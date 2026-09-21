@@ -5,7 +5,7 @@
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="generator" content="Asciidoctor 2.0.23">
-<title>DomainContext, RuleContext, and DataDomain</title>
+<title>Calculated Relations — Design and Roadmap</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Open+Sans:300,300italic,400,400italic,600,600italic%7CNoto+Serif:400,400italic,700,700italic%7CDroid+Sans+Mono:400,700">
 <style>
 /*! Asciidoctor default stylesheet | MIT License | https://asciidoctor.org */
@@ -524,9 +524,9 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 .CodeRay .head .head{color:#f4f}
 </style>
 </head>
-<body id="domain-rule-context" class="book toc2 toc-left">
+<body class="book toc2 toc-left">
 <div id="header">
-<h1>DomainContext, RuleContext, and DataDomain</h1>
+<h1>Calculated Relations — Design and Roadmap</h1>
 <div class="details">
 <span id="revnumber">version 1.4.2-SNAPSHOT,</span>
 <span id="revdate">2026-09-21T22:14:39Z</span>
@@ -534,33 +534,30 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
 <ul class="sectlevel1">
-<li><a href="#_datadomain">1. DataDomain</a></li>
-<li><a href="#_domaincontext">2. DomainContext</a></li>
-<li><a href="#_rulecontext">3. RuleContext</a></li>
-<li><a href="#_end_to_end_flow">4. End-to-End Flow</a></li>
-<li><a href="#_resolvers_and_variables_in_rule_filters">5. Resolvers and Variables in Rule Filters</a>
+<li><a href="#_background">1. Background</a></li>
+<li><a href="#_problem_statement">2. Problem Statement</a></li>
+<li><a href="#_goals">3. Goals</a></li>
+<li><a href="#_non_goals">4. Non-Goals</a></li>
+<li><a href="#_design">5. Design</a>
 <ul class="sectlevel2">
-<li><a href="#_business_scenario_multi_tenant_franchise_dynamic_partner_segmentation">5.1. Business Scenario: Multi-Tenant Franchise &amp; Dynamic Partner Segmentation</a></li>
-<li><a href="#_how_the_feature_supports_the_business_solution">5.2. How the Feature Supports the Business Solution</a></li>
+<li><a href="#_d1_materialization_modes">5.1. D1. Materialization Modes</a></li>
+<li><a href="#_d2_dependency_validation_and_loud_staleness">5.2. D2. Dependency Validation and Loud Staleness</a></li>
+<li><a href="#_d3_declarative_hierarchylist_edges">5.3. D3. Declarative Hierarchy/List Edges</a></li>
+<li><a href="#_d4_compute_guards">5.4. D4. Compute Guards</a></li>
+<li><a href="#_d5_provenance_off_the_hot_path">5.5. D5. Provenance Off the Hot Path</a></li>
+<li><a href="#_d6_bulk_recompute_cli">5.6. D6. Bulk Recompute CLI</a></li>
+<li><a href="#_d7_metrics">5.7. D7. Metrics</a></li>
+<li><a href="#_d8_provider_test_kit">5.8. D8. Provider Test Kit</a></li>
 </ul>
 </li>
-<li><a href="#_concrete_example_building_and_using_a_resolver">6. Concrete example: building and using a resolver</a>
+<li><a href="#_roadmap">6. Roadmap</a>
 <ul class="sectlevel2">
-<li><a href="#_1_implement_the_spi">6.1. 1) Implement the SPI</a></li>
-<li><a href="#_2_how_rulecontext_uses_resolvers">6.2. 2) How RuleContext uses resolvers</a></li>
-<li><a href="#_3_author_a_rule_that_consumes_the_variable">6.3. 3) Author a rule that consumes the variable</a></li>
-<li><a href="#_4_end_to_end_behavior">6.4. 4) End-to-end behavior</a></li>
-<li><a href="#_string_literals_vs_typed_values_in_resolver_variables">6.5. String literals vs. typed values in resolver variables</a>
-<ul class="sectlevel3">
-<li><a href="#_example_a_resolver_returns_objectids_typed">6.5.1. Example A: Resolver returns ObjectIds (typed)</a></li>
-<li><a href="#_example_b_resolver_returns_string_literals_force_raw_strings">6.5.2. Example B: Resolver returns String literals (force raw strings)</a></li>
-<li><a href="#_other_types_supported">6.5.3. Other types supported</a></li>
+<li><a href="#_sequencing_rationale">6.1. Sequencing Rationale</a></li>
 </ul>
 </li>
-<li><a href="#ontology-domain-rule-context">6.6. Using AccessListResolver with Ontology (optional)</a></li>
-<li><a href="#_admitted_vocabulary_for_rule_predicates">6.7. Admitted vocabulary for rule predicates</a></li>
-</ul>
-</li>
+<li><a href="#_backwards_compatibility">7. Backwards Compatibility</a></li>
+<li><a href="#_open_questions">8. Open Questions</a></li>
+<li><a href="#_out_of_scope_for_now">9. Out of Scope (For Now)</a></li>
 </ul>
 </div>
 </div>
@@ -568,512 +565,965 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <div id="preamble">
 <div class="sectionbody">
 <div class="paragraph">
-<p>Quantum enforces multi-tenant isolation and sharing through contextual data carried on models and evaluated at runtime.</p>
+<p><strong>Status:</strong> Implemented on <code>feature/ontology-enhancements</code> against <code>1.4.0-SNAPSHOT</code>.
+<strong>Owners:</strong> Ontology team.
+<strong>Scope:</strong> <code>quantum-ontology-core</code>, <code>quantum-ontology-mongo</code>, <code>quantum-ontology-policy-bridge</code>, <code>quantum-cli</code>, <code>quantum-docs</code>.</p>
 </div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_datadomain">1. DataDomain</h2>
-<div class="sectionbody">
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
 <div class="paragraph">
-<p>Every persisted model includes a DataDomain that describes ownership and scope, commonly including fields such as:</p>
+<p><strong>Implementation status (initial pass):</strong> All eight design items have landed.
+Per-item notes appear inline in the design and the roadmap table below. In
+short:</p>
 </div>
 <div class="ulist">
 <ul>
 <li>
-<p>tenantId: Identifies the tenant</p>
+<p>M1 (Safety Net): D7 metrics, D4 guards, D2 <code>@DependsOn</code> + validator, D8
+test kit — all complete with unit tests in <code>quantum-ontology-core</code>.</p>
 </li>
 <li>
-<p>orgRefName: Organization unit reference within a tenant</p>
+<p>M2 (Operability): D6 bulk recompute service + admin REST; D5 provenance
+side-collection storage and migration runner. The CLI shim and the
+upsert-path rewrite are explicitly deferred (see notes).</p>
 </li>
 <li>
-<p>ownerId: Owning user or system entity</p>
-</li>
-<li>
-<p>realm: Optional runtime override for partitioning</p>
+<p>M3 (Performance / Authoring): D1 materialization modes (EAGER/LAZY/ONDEMAND)
+with cache + read facade + write-hook honoring; D3 declarative <code>computed:</code>
+YAML block + <code>DeclarativeComputedEdgeProvider</code>.</p>
 </li>
 </ul>
 </div>
 <div class="paragraph">
-<p>These fields enable filtering, authorization, and controlled sharing of data between tenants or org units.</p>
+<p>Total new test coverage in <code>quantum-ontology-core</code>: 72 tests (was 53).</p>
+</div>
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p>This document captures a forward-looking design for the <strong>calculated relations</strong>
+subsystem (computed/derived ontology edges). It collects the gaps observed in
+the current implementation, proposes targeted enhancements, and sequences them
+into a phased roadmap.</p>
+</div>
+<div class="paragraph">
+<p>For a usage-level introduction to ontology relationships, see
+<a href="../user-guide/ontology.html">user-guide/ontology.adoc</a>
+(including the Territory → Location computed-edge example under
+<em>Custom Edge Providers</em>). A longer narrative guide also lives at
+<a href="../../implementing-territory-location-edges.md"><code>quantum-docs/src/docs/implementing-territory-location-edges.md</code></a>.</p>
 </div>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_domaincontext">2. DomainContext</h2>
+<h2 id="_background">1. Background</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>DomainContext represents the current execution context for a request or operation, typically capturing:</p>
+<p>The framework distinguishes three ways edges enter <code>ontology_edges</code>:</p>
 </div>
-<div class="ulist">
-<ul>
-<li>
-<p>current tenant/org/user identity</p>
-</li>
-<li>
-<p>functional area / functional domain</p>
-</li>
-<li>
-<p>the action being executed (e.g., CREATE, UPDATE, VIEW, DELETE, ARCHIVE)</p>
-</li>
-</ul>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 16.6666%;">
+<col style="width: 16.6666%;">
+<col style="width: 16.6666%;">
+<col style="width: 50.0002%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Kind</th>
+<th class="tableblock halign-left valign-top"><code>inferred</code></th>
+<th class="tableblock halign-left valign-top"><code>derived</code></th>
+<th class="tableblock halign-left valign-top">Source</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Explicit</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">false</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">false</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>@OntologyProperty</code> annotation or YAML triple</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Inferred</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">true</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">false</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>ForwardChainingReasoner</code> (transitive, symmetric, subPropertyOf, chains)</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Derived (calculated)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">false</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">true</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>ComputedEdgeProvider</code> SPI implementations</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p>The flags live on <code>EdgeRecord</code> (<code>quantum-ontology-core/&#8230;&#8203;/EdgeRecord.java</code>).</p>
 </div>
 <div class="paragraph">
-<p>It feeds downstream components (repositories, resources) to consistently apply filtering and policy decisions.</p>
+<p>Calculated edges are produced by CDI beans extending
+<code>ComputedEdgeProvider&lt;S&gt;</code> (or its specialization <code>HierarchyListEdgeProvider&lt;S, H, T&gt;</code>),
+discovered via <code>ComputedEdgeRegistry</code>, and triggered post-persist by
+<code>OntologyWriteHook</code>. Each edge carries a <code>ComputedEdgeProvenance</code> record
+(<code>providerId</code>, <code>hierarchyPath</code>, <code>resolvedLists</code>, <code>computedAt</code>).</p>
 </div>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_rulecontext">3. RuleContext</h2>
+<h2 id="_problem_statement">2. Problem Statement</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>RuleContext encapsulates policy evaluation. It can:</p>
+<p>Calculated relations work, but the current implementation has rough edges that
+will become painful as the number of providers and the size of materialized
+edge sets grow:</p>
 </div>
-<div class="ulist">
-<ul>
-<li>
-<p>Enforce whether an action is allowed for a given model and DataDomain</p>
-</li>
-<li>
-<p>Produce additional filters and projections used by repositories</p>
-</li>
-<li>
-<p>Grant cross-tenant read access for specific functional areas (e.g., shared catalogs) while keeping others strictly isolated</p>
-</li>
-</ul>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_end_to_end_flow">4. End-to-End Flow</h2>
-<div class="sectionbody">
 <div class="olist arabic">
 <ol class="arabic">
 <li>
-<p>A REST request enters a BaseResource-derived endpoint.</p>
+<p><strong>Eager-only materialization.</strong> Every relevant entity write recomputes and
+rewrites the full edge set for affected sources. There is no compute-on-read
+or cached tier.</p>
 </li>
 <li>
-<p>The resource builds a DomainContext from the security principal and request parameters.</p>
+<p><strong>Silent staleness.</strong> Providers that declare <code>getDependencyTypes()</code> but leave
+<code>getAffectedSourceIds()</code> returning the default empty set will quietly skip
+invalidation. There is no startup-time validation and no runtime warning.</p>
 </li>
 <li>
-<p>RuleContext evaluates permissions and returns effective filters.</p>
+<p><strong>No declarative path for the common shape.</strong> The "source assigned to
+hierarchy node, node carries list of targets" pattern is implemented by
+hand in every provider, even though <code>HierarchyListEdgeProvider</code> already
+shapes the structure.</p>
 </li>
 <li>
-<p>Repository applies filters (DataDomain-aware) to find/get/list/update/delete.</p>
+<p><strong>No automatic cycle/depth guards in compute.</strong> The reasoner
+(<code>ForwardChainingReasoner</code>) guards transitive expansion with
+<code>MAX_TRANSITIVE_STEP_VISITS = 10_000</code> (visit budget, not a 10-iteration
+cap), but provider-side compute historically relied on the implementer
+to terminate (addressed by D4).</p>
 </li>
 <li>
-<p>The model’s UIActionList can be computed to reflect what the caller can do next.</p>
+<p><strong>Provenance bloat.</strong> Per-edge provenance maps are stored inline on every
+<code>EdgeRecord</code>, inflating the working set for high-fanout providers.</p>
+</li>
+<li>
+<p><strong>No bulk recompute / reconciliation tool.</strong> When provider logic changes,
+there is no first-class way to reprocess existing sources.</p>
+</li>
+<li>
+<p><strong>No metrics surface.</strong> Per-provider invocation count, duration, and
+add/remove deltas are not exposed.</p>
+</li>
+<li>
+<p><strong>Heavy test setup.</strong> Provider unit tests require Mongo and full repo wiring.</p>
+</li>
+</ol>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_goals">3. Goals</h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Reduce write-amplification for high-fanout providers without changing the
+read API.</p>
+</li>
+<li>
+<p>Make staleness bugs hard to introduce — fail loud, not silent.</p>
+</li>
+<li>
+<p>Lower the cost of authoring a new calculated relation for the common case
+to roughly "fill out a YAML block".</p>
+</li>
+<li>
+<p>Give operators visibility (metrics) and a recovery path (recompute CLI).</p>
+</li>
+<li>
+<p>Keep the existing <code>ComputedEdgeProvider</code> contract as the escape hatch;
+do not break callers.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_non_goals">4. Non-Goals</h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>A full SPARQL/OWL query layer. The expression DSL stays narrow.</p>
+</li>
+<li>
+<p>Replacing the reasoner. Inferred edges remain the reasoner&#8217;s domain.</p>
+</li>
+<li>
+<p>Cross-realm or cross-tenant edge sharing.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_design">5. Design</h2>
+<div class="sectionbody">
+<div class="sect2">
+<h3 id="_d1_materialization_modes">5.1. D1. Materialization Modes</h3>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+<div class="title">Status: implemented</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>MaterializationMode</code> enum at <code>quantum-ontology-core/&#8230;&#8203;/core/MaterializationMode.java</code>.</p>
+</li>
+<li>
+<p><code>ComputedEdgeProvider#getMaterializationMode()</code> (default EAGER) and
+<code>getCacheTtlSeconds()</code> hooks.</p>
+</li>
+<li>
+<p><code>ComputedEdgeCache</code> (per-process TTL&#8217;d map) at <code>quantum-ontology-core/&#8230;&#8203;/core/ComputedEdgeCache.java</code>.</p>
+</li>
+<li>
+<p><code>OntologyWriteHook</code> skips non-EAGER providers at write time.</p>
+</li>
+<li>
+<p><code>ComputedEdgeReader</code> (in <code>quantum-ontology-mongo</code>) is the read-side
+facade for source-keyed <strong>and</strong> destination-keyed lookups used by
+policy/<code>hasEdge</code> rewrites; <code>ComputedEdgeRecomputeHandler</code> punches the
+cache for LAZY and no-ops for ONDEMAND on dependency changes.</p>
+</li>
+</ul>
+</div>
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p>Add a <code>MaterializationMode</code> enum returned by a new
+<code>ComputedEdgeProvider#getMaterializationMode()</code> (default <code>EAGER</code>):</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="directive">public</span> <span class="type">enum</span> MaterializationMode {
+    EAGER,    <span class="comment">// current behavior: write through to ontology_edges</span>
+    LAZY,     <span class="comment">// compute on read; cache with TTL</span>
+    ONDEMAND  <span class="comment">// never store; always compute via the repo facade</span>
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p><code>ComputedEdgeReader</code> is the mode-aware facade. Callers that need correctness
+across all modes must use it (or APIs wired through it) rather than
+<code>OntologyEdgeRepo</code> alone:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><strong>Source-keyed reads</strong> (<code>edgesFor</code> / <code>dstIdsBySrc</code>): for <code>LAZY</code>/<code>ONDEMAND</code>,
+short-circuit to the provider (with TTL cache for <code>LAZY</code>) instead of the
+collection.</p>
+</li>
+<li>
+<p><strong>Destination-keyed reads</strong> (<code>srcIdsByDst</code>, used by <code>hasEdge</code> /
+<code>ListQueryRewriter</code>, MCP incoming-graph tools, and similar): for
+<code>LAZY</code>/<code>ONDEMAND</code>, enumerate candidate sources via
+<code>SourceEntityEnumerator</code>, compute provider edges, and union with any
+EAGER rows still in <code>ontology_edges</code>. Without an enumerator, inverse
+results fall back to store-only and log a warning (incomplete for pure
+LAZY providers).</p>
+</li>
+<li>
+<p><code>OntologyEdgeRepo</code> remains the pure store. Direct repo reads do <strong>not</strong>
+see unmaterialized LAZY/ONDEMAND edges.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>The <code>LAZY</code> cache lives in a <code>ComputedEdgeCache</code> (per-process, TTL-
+configurable per provider). Cache invalidation reuses the existing
+<code>getAffectedSourceIds</code> machinery.</p>
+</div>
+<div class="paragraph">
+<p><strong>Acceptance:</strong></p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>An existing provider can opt into <code>LAZY</code> by overriding one method.</p>
+</li>
+<li>
+<p>Source-keyed and destination-keyed reads return the same edges as the
+EAGER path when a <code>SourceEntityEnumerator</code> (and source loader) is
+registered for the provider&#8217;s source type.</p>
+</li>
+<li>
+<p>Writes that previously fanned out N edges no longer write any rows for
+that provider.</p>
+</li>
+<li>
+<p>Inverse enumeration is bounded (visit budget) and may be expensive;
+prefer <code>EAGER</code> when destination-side policy filters are hot paths.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_d2_dependency_validation_and_loud_staleness">5.2. D2. Dependency Validation and Loud Staleness</h3>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+<div class="title">Status: implemented</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>@DependsOn(type, via, expand)</code> (repeatable) at
+<code>quantum-ontology-core/&#8230;&#8203;/annotations/DependsOn.java</code>.</p>
+</li>
+<li>
+<p><code>ComputedEdgeProvider#getDependencyTypes()</code> derives its default from
+<code>@DependsOn</code> declarations on the class hierarchy.</p>
+</li>
+<li>
+<p><code>ComputedEdgeStalenessValidator</code> is pure logic in core, unit-tested
+without CDI.</p>
+</li>
+<li>
+<p><code>ComputedEdgeProviderAutoDiscovery</code> runs the validator at startup,
+emits WARN logs, and bumps <code>OntologyMetrics.recordStalenessRisk</code> per
+unhelped (provider, dependency-type) pair.</p>
+</li>
+</ul>
+</div>
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p>Add startup-time validation in <code>ComputedEdgeRegistry</code>:</p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>For each registered provider, walk <code>getDependencyTypes()</code>.</p>
+</li>
+<li>
+<p>For each dependency type, check whether <code>getAffectedSourceIds(&#8230;&#8203;)</code> for an
+arbitrary id returns the default empty set <strong>and</strong> the method has not been
+overridden (detected via reflection on the declaring class).</p>
+</li>
+<li>
+<p>Log a <code>WARN</code> and emit a Micrometer counter <code>ontology.provider.staleness_risk</code>
+tagged by <code>providerId</code> and <code>dependencyType</code>.</p>
 </li>
 </ol>
 </div>
 <div class="paragraph">
-<p>This pattern ensures consistent enforcement across all CRUD operations, independent of the specific model or repository.</p>
+<p>Add an optional <code>@DependsOn</code> annotation that declaratively expresses the
+inverse-edge query for the common case:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@DependsOn</span>(type = Territory.class, via = <span class="string"><span class="delimiter">&quot;</span><span class="content">assignedTerritories</span><span class="delimiter">&quot;</span></span>, expand = ANCESTORS)
+<span class="annotation">@DependsOn</span>(type = LocationList.class, via = <span class="string"><span class="delimiter">&quot;</span><span class="content">staticDynamicList</span><span class="delimiter">&quot;</span></span>)
+<span class="directive">public</span> <span class="type">class</span> <span class="class">AssociateCanSeeLocationProvider</span> <span class="directive">extends</span> HierarchyListEdgeProvider&lt;...&gt; { }</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The registry derives <code>getAffectedSourceIds</code> from the annotation if the method
+has not been explicitly overridden.</p>
+</div>
+<div class="paragraph">
+<p><strong>Acceptance:</strong> removing the override on a provider with <code>@DependsOn</code> keeps
+invalidation correct; removing both surfaces a warning at startup.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_d3_declarative_hierarchylist_edges">5.3. D3. Declarative Hierarchy/List Edges</h3>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+<div class="title">Status: implemented</div>
+<div class="ulist">
+<ul>
+<li>
+<p>YAML <code>computed:</code> block parsed by <code>YamlOntologyLoader.loadComputedSpecs()</code>
+into <code>ComputedEdgeSpec</code> records.</p>
+</li>
+<li>
+<p><code>DeclarativeRuntime&lt;S, H, T&gt;</code> SPI for application-supplied entity
+loading / hierarchy walk / list resolution.</p>
+</li>
+<li>
+<p><code>DeclarativeComputedEdgeProvider</code> extends <code>HierarchyListEdgeProvider</code>,
+so the cycle/depth/target guards from D4 apply automatically.</p>
+</li>
+<li>
+<p>End-to-end test: <code>DeclarativeComputedEdgeTest</code> loads a YAML spec and
+produces the expected target set against in-memory fakes.</p>
+</li>
+<li>
+<p><code>dependsOn:</code> entries are surfaced via <code>declaredDependencyTypeNames()</code>;
+applications resolve type strings to classes when registering a runtime.</p>
+</li>
+</ul>
+</div>
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p>Extend the YAML ontology schema to allow <code>computed:</code> definitions for the
+hierarchy+list pattern:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="yaml"><span class="key">computed</span>:
+  - <span class="string"><span class="content">id: canSeeLocation</span></span>
+    <span class="key">domain</span>: <span class="string"><span class="content">Associate</span></span>
+    <span class="key">range</span>: <span class="string"><span class="content">Location</span></span>
+    <span class="key">via</span>:
+      <span class="key">hierarchy</span>:
+        <span class="key">node</span>: <span class="string"><span class="content">Territory</span></span>
+        <span class="key">from</span>: <span class="string"><span class="content">assignedTerritories</span></span>     <span class="comment"># field on Associate</span>
+        <span class="key">expand</span>: <span class="string"><span class="content">descendants</span></span>            <span class="comment"># descendants | ancestors | none</span>
+      <span class="key">list</span>:
+        <span class="key">field</span>: <span class="string"><span class="content">locationLists</span></span>           <span class="comment"># field on Territory</span>
+        <span class="key">mode</span>: <span class="string"><span class="content">auto</span></span>                     <span class="comment"># auto | static | dynamic</span>
+    <span class="key">dependsOn</span>:
+      - <span class="string"><span class="content">type: Territory</span></span>
+      - <span class="string"><span class="content">type: LocationList</span></span></code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>A <code>YamlComputedEdgeProvider</code> implementation reads these blocks at boot and
+registers a synthetic provider per entry. Hand-rolled providers remain the
+escape hatch for everything that does not fit this shape.</p>
+</div>
+<div class="paragraph">
+<p><strong>Acceptance:</strong> the territory/location reference example can be expressed
+entirely in YAML and produces edges identical to the hand-rolled provider
+under the existing integration tests.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_d4_compute_guards">5.4. D4. Compute Guards</h3>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+<div class="title">Status: implemented</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>ComputationContext</code> now tracks <code>visitedNodeIds</code>, configurable
+<code>maxHierarchyDepth</code> (default 64) and <code>maxComputedTargets</code> (default
+50_000), and a list of guard trips.</p>
+</li>
+<li>
+<p><code>HierarchyListEdgeProvider</code> short-circuits on cycle / depth / target
+hits and records the trip. (Note: with the existing flat-descendants
+API, <code>maxHierarchyDepth</code> is interpreted as max hierarchy nodes
+processed, not tree depth — see HierarchyListGuardsTest.)</p>
+</li>
+<li>
+<p>Trips flow into <code>OntologyMetrics.recordGuardTrip</code> per provider via the
+static metrics hook on <code>ComputedEdgeProvider</code>.</p>
+</li>
+</ul>
+</div>
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p>Augment <code>ComputationContext</code> with:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>Set&lt;String&gt; visitedNodeIds</code> — automatically populated by
+<code>HierarchyListEdgeProvider</code> during BFS; revisits short-circuit.</p>
+</li>
+<li>
+<p><code>int maxHierarchyDepth</code> (configurable, default 64).</p>
+</li>
+<li>
+<p><code>int maxComputedTargets</code> (configurable, default 50_000).</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>When a guard trips, the provider returns the partial result, logs a <code>WARN</code>,
+and increments a counter tagged by provider. Bare <code>ComputedEdgeProvider</code>
+implementations get the same context and can opt in.</p>
+</div>
+<div class="paragraph">
+<p><strong>Acceptance:</strong> a synthetic test with a cyclic Territory hierarchy completes
+without stack overflow and emits the expected warning counter.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_d5_provenance_off_the_hot_path">5.5. D5. Provenance Off the Hot Path</h3>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+<div class="title">Status: storage + migration implemented; upsert wiring deferred</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>OntologyEdgeProvenanceDoc</code> (collection <code>ontology_edge_provenance</code>),
+<code>OntologyEdgeProvenanceRepo</code>, and <code>ProvenanceStore</code> strategy.</p>
+</li>
+<li>
+<p>Feature flag <code>quantum.ontology.provenance.split</code> (default false). With
+the flag off, behavior is unchanged.</p>
+</li>
+<li>
+<p><code>ProvenanceMigrationService.migrate(realm, dryRun)</code> is idempotent and
+exposed at <code>POST /ontology/admin/provenance/migrate</code>.</p>
+</li>
+<li>
+<p><strong>Deferred:</strong> rewriting <code>OntologyMaterializer</code> and <code>OntologyEdgeRepo</code>
+upsert paths to consult <code>ProvenanceStore</code> rather than setting <code>prov</code>
+directly. Doing so without the integration-test environment risked
+regressions; the storage and migration are the correct foundation
+and can be wired in with full IT coverage in a follow-up.</p>
+</li>
+</ul>
+</div>
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p>Move per-edge provenance out of <code>EdgeRecord.prov</code> into a sibling collection
+<code>ontology_edge_provenance</code> keyed by edge <code>_id</code>. <code>EdgeRecord</code> retains a
+lightweight <code>provRef</code> (boolean: provenance available) and <code>providerId</code> for
+filtering.</p>
+</div>
+<div class="paragraph">
+<p>Graph REST endpoints accept <code>?withProv=true</code> to join provenance into the
+response. The policy bridge does not need provenance, so its hot path
+shrinks proportionally.</p>
+</div>
+<div class="paragraph">
+<p><strong>Acceptance:</strong> an edge query with <code>withProv=false</code> returns documents whose
+average size is reduced by the previously-inlined provenance bytes; with
+<code>withProv=true</code> the response is byte-equivalent (modulo ordering) to today.</p>
+</div>
+<div class="paragraph">
+<p>Migration: a one-shot job copies existing <code>prov</code> maps to the side
+collection and clears the inline field.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_d6_bulk_recompute_cli">5.6. D6. Bulk Recompute CLI</h3>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+<div class="title">Status: service implemented; REST endpoint exposed; CLI shim deferred</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>BulkRecomputeService</code> walks all source entities for a provider via a
+registered <code>SourceEntityEnumerator</code> SPI, recomputes target sets,
+diffs against persisted edges, and either reports deltas (<code>dryRun=true</code>)
+or re-applies via the existing <code>ComputedEdgeRecomputeHandler</code>.</p>
+</li>
+<li>
+<p>Exposed at <code>POST /ontology/admin/recompute</code> with the original
+request/response shape.</p>
+</li>
+<li>
+<p><code>GET /ontology/admin/metrics</code> exposes the <code>OntologyMetrics</code> snapshot.</p>
+</li>
+<li>
+<p><strong>Deferred:</strong> the picocli verb. <code>quantum-cli</code> already binds
+<code>@TopCommand</code> to <code>ServiceTokenCLI</code>; quarkus-picocli only allows one
+top command, so adding a sibling would either restructure the
+existing CLI invocation or require a parallel jar. The REST endpoint
+is the canonical entry point; a thin CLI wrapper that posts to it
+can land separately.</p>
+</li>
+</ul>
+</div>
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p>Add a <code>quantum-cli</code> verb:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code>quantum ontology recompute \
+    --provider AssociateCanSeeLocationProvider \
+    --realm acme \
+    [--source-id &lt;id&gt;] [--dry-run] [--batch-size 500]</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>It iterates source entities (filtered to <code>--source-id</code> if given), runs the
+provider&#8217;s <code>computeTargets</code>, diffs against current materialized edges, and
+applies (or reports, with <code>--dry-run</code>) the deltas. Output: per-source
+add/remove counts and a final summary.</p>
+</div>
+<div class="paragraph">
+<p><strong>Acceptance:</strong> running with <code>--dry-run</code> after a no-op deploy reports zero
+deltas; running after a deliberate provider-logic change reports the
+expected diff.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_d7_metrics">5.7. D7. Metrics</h3>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+<div class="title">Status: implemented (in-process; Micrometer bridge follow-up)</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>OntologyMetrics</code> is a dependency-free <code>@ApplicationScoped</code> bean in
+<code>quantum-ontology-core</code>. Per-provider counters: invocations, total /
+avg / max nanos, targets produced, edges added, edges removed, errors,
+guard trips, staleness-risk-by-dependency.</p>
+</li>
+<li>
+<p>Wired in <code>OntologyWriteHook</code> (timing per provider invocation) and
+<code>OntologyMaterializer</code> (added/removed deltas via <code>prov.providerId</code>
+inspection).</p>
+</li>
+<li>
+<p>Snapshot exposed at <code>GET /ontology/admin/metrics</code>.</p>
+</li>
+<li>
+<p><strong>Follow-up:</strong> a Micrometer bridge (subscribe to <code>OntologyMetrics</code>
+snapshots and emit gauges/counters) is intentionally separate so
+<code>quantum-ontology-core</code> stays free of the Micrometer dependency.</p>
+</li>
+</ul>
+</div>
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p>Wrap <code>ComputedEdgeProvider#edges(&#8230;&#8203;)</code> in a Micrometer timer and counters,
+tagged by <code>providerId</code>:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>ontology.provider.invocations</code> — counter</p>
+</li>
+<li>
+<p><code>ontology.provider.duration</code> — timer</p>
+</li>
+<li>
+<p><code>ontology.provider.targets_produced</code> — distribution summary</p>
+</li>
+<li>
+<p><code>ontology.provider.edges_added</code>, <code>ontology.provider.edges_removed</code> —
+counters (emitted from the materializer diff path)</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Surfaced through the existing Quarkus Micrometer registry.</p>
+</div>
+<div class="paragraph">
+<p><strong>Acceptance:</strong> <code>/q/metrics</code> exposes the counters with non-zero values after
+the integration test run.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_d8_provider_test_kit">5.8. D8. Provider Test Kit</h3>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+<div class="title">Status: implemented</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>com.e2eq.ontology.testkit.InMemoryHierarchy&lt;H, T&gt;</code> builds a fluent
+fake hierarchy with parent/child links and per-node list items; its
+<code>descendants(nodeId)</code> matches the <code>HierarchyListEdgeProvider</code>
+flat-descendants contract.</p>
+</li>
+<li>
+<p><code>com.e2eq.ontology.testkit.ComputedEdgeProviderHarness</code> invokes any
+<code>ComputedEdgeProvider</code> against a fake <code>DataDomainInfo</code> and returns a
+<code>Result</code> with <code>targetIds()</code> and <code>providerIds()</code> helpers.</p>
+</li>
+<li>
+<p>Sample test (<code>TestKitSampleTest</code>) declares a hierarchy + provider in
+~80 lines with no Mongo and no Quarkus boot.</p>
+</li>
+<li>
+<p>Drive-by fix: <code>extractId</code>, <code>extractNodeId</code>, and <code>extractNodeRefName</code>
+now <code>setAccessible(true)</code> on the reflected <code>getId/getRefName</code> methods,
+so providers work against package-private fixtures and
+reflection-loaded classes.</p>
+</li>
+</ul>
+</div>
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p>Add <code>quantum-ontology-core/src/test-fixtures</code> (or a <code>test-jar</code>) module with:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>InMemoryHierarchyRepo&lt;H&gt;</code> — accepts a tree literal in tests.</p>
+</li>
+<li>
+<p><code>InMemoryListResolver&lt;T&gt;</code> — registered (listId → items) map.</p>
+</li>
+<li>
+<p><code>ComputedEdgeProviderHarness</code> — wires a provider against the fakes and
+asserts target sets and provenance.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>The provider unit test for <code>AssociateCanSeeLocationProvider</code> is rewritten
+against the harness; the existing <code>TerritoryLocationPermissionIT</code> remains
+the integration coverage.</p>
+</div>
+<div class="paragraph">
+<p><strong>Acceptance:</strong> the provider unit tests no longer depend on Mongo or Quarkus
+boot; they run in &lt;1s.</p>
+</div>
 </div>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_resolvers_and_variables_in_rule_filters">5. Resolvers and Variables in Rule Filters</h2>
+<h2 id="_roadmap">6. Roadmap</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>RuleContext can attach FILTERs (not only ALLOW/DENY) to repository queries using rule fields and filter strings. Variables inside those filter strings are populated from:</p>
+<p>The roadmap is organized into three sequential milestones inside the
+<code>1.4.0-SNAPSHOT</code> line. Each milestone is independently shippable.</p>
 </div>
-<div class="ulist">
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 10%;">
+<col style="width: 20%;">
+<col style="width: 30%;">
+<col style="width: 20%;">
+<col style="width: 10%;">
+<col style="width: 10%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Milestone</th>
+<th class="tableblock halign-left valign-top">Theme</th>
+<th class="tableblock halign-left valign-top">Items</th>
+<th class="tableblock halign-left valign-top">Risk</th>
+<th class="tableblock halign-left valign-top">Target</th>
+<th class="tableblock halign-left valign-top">Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>M1 — Safety Net</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Make staleness loud, give us metrics and a test kit before we change
+behavior.</p></td>
+<td class="tableblock halign-left valign-top"><div class="content"><div class="ulist">
 <ul>
 <li>
-<p>PrincipalContext and ResourceContext standard variables: <code>principalId</code>, <code>pAccountId</code>, <code>pTenantId</code>, <code>ownerId</code>, <code>orgRefName</code>, <code>resourceId</code>, <code>action</code>, <code>functionalDomain</code>, <code>area</code></p>
+<p>D2 — Dependency validation and <code>@DependsOn</code></p>
 </li>
 <li>
-<p>Dotted coordinate namespaces:</p>
-<div class="ulist">
+<p>D4 — Compute guards</p>
+</li>
+<li>
+<p>D7 — Metrics</p>
+</li>
+<li>
+<p>D8 — Provider Test Kit</p>
+</li>
+</ul>
+</div></div></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Low. Additive only; no on-disk format change.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>1.4.0-SNAPSHOT</code> early</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Done</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>M2 — Operability</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Recovery path and provenance footprint.</p></td>
+<td class="tableblock halign-left valign-top"><div class="content"><div class="ulist">
 <ul>
 <li>
-<p><code>${facet.&lt;key&gt;}</code> &amp; <code>${coord.&lt;key&gt;}</code>: Resolved dynamically from tenant <code>DataDomainPolicyEntry.facetFilters</code> or contextual coordinate maps</p>
+<p>D6 — Bulk recompute (REST; CLI shim deferred)</p>
 </li>
 <li>
-<p><code>${principal.&lt;attr&gt;}</code>: Extracted from authenticated principal claims (<code>userId</code>, <code>defaultRealm</code>, <code>tenantId</code>, custom attributes)</p>
-</li>
-<li>
-<p><code>${dd.&lt;attr&gt;}</code>: Extracted from target <code>DataDomain</code> coordinates (<code>tenantId</code>, <code>orgRefName</code>, <code>accountNum</code>, <code>dataSegment</code>, <code>ownerId</code>)</p>
+<p>D5 — Provenance side collection + migration (upsert wiring deferred)</p>
 </li>
 </ul>
-</div>
+</div></div></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Medium. Migration touches existing data; gated by feature flag
+<code>quantum.ontology.provenance.split</code> (default off until validated).</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>1.4.0-SNAPSHOT</code> mid</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Done (with documented deferrals)</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>M3 — Performance and Authoring</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Reduce write amplification and lower the cost of new providers.</p></td>
+<td class="tableblock halign-left valign-top"><div class="content"><div class="ulist">
+<ul>
+<li>
+<p>D1 — Materialization modes (EAGER, LAZY, ONDEMAND)</p>
 </li>
 <li>
-<p>AccessListResolver SPI implementations: per-request computed Collections (e.g., customer IDs the caller can access)</p>
+<p>D3 — Declarative computed edges in YAML</p>
 </li>
 </ul>
-</div>
-<div class="paragraph">
-<p>Implementation highlights:
-- AccessListResolver has methods key(), supports(&#8230;&#8203;), resolve(&#8230;&#8203;). Resolvers are injected and invoked for each request; results are published as variables by key.
-- <code>MorphiaUtils.VariableBundle</code> carries both string variables and typed object variables (including Collections and arrays) to the query listener.
-- The <code>QueryToFilterListener</code> and in-memory <code>QueryToPredicateJsonListener</code> support single-variable IN clauses with or without brackets (<code>field:^${var}</code> or <code>field:^[${var}]</code>), expanding Collections/arrays into native <code>$in</code> filters and coercing types (ObjectId, numbers, booleans, dates).</p>
-</div>
+</div></div></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Medium-high. New code paths in the read layer; YAML schema additions.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>1.4.0-SNAPSHOT</code> late / branch handoff</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Done</p></td>
+</tr>
+</tbody>
+</table>
 <div class="sect2">
-<h3 id="_business_scenario_multi_tenant_franchise_dynamic_partner_segmentation">5.1. Business Scenario: Multi-Tenant Franchise &amp; Dynamic Partner Segmentation</h3>
-<div class="paragraph">
-<p>A national retail brand operates diverse franchised store chains sharing a centralized inventory platform. Access is governed not by static roles, but by custom dynamic coordinates: store tiers (<code>facet.tier: ["FLAGSHIP", "REGIONAL"]</code>) and sales zones (<code>coord.salesZone: "NORTHEAST"</code>).</p>
-</div>
-</div>
-<div class="sect2">
-<h3 id="_how_the_feature_supports_the_business_solution">5.2. How the Feature Supports the Business Solution</h3>
-<div class="paragraph">
-<p>Administrators define a single generic security policy:</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code>tier:^${facet.allowedTiers} &amp;&amp; zone:${coord.salesZone} &amp;&amp; status:AVAILABLE</code></pre>
-</div>
-</div>
-<div class="paragraph">
-<p>The <code>DataDomainResolver</code> SPI binds the caller&#8217;s credentials into typed facet collections and zone variables at request time. Bracketless <code>IN</code> (<code>tier:^${facet.allowedTiers}</code>) automatically unpacks collections into native MongoDB <code>$in</code> operators. Unauthenticated or foreign-tenant requests fail closed.</p>
-</div>
-<div class="paragraph">
-<p>Authoring examples:
-- Constrain by principal domain:</p>
-</div>
-<div class="paragraph">
-<p>+</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code>orgRefName:${orgRefName} &amp;&amp; dataDomain.tenantId:${pTenantId}</code></pre>
-</div>
-</div>
+<h3 id="_sequencing_rationale">6.1. Sequencing Rationale</h3>
 <div class="ulist">
 <ul>
 <li>
-<p>Bracketless single-variable IN for customer visibility or facet tiers:</p>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code>customerId:^${accessibleCustomerIds} &amp;&amp; tier:^${facet.allowedTiers}</code></pre>
-</div>
-</div>
+<p>M1 ships first because its items are observability and validation. They
+surface latent bugs that M2/M3 might otherwise hide.</p>
+</li>
+<li>
+<p>M2 ships before M3 because D5 (provenance split) is a prerequisite for
+honest cost comparisons of D1 (LAZY/ONDEMAND).</p>
+</li>
+<li>
+<p>D3 is intentionally last; we want to validate the declarative shape
+against real providers ported in M2/M3, not against speculative ones.</p>
 </li>
 </ul>
-</div>
-<div class="paragraph">
-<p>For the complete query language reference, see <a href="query-language.html#query-language">Query Language</a>.</p>
 </div>
 </div>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_concrete_example_building_and_using_a_resolver">6. Concrete example: building and using a resolver</h2>
+<h2 id="_backwards_compatibility">7. Backwards Compatibility</h2>
 <div class="sectionbody">
-<div class="paragraph">
-<p>This section shows how to implement a resolver that restricts access to orders by the set of customerIds the current user is allowed to see.</p>
-</div>
-<div class="sect2">
-<h3 id="_1_implement_the_spi">6.1. 1) Implement the SPI</h3>
-<div class="paragraph">
-<p>Create a CDI bean that implements AccessListResolver. It decides when it applies and returns a Collection of values. The collection can be ObjectId, String, numbers, etc.</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code data-lang="java"><span class="keyword">import</span> <span class="include">com.e2eq.framework.securityrules.AccessListResolver</span>;
-<span class="keyword">import</span> <span class="include">com.e2eq.framework.model.persistent.base.UnversionedBaseModel</span>;
-<span class="keyword">import</span> <span class="include">com.e2eq.framework.model.securityrules.PrincipalContext</span>;
-<span class="keyword">import</span> <span class="include">com.e2eq.framework.model.securityrules.ResourceContext</span>;
-<span class="keyword">import</span> <span class="include">jakarta.enterprise.context.ApplicationScoped</span>;
-<span class="keyword">import</span> <span class="include">jakarta.inject.Inject</span>;
-<span class="keyword">import</span> <span class="include">org.bson.types.ObjectId</span>;
-<span class="keyword">import</span> <span class="include">java.util</span>.*;
-
-<span class="annotation">@ApplicationScoped</span>
-<span class="directive">public</span> <span class="type">class</span> <span class="class">CustomerAccessResolver</span> <span class="directive">implements</span> AccessListResolver {
-
-    <span class="annotation">@Inject</span> CustomerAccessService service; <span class="comment">// your app-specific service</span>
-
-    <span class="annotation">@Override</span>
-    <span class="directive">public</span> <span class="predefined-type">String</span> key() {
-        <span class="comment">// This becomes the variable name available to rules: ${accessibleCustomerIds}</span>
-        <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">accessibleCustomerIds</span><span class="delimiter">&quot;</span></span>;
-    }
-
-    <span class="annotation">@Override</span>
-    <span class="directive">public</span> <span class="type">boolean</span> supports(PrincipalContext pctx, ResourceContext rctx,
-                            <span class="predefined-type">Class</span>&lt;? <span class="directive">extends</span> UnversionedBaseModel&gt; modelClass) {
-        <span class="comment">// Optionally narrow by area/domain/action/model</span>
-        <span class="keyword">return</span> rctx != <span class="predefined-constant">null</span> &amp;&amp; <span class="string"><span class="delimiter">&quot;</span><span class="content">sales</span><span class="delimiter">&quot;</span></span>.equalsIgnoreCase(rctx.getArea())
-               &amp;&amp; <span class="string"><span class="delimiter">&quot;</span><span class="content">order</span><span class="delimiter">&quot;</span></span>.equalsIgnoreCase(rctx.getFunctionalDomain());
-    }
-
-    <span class="annotation">@Override</span>
-    <span class="directive">public</span> <span class="predefined-type">Collection</span>&lt;?&gt; resolve(PrincipalContext pctx, ResourceContext rctx,
-                                 <span class="predefined-type">Class</span>&lt;? <span class="directive">extends</span> UnversionedBaseModel&gt; modelClass) {
-        <span class="comment">// Return the set of customer ids for this user; could be ObjectId or String.</span>
-        <span class="comment">// Example returns strings; the query listener will coerce 24-hex to ObjectId.</span>
-        <span class="keyword">return</span> service.findCustomerIdsForUser(pctx.getUserId());
-    }
-}</code></pre>
-</div>
-</div>
-<div class="paragraph">
-<p>Notes:
-- You can return List&lt;ObjectId&gt; directly if you prefer; no coercion needed then.
-- The resolver runs per request. Cache internally if the computation is expensive.</p>
-</div>
-</div>
-<div class="sect2">
-<h3 id="_2_how_rulecontext_uses_resolvers">6.2. 2) How RuleContext uses resolvers</h3>
-<div class="paragraph">
-<p>At query time, RuleContext discovers all AccessListResolver beans and calls supports(&#8230;&#8203;). For those that apply, it invokes resolve(&#8230;&#8203;) and publishes the result into the variable bundle under the provided key(). Variables are available to the BIAPI query via ${&#8230;&#8203;}.</p>
-</div>
-<div class="paragraph">
-<p>Internally this uses <code>MorphiaUtils.VariableBundle</code> and <code>QueryToFilterListener</code> to carry both strings and typed objects/collections.
-Starting with this release you can reuse the exact same variable bundle for custom evaluation paths. The
-<code>RuleContext.resolveVariableBundle(&#8230;&#8203;)</code> helper runs all matching <code>AccessListResolver</code> beans and returns the
-maps you can feed directly into <code>QueryPredicates</code> (for in-memory rules) or any other component that understands
-<code>${var}</code> tokens.</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code data-lang="java">PrincipalContext pc = ...; <span class="comment">// build from request</span>
-ResourceContext rc = ...;
-
-MorphiaUtils.VariableBundle vars = ruleContext.resolveVariableBundle(pc, rc, UserProfile.class);
-
-<span class="predefined-type">Predicate</span>&lt;JsonNode&gt; predicate = QueryPredicates.compilePredicate(
-    <span class="string"><span class="delimiter">&quot;</span><span class="content">customerId:^[${accessibleCustomerIds}]</span><span class="delimiter">&quot;</span></span>,
-    vars.strings,
-    vars.objects
-);
-
-JsonNode order = QueryPredicates.toJsonNode(<span class="predefined-type">Map</span>.of(<span class="string"><span class="delimiter">&quot;</span><span class="content">customerId</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">5f1e1a5e5e5e5e5e5e5e5e51</span><span class="delimiter">&quot;</span></span>));
-<span class="type">boolean</span> allowed = predicate.test(order); <span class="comment">// true when resolver returned that ObjectId</span></code></pre>
-</div>
-</div>
-<div class="paragraph">
-<p>This allows the same resolver outputs to drive Morphia queries and client-side predicate checks without
-duplicating resolver logic.</p>
-</div>
-</div>
-<div class="sect2">
-<h3 id="_3_author_a_rule_that_consumes_the_variable">6.3. 3) Author a rule that consumes the variable</h3>
-<div class="paragraph">
-<p>Given the resolver above, a rule can attach an IN filter to constrain queries:</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code>// andFilterString (example)
-customerId:^[${accessibleCustomerIds}]</code></pre>
-</div>
-</div>
-<div class="paragraph">
-<p>When executed:
-- If accessibleCustomerIds is a Collection/array, each element is type-coerced (ObjectId, number, date, boolean, or string) and used in $in.
-- If accessibleCustomerIds is a comma-separated string, it is split and each token is coerced similarly.
-- An empty collection results in an empty $in (matches none), effectively denying access via filtering, not via ALLOW/DENY.</p>
-</div>
-</div>
-<div class="sect2">
-<h3 id="_4_end_to_end_behavior">6.4. 4) End-to-end behavior</h3>
 <div class="ulist">
 <ul>
 <li>
-<p>SecurityFilter sets ResourceContext (area/domain/action) per request.</p>
+<p>All <code>ComputedEdgeProvider</code> subclasses continue to compile and run unchanged.</p>
 </li>
 <li>
-<p>RuleContext evaluates rules for the principal and resource and gathers resolvers.</p>
+<p>The new <code>getMaterializationMode()</code> defaults to <code>EAGER</code>.</p>
 </li>
 <li>
-<p>The repository composes filters including the rule-provided IN clause with the access list.</p>
+<p>The new <code>@DependsOn</code> annotation is opt-in; missing annotations behave as today.</p>
 </li>
 <li>
-<p>Only documents whose customerId is in the caller’s resolved set are returned.</p>
-</li>
-</ul>
-</div>
-</div>
-<div class="sect2">
-<h3 id="_string_literals_vs_typed_values_in_resolver_variables">6.5. String literals vs. typed values in resolver variables</h3>
-<div class="paragraph">
-<p>When an <code>AccessListResolver</code> returns a list of values that will be used in an <code>IN</code> clause (for example, <code>field:^[${var}]</code>), the engine attempts to coerce each element to an appropriate type so Mongo/Morphia filters are typed correctly:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>24‑hex string → ObjectId</p>
-</li>
-<li>
-<p><code>true</code>/<code>false</code> → Boolean</p>
-</li>
-<li>
-<p>integer → Long</p>
-</li>
-<li>
-<p>decimal → Double</p>
-</li>
-<li>
-<p>ISO‑8601 datetime → <code>java.util.Date</code></p>
-</li>
-<li>
-<p><code>yyyy-MM-dd</code> → <code>java.time.LocalDate</code></p>
-</li>
-<li>
-<p>otherwise → String</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>This works well when your target field is an ObjectId, number, or date. However, string fields can contain values that look like other types (for example, a 24‑hex string that resembles an ObjectId). In those cases you must force "treat as plain string" so no coercion occurs.</p>
-</div>
-<div class="paragraph">
-<p>To do this, the framework provides a small wrapper type <code>StringLiteral</code>. If a resolver returns <code>StringLiteral</code> instances, the listener unwraps them to plain <code>String</code> values and skips coercion entirely.</p>
-</div>
-<div class="sect3">
-<h4 id="_example_a_resolver_returns_objectids_typed">6.5.1. Example A: Resolver returns ObjectIds (typed)</h4>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@ApplicationScoped</span>
-<span class="directive">public</span> <span class="type">class</span> <span class="class">CustomerAccessResolver</span> <span class="directive">implements</span> AccessListResolver {
-    <span class="directive">public</span> <span class="directive">static</span> <span class="directive">final</span> ObjectId ID1 = <span class="keyword">new</span> ObjectId(<span class="string"><span class="delimiter">&quot;</span><span class="content">5f1e1a5e5e5e5e5e5e5e5e51</span><span class="delimiter">&quot;</span></span>);
-    <span class="directive">public</span> <span class="directive">static</span> <span class="directive">final</span> ObjectId ID2 = <span class="keyword">new</span> ObjectId(<span class="string"><span class="delimiter">&quot;</span><span class="content">5f1e1a5e5e5e5e5e5e5e5e52</span><span class="delimiter">&quot;</span></span>);
-
-    <span class="annotation">@Override</span> <span class="directive">public</span> <span class="predefined-type">String</span> key() { <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">accessibleCustomerIds</span><span class="delimiter">&quot;</span></span>; }
-    <span class="annotation">@Override</span> <span class="directive">public</span> <span class="type">boolean</span> supports(PrincipalContext p, ResourceContext r, <span class="predefined-type">Class</span>&lt;? <span class="directive">extends</span> UnversionedBaseModel&gt; m) {
-        <span class="keyword">return</span> r != <span class="predefined-constant">null</span> &amp;&amp; <span class="string"><span class="delimiter">&quot;</span><span class="content">sales</span><span class="delimiter">&quot;</span></span>.equalsIgnoreCase(r.getArea()) &amp;&amp; <span class="string"><span class="delimiter">&quot;</span><span class="content">order</span><span class="delimiter">&quot;</span></span>.equalsIgnoreCase(r.getFunctionalDomain()) &amp;&amp; <span class="string"><span class="delimiter">&quot;</span><span class="content">view</span><span class="delimiter">&quot;</span></span>.equalsIgnoreCase(r.getAction());
-    }
-    <span class="annotation">@Override</span> <span class="directive">public</span> <span class="predefined-type">Collection</span>&lt;?&gt; resolve(PrincipalContext p, ResourceContext r, <span class="predefined-type">Class</span>&lt;? <span class="directive">extends</span> UnversionedBaseModel&gt; m) {
-        <span class="keyword">return</span> java.util.List.of(ID1, ID2); <span class="comment">// typed values pass through as-is</span>
-    }
-}</code></pre>
-</div>
-</div>
-<div class="paragraph">
-<p>Rule:</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code>customerId:^[${accessibleCustomerIds}]</code></pre>
-</div>
-</div>
-<div class="paragraph">
-<p>Result: <code>$in</code> with <code>List&lt;ObjectId&gt;</code> on <code>customerId</code>.</p>
-</div>
-</div>
-<div class="sect3">
-<h4 id="_example_b_resolver_returns_string_literals_force_raw_strings">6.5.2. Example B: Resolver returns String literals (force raw strings)</h4>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@ApplicationScoped</span>
-<span class="directive">public</span> <span class="type">class</span> <span class="class">CustomerCodeResolver</span> <span class="directive">implements</span> AccessListResolver {
-    <span class="annotation">@Override</span> <span class="directive">public</span> <span class="predefined-type">String</span> key() { <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">accessibleCustomerCodes</span><span class="delimiter">&quot;</span></span>; }
-    <span class="annotation">@Override</span> <span class="directive">public</span> <span class="type">boolean</span> supports(PrincipalContext p, ResourceContext r, <span class="predefined-type">Class</span>&lt;? <span class="directive">extends</span> UnversionedBaseModel&gt; m) {
-        <span class="keyword">return</span> r != <span class="predefined-constant">null</span> &amp;&amp; <span class="string"><span class="delimiter">&quot;</span><span class="content">sales</span><span class="delimiter">&quot;</span></span>.equalsIgnoreCase(r.getArea()) &amp;&amp; <span class="string"><span class="delimiter">&quot;</span><span class="content">order</span><span class="delimiter">&quot;</span></span>.equalsIgnoreCase(r.getFunctionalDomain()) &amp;&amp; <span class="string"><span class="delimiter">&quot;</span><span class="content">view</span><span class="delimiter">&quot;</span></span>.equalsIgnoreCase(r.getAction());
-    }
-    <span class="annotation">@Override</span> <span class="directive">public</span> <span class="predefined-type">Collection</span>&lt;?&gt; resolve(PrincipalContext p, ResourceContext r, <span class="predefined-type">Class</span>&lt;? <span class="directive">extends</span> UnversionedBaseModel&gt; m) {
-        <span class="keyword">return</span> java.util.List.of(
-            com.e2eq.framework.model.persistent.morphia.StringLiteral.of(<span class="string"><span class="delimiter">&quot;</span><span class="content">5f1e1a5e5e5e5e5e5e5e5e51</span><span class="delimiter">&quot;</span></span>),
-            com.e2eq.framework.model.persistent.morphia.StringLiteral.of(<span class="string"><span class="delimiter">&quot;</span><span class="content">CUST-42</span><span class="delimiter">&quot;</span></span>)
-        );
-    }
-}</code></pre>
-</div>
-</div>
-<div class="paragraph">
-<p>Rule:</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code>customerCode:^[${accessibleCustomerCodes}]</code></pre>
-</div>
-</div>
-<div class="paragraph">
-<p>Result: <code>$in</code> with <code>List&lt;String&gt;</code> on <code>customerCode</code> (even for hex-like strings).</p>
-</div>
-</div>
-<div class="sect3">
-<h4 id="_other_types_supported">6.5.3. Other types supported</h4>
-<div class="paragraph">
-<p>Resolvers can also return numbers, booleans, and dates/datetimes. Already-typed elements (Number, Boolean, java.util.Date, java.time.LocalDate, ObjectId) are preserved. String elements are heuristically parsed into those types unless wrapped with <code>StringLiteral</code>.</p>
-</div>
-<div class="paragraph">
-<p>Authoring tips:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Prefer returning already-typed values when you know the target field type.</p>
-</li>
-<li>
-<p>Use <code>StringLiteral</code> when a value might be misinterpreted (for example, 24‑hex or numeric-looking strings).</p>
-</li>
-<li>
-<p>For CSV strings published under a variable, the engine splits by comma and applies the same per-element coercion.</p>
+<p>The provenance split is gated behind a feature flag; with the flag off,
+<code>EdgeRecord.prov</code> continues to be populated inline.</p>
 </li>
 </ul>
 </div>
 </div>
 </div>
-<div class="sect2">
-<h3 id="ontology-domain-rule-context">6.6. Using AccessListResolver with Ontology (optional)</h3>
-<div class="paragraph">
-<p>When ontology is enabled, an AccessListResolver can compute ID lists from semantic edges (materialized in Mongo) and publish them as variables for use in rule filters.</p>
+<div class="sect1">
+<h2 id="_open_questions">8. Open Questions</h2>
+<div class="sectionbody">
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Should <code>LAZY</code> results be cached per (source, predicate) or per source?
+Per-source is simpler but invalidates more aggressively.</p>
+</li>
+<li>
+<p>Where does <code>@DependsOn</code>-derived invalidation actually run the inverse
+query — synchronously in the write hook, or via a lightweight worker?</p>
+</li>
+<li>
+<p>For the YAML DSL, do we surface filters on the list step
+(<code>list.filter: "active = true"</code>), or push that to the existing
+static/dynamic list machinery?</p>
+</li>
+<li>
+<p>Should the recompute CLI emit an idempotent ledger so re-runs converge,
+or is the diff-and-apply path sufficient?</p>
+</li>
+<li>
+<p>Should inverse LAZY scans maintain a secondary index (dst → src) instead
+of enumerating sources on each <code>srcIdsByDst</code> call?</p>
+</li>
+</ol>
 </div>
 <div class="paragraph">
-<p>Example resolver (conceptual)</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@ApplicationScoped</span>
-<span class="directive">public</span> <span class="type">class</span> <span class="class">OrdersByOrgResolver</span> <span class="directive">implements</span> AccessListResolver {
-  <span class="annotation">@Inject</span> EdgeDao edgeDao; <span class="comment">// from quantum-ontology-mongo</span>
-  <span class="annotation">@Override</span> <span class="directive">public</span> <span class="predefined-type">String</span> key() { <span class="keyword">return</span> <span class="string"><span class="delimiter">&quot;</span><span class="content">idsByPlacedInOrg</span><span class="delimiter">&quot;</span></span>; }
-  <span class="annotation">@Override</span> <span class="directive">public</span> <span class="type">boolean</span> supports(PrincipalContext p, ResourceContext r, <span class="predefined-type">Class</span>&lt;? <span class="directive">extends</span> UnversionedBaseModel&gt; model) {
-    <span class="keyword">return</span> model.getSimpleName().equals(<span class="string"><span class="delimiter">&quot;</span><span class="content">Order</span><span class="delimiter">&quot;</span></span>);
-  }
-  <span class="annotation">@Override</span> <span class="directive">public</span> <span class="predefined-type">Collection</span>&lt;?&gt; resolve(PrincipalContext p, ResourceContext r, <span class="predefined-type">Class</span>&lt;? <span class="directive">extends</span> UnversionedBaseModel&gt; model) {
-    <span class="predefined-type">String</span> tenantId = p.getDataDomain().getTenantId();
-    <span class="predefined-type">String</span> org = p.getDataDomain().getOrgRefName();
-    <span class="keyword">return</span> edgeDao.srcIdsByDst(tenantId, <span class="string"><span class="delimiter">&quot;</span><span class="content">placedInOrg</span><span class="delimiter">&quot;</span></span>, org);
-  }
-}</code></pre>
+<p>These are deferred to design discussion as follow-ups after the initial
+modes land.</p>
 </div>
 </div>
-<div class="paragraph">
-<p>Rule filter usage</p>
 </div>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code>id:^${idsByPlacedInOrg}</code></pre>
-</div>
-</div>
-<div class="paragraph">
-<p>Notes</p>
-</div>
+<div class="sect1">
+<h2 id="_out_of_scope_for_now">9. Out of Scope (For Now)</h2>
+<div class="sectionbody">
 <div class="ulist">
 <ul>
 <li>
-<p>Always scope by tenantId from RuleContext/PrincipalContext.</p>
+<p>A general expression language for arbitrary computed edges (vs. just the
+hierarchy+list shape). Tracked for a future major.</p>
 </li>
 <li>
-<p>This is optional and only active if you wire ontology components. For a deeper integration path, see <a href="modeling.html#ontology-integration-morphia-permissions">Integrating Ontology</a>.</p>
+<p>Cross-provider memoization (e.g. two providers walking the same Territory
+tree share work). Plausible after M3 but not in this roadmap.</p>
+</li>
+<li>
+<p>GraphQL-style on-the-fly traversal. Out of scope; use the existing graph
+REST endpoints.</p>
 </li>
 </ul>
-</div>
-</div>
-<div class="sect2">
-<h3 id="_admitted_vocabulary_for_rule_predicates">6.7. Admitted vocabulary for rule predicates</h3>
-<div class="paragraph">
-<p>When a rule references an ontology predicate through a query helper such as
-<code>hasEdge("placedInOrg", &#8230;&#8203;)</code>, the predicate must be <strong>admitted</strong> for policy use, not merely
-declared in the TBox. As <code>RuleContext</code> registers a rule it fires a <code>RuleVocabularyCheck</code>,
-and <code>PolicyVocabularyGuard</code> (<code>quantum-ontology-policy-bridge</code>) validates the referenced
-predicates against the realm&#8217;s admitted set. A predicate that is undeclared (<code>ABSENT</code>) or
-declared-but-not-admitted (<code>PROVISIONAL</code>) fails rule registration, naming the rule and the
-offending predicate.</p>
-</div>
-<div class="paragraph">
-<p>Enforcement is fail-closed: if the realm&#8217;s admitted set cannot be read it is treated as
-<code>UNAVAILABLE</code> and the guard refuses to downgrade a governed realm to "all admitted." A
-legacy realm (<code>admittedPredicates == null</code>) admits all declared predicates for
-back-compatibility. See <a href="ontology.html#provisional-admitted-vocabulary-tier">Ontology
-Modeling: provisional vs. admitted vocabulary tier</a> for the tier model, and the Quantum
-Enterprise <strong>Ontology governance control plane</strong> chapter for the admin promote/demote
-endpoints.</p>
-</div>
 </div>
 </div>
 </div>
@@ -1081,7 +1531,7 @@ endpoints.</p>
 <div id="footer">
 <div id="footer-text">
 Version 1.4.2-SNAPSHOT<br>
-Last updated 2026-09-20 22:59:16 -0400
+Last updated 2026-08-07 08:29:42 -0400
 </div>
 </div>
 </body>

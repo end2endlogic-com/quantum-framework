@@ -599,6 +599,14 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <span class="tag">&lt;/dependency&gt;</span></code></pre>
 </div>
 </div>
+<div class="paragraph">
+<p><code>quantum-framework</code> is the compatibility bundle and includes the framework&#8217;s
+server-side REST adapters. For a service with an explicit endpoint boundary,
+select the narrower modules instead. For example, add
+<code>com.end2endlogic:quantum-query-rest</code> only when that backend is intended to
+host the existing <code>/api/query</code> API. SDK-only consumers should omit REST and
+repository modules so they do not expose or persist server-owned APIs.</p>
+</div>
 </div>
 <div class="sect2">
 <h3 id="_configuration">1.3. Configuration</h3>
@@ -836,7 +844,8 @@ quarkus.http.cors.origins=http://localhost:3000</code></pre>
 </div>
 <div class="paragraph">
 <p>1) Add dependencies (app-level)
-- quantum-ontology-core, quantum-ontology-mongo, quantum-ontology-policy-bridge</p>
+- quantum-ontology-core, quantum-ontology-mongo, quantum-ontology-policy-bridge
+- Do not add quantum-ontology-rest unless this application intentionally hosts the ontology control-plane API. Normal consumers call quantum-ontology-service through its generated SDK.</p>
 </div>
 <div class="paragraph">
 <p>2) Turn it on via config</p>
@@ -882,8 +891,8 @@ quarkus.http.cors.origins=http://localhost:3000</code></pre>
 </div>
 <div id="footer">
 <div id="footer-text">
-Version 1.3.1-SNAPSHOT<br>
-Last updated 2026-03-16 19:51:21 -0400
+Version 1.4.2-SNAPSHOT<br>
+Last updated 2026-08-07 08:00:40 -0400
 </div>
 </div>
 </body>

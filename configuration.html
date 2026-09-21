@@ -537,6 +537,8 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_quantum_framework_configuration">1.4. Quantum Framework Configuration</a></li>
 <li><a href="#_see_also">1.5. See Also</a></li>
 <li><a href="#_ontology_configuration_optional">1.6. Ontology Configuration (optional)</a></li>
+<li><a href="#_query_gateway_configuration">1.7. Query Gateway Configuration</a></li>
+<li><a href="#_control_plane_split_deployment_mode">1.8. Control-plane split (deployment mode)</a></li>
 </ul>
 </li>
 </ul>
@@ -684,6 +686,41 @@ aws.cognito.jwks.url=https://cognito-idp.${aws.cognito.region}.amazonaws.com/${a
 </div>
 </div>
 <div class="sect4">
+<h5 id="_application_registration_optional_module">Application Registration (optional module)</h5>
+<div class="paragraph">
+<p>The <code>quantum-application-registration</code> module lets an application announce itself to its environment at startup, so first arrival can install, seed and migrate it. It is inert unless enabled, and requires an <code>ApplicationRegistrar</code> implementation on the classpath.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="properties"># Off by default; the framework starts identically without this.
+quantum.application-registration.enabled=false
+
+# Selects the registrar: matches its getName() OR its fully-qualified class name.
+quantum.application-registration.provider=system-manager
+
+# Required when enabled. Never inferred -- a service that guesses its
+# environment can register into the wrong one.
+quantum.application-registration.application-id=my-app
+quantum.application-registration.environment=production
+
+# Realms this application reads and writes, comma separated.
+quantum.application-registration.realms=my-app-P1
+
+# Build identity; participates in the already-registered fingerprint.
+quantum.application-registration.application-version=1.4.2
+
+# Whether a failed registration stops the service. Defaults to true.
+quantum.application-registration.fail-on-error=true</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Registration is attempted once per fingerprint (application + version + environment + realms). On every later boot the registrar&#8217;s cheap local check short-circuits it, so a restart costs one indexed read rather than a call to the control plane.</p>
+</div>
+<div class="paragraph">
+<p>See <a href="../user-guide/application-registration.html">Application Registration</a> for the SPI and implementation rules.</p>
+</div>
+</div>
+<div class="sect4">
 <h5 id="_oauth_server_optional_module">OAuth Server (optional module)</h5>
 <div class="paragraph">
 <p>The <code>quantum-oauth-server</code> module uses the same JWT configuration properties listed above (<code>mp.jwt.verify.issuer</code>, <code>mp.jwt.verify.publickey.location</code>, <code>com.b2bi.jwt.duration</code>). No additional properties are required. The OAuth endpoints (<code>/oauth/authorize</code>, <code>/oauth/token</code>, <code>/oauth/jwks</code>, <code>/.well-known/openid-configuration</code>, <code>/oauth/userinfo</code>) activate automatically when the module is on the classpath.</p>
@@ -774,6 +811,52 @@ under <code>seed-packs/</code> on the application classpath (including JAR depen
 Apps depending on the framework no longer need to copy framework seeds locally
 or reference absolute file paths. If both filesystem and classpath contain seed
 packs with the same name, the latest semantic version is applied.</p>
+</div>
+</td>
+</tr>
+</table>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_bootstrap_packs">Bootstrap packs</h5>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="properties"># Enable BootstrapPack infrastructure
+quantum.bootstrap-pack.enabled=true
+
+# Apply discovered bootstrap packs on startup
+quantum.bootstrap-pack.apply.on-startup=false
+
+# Optional CSV list of realms to target on startup
+# If omitted, the framework uses the system/default/test realms when available
+quantum.bootstrap-pack.apply.realms=system-com,mycompany-com,test-com
+
+# Optional CSV filter to apply only selected pack refs
+quantum.bootstrap-pack.apply.filter=pack-a,pack-b</code></pre>
+</div>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+<div class="paragraph">
+<p>Bootstrap packs are not the same thing as seed packs.</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Use seed packs for deterministic baseline data.</p>
+</li>
+<li>
+<p>Use bootstrap packs for idempotent operational setup steps.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>See <a href="../user-guide/bootstrap-packs.html">Bootstrap Packs</a> for details.</p>
 </div>
 </td>
 </tr>
@@ -889,16 +972,16 @@ quantum.ontology.scan.packages=com.example.model,com.example.entities</code></pr
 <div class="ulist">
 <ul>
 <li>
-<p>Create an edges collection (name of your choice) when enabling ontology. Ensure the following indexes:</p>
+<p>The MongoDB <code>edges</code> collection (default name configured via <code>ontology.mongo.collection.edges</code>) supports open edge qualification via compound indexes:</p>
 </li>
 <li>
-<p>Compound: { tenantId:1, p:1, dst:1 }</p>
+<p><code>idx_domain_p_dst_props</code>: <code>{ "dataDomain": 1, "p": 1, "dst": 1, "props": 1 }</code>&#8201;&#8212;&#8201;optimizes <code>hasEdge</code> / <code>srcIdsByDst</code> lookups.</p>
 </li>
 <li>
-<p>Compound: { tenantId:1, src:1, p:1 }</p>
+<p><code>idx_domain_src_p_props</code>: <code>{ "dataDomain": 1, "src": 1, "p": 1, "props": 1 }</code>&#8201;&#8212;&#8201;optimizes <code>hasIncomingEdge</code> / <code>dstIdsBySrc</code> lookups.</p>
 </li>
 <li>
-<p>Optionally, add a TTL on ts for inferred edges if you plan periodic full recomputes.</p>
+<p>Inferred edges carry <code>inferred: true</code> with provenance and timestamp metadata for maintenance and TTL eviction.</p>
 </li>
 </ul>
 </div>
@@ -908,10 +991,49 @@ quantum.ontology.scan.packages=com.example.model,com.example.entities</code></pr
 <div class="ulist">
 <ul>
 <li>
-<p>Use OntologyMaterializer to recompute inferred edges when entities change (sources and intermediates for your property chains).</p>
+<p>Use <code>OntologyMaterializer</code> to recompute inferred edges when entities change (sources and intermediates for your property chains).</p>
 </li>
 </ul>
 </div>
+</div>
+<div class="sect3">
+<h4 id="_query_gateway_configuration">1.7. Query Gateway Configuration</h4>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 33.3333%;">
+<col style="width: 16.6666%;">
+<col style="width: 50.0001%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Property</th>
+<th class="tableblock halign-left valign-top">Default</th>
+<th class="tableblock halign-left valign-top">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>feature.queryGateway.execution.enabled</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Guards execution of <code>POST /api/query/find</code> for <code>AGGREGATION</code>-mode queries. When <code>false</code>, aggregation queries return HTTP 501 (<code>ExecutionDisabled</code>). Must be set to <code>true</code> to allow the gateway to execute governed MongoDB aggregation pipelines (with inner-pipeline <code>$lookup</code> pushdown and multi-hop traversals).</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>feature.queryGateway.maxPageSize</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>1000</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Maximum page size allowed for <code>/api/query/find</code> requests.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>ontology.mongo.database</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>quantum</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Default database name for the ontology edges collection when not overridden by realm context.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>ontology.mongo.collection.edges</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>edges</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Collection name storing ontology edge documents.</p></td>
+</tr>
+</tbody>
+</table>
 <div class="paragraph">
 <p>See also</p>
 </div>
@@ -921,17 +1043,76 @@ quantum.ontology.scan.packages=com.example.model,com.example.entities</code></pr
 <p><a href="../user-guide/ontology.html">Ontologies in Quantum</a></p>
 </li>
 <li>
-<p><a href="../user-guide/ontology.html#ontology-integration-morphia-permissions-section">Integrating Ontology</a></p>
+<p><a href="../user-guide/ontology.html#ontology-facet-segmentation">Dynamic Edge Properties &amp; Facet Segmentation</a></p>
+</li>
+<li>
+<p><a href="../user-guide/planner-and-query-gateway.html">Planner and Query Gateway</a></p>
+</li>
+<li>
+<p><a href="../user-guide/tenant-models.html#user-definable-facet-segmentation">User-Definable Facet Segmentation &amp; Coordinate SPI</a></p>
 </li>
 </ul>
 </div>
+</div>
+<div class="sect3">
+<h4 id="_control_plane_split_deployment_mode">1.8. Control-plane split (deployment mode)</h4>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 33.3333%;">
+<col style="width: 16.6666%;">
+<col style="width: 50.0001%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Property</th>
+<th class="tableblock halign-left valign-top">Default</th>
+<th class="tableblock halign-left valign-top">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>quantum.mode</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>embedded</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Deployment mode of the control-plane split. <code>embedded</code>: the app owns its
+system realm — system-realm migrations, baseline identity, seeds, and
+bootstrap packs run locally (today&#8217;s behavior, wp3 tiers 0/1). <code>remote</code>: the
+control plane owns the system realm; this app skips system-realm startup
+work while app-realm work runs locally (tier 2). Unknown values fail loud at
+startup.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>quantum.system-service.base-url</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">—</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Control-plane service endpoint. Required when <code>quantum.mode=remote</code>
+(startup fails loud without it); unused in embedded mode.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>quantum.system.directory.mode</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">follows <code>quantum.mode</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Optional override for the SystemDirectory implementation alone
+(<code>local</code>/<code>remote</code>) — for migration windows where an app runs remote but
+still resolves the directory locally. Remote directory resolution fails loud
+until the Phase C control-plane client ships.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>quantum.system-rest.enabled</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>true</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Build-time switch over the control-plane admin REST surface
+(<code>/admin/tenants*</code>, <code>/security/realm*</code>, <code>/security/realm-memberships</code>,
+<code>/admin/seeds</code>, <code>/system/migration</code>, <code>/admin/bootstrap-packs</code>,
+<code>/onboarding/*</code>). <code>false</code> removes all nine resources at build — the tier-1
+hardening that replaces per-type <code>quarkus.arc.exclude-types</code> lists, and what
+a tier-2 tenant-plane app sets.</p></td>
+</tr>
+</tbody>
+</table>
 </div>
 </div>
 </div>
 <div id="footer">
 <div id="footer-text">
-Version 1.3.1-SNAPSHOT<br>
-Last updated 2026-04-10 09:31:46 -0400
+Version 1.4.2-SNAPSHOT<br>
+Last updated 2026-09-21 13:44:48 -0400
 </div>
 </div>
 </body>

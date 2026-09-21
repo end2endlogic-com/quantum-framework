@@ -528,8 +528,8 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <div id="header">
 <h1>Permissions: Rule Bases, SecurityURIHeader, and SecurityURIBody</h1>
 <div class="details">
-<span id="revnumber">version 1.3.1-SNAPSHOT,</span>
-<span id="revdate">2026-04-13T18:47:11Z</span>
+<span id="revnumber">version 1.4.2-SNAPSHOT,</span>
+<span id="revdate">2026-09-21T22:14:39Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -540,81 +540,103 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_matching_algorithm">4. Matching Algorithm</a></li>
 <li><a href="#_priorities">5. Priorities</a></li>
 <li><a href="#_grant_based_vs_deny_based_rule_sets">6. Grant-based vs Deny-based Rule Sets</a></li>
-<li><a href="#_feature_flags_variants_and_target_rules">7. Feature Flags, Variants, and Target Rules</a></li>
-<li><a href="#scoped-action-enablement">8. Scoped Action Enablement and Dependency Tracking</a>
+<li><a href="#_row_filter_computation_data_scoping">7. Row Filter Computation (Data Scoping)</a>
 <ul class="sectlevel2">
-<li><a href="#_core_idea_the_same_scoped_action_tuple_stays_canonical">8.1. Core idea: the same scoped action tuple stays canonical</a></li>
-<li><a href="#_the_three_answers_returned_by_the_framework">8.2. The three answers returned by the framework</a></li>
-<li><a href="#_runtime_models">8.3. Runtime models</a></li>
-<li><a href="#_rest_api">8.4. REST API</a></li>
-<li><a href="#_manifest_driven_dependency_relationships">8.5. Manifest-driven dependency relationships</a></li>
-<li><a href="#_resolver_spi">8.6. Resolver SPI</a></li>
-<li><a href="#_built_in_oss_dependency_types">8.7. Built-in OSS dependency types</a></li>
-<li><a href="#_missing_manifests_and_unsupported_dependency_types">8.8. Missing manifests and unsupported dependency types</a></li>
-<li><a href="#_example_contributor">8.9. Example contributor</a></li>
-<li><a href="#_relationship_to_policies_feature_flags_and_ui_actions">8.10. Relationship to policies, feature flags, and UI actions</a></li>
-<li><a href="#_enterprise_extensions">8.11. Enterprise extensions</a></li>
-<li><a href="#_guidance">8.12. Guidance</a></li>
+<li><a href="#_the_pipeline">7.1. The pipeline</a></li>
+<li><a href="#_what_is_scoped_by_default">7.2. What is scoped by default</a></li>
+<li><a href="#_available_substitution_variables_static">7.3. Available substitution variables (static)</a></li>
+<li><a href="#_dynamic_access_lists_the_accesslistresolver_spi">7.4. Dynamic access lists (the <code>AccessListResolver</code> SPI)</a></li>
+<li><a href="#_summary">7.5. Summary</a></li>
 </ul>
 </li>
-<li><a href="#_multiple_matching_rulebases">9. Multiple Matching RuleBases</a></li>
-<li><a href="#_identity_and_role_matching">10. Identity and Role Matching</a>
+<li><a href="#_feature_flags_variants_and_target_rules">8. Feature Flags, Variants, and Target Rules</a></li>
+<li><a href="#scoped-action-enablement">9. Scoped Action Enablement and Dependency Tracking</a>
 <ul class="sectlevel2">
-<li><a href="#_how_roles_are_defined_for_an_identity_role_sources_and_resolution">10.1. How roles are defined for an identity (role sources and resolution)</a>
+<li><a href="#_core_idea_the_same_scoped_action_tuple_stays_canonical">9.1. Core idea: the same scoped action tuple stays canonical</a></li>
+<li><a href="#_the_three_answers_returned_by_the_framework">9.2. The three answers returned by the framework</a></li>
+<li><a href="#_runtime_models">9.3. Runtime models</a></li>
+<li><a href="#_rest_api">9.4. REST API</a></li>
+<li><a href="#_manifest_driven_dependency_relationships">9.5. Manifest-driven dependency relationships</a></li>
+<li><a href="#_resolver_spi">9.6. Resolver SPI</a></li>
+<li><a href="#_built_in_oss_dependency_types">9.7. Built-in OSS dependency types</a></li>
+<li><a href="#_missing_manifests_and_unsupported_dependency_types">9.8. Missing manifests and unsupported dependency types</a></li>
+<li><a href="#_example_contributor">9.9. Example contributor</a></li>
+<li><a href="#_relationship_to_policies_feature_flags_and_ui_actions">9.10. Relationship to policies, feature flags, and UI actions</a></li>
+<li><a href="#_enterprise_extensions">9.11. Enterprise extensions</a></li>
+<li><a href="#_guidance">9.12. Guidance</a></li>
+</ul>
+</li>
+<li><a href="#_multiple_matching_rulebases">10. Multiple Matching RuleBases</a></li>
+<li><a href="#_identity_and_role_matching">11. Identity and Role Matching</a>
+<ul class="sectlevel2">
+<li><a href="#_how_roles_are_defined_for_an_identity_role_sources_and_resolution">11.1. How roles are defined for an identity (role sources and resolution)</a>
 <ul class="sectlevel3">
-<li><a href="#_populating_rolesource_and_roleassignments">10.1.1. Populating <code>RoleSource</code> and <code>roleAssignments</code></a></li>
-<li><a href="#_authproviders_what_you_need_to_do">10.1.2. AuthProviders: what you need to do</a></li>
-<li><a href="#_security_check_responses_enriching_roleassignments">10.1.3. Security Check responses: enriching <code>roleAssignments</code></a></li>
+<li><a href="#_populating_rolesource_and_roleassignments">11.1.1. Populating <code>RoleSource</code> and <code>roleAssignments</code></a></li>
+<li><a href="#_authproviders_what_you_need_to_do">11.1.2. AuthProviders: what you need to do</a></li>
+<li><a href="#_security_check_responses_enriching_roleassignments">11.1.3. Security Check responses: enriching <code>roleAssignments</code></a></li>
 </ul>
 </li>
 </ul>
 </li>
-<li><a href="#_example_scenarios">11. Example Scenarios</a></li>
-<li><a href="#_operational_tips">12. Operational Tips</a></li>
-<li><a href="#_how_uiactions_and_defaultuiactions_are_calculated">13. How UIActions and DefaultUIActions are calculated</a></li>
-<li><a href="#_how_this_integrates_end_to_end">14. How This Integrates End-to-End</a></li>
-<li><a href="#_administering_policies_via_rest_policyresource">15. Administering Policies via REST (PolicyResource)</a>
+<li><a href="#_example_scenarios">12. Example Scenarios</a></li>
+<li><a href="#_operational_tips">13. Operational Tips</a></li>
+<li><a href="#_field_level_policy_property_exclusions">14. Field-Level Policy (Property Exclusions)</a>
 <ul class="sectlevel2">
-<li><a href="#_model_shape_policy">15.1. Model shape (Policy)</a></li>
-<li><a href="#_how_rule_contributed_filters_work_andfilterstring_orfilterstring_joinop">15.2. How rule-contributed filters work (andFilterString, orFilterString, joinOp)</a></li>
-<li><a href="#_accesslistresolvers_spi_for_list_based_access">15.3. AccessListResolvers (SPI) for list-based access</a></li>
-<li><a href="#_principalcontextpropertiesresolver_spi_for_custom_principal_properties">15.4. PrincipalContextPropertiesResolver (SPI) for custom principal properties</a></li>
-<li><a href="#_endpoints">15.5. Endpoints</a></li>
-<li><a href="#_examples">15.6. Examples</a></li>
-<li><a href="#_how_changes_affect_rule_bases_and_enforcement">15.7. How changes affect rule bases and enforcement</a></li>
+<li><a href="#_declaring_exclusions_on_a_rule">14.1. Declaring exclusions on a rule</a></li>
+<li><a href="#_layered_enforcement_one_policy_source_every_egress_guarded">14.2. Layered enforcement — one policy source, every egress guarded</a></li>
+<li><a href="#_limitations_v1">14.3. Limitations (v1)</a></li>
 </ul>
 </li>
-<li><a href="#_realm_override_x_realm_and_impersonation_x_impersonate">16. Realm override (X-Realm) and Impersonation (X-Impersonate)</a>
+<li><a href="#_how_uiactions_and_defaultuiactions_are_calculated">15. How UIActions and DefaultUIActions are calculated</a></li>
+<li><a href="#_how_this_integrates_end_to_end">16. How This Integrates End-to-End</a></li>
+<li><a href="#_administering_policies_via_rest_policyresource">17. Administering Policies via REST (PolicyResource)</a>
 <ul class="sectlevel2">
-<li><a href="#_what_they_do_at_a_glance">16.1. What they do (at a glance)</a></li>
-<li><a href="#_how_the_headers_integrate_with_permission_evaluation">16.2. How the headers integrate with permission evaluation</a></li>
-<li><a href="#_required_credential_configuration_credentialuseridpassword">16.3. Required credential configuration (CredentialUserIdPassword)</a></li>
-<li><a href="#_end_to_end_behavior_from_securityfilter_reference">16.4. End-to-end behavior from SecurityFilter (reference)</a></li>
-<li><a href="#_practical_differences_and_use_cases">16.5. Practical differences and use cases</a></li>
-<li><a href="#_examples_2">16.6. Examples</a></li>
+<li><a href="#_model_shape_policy">17.1. Model shape (Policy)</a></li>
+<li><a href="#_how_rule_contributed_filters_work_andfilterstring_orfilterstring_joinop">17.2. How rule-contributed filters work (andFilterString, orFilterString, joinOp)</a></li>
+<li><a href="#_accesslistresolvers_spi_for_list_based_access">17.3. AccessListResolvers (SPI) for list-based access</a></li>
+<li><a href="#_principalcontextpropertiesresolver_spi_for_custom_principal_properties">17.4. PrincipalContextPropertiesResolver (SPI) for custom principal properties</a></li>
+<li><a href="#_endpoints">17.5. Endpoints</a></li>
+<li><a href="#_examples">17.6. Examples</a></li>
+<li><a href="#_how_changes_affect_rule_bases_and_enforcement">17.7. How changes affect rule bases and enforcement</a></li>
 </ul>
 </li>
-<li><a href="#_data_domain_assignment_on_create_domaincontext_and_datadomainpolicy">17. Data domain assignment on create: DomainContext and DataDomainPolicy</a>
+<li><a href="#_realm_override_x_realm_and_impersonation_x_impersonate">18. Realm override (X-Realm) and Impersonation (X-Impersonate)</a>
 <ul class="sectlevel2">
-<li><a href="#_the_problem_this_solves_and_why_it_matters">17.1. The problem this solves (and why it matters)</a></li>
-<li><a href="#_key_concepts_recap_domaincontext_and_datadomain">17.2. Key concepts recap: DomainContext and DataDomain</a></li>
-<li><a href="#_the_default_policy_do_nothing_and_it_works">17.3. The default policy (do nothing and it works)</a></li>
-<li><a href="#_policy_scopes_principalattached_vs_global">17.4. Policy scopes: principal‑attached vs. global</a></li>
-<li><a href="#_the_policy_map_and_matching">17.5. The policy map and matching</a></li>
-<li><a href="#_how_the_resolver_works">17.6. How the resolver works</a></li>
-<li><a href="#_when_would_you_want_a_nonglobal_policy">17.7. When would you want a non‑global policy?</a></li>
-<li><a href="#_relation_to_tenancy_models">17.8. Relation to tenancy models</a></li>
-<li><a href="#_authoring_tips">17.9. Authoring tips</a></li>
-<li><a href="#_api_pointers">17.10. API pointers</a></li>
-<li><a href="#ontology-permissions">17.11. Ontology in Permission Rules (optional)</a>
+<li><a href="#_what_they_do_at_a_glance">18.1. What they do (at a glance)</a></li>
+<li><a href="#_how_the_headers_integrate_with_permission_evaluation">18.2. How the headers integrate with permission evaluation</a></li>
+<li><a href="#_required_credential_configuration_credentialuseridpassword">18.3. Required credential configuration (CredentialUserIdPassword)</a></li>
+<li><a href="#_end_to_end_behavior_from_securityfilter_reference">18.4. End-to-end behavior from SecurityFilter (reference)</a></li>
+<li><a href="#_practical_differences_and_use_cases">18.5. Practical differences and use cases</a></li>
+<li><a href="#_examples_2">18.6. Examples</a></li>
+</ul>
+</li>
+<li><a href="#_data_domain_assignment_on_create_domaincontext_and_datadomainpolicy">19. Data domain assignment on create: DomainContext and DataDomainPolicy</a>
+<ul class="sectlevel2">
+<li><a href="#_the_problem_this_solves_and_why_it_matters">19.1. The problem this solves (and why it matters)</a></li>
+<li><a href="#_key_concepts_recap_domaincontext_and_datadomain">19.2. Key concepts recap: DomainContext and DataDomain</a></li>
+<li><a href="#_the_default_policy_do_nothing_and_it_works">19.3. The default policy (do nothing and it works)</a></li>
+<li><a href="#_policy_scopes_principalattached_vs_global">19.4. Policy scopes: principal‑attached vs. global</a></li>
+<li><a href="#_the_policy_map_and_matching">19.5. The policy map and matching</a></li>
+<li><a href="#_how_the_resolver_works">19.6. How the resolver works</a></li>
+<li><a href="#_when_would_you_want_a_nonglobal_policy">19.7. When would you want a non‑global policy?</a></li>
+<li><a href="#_relation_to_tenancy_models">19.8. Relation to tenancy models</a></li>
+<li><a href="#_authoring_tips">19.9. Authoring tips</a></li>
+<li><a href="#_api_pointers">19.10. API pointers</a></li>
+<li><a href="#ontology-permissions">19.11. Ontology in Permission Rules (optional)</a>
 <ul class="sectlevel3">
-<li><a href="#rule-hasedge">17.11.1. Rule language: add hasEdge()</a></li>
+<li><a href="#rule-hasedge">19.11.1. Rule language: add hasEdge()</a></li>
 </ul>
 </li>
-<li><a href="#label-resolution-spi">17.12. Label resolution SPI and hasLabel() in rules</a></li>
+<li><a href="#_business_scenarios_policy_enforcement_solutions">19.12. Business Scenarios &amp; Policy Enforcement Solutions</a>
+<ul class="sectlevel3">
+<li><a href="#_business_scenario_1_healthcare_temporary_on_call_staffing_regulatory_audits">19.12.1. Business Scenario 1: Healthcare Temporary On-Call Staffing &amp; Regulatory Audits</a></li>
+<li><a href="#_business_scenario_2_aerospace_defense_project_classification_guard">19.12.2. Business Scenario 2: Aerospace Defense Project Classification Guard</a></li>
 </ul>
 </li>
-<li><a href="#script-helpers-reference">18. Script Helpers reference (when enabled)</a></li>
+<li><a href="#label-resolution-spi">19.13. Label resolution SPI and hasLabel() in rules</a></li>
+</ul>
+</li>
+<li><a href="#script-helpers-reference">20. Script Helpers reference (when enabled)</a></li>
 </ul>
 </div>
 </div>
@@ -1072,7 +1094,243 @@ Ontology- and label-aware policy helpers are available to postconditionScript wh
 </div>
 </div>
 <div class="sect1">
-<h2 id="_feature_flags_variants_and_target_rules">7. Feature Flags, Variants, and Target Rules</h2>
+<h2 id="_row_filter_computation_data_scoping">7. Row Filter Computation (Data Scoping)</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Matching decides <em>whether</em> an action is allowed. Once the effect is <code>ALLOW</code>, the
+framework derives the row filter that scopes <em>which records</em> a list/query
+returns. This is the data-scoping half of enforcement, and it is computed
+per-request from the principal, the matched rules, and (optionally) dynamic
+access lists.</p>
+</div>
+<div class="sect2">
+<h3 id="_the_pipeline">7.1. The pipeline</h3>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>A <code>BaseResource</code> list/query calls <code>MorphiaRepo.getFilterArray(userFilters, modelClass)</code>. The caller&#8217;s own query filters are the starting set; security filters are <strong>AND-ed on top</strong> of them.</p>
+</li>
+<li>
+<p><code>RepoSecurityFilterBuilder</code> short-circuits when <code>SecurityContext.isIgnoringRules()</code> is set — returning the filters <strong>unscoped</strong>. This <code>ignoreRules</code> path is reserved for system-internal/unauthenticated lookups (e.g. credential resolution at login, infrastructure reads). Otherwise it requires both a <code>PrincipalContext</code> and a <code>ResourceContext</code> and <strong>fails closed</strong> (throws) if either is missing.</p>
+</li>
+<li>
+<p><code>RuleContext.getFilters(filters, pcontext, rcontext, modelClass)</code> runs <code>checkRules</code>; if the final effect is not <code>ALLOW</code> the base filters are returned unchanged. Otherwise it resolves a variable bundle and, for each matched <code>ALLOW</code> rule, interpolates the rule&#8217;s <code>andFilterString</code>/<code>orFilterString</code> via <code>MorphiaUtils.convertToFilter(&#8230;&#8203;)</code>, combining them with the rule&#8217;s <code>joinOp</code> (AND/OR) and de-duplicating.</p>
+</li>
+<li>
+<p>The resulting <code>Filter[]</code> is AND-ed into the Morphia query.</p>
+</li>
+</ol>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+The <strong>realm</strong> is not a row filter — <code>getRealmId(principal)</code> returns the
+principal&#8217;s <code>defaultRealm</code>, which selects <strong>which database</strong> the query runs
+against (realm == database). Row filters scope records <em>within</em> that database.
+</td>
+</tr>
+</table>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_what_is_scoped_by_default">7.2. What is scoped by default</h3>
+<div class="paragraph">
+<p>There is exactly <strong>one</strong> scope filter baked into the default/system rules:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code>dataDomain.tenantId:${pTenantId}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>A normal authenticated query therefore gets <strong>tenant isolation only</strong>. Scoping
+by organization, account, or data segment is <strong>not automatic</strong> — you must
+author rules that reference the corresponding variables (see below).</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_available_substitution_variables_static">7.3. Available substitution variables (static)</h3>
+<div class="paragraph">
+<p><code>MorphiaUtils.createStandardVariableMapFrom</code> registers these scalars from the
+principal/resource context. They resolve from the principal&#8217;s <code>DataDomain</code> and
+<code>DomainContext</code>, which are populated from the authenticated token&#8217;s claims.</p>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Variable</th>
+<th class="tableblock halign-left valign-top">Source</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>${pTenantId}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>DataDomain.tenantId</code> (used by the default rule)</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>${pAccountId}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>DataDomain.accountNum</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>${orgRefName}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>DataDomain.orgRefName</code> (note: no <code>p</code> prefix)</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>${ownerId}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>DataDomain.ownerId</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>${defaultRealm}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>PrincipalContext.defaultRealm</code> (drives X-Realm scoping)</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>${principalId}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>PrincipalContext.userId</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>${resourceId}</code>, <code>${action}</code>, <code>${functionalDomain}</code>, <code>${area}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>ResourceContext</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>${dcTenantId}</code>, <code>${dcOrgRefName}</code>, <code>${dcAccountId}</code>, <code>${dcDataSegment}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">the <code>DomainContext</code> (X-Realm-aware; may differ from <code>DataDomain</code>)</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>${systemTenantId}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>DataDomain.tenantId</code> (legacy alias)</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p>To scope by org and account in addition to tenant, author a rule whose filter
+combines them:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="yaml">- <span class="string"><span class="content">name: scope-by-org-and-account</span></span>
+  <span class="key">priority</span>: <span class="string"><span class="content">500</span></span>
+  <span class="key">securityURI</span>:
+    <span class="key">header</span>: <span class="string"><span class="content">{ identity: '*', area: '*', functionalDomain: '*', action: 'view' }</span></span>
+    <span class="key">body</span>:   <span class="string"><span class="content">{ realm: '*', tenantId: '*', accountNumber: '*', orgRefName: '*' }</span></span>
+  <span class="key">andFilterString</span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">dataDomain.orgRefName:${orgRefName}</span><span class="delimiter">&quot;</span></span>
+  <span class="key">orFilterString</span>:  <span class="string"><span class="delimiter">&quot;</span><span class="content">dataDomain.accountId:${pAccountId}</span><span class="delimiter">&quot;</span></span>
+  <span class="key">joinOp</span>: <span class="string"><span class="content">AND</span></span>
+  <span class="key">effect</span>: <span class="string"><span class="content">ALLOW</span></span></code></pre>
+</div>
+</div>
+<div class="admonitionblock important">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-important" title="Important"></i>
+</td>
+<td class="content">
+Because every <code>${&#8230;&#8203;}</code> value originates in the token, a token that
+omits tenant/org/account claims makes the corresponding filters unresolvable —
+even the default <code>${pTenantId}</code> filter. A centralized issuer MUST project the
+principal&#8217;s <code>DomainContext</code> (realm/tenant/org/account) into token claims for
+this machinery to scope correctly.
+</td>
+</tr>
+</table>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_dynamic_access_lists_the_accesslistresolver_spi">7.4. Dynamic access lists (the <code>AccessListResolver</code> SPI)</h3>
+<div class="paragraph">
+<p>Some scoping is not a static scalar but a <strong>computed collection</strong> — for example,
+"the set of location IDs this principal may see". These are supplied by
+<code>AccessListResolver</code> implementations rather than by the standard variable map.
+A resolver whose <code>key()</code> returns <code>accessibleLocationIds</code> makes the variable
+<code>${accessibleLocationIds}</code> available, referenced with the in-list operator:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code>locationId:^[${accessibleLocationIds}]</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The list can be derived however the resolver chooses — a territory assignment,
+a <code>PrincipalContextPropertiesResolver</code> custom property, or by <strong>walking the
+ontology graph</strong>. The ontology path is <code>ListQueryRewriter</code> (in
+<code>quantum-ontology-policy-bridge</code>), which derives accessible IDs from edges such
+as <code>hasEdge("canSeeLocation", &#8230;&#8203;)</code>. This is the ontology↔rule seam:
+<strong>ontology edges → access list → <code>${accessibleLocationIds}</code> → rule filter</strong>.
+Predicate references used this way are validated at rule-load time by
+<code>RuleVocabularyValidator</code>.</p>
+</div>
+<div class="paragraph">
+<p>Two behaviors distinguish dynamic lists from the static scalars:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><strong><code>supports()</code> gating.</strong> A resolver is only invoked when its
+<code>supports(pcontext, rcontext, modelClass)</code> returns true for the <em>current
+request&#8217;s</em> context (not the rule&#8217;s scope). Be permissive, or filter by
+<code>modelClass</code>, or the variable will be unresolvable for valid requests.</p>
+</li>
+<li>
+<p><strong>Skip-on-unresolved.</strong> If a rule&#8217;s filter references a variable that cannot
+be resolved for the current model class (e.g. <code>${accessibleLocationIds}</code> on a
+<code>UserProfile</code> query), <code>getFilters</code> <strong>skips that rule&#8217;s filter</strong> rather than
+erroring — so a Location access rule does not wrongly constrain unrelated
+queries.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_summary">7.5. Summary</h3>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 50%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Scope</th>
+<th class="tableblock halign-left valign-top">Kind</th>
+<th class="tableblock halign-left valign-top">How it applies</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Realm</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">database selection</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>getRealmId</code> → <code>defaultRealm</code> picks the DB</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Tenant</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">static, default</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">built-in <code>dataDomain.tenantId:${pTenantId}</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Org / Account / Segment</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">static, opt-in</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">author a rule referencing <code>${orgRefName}</code> / <code>${pAccountId}</code> / <code>${dcDataSegment}</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Location (and similar)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">dynamic, resolver-backed</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>AccessListResolver</code> (often ontology-edge-backed) supplies <code>${accessibleLocationIds}</code>; requires a rule <strong>and</strong> a registered resolver</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_feature_flags_variants_and_target_rules">8. Feature Flags, Variants, and Target Rules</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Feature flags complement permission rules by controlling whether a capability is active for a given principal, cohort, or environment. Permissions answer “may this identity perform this action?”; feature flags answer “is this capability turned on, and which variant applies?” Use them together to achieve safe rollouts and fine‑grained authorization.</p>
@@ -1289,7 +1547,7 @@ Ontology- and label-aware policy helpers are available to postconditionScript wh
 </div>
 </div>
 <div class="sect1">
-<h2 id="scoped-action-enablement">8. Scoped Action Enablement and Dependency Tracking</h2>
+<h2 id="scoped-action-enablement">9. Scoped Action Enablement and Dependency Tracking</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>For the dedicated guide covering the runtime API, manifest model, SPI contracts, and built-in resolver types, see <a href="./action-enablement.html">Scoped Action Enablement</a>.</p>
@@ -1320,7 +1578,7 @@ Ontology- and label-aware policy helpers are available to postconditionScript wh
 <p>Quantum now provides a framework-level dependency tracking layer for these cases. The implementation guide for this work lives in <code>docs/design/SCOPED_ACTION_ENABLEMENT_IMPLEMENTATION_GUIDE.md</code>, and the runtime contracts are implemented in the <code>quantum-action-enablement-models</code> and <code>quantum-action-enablement-quarkus</code> modules.</p>
 </div>
 <div class="sect2">
-<h3 id="_core_idea_the_same_scoped_action_tuple_stays_canonical">8.1. Core idea: the same scoped action tuple stays canonical</h3>
+<h3 id="_core_idea_the_same_scoped_action_tuple_stays_canonical">9.1. Core idea: the same scoped action tuple stays canonical</h3>
 <div class="paragraph">
 <p>The unit of evaluation is still the same tuple already used by the policy engine:</p>
 </div>
@@ -1369,7 +1627,7 @@ Ontology- and label-aware policy helpers are available to postconditionScript wh
 </div>
 </div>
 <div class="sect2">
-<h3 id="_the_three_answers_returned_by_the_framework">8.2. The three answers returned by the framework</h3>
+<h3 id="_the_three_answers_returned_by_the_framework">9.2. The three answers returned by the framework</h3>
 <div class="paragraph">
 <p>Scoped action enablement separates three concerns that are often blurred together:</p>
 </div>
@@ -1425,7 +1683,7 @@ Ontology- and label-aware policy helpers are available to postconditionScript wh
 </div>
 </div>
 <div class="sect2">
-<h3 id="_runtime_models">8.3. Runtime models</h3>
+<h3 id="_runtime_models">9.3. Runtime models</h3>
 <div class="paragraph">
 <p>The core request and response models are intentionally small:</p>
 </div>
@@ -1487,7 +1745,7 @@ Ontology- and label-aware policy helpers are available to postconditionScript wh
 </div>
 </div>
 <div class="sect2">
-<h3 id="_rest_api">8.4. REST API</h3>
+<h3 id="_rest_api">9.4. REST API</h3>
 <div class="paragraph">
 <p>The runtime API is exposed at:</p>
 </div>
@@ -1581,7 +1839,7 @@ Ontology- and label-aware policy helpers are available to postconditionScript wh
 </div>
 </div>
 <div class="sect2">
-<h3 id="_manifest_driven_dependency_relationships">8.5. Manifest-driven dependency relationships</h3>
+<h3 id="_manifest_driven_dependency_relationships">9.5. Manifest-driven dependency relationships</h3>
 <div class="paragraph">
 <p>The relationship from settings and feature flags to functional area/domain/action lives in a manifest of <code>ScopedActionRequirement</code> entries. Each manifest entry says:</p>
 </div>
@@ -1644,7 +1902,7 @@ Ontology- and label-aware policy helpers are available to postconditionScript wh
 </div>
 </div>
 <div class="sect2">
-<h3 id="_resolver_spi">8.6. Resolver SPI</h3>
+<h3 id="_resolver_spi">9.6. Resolver SPI</h3>
 <div class="paragraph">
 <p>Each dependency type is implemented by an <code>ActionDependencyResolver</code>:</p>
 </div>
@@ -1691,7 +1949,7 @@ Ontology- and label-aware policy helpers are available to postconditionScript wh
 </div>
 </div>
 <div class="sect2">
-<h3 id="_built_in_oss_dependency_types">8.7. Built-in OSS dependency types</h3>
+<h3 id="_built_in_oss_dependency_types">9.7. Built-in OSS dependency types</h3>
 <div class="paragraph">
 <p>The open-source framework currently provides these dependency resolvers:</p>
 </div>
@@ -1761,7 +2019,7 @@ Ontology- and label-aware policy helpers are available to postconditionScript wh
 </div>
 </div>
 <div class="sect2">
-<h3 id="_missing_manifests_and_unsupported_dependency_types">8.8. Missing manifests and unsupported dependency types</h3>
+<h3 id="_missing_manifests_and_unsupported_dependency_types">9.8. Missing manifests and unsupported dependency types</h3>
 <div class="paragraph">
 <p>The framework intentionally does not fail open here.</p>
 </div>
@@ -1796,7 +2054,7 @@ Ontology- and label-aware policy helpers are available to postconditionScript wh
 </div>
 </div>
 <div class="sect2">
-<h3 id="_example_contributor">8.9. Example contributor</h3>
+<h3 id="_example_contributor">9.9. Example contributor</h3>
 <div class="paragraph">
 <p>At the framework level, the built-in manifest contributor registers the enablement API itself with a permission dependency. Application modules then add their own manifests.</p>
 </div>
@@ -1842,7 +2100,7 @@ Ontology- and label-aware policy helpers are available to postconditionScript wh
 </div>
 </div>
 <div class="sect2">
-<h3 id="_relationship_to_policies_feature_flags_and_ui_actions">8.10. Relationship to policies, feature flags, and UI actions</h3>
+<h3 id="_relationship_to_policies_feature_flags_and_ui_actions">9.10. Relationship to policies, feature flags, and UI actions</h3>
 <div class="paragraph">
 <p>Think of the layers this way:</p>
 </div>
@@ -1896,7 +2154,7 @@ Ontology- and label-aware policy helpers are available to postconditionScript wh
 </div>
 </div>
 <div class="sect2">
-<h3 id="_enterprise_extensions">8.11. Enterprise extensions</h3>
+<h3 id="_enterprise_extensions">9.11. Enterprise extensions</h3>
 <div class="paragraph">
 <p>The framework module is intentionally generic. Enterprise modules can contribute additional dependency resolvers without changing the core contracts.</p>
 </div>
@@ -1943,7 +2201,7 @@ Ontology- and label-aware policy helpers are available to postconditionScript wh
 </div>
 </div>
 <div class="sect2">
-<h3 id="_guidance">8.12. Guidance</h3>
+<h3 id="_guidance">9.12. Guidance</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -1967,7 +2225,7 @@ Ontology- and label-aware policy helpers are available to postconditionScript wh
 </div>
 </div>
 <div class="sect1">
-<h2 id="_multiple_matching_rulebases">9. Multiple Matching RuleBases</h2>
+<h2 id="_multiple_matching_rulebases">10. Multiple Matching RuleBases</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -1988,7 +2246,7 @@ Ontology- and label-aware policy helpers are available to postconditionScript wh
 </div>
 </div>
 <div class="sect1">
-<h2 id="_identity_and_role_matching">10. Identity and Role Matching</h2>
+<h2 id="_identity_and_role_matching">11. Identity and Role Matching</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -2007,7 +2265,7 @@ Ontology- and label-aware policy helpers are available to postconditionScript wh
 </ul>
 </div>
 <div class="sect2">
-<h3 id="_how_roles_are_defined_for_an_identity_role_sources_and_resolution">10.1. How roles are defined for an identity (role sources and resolution)</h3>
+<h3 id="_how_roles_are_defined_for_an_identity_role_sources_and_resolution">11.1. How roles are defined for an identity (role sources and resolution)</h3>
 <div class="paragraph">
 <p>Quantum composes the effective roles for a request by merging:</p>
 </div>
@@ -2194,7 +2452,7 @@ Ontology- and label-aware policy helpers are available to postconditionScript wh
 </ul>
 </div>
 <div class="sect3">
-<h4 id="_populating_rolesource_and_roleassignments">10.1.1. Populating <code>RoleSource</code> and <code>roleAssignments</code></h4>
+<h4 id="_populating_rolesource_and_roleassignments">11.1.1. Populating <code>RoleSource</code> and <code>roleAssignments</code></h4>
 <div class="paragraph">
 <p>Quantum exposes structured provenance for each role via:</p>
 </div>
@@ -2251,7 +2509,7 @@ from the flat <code>roles</code> set and mark each role with <code>CREDENTIAL</c
 </div>
 </div>
 <div class="sect3">
-<h4 id="_authproviders_what_you_need_to_do">10.1.2. AuthProviders: what you need to do</h4>
+<h4 id="_authproviders_what_you_need_to_do">11.1.2. AuthProviders: what you need to do</h4>
 <div class="paragraph">
 <p>Auth providers (for example, <code>CustomTokenAuthProvider</code>) should add provenance at two points:</p>
 </div>
@@ -2366,7 +2624,7 @@ java.util.List&lt;com.e2eq.framework.model.auth.RoleAssignment&gt; roleAssignmen
 </div>
 </div>
 <div class="sect3">
-<h4 id="_security_check_responses_enriching_roleassignments">10.1.3. Security Check responses: enriching <code>roleAssignments</code></h4>
+<h4 id="_security_check_responses_enriching_roleassignments">11.1.3. Security Check responses: enriching <code>roleAssignments</code></h4>
 <div class="paragraph">
 <p><code>SecurityCheckResponse</code> defaults to marking all roles as <code>CREDENTIAL</code>. To provide accurate provenance during permission checks:</p>
 </div>
@@ -2398,7 +2656,7 @@ resp.setRoleAssignments(roleAssignments);
 </div>
 </div>
 <div class="sect1">
-<h2 id="_example_scenarios">11. Example Scenarios</h2>
+<h2 id="_example_scenarios">12. Example Scenarios</h2>
 <div class="sectionbody">
 <div class="olist arabic">
 <ol class="arabic">
@@ -2507,7 +2765,7 @@ resp.setRoleAssignments(roleAssignments);
 </div>
 </div>
 <div class="sect1">
-<h2 id="_operational_tips">12. Operational Tips</h2>
+<h2 id="_operational_tips">13. Operational Tips</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -2528,7 +2786,135 @@ resp.setRoleAssignments(roleAssignments);
 </div>
 </div>
 <div class="sect1">
-<h2 id="_how_uiactions_and_defaultuiactions_are_calculated">13. How UIActions and DefaultUIActions are calculated</h2>
+<h2 id="_field_level_policy_property_exclusions">14. Field-Level Policy (Property Exclusions)</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Row filters (<code>andFilterString</code> / <code>orFilterString</code>) control <strong>which documents</strong> a
+principal can see. Field-level policy controls <strong>which fields of those
+documents</strong> — the common "the carrier may see the shipment but not the price"
+requirement.</p>
+</div>
+<div class="sect2">
+<h3 id="_declaring_exclusions_on_a_rule">14.1. Declaring exclusions on a rule</h3>
+<div class="paragraph">
+<p><code>Rule.excludedFields</code> carries dotted property paths. The exclusions apply to
+any principal/resource the rule matches, composing with the same matching
+algorithm as row filters:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java">Rule.Builder()
+   .withName(<span class="string"><span class="delimiter">&quot;</span><span class="content">carrier-fulfillment-view</span><span class="delimiter">&quot;</span></span>)
+   .withSecurityURI(uri)                       <span class="comment">// who/what this rule matches</span>
+   .withEffect(RuleEffect.ALLOW)
+   .withAndFilterString(<span class="string"><span class="delimiter">&quot;</span><span class="content">hasEdge('assignedTo', ${principal.orgRefName})</span><span class="delimiter">&quot;</span></span>)
+   .withExcludedFields(<span class="predefined-type">List</span>.of(<span class="string"><span class="delimiter">&quot;</span><span class="content">pricing.unitPrice</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">pricing.margin</span><span class="delimiter">&quot;</span></span>))
+   .build();</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Semantics are <strong>deny-wins</strong>: the union of <code>excludedFields</code> across <strong>all</strong>
+matched ALLOW rules applies. A field excluded by any applicable rule is
+excluded, even if another matched rule does not mention it. Paths that do not
+exist on a queried model are ignored (nothing to protect). Excluded fields are
+<strong>omitted</strong> from results, not nulled-and-present — clients should treat absence
+under an active field policy as "restricted", and the REST layer signals this
+with the <code>X-Field-Policy</code> response header listing the applied exclusions.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_layered_enforcement_one_policy_source_every_egress_guarded">14.2. Layered enforcement — one policy source, every egress guarded</h3>
+<div class="paragraph">
+<p>The resolved exclusion set comes from one place
+(<code>RuleContext.getExcludedFieldPaths</code>) and is enforced wherever data leaves the
+platform. The query language is a multi-datasource contract, so enforcement is
+<strong>per egress</strong>, not per database:</p>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 20%;">
+<col style="width: 40%;">
+<col style="width: 40%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Egress</th>
+<th class="tableblock halign-left valign-top">Mechanism</th>
+<th class="tableblock halign-left valign-top">Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">MongoDB reads</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Projection injection in <code>MorphiaRepo.buildFindOptions</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Excluded paths never leave the database. Caller <code>INCLUDE</code> projections have
+policy paths dropped (exclusion wins); caller <code>EXCLUDE</code> projections are
+unioned with policy paths.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">MongoDB updates</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Preserve-hidden-fields gate in <code>MorphiaRepo.merge</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">A principal whose policy hides a field cannot blind-overwrite it: the stored
+value is restored (via <code>FieldPolicyEnforcer.copyPath</code>) before persisting.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">In-memory / hierarchical / custom datasources</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>FieldPolicyEnforcer.mask(result, paths)</code> at result materialization</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">For non-Mongo backends this <strong>is</strong> the datastore-level enforcement.
+<strong>Implementing the query contract against a new datasource requires wiring
+the enforcer</strong> — it is part of the adapter contract, exactly like honoring
+row-filter strings.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">REST serialization</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>FieldPolicyResponseInterceptor</code> (WriterInterceptor)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Defense-in-depth fed by the same resolved set: catches computed getters,
+reference-expanded fields, and responses assembled outside a secured repo.
+Adds the <code>X-Field-Policy</code> header when masking occurred.</p></td>
+</tr>
+</tbody>
+</table>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+A serializer-only approach (e.g. Jackson <code>@JsonView</code>) was considered and
+rejected as the primary mechanism: views are compile-time classes while
+Quantum policies are tenant-authorable runtime data, and serializer
+enforcement guards only the REST door while the reasoner, MCP surface,
+exports, and events read through repositories. The serializer layer is kept —
+as the last lock, driven by the same rule-resolved path set.
+</td>
+</tr>
+</table>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_limitations_v1">14.3. Limitations (v1)</h3>
+<div class="ulist">
+<ul>
+<li>
+<p>Wildcard paths (<code>pricing.*</code>) are not yet supported — list explicit paths.</p>
+</li>
+<li>
+<p>The write gate applies on <code>merge</code> (partial update); full-document <code>save</code> of
+a <strong>new</strong> entity is not field-filtered (the creator authored the values).</p>
+</li>
+<li>
+<p>Field exclusions are resolved per (principal, resource) pair, like row
+filters; per-<strong>instance</strong> visibility derives from relationship row filters
+(<code>hasEdge</code>), not from per-document field lists.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_how_uiactions_and_defaultuiactions_are_calculated">15. How UIActions and DefaultUIActions are calculated</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>When the server returns a collection of entities (for example, userProfiles), each entity may expose two action lists:</p>
@@ -2648,7 +3034,7 @@ resp.setRoleAssignments(roleAssignments);
 </div>
 </div>
 <div class="sect1">
-<h2 id="_how_this_integrates_end_to_end">14. How This Integrates End-to-End</h2>
+<h2 id="_how_this_integrates_end_to_end">16. How This Integrates End-to-End</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -2666,7 +3052,7 @@ resp.setRoleAssignments(roleAssignments);
 </div>
 </div>
 <div class="sect1">
-<h2 id="_administering_policies_via_rest_policyresource">15. Administering Policies via REST (PolicyResource)</h2>
+<h2 id="_administering_policies_via_rest_policyresource">17. Administering Policies via REST (PolicyResource)</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>The PolicyResource exposes CRUD-style REST APIs for creating and managing policies (rule bases) that drive authorization decisions. Each Policy targets a principalId (either a specific userId or a role name) and contains an ordered list of Rule objects. Rules match requests using SecurityURIHeader and SecurityURIBody and then contribute an effect (ALLOW/DENY) and optional repository filters.</p>
@@ -2685,7 +3071,7 @@ resp.setRoleAssignments(roleAssignments);
 </ul>
 </div>
 <div class="sect2">
-<h3 id="_model_shape_policy">15.1. Model shape (Policy)</h3>
+<h3 id="_model_shape_policy">17.1. Model shape (Policy)</h3>
 <div class="paragraph">
 <p>A Policy extends FullBaseModel and includes:
 - id, refName, displayName, dataDomain, archived/expired flags (inherited)
@@ -2726,7 +3112,7 @@ resp.setRoleAssignments(roleAssignments);
 </div>
 </div>
 <div class="sect2">
-<h3 id="_how_rule_contributed_filters_work_andfilterstring_orfilterstring_joinop">15.2. How rule-contributed filters work (andFilterString, orFilterString, joinOp)</h3>
+<h3 id="_how_rule_contributed_filters_work_andfilterstring_orfilterstring_joinop">17.2. How rule-contributed filters work (andFilterString, orFilterString, joinOp)</h3>
 <div class="paragraph">
 <p>When an ALLOW rule matches, it can contribute repository-level filters that restrict which documents are visible or mutable. The fields are:</p>
 </div>
@@ -2978,8 +3364,40 @@ resp.setRoleAssignments(roleAssignments);
 <td class="tableblock halign-left valign-top"><p class="tableblock">DomainContext.dataSegment</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Data segment number from domain context</p></td>
 </tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>${facet.&lt;key&gt;}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">DataDomainPolicyEntry.facetFilters</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Tenant-configured facet filters (e.g. <code>${facet.allowedTiers}</code>)</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>${coord.&lt;key&gt;}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">DataDomainResolution coordinates</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Custom coordinate variables (e.g. <code>${coord.salesZone}</code>)</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>${principal.&lt;attr&gt;}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">PrincipalContext attributes</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Authenticated principal attributes and claims</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>${dd.&lt;attr&gt;}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">DataDomain fields</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Target DataDomain partition coordinates</p></td>
+</tr>
 </tbody>
 </table>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+<strong>Dotted Variable Identifiers &amp; Single-Variable IN</strong>: Variables with dotted paths (<code>${facet.tier}</code>, <code>${coord.salesZone}</code>) resolve in a strict hierarchy. When evaluated with the list membership operator (<code>:^</code>), single variables resolving to a Java <code>Collection</code> (e.g. <code>allowedTiers = ["FLAGSHIP", "REGIONAL"]</code>) can be passed without brackets (<code>tier:^${facet.allowedTiers}</code>), automatically unpacking into native MongoDB <code>$in</code> clauses.
+</td>
+</tr>
+</table>
+</div>
 <div class="paragraph">
 <p><strong>X-Realm integration</strong>: When <code>X-Realm</code> is used, <code>${defaultRealm}</code> automatically reflects the target realm. This enables permission filters to dynamically scope data based on the active realm:</p>
 </div>
@@ -3003,7 +3421,7 @@ resp.setRoleAssignments(roleAssignments);
 </div>
 </div>
 <div class="sect2">
-<h3 id="_accesslistresolvers_spi_for_list_based_access">15.3. AccessListResolvers (SPI) for list-based access</h3>
+<h3 id="_accesslistresolvers_spi_for_list_based_access">17.3. AccessListResolvers (SPI) for list-based access</h3>
 <div class="imageblock">
 <div class="content">
 <img src="diag-plantuml-md5-19678e06c83a16fe71cfaff92a476663.svg" alt="Diagram" width="629" height="385">
@@ -3100,7 +3518,7 @@ resp.setRoleAssignments(roleAssignments);
 </div>
 </div>
 <div class="sect2">
-<h3 id="_principalcontextpropertiesresolver_spi_for_custom_principal_properties">15.4. PrincipalContextPropertiesResolver (SPI) for custom principal properties</h3>
+<h3 id="_principalcontextpropertiesresolver_spi_for_custom_principal_properties">17.4. PrincipalContextPropertiesResolver (SPI) for custom principal properties</h3>
 <div class="imageblock">
 <div class="content">
 <img src="diag-plantuml-md5-3f301d1907337043041d1f30cc0a065b.svg" alt="Diagram" width="873" height="278">
@@ -3460,7 +3878,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect2">
-<h3 id="_endpoints">15.5. Endpoints</h3>
+<h3 id="_endpoints">17.5. Endpoints</h3>
 <div class="paragraph">
 <p>All endpoints are relative to /security/permission/policies. These are inherited from BaseResource and are consistent across entity resources.</p>
 </div>
@@ -3654,7 +4072,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect2">
-<h3 id="_examples">15.6. Examples</h3>
+<h3 id="_examples">17.6. Examples</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -3703,7 +4121,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect2">
-<h3 id="_how_changes_affect_rule_bases_and_enforcement">15.7. How changes affect rule bases and enforcement</h3>
+<h3 id="_how_changes_affect_rule_bases_and_enforcement">17.7. How changes affect rule bases and enforcement</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -3772,7 +4190,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect1">
-<h2 id="_realm_override_x_realm_and_impersonation_x_impersonate">16. Realm override (X-Realm) and Impersonation (X-Impersonate)</h2>
+<h2 id="_realm_override_x_realm_and_impersonation_x_impersonate">18. Realm override (X-Realm) and Impersonation (X-Impersonate)</h2>
 <div class="sectionbody">
 <div class="imageblock">
 <div class="content">
@@ -3783,7 +4201,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 <p>This section explains how to use the request headers X-Realm, X-Impersonate-<strong>, and X-Acting-On-Behalf-Of-</strong> alongside permission rule bases. These headers influence which realm (database) a request operates against and, in the case of impersonation, which identity&#8217;s roles are evaluated by the rule engine.</p>
 </div>
 <div class="sect2">
-<h3 id="_what_they_do_at_a_glance">16.1. What they do (at a glance)</h3>
+<h3 id="_what_they_do_at_a_glance">18.1. What they do (at a glance)</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -3802,7 +4220,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect2">
-<h3 id="_how_the_headers_integrate_with_permission_evaluation">16.2. How the headers integrate with permission evaluation</h3>
+<h3 id="_how_the_headers_integrate_with_permission_evaluation">18.2. How the headers integrate with permission evaluation</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -3851,7 +4269,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect2">
-<h3 id="_required_credential_configuration_credentialuseridpassword">16.3. Required credential configuration (CredentialUserIdPassword)</h3>
+<h3 id="_required_credential_configuration_credentialuseridpassword">18.3. Required credential configuration (CredentialUserIdPassword)</h3>
 <div class="paragraph">
 <p>Two fields on CredentialUserIdPassword govern whether a user may use these headers:</p>
 </div>
@@ -3906,7 +4324,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect2">
-<h3 id="_end_to_end_behavior_from_securityfilter_reference">16.4. End-to-end behavior from SecurityFilter (reference)</h3>
+<h3 id="_end_to_end_behavior_from_securityfilter_reference">18.4. End-to-end behavior from SecurityFilter (reference)</h3>
 <div class="paragraph">
 <p>The SecurityFilter constructs the PrincipalContext/ResourceContext before rule evaluation:
 - X-Realm is read and, if present, validated against the caller’s credential.realmRegEx.
@@ -3917,7 +4335,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect2">
-<h3 id="_practical_differences_and_use_cases">16.5. Practical differences and use cases</h3>
+<h3 id="_practical_differences_and_use_cases">18.5. Practical differences and use cases</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -3994,7 +4412,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect2">
-<h3 id="_examples_2">16.6. Examples</h3>
+<h3 id="_examples_2">18.6. Examples</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -4045,13 +4463,13 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect1">
-<h2 id="_data_domain_assignment_on_create_domaincontext_and_datadomainpolicy">17. Data domain assignment on create: DomainContext and DataDomainPolicy</h2>
+<h2 id="_data_domain_assignment_on_create_domaincontext_and_datadomainpolicy">19. Data domain assignment on create: DomainContext and DataDomainPolicy</h2>
 <div class="sectionbody">
 <div id="_data_domain_assignment" class="paragraph">
 <p>This section explains how Quantum decides which dataDomain is stamped on newly created records, why this decision is necessary in a multi‑tenant system, what the default behavior is, and how you can override it globally or per Functional Area / Functional Domain. It also describes the DataDomainResolver interface and the default implementation provided by the framework.</p>
 </div>
 <div class="sect2">
-<h3 id="_the_problem_this_solves_and_why_it_matters">17.1. The problem this solves (and why it matters)</h3>
+<h3 id="_the_problem_this_solves_and_why_it_matters">19.1. The problem this solves (and why it matters)</h3>
 <div class="paragraph">
 <p>In a multi‑tenant platform you must ensure each new record is written to the correct data partition so later reads/updates can be scoped safely. If the dataDomain is wrong or missing, you risk leaking data across tenants or making your own data inaccessible due to mis‑scoping.</p>
 </div>
@@ -4066,7 +4484,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect2">
-<h3 id="_key_concepts_recap_domaincontext_and_datadomain">17.2. Key concepts recap: DomainContext and DataDomain</h3>
+<h3 id="_key_concepts_recap_domaincontext_and_datadomain">19.2. Key concepts recap: DomainContext and DataDomain</h3>
 <div class="dlist">
 <dl>
 <dt class="hdlist1">DomainContext (on credentials/realms)</dt>
@@ -4084,7 +4502,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect2">
-<h3 id="_the_default_policy_do_nothing_and_it_works">17.3. The default policy (do nothing and it works)</h3>
+<h3 id="_the_default_policy_do_nothing_and_it_works">19.3. The default policy (do nothing and it works)</h3>
 <div class="paragraph">
 <p>Out of the box, Quantum preserves the existing behavior: if no policy is configured, the resolver falls back to the authenticated principal’s DataDomain. This guarantees compatibility with existing applications.</p>
 </div>
@@ -4096,7 +4514,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect2">
-<h3 id="_policy_scopes_principalattached_vs_global">17.4. Policy scopes: principal‑attached vs. global</h3>
+<h3 id="_policy_scopes_principalattached_vs_global">19.4. Policy scopes: principal‑attached vs. global</h3>
 <div class="paragraph">
 <p>You can define overrides at two levels:
 - Principal‑attached (per credential): attach a DataDomainPolicy to a CredentialUserIdPassword. The SecurityFilter places this policy into the PrincipalContext, so it applies only to records created by that principal. This is useful for VIP service accounts or specific partners.
@@ -4107,7 +4525,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect2">
-<h3 id="_the_policy_map_and_matching">17.5. The policy map and matching</h3>
+<h3 id="_the_policy_map_and_matching">19.5. The policy map and matching</h3>
 <div class="paragraph">
 <p>A DataDomainPolicy is a small map of rules: Map&lt;String, DataDomainPolicyEntry&gt; policyEntries, keyed by "&lt;FunctionalArea&gt;:&lt;FunctionalDomain&gt;" with support for "*" wildcards. The resolver evaluates keys in this order:</p>
 </div>
@@ -4164,7 +4582,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect2">
-<h3 id="_how_the_resolver_works">17.6. How the resolver works</h3>
+<h3 id="_how_the_resolver_works">19.6. How the resolver works</h3>
 <div class="paragraph">
 <p>Interfaces and default implementation:</p>
 </div>
@@ -4200,7 +4618,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect2">
-<h3 id="_when_would_you_want_a_nonglobal_policy">17.7. When would you want a non‑global policy?</h3>
+<h3 id="_when_would_you_want_a_nonglobal_policy">19.7. When would you want a non‑global policy?</h3>
 <div class="paragraph">
 <p>Here are a few concrete scenarios:
 - Centralized HR: All HR Employee records are written to a shared HR domain regardless of the team creating them. This supports a shared‑service HR model without duplicating HR data per tenant.
@@ -4210,7 +4628,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect2">
-<h3 id="_relation_to_tenancy_models">17.8. Relation to tenancy models</h3>
+<h3 id="_relation_to_tenancy_models">19.8. Relation to tenancy models</h3>
 <div class="paragraph">
 <p>The policy mechanism supports both siloed and pooled tenancy:
 - Siloed tenancy: Most domains default to FROM_CREDENTIAL (each tenant writes to its own partition). Only a few shared services (e.g., HR, catalog) use FIXED to centralize data.
@@ -4221,7 +4639,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect2">
-<h3 id="_authoring_tips">17.9. Authoring tips</h3>
+<h3 id="_authoring_tips">19.9. Authoring tips</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -4240,7 +4658,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect2">
-<h3 id="_api_pointers">17.10. API pointers</h3>
+<h3 id="_api_pointers">19.10. API pointers</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -4259,7 +4677,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </div>
 </div>
 <div class="sect2">
-<h3 id="ontology-permissions">17.11. Ontology in Permission Rules (optional)</h3>
+<h3 id="ontology-permissions">19.11. Ontology in Permission Rules (optional)</h3>
 <div class="paragraph">
 <p>If you enable the ontology modules, you can author rules that constrain access by semantic relationships, not field paths. This keeps policies stable as your object model evolves.</p>
 </div>
@@ -4332,7 +4750,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </ul>
 </div>
 <div class="sect3">
-<h4 id="rule-hasedge">17.11.1. Rule language: add hasEdge()</h4>
+<h4 id="rule-hasedge">19.11.1. Rule language: add hasEdge()</h4>
 <div class="paragraph">
 <p>We introduce a policy function/operator to reference ontology edges directly from rules. This lets policies constrain access by semantic relationships instead of field paths.</p>
 </div>
@@ -4421,11 +4839,65 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 </td>
 <td class="content">
 <div class="paragraph">
-<p>In <code>andFilterString</code> and <code>orFilterString</code>, use standard BIAPI syntax for these functions: <code>hasEdge(predicate, dst)</code> and <code>hasIncomingEdge(predicate, src)</code>. In <code>postconditionScript</code>, use the JavaScript helper counterparts: <code>hasEdge(predicate, dst)</code> and <code>hasIncomingEdge(predicate, src)</code>.</p>
+<p>In <code>andFilterString</code> and <code>orFilterString</code>, use standard BIAPI syntax:
+- 2-argument existence check: <code>hasEdge(predicate, dst)</code> and <code>hasIncomingEdge(predicate, src)</code>.
+- 3-argument qualified check: <code>hasEdge(predicate, dst, { edgeFilter })</code> and <code>hasIncomingEdge(predicate, src, { edgeFilter })</code>.
+- Query macros: <code>@asOf(timestamp)</code> for bitemporal validity and <code>@minConfidence(threshold)</code> for probabilistic trust.
+In <code>postconditionScript</code>, use the JavaScript helper counterparts: <code>hasEdge(predicate, dst, propsOrFn)</code> and <code>hasIncomingEdge(predicate, src, propsOrFn)</code>.</p>
 </div>
 </td>
 </tr>
 </table>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_business_scenarios_policy_enforcement_solutions">19.12. Business Scenarios &amp; Policy Enforcement Solutions</h3>
+<div class="sect3">
+<h4 id="_business_scenario_1_healthcare_temporary_on_call_staffing_regulatory_audits">19.12.1. Business Scenario 1: Healthcare Temporary On-Call Staffing &amp; Regulatory Audits</h4>
+<div class="paragraph">
+<p>In a hospital network, physicians hold temporary appointments (e.g. "Acting Chief of Emergency Medicine" from Monday 08:00 to Friday 17:00). Policies must guarantee zero-latency expiration without relying on deletion batch cron jobs, while preserving historical audit trails for HIPAA compliance.</p>
+</div>
+<div class="paragraph">
+<p><strong>Solution in Permission Rules</strong>:
+Using the <code>@asOf(ts)</code> macro inside a qualified edge filter ensures that access expires automatically the moment <code>now &gt;= validTo</code>, and enables point-in-time compliance audits:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="yaml">- <span class="string"><span class="content">name: emergency-department-chart-access</span></span>
+  <span class="key">priority</span>: <span class="string"><span class="content">100</span></span>
+  <span class="key">securityURI</span>:
+    <span class="key">header</span>: <span class="string"><span class="content">{ identity: PHYSICIAN, area: clinical, functionalDomain: charts, action: view }</span></span>
+    <span class="key">body</span>:   <span class="string"><span class="content">{ realm: '*', orgRefName: '*', accountNumber: '*', tenantId: '*', ownerId: '*', dataSegment: '*', resourceId: '*' }</span></span>
+  <span class="key">effect</span>: <span class="string"><span class="content">ALLOW</span></span>
+  <span class="key">andFilterString</span>: <span class="string"><span class="delimiter">&gt;</span><span class="content">
+    hasEdge(&quot;actingChiefOf&quot;, &quot;DEPT-EMERGENCY&quot;, { @asOf(2026-09-20T22:00:00Z) &amp;&amp; status:&quot;ACTIVE&quot; })</span></span></code></pre>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_business_scenario_2_aerospace_defense_project_classification_guard">19.12.2. Business Scenario 2: Aerospace Defense Project Classification Guard</h4>
+<div class="paragraph">
+<p>In defense environments, the association between an engineering contractor and a classified stealth program (<code>PROJECT-TITAN</code>) has a security classification of <code>SECRET</code> with an <code>ITAR</code> handling compartment. An uncleared sub-contractor querying their project dashboard must not discover that <code>PROJECT-TITAN</code> exists or is linked to their team.</p>
+</div>
+<div class="paragraph">
+<p><strong>Solution in Permission Rules</strong>:
+Using Mandatory Access Control (MAC) edge properties pushed into the compound index scan (<code>idx_domain_security</code>), the relationship is withheld at the database level:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="yaml">- <span class="string"><span class="content">name: defense-classified-project-view</span></span>
+  <span class="key">priority</span>: <span class="string"><span class="content">105</span></span>
+  <span class="key">securityURI</span>:
+    <span class="key">header</span>: <span class="string"><span class="content">{ identity: CONTRACTOR, area: engineering, functionalDomain: projects, action: view }</span></span>
+    <span class="key">body</span>:   <span class="string"><span class="content">{ realm: '*', orgRefName: '*', accountNumber: '*', tenantId: '*', ownerId: '*', dataSegment: '*', resourceId: '*' }</span></span>
+  <span class="key">effect</span>: <span class="string"><span class="content">ALLOW</span></span>
+  <span class="key">andFilterString</span>: <span class="string"><span class="delimiter">&gt;</span><span class="content">
+    hasEdge(&quot;assignedToProject&quot;, &quot;PROJECT-TITAN&quot;, {
+      securityLabel: &quot;SECRET&quot; &amp;&amp;
+      compartments:^ [&quot;ITAR&quot;]
+    })</span></span></code></pre>
+</div>
 </div>
 <div class="paragraph">
 <p>Under the hood</p>
@@ -4439,7 +4911,7 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
 <p>The list/filter query is rewritten using ListQueryRewriter.rewriteForHasEdge(&#8230;&#8203;) or rewriteForHasIncomingEdge(&#8230;&#8203;), which turns the predicate and resolved ID into a set of target/source IDs and merges it with the base query efficiently.</p>
 </li>
 <li>
-<p>OntologyEdgeDao must be indexed on (tenantId, p, dst) and (tenantId, src, p) for performance.</p>
+<p>MongoDB compound indexes <code>idx_domain_p_dst_props</code>, <code>idx_domain_temporal</code>, <code>idx_domain_security</code>, and <code>idx_domain_confidence</code> accelerate edge lookups directly at the datastore layer.</p>
 </li>
 </ul>
 </div>
@@ -4484,6 +4956,13 @@ PrincipalContext pctx = SecurityContext.getPrincipalContext().get();
       <span class="key">area</span>: <span class="string"><span class="content">core</span></span>
       <span class="key">functionalDomain</span>: <span class="string"><span class="content">location</span></span>
       <span class="key">action</span>: <span class="string"><span class="content">view</span></span>
+    <span class="key">body</span>:
+      <span class="key">realm</span>: <span class="string"><span class="content">'*'</span></span>
+      <span class="key">accountNumber</span>: <span class="string"><span class="content">'*'</span></span>
+      <span class="key">tenantId</span>: <span class="string"><span class="content">'*'</span></span>
+      <span class="key">dataSegment</span>: <span class="string"><span class="content">'*'</span></span>
+      <span class="key">ownerId</span>: <span class="string"><span class="content">'*'</span></span>
+      <span class="key">resourceId</span>: <span class="string"><span class="content">'*'</span></span>
   <span class="key">effect</span>: <span class="string"><span class="content">ALLOW</span></span>
   <span class="comment"># Find locations that the current user has a &quot;canAccessLocation&quot; edge to</span>
   <span class="key">andFilterString</span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">hasIncomingEdge(canAccessLocation, ${principalId})</span><span class="delimiter">&quot;</span></span></code></pre>
@@ -4570,7 +5049,7 @@ query.filter(dev.morphia.query.filters.Filters.in(<span class="string"><span cla
 </div>
 </div>
 <div class="sect2">
-<h3 id="label-resolution-spi">17.12. Label resolution SPI and hasLabel() in rules</h3>
+<h3 id="label-resolution-spi">19.13. Label resolution SPI and hasLabel() in rules</h3>
 <div class="paragraph">
 <p>Labels are a lightweight way to attach semantic markers to principals and resources, and then use them in rule scripts. Quantum provides a pluggable label resolution SPI and a script helper to check labels during policy evaluation.</p>
 </div>
@@ -4689,7 +5168,7 @@ hasLabel(<span class="string"><span class="delimiter">&quot;</span><span class="
 </div>
 </div>
 <div class="sect1">
-<h2 id="script-helpers-reference">18. Script Helpers reference (when enabled)</h2>
+<h2 id="script-helpers-reference">20. Script Helpers reference (when enabled)</h2>
 <div class="sectionbody">
 <div class="imageblock">
 <div class="content">
@@ -4859,8 +5338,8 @@ noViolations() === <span class="predefined-constant">true</span></code></pre>
 </div>
 <div id="footer">
 <div id="footer-text">
-Version 1.3.1-SNAPSHOT<br>
-Last updated 2026-04-01 14:18:49 -0400
+Version 1.4.2-SNAPSHOT<br>
+Last updated 2026-09-20 22:59:16 -0400
 </div>
 </div>
 </body>

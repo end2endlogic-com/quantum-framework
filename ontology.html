@@ -528,8 +528,8 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <div id="header">
 <h1>Ontology Modeling</h1>
 <div class="details">
-<span id="revnumber">version 1.3.1-SNAPSHOT,</span>
-<span id="revdate">2026-04-13T18:47:11Z</span>
+<span id="revnumber">version 1.4.2-SNAPSHOT,</span>
+<span id="revdate">2026-09-21T22:14:39Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -556,8 +556,28 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_what_is_provenance_and_how_to_read_it">3.3. What is provenance and how to read it</a></li>
 <li><a href="#_querying_ontologies">3.4. Querying Ontologies</a>
 <ul class="sectlevel3">
-<li><a href="#_biapi_query_language_functions_hasedge_and_hasincomingedge">3.4.1. BIAPI Query Language Functions: hasEdge and hasIncomingEdge</a></li>
-<li><a href="#_programmatic_querying_with_edgedao">3.4.2. Programmatic Querying with EdgeDao</a></li>
+<li><a href="#_biapi_query_language_functions_hasedge_hasoutgoingedge_and_hasincomingedge">3.4.1. BIAPI Query Language Functions: hasEdge, hasOutgoingEdge, and hasIncomingEdge</a></li>
+<li><a href="#_programmatic_querying_with_ontologyedgerepo">3.4.2. Programmatic Querying with OntologyEdgeRepo</a></li>
+</ul>
+</li>
+<li><a href="#ontology-facet-segmentation">3.5. Dynamic Edge Properties, Edge Qualification, and Facet Segmentation</a>
+<ul class="sectlevel3">
+<li><a href="#_1_dynamic_edge_properties_compound_indexes">3.5.1. 1. Dynamic Edge Properties &amp; Compound Indexes</a></li>
+<li><a href="#_2_store_free_coordinate_spi_datadomainresolver">3.5.2. 2. Store-Free Coordinate SPI (<code>DataDomainResolver</code>)</a></li>
+<li><a href="#_3_multi_tenant_policies_and_dynamic_facets">3.5.3. 3. Multi-Tenant Policies and Dynamic Facets</a></li>
+<li><a href="#_4_defaults_precedence_and_security_invariants">3.5.4. 4. Defaults, Precedence, and Security Invariants</a></li>
+<li><a href="#_5_javascript_policy_runtime_support">3.5.5. 5. JavaScript Policy Runtime Support</a></li>
+</ul>
+</li>
+<li><a href="#ontology-edge-metadata-and-variable-resolution">3.6. Graph Edge Metadata, Temporal Validity, and Custom Coordinates Variable Resolution</a>
+<ul class="sectlevel3">
+<li><a href="#_1_custom_coordinates_dynamic_variable_resolution_facet_coord">3.6.1. 1. Custom Coordinates &amp; Dynamic Variable Resolution (<code>${facet.<strong>}</code>, <code>${coord.</strong>}</code>)</a></li>
+<li><a href="#_2_temporal_edge_validity_validfrom_validto_the_asofts_macro">3.6.2. 2. Temporal Edge Validity (<code>validFrom</code> / <code>validTo</code>) &amp; the <code>@asOf(ts)</code> Macro</a></li>
+<li><a href="#_3_security_classification_compartments_securitylabel_compartments">3.6.3. 3. Security Classification &amp; Compartments (<code>securityLabel</code>, <code>compartments</code>)</a></li>
+<li><a href="#_4_ai_probabilistic_edge_governance_confidence_assertionmethod_minconfidenceval">3.6.4. 4. AI &amp; Probabilistic Edge Governance (<code>confidence</code>, <code>assertionMethod</code>, <code>@minConfidence(val)</code>)</a></li>
+<li><a href="#_5_purpose_based_access_control_pbac_consent_tracking_allowedpurposes_consentid">3.6.5. 5. Purpose-Based Access Control (PBAC) &amp; Consent Tracking (<code>allowedPurposes</code>, <code>consentId</code>)</a></li>
+<li><a href="#_6_cryptographic_attestation_separation_of_duties_edgeattestation_mutuallyexclusivewith">3.6.6. 6. Cryptographic Attestation &amp; Separation of Duties (<code>EdgeAttestation</code>, <code>mutuallyExclusiveWith</code>)</a></li>
+<li><a href="#_7_summary_matrix_of_edge_metadata_dimensions_defaults">3.6.7. 7. Summary Matrix of Edge Metadata Dimensions &amp; Defaults</a></li>
 </ul>
 </li>
 </ul>
@@ -581,9 +601,10 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </ul>
 </li>
 <li><a href="#_security_and_multi_tenant_considerations">4.7. Security and multi-tenant considerations</a></li>
-<li><a href="#_developer_workflow_and_dx_checklist">4.8. Developer workflow and DX checklist</a></li>
-<li><a href="#_cookbook_end_to_end_example_with_orders_org">4.9. Cookbook: end-to-end example with Orders + Org</a></li>
-<li><a href="#_migration_notes_for_teams_using_reference">4.10. Migration notes for teams using @Reference</a></li>
+<li><a href="#provisional-admitted-vocabulary-tier">4.8. Provisional vs. admitted vocabulary tier</a></li>
+<li><a href="#_developer_workflow_and_dx_checklist">4.9. Developer workflow and DX checklist</a></li>
+<li><a href="#_cookbook_end_to_end_example_with_orders_org">4.10. Cookbook: end-to-end example with Orders + Org</a></li>
+<li><a href="#_migration_notes_for_teams_using_reference">4.11. Migration notes for teams using @Reference</a></li>
 </ul>
 </li>
 <li><a href="#_primer_first_time_guide_to_core_relationship_semantics">5. Primer: First-time guide to core relationship semantics</a></li>
@@ -1503,17 +1524,20 @@ Provenance is for explanation and maintenance. The runtime edges you query on re
 <p>Quantum provides several ways to leverage ontology relationships in your queries and business logic.</p>
 </div>
 <div class="sect3">
-<h4 id="_biapi_query_language_functions_hasedge_and_hasincomingedge">3.4.1. BIAPI Query Language Functions: hasEdge and hasIncomingEdge</h4>
+<h4 id="_biapi_query_language_functions_hasedge_hasoutgoingedge_and_hasincomingedge">3.4.1. BIAPI Query Language Functions: hasEdge, hasOutgoingEdge, and hasIncomingEdge</h4>
 <div class="paragraph">
-<p>The query language (BIAPIQuery) includes built-in functions to filter entities based on their ontology edges. These are the preferred way to perform ontology-aware queries from REST APIs or permission rules.</p>
+<p>The query language (BIAPIQuery) includes built-in functions to filter entities based on their ontology relationships. These functions support both standard relationship existence checks and qualified property filtering:</p>
 </div>
 <div class="ulist">
 <ul>
 <li>
-<p><strong><code>hasEdge(predicate, dst)</code></strong>: Filters for entities (sources) that have an edge pointing TO a specific destination.</p>
+<p><strong><code>hasEdge(predicate, dst [, { edgeFilter }])</code></strong>: Filters for entities (sources) that have an edge pointing TO a specific destination, optionally satisfying edge-level property constraints.</p>
 </li>
 <li>
-<p><strong><code>hasIncomingEdge(predicate, src)</code></strong>: Filters for entities (targets) that have an edge coming FROM a specific source.</p>
+<p><strong><code>hasOutgoingEdge(predicate, dst [, { edgeFilter }])</code></strong>: Synonym for <code>hasEdge</code>.</p>
+</li>
+<li>
+<p><strong><code>hasIncomingEdge(predicate, src [, { edgeFilter }])</code></strong>: Filters for entities (targets) that have an edge coming FROM a specific source, optionally satisfying edge-level property constraints.</p>
 </li>
 </ul>
 </div>
@@ -1525,31 +1549,570 @@ Provenance is for explanation and maintenance. The runtime edges you query on re
 <pre class="CodeRay highlight"><code># Find orders placed in OrgA
 hasEdge(placedInOrg, &quot;OrgA&quot;)
 
-# Find locations accessible by a specific associate
-hasIncomingEdge(canAccessLocation, &quot;associate-123&quot;)
+# Find orders placed in OrgA with high priority and active status
+hasEdge(&quot;placedInOrg&quot;, &quot;OrgA&quot;, { priority:&quot;HIGH&quot; &amp;&amp; active:true })
 
-# Combine with other filters
-hasEdge(placedInOrg, &quot;OrgA&quot;) &amp;&amp; status:PENDING</code></pre>
+# Find locations accessible by a specific associate with tier 1 or 2 access
+hasIncomingEdge(canAccessLocation, &quot;associate-123&quot;, { tier:^[#1, #2] })
+
+# Combine with root entity filters
+hasEdge(placedInOrg, &quot;OrgA&quot;, { department:&quot;FINANCE&quot; }) &amp;&amp; status:PENDING</code></pre>
 </div>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_programmatic_querying_with_edgedao">3.4.2. Programmatic Querying with EdgeDao</h4>
+<h4 id="_programmatic_querying_with_ontologyedgerepo">3.4.2. Programmatic Querying with OntologyEdgeRepo</h4>
 <div class="paragraph">
-<p>For more complex scenarios in Java code, you can use the <code>EdgeDao</code> directly:</p>
+<p>For programmatic access in Java services, use <code>OntologyEdgeRepo</code> directly:</p>
 </div>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code data-lang="java"><span class="annotation">@Inject</span>
-EdgeDao edgeDao;
+OntologyEdgeRepo edgeRepo;
 
-<span class="comment">// Find all destination IDs for a given source and predicate</span>
-<span class="predefined-type">Set</span>&lt;<span class="predefined-type">String</span>&gt; targetIds = edgeDao.dstIdsBySrc(tenantId, <span class="string"><span class="delimiter">&quot;</span><span class="content">Associate</span><span class="delimiter">&quot;</span></span>, associateId, <span class="string"><span class="delimiter">&quot;</span><span class="content">canAccessLocation</span><span class="delimiter">&quot;</span></span>);
+<span class="comment">// 1. Basic destination lookup (unfiltered)</span>
+<span class="predefined-type">Set</span>&lt;<span class="predefined-type">String</span>&gt; targetIds = edgeRepo.dstIdsBySrc(tenantId, <span class="string"><span class="delimiter">&quot;</span><span class="content">Associate</span><span class="delimiter">&quot;</span></span>, associateId, <span class="string"><span class="delimiter">&quot;</span><span class="content">canAccessLocation</span><span class="delimiter">&quot;</span></span>);
 
-<span class="comment">// Find all source IDs for a given destination and predicate</span>
-<span class="predefined-type">Set</span>&lt;<span class="predefined-type">String</span>&gt; sourceIds = edgeDao.srcIdsByDst(tenantId, <span class="string"><span class="delimiter">&quot;</span><span class="content">canAccessLocation</span><span class="delimiter">&quot;</span></span>, locationId);</code></pre>
+<span class="comment">// 2. Qualified edge filtering with MongoDB property filters (pushed into compound index scan)</span>
+<span class="predefined-type">Set</span>&lt;<span class="predefined-type">String</span>&gt; approvedSources = edgeRepo.srcIdsByDst(
+    tenantId,
+    <span class="string"><span class="delimiter">&quot;</span><span class="content">placedInOrg</span><span class="delimiter">&quot;</span></span>,
+    <span class="string"><span class="delimiter">&quot;</span><span class="content">OrgA</span><span class="delimiter">&quot;</span></span>,
+    Filters.eq(<span class="string"><span class="delimiter">&quot;</span><span class="content">props.priority</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">HIGH</span><span class="delimiter">&quot;</span></span>),
+    Filters.eq(<span class="string"><span class="delimiter">&quot;</span><span class="content">props.active</span><span class="delimiter">&quot;</span></span>, <span class="predefined-constant">true</span>)
+);
+
+<span class="comment">// 3. Upserting edges with dynamic property maps</span>
+<span class="predefined-type">Map</span>&lt;<span class="predefined-type">String</span>, <span class="predefined-type">Object</span>&gt; props = <span class="predefined-type">Map</span>.of(
+    <span class="string"><span class="delimiter">&quot;</span><span class="content">priority</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">HIGH</span><span class="delimiter">&quot;</span></span>,
+    <span class="string"><span class="delimiter">&quot;</span><span class="content">active</span><span class="delimiter">&quot;</span></span>, <span class="predefined-constant">true</span>,
+    <span class="string"><span class="delimiter">&quot;</span><span class="content">effectiveDate</span><span class="delimiter">&quot;</span></span>, Instant.now().toString()
+);
+edgeRepo.upsert(tenantId, <span class="string"><span class="delimiter">&quot;</span><span class="content">Order</span><span class="delimiter">&quot;</span></span>, orderId, <span class="string"><span class="delimiter">&quot;</span><span class="content">placedInOrg</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">Org</span><span class="delimiter">&quot;</span></span>, orgId, props);</code></pre>
 </div>
 </div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="ontology-facet-segmentation">3.5. Dynamic Edge Properties, Edge Qualification, and Facet Segmentation</h3>
+<div class="paragraph">
+<p>As multi-tenant domains evolve, access boundaries often depend on multidimensional runtime facets (such as organization units, geographic regions, partner tiers, and classification levels) rather than static relational foreign keys. Quantum decouples multi-tenant data segmentation semantics from MongoDB physical persistence mechanics using <strong>Dynamic Edge Properties</strong>, <strong>Qualified Edge Traversal</strong>, and the <strong>Store-Free Coordinate SPI</strong>.</p>
+</div>
+<div class="sect3">
+<h4 id="_1_dynamic_edge_properties_compound_indexes">3.5.1. 1. Dynamic Edge Properties &amp; Compound Indexes</h4>
+<div class="paragraph">
+<p>Every <code>OntologyEdge</code> and transport-neutral <code>EdgeRecord</code> includes a flexible <code>props: Map&lt;String, Object&gt;</code> payload:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><strong>Entity Model (<code>OntologyEdge</code>)</strong>: Holds arbitrary key-value metadata characterizing the relationship (e.g. <code>role</code>, <code>validFrom</code>, <code>validTo</code>, <code>serviceLevel</code>, <code>department</code>).</p>
+</li>
+<li>
+<p><strong>Compound Index Scans</strong>: The underlying MongoDB <code>edges</code> collection is backed by compound read-optimizing indexes:</p>
+<div class="ulist">
+<ul>
+<li>
+<p><code>idx_domain_p_dst_props</code>: <code>{"dataDomain": 1, "p": 1, "dst": 1, "props": 1}</code>&#8201;&#8212;&#8201;optimizes <code>hasEdge</code> / <code>srcIdsByDst</code> lookups.</p>
+</li>
+<li>
+<p><code>idx_domain_src_p_props</code>: <code>{"dataDomain": 1, "src": 1, "p": 1, "props": 1}</code>&#8201;&#8212;&#8201;optimizes <code>hasIncomingEdge</code> / <code>dstIdsBySrc</code> lookups.</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p><strong>Dynamic Property Scoping</strong>: When querying edges via <code>{ edgeFilter }</code>, all non-root field references are automatically prefixed with <code>props.</code> so queries can naturally write <code>{ role:"ADMIN" }</code> instead of <code>{ props.role:"ADMIN" }</code>.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_2_store_free_coordinate_spi_datadomainresolver">3.5.2. 2. Store-Free Coordinate SPI (<code>DataDomainResolver</code>)</h4>
+<div class="paragraph">
+<p>In multi-tenant SaaS environments, different tenants may require different coordinate resolution schemes (e.g. resolving tenant, account, department, or geographic facet coordinates). Quantum defines a storage-agnostic SPI in <code>quantum-models</code>:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="keyword">package</span> <span class="namespace">com.e2eq.framework.model.security</span>;
+
+<span class="directive">public</span> <span class="type">interface</span> <span class="class">DataDomainResolver</span> {
+    <span class="comment">// Resolve coordinates when inserting or updating entities</span>
+    DataDomainResolution resolveForCreate(<span class="predefined-type">Class</span>&lt;?&gt; modelClass, SourceAttributes source);
+
+    <span class="comment">// Resolve query constraints for root list/find operations</span>
+    DataDomainResolution resolveForQuery(<span class="predefined-type">Class</span>&lt;?&gt; modelClass, <span class="predefined-type">String</span> action, PrincipalContext context);
+
+    <span class="comment">// Resolve query constraints when hopping across relationships in aggregation pipelines</span>
+    DataDomainResolution resolveForHop(<span class="predefined-type">Class</span>&lt;?&gt; targetClass, <span class="predefined-type">String</span> viaPath, PrincipalContext context);
+}</code></pre>
+</div>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><strong><code>SourceAttributes</code></strong>: A store-free, read-only wrapper around model fields, decoupling coordinate calculation from Morphia, Hibernate, or MongoDB specifics.</p>
+</li>
+<li>
+<p><strong><code>DataDomainResolution</code></strong>: A sealed tagged union (<code>DataDomainResolution.Resolved</code> vs <code>DataDomainResolution.Unresolvable</code>). If coordinate resolution fails or rules deny access, <code>Unresolvable</code> causes the query or mutation to <strong>fail closed</strong>.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_3_multi_tenant_policies_and_dynamic_facets">3.5.3. 3. Multi-Tenant Policies and Dynamic Facets</h4>
+<div class="paragraph">
+<p>A single Quantum server instance supports heterogeneous policies across different tenants:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><strong>Facet Bindings (<code>DataDomainComponentBinding</code>)</strong>: Carries open, user-definable facet bindings (<code>Map&lt;String, Binding&gt; facets</code>) mapping facet names to model field paths, constant values, or contextual variables.</p>
+</li>
+<li>
+<p><strong>Dynamic Policy Entries (<code>DataDomainPolicyEntry</code>)</strong>: Encapsulates:</p>
+<div class="ulist">
+<ul>
+<li>
+<p><code>filter</code>: A BIAPI query expression restricting rows (e.g. <code>status:active &amp;&amp; region:${region}</code>).</p>
+</li>
+<li>
+<p><code>facetFilters</code>: Structured constraints keyed by facet name (e.g. <code>department &#8594; "FINANCE"</code>).</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p><strong>Tenant Independence</strong>:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>In dedicated realms, each tenant maintains its own <code>systemDataDomainPolicies</code> collection.</p>
+</li>
+<li>
+<p>In shared/pooled realms, policies are isolated by <code>tenantId</code>.</p>
+</li>
+<li>
+<p>Different tenants can enforce completely different segmentation rules on the same entity classes.</p>
+</li>
+</ul>
+</div>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_4_defaults_precedence_and_security_invariants">3.5.4. 4. Defaults, Precedence, and Security Invariants</h4>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 16.6666%;">
+<col style="width: 33.3333%;">
+<col style="width: 50.0001%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Component</th>
+<th class="tableblock halign-left valign-top">Default Behavior</th>
+<th class="tableblock halign-left valign-top">Security Invariant</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Edge Property Constraints</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Omitted <code>{ edgeFilter }</code> defaults to an unqualified edge existence check.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">An edge without a <code>props</code> map matches unqualified queries, but fails closed on property queries.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Coordinate Resolution Precedence</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">1. Explicit tenant policy for <code>(modelClass, action)</code>.<br>
+2. System-wide / Global policy provider.<br>
+3. Fallback to caller&#8217;s <code>PrincipalContext</code> credentials (<code>tenantId</code>, <code>ownerId</code>, <code>orgRefName</code>).</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">If none of the above resolve valid coordinates, <code>DataDomainResolver</code> returns <code>Unresolvable</code>.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Missing Security Context</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Execution fails closed with HTTP 500 (<code>SecurityContextMissing</code>).</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">No query or mutation runs without an authenticated principal or explicit administrative rule bypass.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Rule Context Injection</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>DataDomainPolicy</code> entries automatically bind variables into <code>RuleContext</code> (<code>${pTenantId}</code>, <code>${orgRefName}</code>, <code>${ownerId}</code>, <code>${policyFilter}</code>, and typed facet variables).</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Downstream repository and query gateway queries automatically inherit these variables for filter evaluation.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect3">
+<h4 id="_5_javascript_policy_runtime_support">3.5.5. 5. JavaScript Policy Runtime Support</h4>
+<div class="paragraph">
+<p>Policy scripts executed by <code>RuleScriptExecutor</code> can test qualified edges directly in JavaScript pre- and post-conditions:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="javascript"><span class="comment">// 1. Match edge with exact property values</span>
+<span class="keyword">var</span> hasPrimaryRole = hasEdge(<span class="string"><span class="delimiter">&quot;</span><span class="content">memberOf</span><span class="delimiter">&quot;</span></span>, principal.orgRefName, { <span class="key">role</span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">PRIMARY</span><span class="delimiter">&quot;</span></span> });
+
+<span class="comment">// 2. Match edge using a JavaScript predicate function</span>
+<span class="keyword">var</span> isHighTier = hasEdge(<span class="string"><span class="delimiter">&quot;</span><span class="content">assignedToTeam</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">SUPPORT</span><span class="delimiter">&quot;</span></span>, <span class="keyword">function</span>(props) {
+    <span class="keyword">return</span> props &amp;&amp; props.tier &gt;= <span class="integer">2</span> &amp;&amp; props.active === <span class="predefined-constant">true</span>;
+});</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The ontology TBox vocabulary validator (<code>RuleVocabularyValidator</code>) validates 3-argument <code>hasEdge</code> statements at deployment/registration time against the admitted properties defined in your ontology schema.</p>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="ontology-edge-metadata-and-variable-resolution">3.6. Graph Edge Metadata, Temporal Validity, and Custom Coordinates Variable Resolution</h3>
+<div class="paragraph">
+<p>While open property maps (<code>props</code>) allow storing unstructured key-value attributes on graph relationships, complex enterprise deployments require <strong>first-class governance metadata</strong> directly on ontology edges (<code>OntologyEdge</code> and <code>EdgeRecord</code>).</p>
+</div>
+<div class="paragraph">
+<p>To address regulatory compliance, zero-trust security, AI trust boundaries, and dynamic multi-tenant segmentation, Quantum provides structured edge metadata, query language macros (<code>@asOf</code>, <code>@minConfidence</code>), and dotted custom coordinate resolution (<code>${facet.<strong>}</code>, <code>${coord.</strong>}</code>).</p>
+</div>
+<div class="sect3">
+<h4 id="_1_custom_coordinates_dynamic_variable_resolution_facet_coord">3.6.1. 1. Custom Coordinates &amp; Dynamic Variable Resolution (<code>${facet.<strong>}</code>, <code>${coord.</strong>}</code>)</h4>
+<div class="sect4">
+<h5 id="_business_scenario_multi_tenant_retail_franchise_partner_distribution_network">Business Scenario: Multi-Tenant Retail Franchise &amp; Partner Distribution Network</h5>
+<div class="paragraph">
+<p>A national retail holding company operates diverse franchised store brands (e.g. Supermarkets, Convenience, and Pharmacies) sharing a centralized product catalog, procurement platform, and order routing pipeline.</p>
+</div>
+<div class="paragraph">
+<p>Franchise operators, regional distribution managers, and store associates access the same central API endpoints. However, access is governed not by static role names, but by multidimensional business coordinates:
+- The store&#8217;s assigned <strong>tier</strong> (e.g. <code>FLAGSHIP</code>, <code>REGIONAL</code>, <code>EXPRESS</code>),
+- The manager&#8217;s <strong>geographic zone</strong> (e.g. <code>US_NORTHEAST</code>, <code>US_MIDWEST</code>), and
+- The partner&#8217;s <strong>distribution channel</strong> (e.g. <code>DIRECT</code>, <code>WHOLESALE</code>).</p>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_how_the_feature_supports_the_business_solution">How the Feature Supports the Business Solution</h5>
+<div class="paragraph">
+<p>Without dynamic variable resolution, administrators must either maintain thousands of redundant, hardcoded security rules per franchise, or require application developers to write brittle custom filtering logic into service endpoints.</p>
+</div>
+<div class="paragraph">
+<p>Quantum solves this by supporting <strong>dotted variable identifiers</strong> (<code>${facet.tier}</code>, <code>${coord.salesZone}</code>) directly within ANTLR grammar queries and policy rules, resolved dynamically by the store-free <code>DataDomainResolver</code> SPI:
+1. <strong>Dotted Identifiers in ANTLR</strong>: The query lexer admits <code>${facet.name}</code>, <code>${coord.name}</code>, <code>${principal.attr}</code>, and <code>${dd.field}</code> as first-class variable tokens.
+2. <strong>Namespace Precedence</strong>: During variable bundle compilation (<code>MorphiaUtils.buildVariableBundle</code>), namespaces resolve in a deterministic hierarchy:
+   * <code>${facet.&lt;key&gt;}</code> &amp; <code>${coord.&lt;key&gt;}</code>: Evaluated from tenant <code>DataDomainPolicyEntry.facetFilters</code> or contextual coordinates.
+   * <code>${principal.&lt;attr&gt;}</code>: Extracted from authenticated principal claims (<code>userId</code>, <code>defaultRealm</code>, <code>tenantId</code>, custom attributes).
+   * <code>${dd.&lt;attr&gt;}</code>: Extracted from target <code>DataDomain</code> coordinates (<code>tenantId</code>, <code>orgRefName</code>, <code>accountNum</code>, <code>dataSegment</code>, <code>ownerId</code>).
+3. <strong>Bracketless Single-Variable <code>IN</code> Evaluation (<code>field:^${var}</code>)</strong>: When a variable evaluates to a Java <code>Collection</code> (e.g. <code>allowedTiers = ["FLAGSHIP", "REGIONAL"]</code>), the query listener automatically unpacks the collection into a native MongoDB <code>$in</code> operator without requiring bracket syntax <code>[${var}]</code>.
+4. <strong>Fail-Closed Isolation</strong>: If an unauthenticated caller or unresolvable coordinate is encountered, variable evaluation fails closed, preventing cross-franchise data leakage.</p>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_policy_query_example">Policy &amp; Query Example</h5>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="yaml"><span class="comment"># Declarative Security Rule enforcing custom franchise tiers and geographic zone</span>
+<span class="key">id</span>: <span class="string"><span class="content">5012</span></span>
+<span class="key">name</span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Franchise Regional Inventory Access</span><span class="delimiter">&quot;</span></span>
+<span class="key">securityURI</span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">sec://inventory/read</span><span class="delimiter">&quot;</span></span>
+<span class="key">effect</span>: <span class="string"><span class="content">ALLOW</span></span>
+<span class="key">andFilterString</span>: <span class="string"><span class="delimiter">&gt;</span><span class="content">
+  hasEdge(&quot;allocatedToStore&quot;, &quot;${dcOrgRefName}&quot;, { active: true }) &amp;&amp;
+  tier:^${facet.allowedTiers} &amp;&amp;
+  zone:${coord.salesZone} &amp;&amp;
+  status:AVAILABLE</span></span></code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>When an authenticated manager with <code>allowedTiers = ["FLAGSHIP", "REGIONAL"]</code> and <code>salesZone = "US_NORTHEAST"</code> queries inventory, the query automatically compiles to:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">tier</span><span class="delimiter">&quot;</span></span>: { <span class="key"><span class="delimiter">&quot;</span><span class="content">$in</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">FLAGSHIP</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">REGIONAL</span><span class="delimiter">&quot;</span></span>] },
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">zone</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">US_NORTHEAST</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">status</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">AVAILABLE</span><span class="delimiter">&quot;</span></span>
+}</code></pre>
+</div>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_2_temporal_edge_validity_validfrom_validto_the_asofts_macro">3.6.2. 2. Temporal Edge Validity (<code>validFrom</code> / <code>validTo</code>) &amp; the <code>@asOf(ts)</code> Macro</h4>
+<div class="sect4">
+<h5 id="_business_scenario_hospital_emergency_staffing_rotations_point_in_time_audits">Business Scenario: Hospital Emergency Staffing Rotations &amp; Point-in-Time Audits</h5>
+<div class="paragraph">
+<p>In a regional hospital network, medical doctors and nursing staff rotate through shifts and departments on a temporary basis (e.g., Dr. Smith is assigned as "Acting Chief of Emergency Medicine" strictly from Monday 08:00 to Friday 17:00).</p>
+</div>
+<div class="paragraph">
+<p>Furthermore, under HIPAA and Joint Commission regulatory standards, the hospital must undergo historical point-in-time compliance audits: <strong>"Did Dr. Smith have authorization to access Patient X&#8217;s intensive care psychiatric records on October 14th at 14:30?"</strong></p>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_how_the_feature_supports_the_business_solution_2">How the Feature Supports the Business Solution</h5>
+<div class="paragraph">
+<p>Traditional authorization systems attempt to handle temporary access using asynchronous batch cron jobs that delete expired relationship records. This introduces severe vulnerabilities:
+- <strong>Polling Latency</strong>: The user retains unauthorized access between actual expiration and the next cron run.
+- <strong>Audit Destruction</strong>: Deleting expired edges permanently destroys historical lineage, making historical point-in-time compliance audits impossible.</p>
+</div>
+<div class="paragraph">
+<p>Quantum introduces first-class temporal validity directly onto <code>OntologyEdge</code> and <code>EdgeRecord</code>:
+- <strong><code>validFrom: Date</code></strong>: Inclusive timestamp when the relationship becomes active (or <code>null</code> for beginning of time).
+- <strong><code>validTo: Date</code></strong>: Exclusive timestamp when the relationship expires (or <code>null</code> for indefinite validity).
+- <strong>Compound Temporal Index</strong>: Backed by MongoDB index <code>idx_domain_temporal</code> (<code>{"dataDomain.tenantId": 1, "validFrom": 1, "validTo": 1}</code>).
+- <strong>The <code>@asOf(timestamp)</code> Macro</strong>: The query normalizer transforms <code>@asOf(ts)</code> into an optimized range comparison:
+  <code>validFrom:&#8656;ts || validFrom:null) &amp;&amp; (validTo:&gt;=ts || validTo:null</code> (or <code>edges.</code> prefixed in traversal contexts).</p>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_query_code_example">Query &amp; Code Example</h5>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code># 1. Real-time access policy: Edge must be active right now
+hasEdge(&quot;actingChiefOf&quot;, &quot;DEPT-EMERGENCY&quot;, { @asOf(2026-09-20T22:00:00Z) &amp;&amp; status:&quot;ACTIVE&quot; })
+
+# 2. Historical audit query: Was the physician assigned to this patient on October 14th?
+@asOf(2026-10-14T14:30:00Z) &amp;&amp; hasEdge(&quot;assignedPhysician&quot;, &quot;PATIENT-8891&quot;)</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>In Java domain code:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java">EdgeRecord edge = <span class="keyword">new</span> EdgeRecord();
+edge.setSrc(<span class="string"><span class="delimiter">&quot;</span><span class="content">physician_smith</span><span class="delimiter">&quot;</span></span>);
+edge.setP(<span class="string"><span class="delimiter">&quot;</span><span class="content">actingChiefOf</span><span class="delimiter">&quot;</span></span>);
+edge.setDst(<span class="string"><span class="delimiter">&quot;</span><span class="content">DEPT-EMERGENCY</span><span class="delimiter">&quot;</span></span>);
+edge.setValidFrom(<span class="predefined-type">Date</span>.from(Instant.parse(<span class="string"><span class="delimiter">&quot;</span><span class="content">2026-09-21T08:00:00Z</span><span class="delimiter">&quot;</span></span>)));
+edge.setValidTo(<span class="predefined-type">Date</span>.from(Instant.parse(<span class="string"><span class="delimiter">&quot;</span><span class="content">2026-09-25T17:00:00Z</span><span class="delimiter">&quot;</span></span>)));
+edgeRepo.bulkUpsertEdgeRecords(realmId, <span class="predefined-type">List</span>.of(edge));</code></pre>
+</div>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_3_security_classification_compartments_securitylabel_compartments">3.6.3. 3. Security Classification &amp; Compartments (<code>securityLabel</code>, <code>compartments</code>)</h4>
+<div class="sect4">
+<h5 id="_business_scenario_aerospace_defense_contracting_sensitive_mergers_acquisitions">Business Scenario: Aerospace Defense Contracting &amp; Sensitive Mergers &amp; Acquisitions</h5>
+<div class="paragraph">
+<p>An aerospace defense conglomerate collaborates with defense ministries (DoD, NATO) and commercial aerospace manufacturers. In classified defense programs, <strong>the existence of a relationship is itself classified</strong>. For example, the association between an engineering contractor and <code>PROJECT-TITAN</code> has a security classification of <code>SECRET</code> with an <code>ITAR</code> (International Traffic in Arms Regulations) handling compartment.</p>
+</div>
+<div class="paragraph">
+<p>If an uncleared sub-contractor or foreign national queries their project dashboard, the query must not reveal that <code>PROJECT-TITAN</code> is linked to their team, nor leak information via query timing or error messages.</p>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_how_the_feature_supports_the_business_solution_3">How the Feature Supports the Business Solution</h5>
+<div class="paragraph">
+<p>Quantum implements Mandatory Access Control (MAC) directly in the graph datastore layer:
+- <strong><code>securityLabel: String</code></strong>: Hierarchical classification level (e.g. <code>UNCLASSIFIED</code>, <code>CONFIDENTIAL</code>, <code>SECRET</code>, <code>TOP_SECRET</code>).
+- <strong><code>compartments: List&lt;String&gt;</code></strong>: Need-to-know compartment restriction codes (e.g. <code>ITAR</code>, <code>NOFORN</code>, <code>FINANCE</code>, <code>LEGAL</code>).
+- <strong>Index Scan Pushdown</strong>: Backed by compound index <code>idx_domain_security</code> (<code>{"dataDomain.tenantId": 1, "securityLabel": 1}</code>). Security constraints are enforced inside the database index scan:
+  <code>hasEdge("assignedToProject", "PROJECT-TITAN", { securityLabel: "SECRET" &amp;&amp; compartments:^ ["ITAR"] })</code>
+- <strong>Zero Information Leakage</strong>: If the caller&#8217;s <code>PrincipalContext</code> lacks the required clearance or compartment entitlements, the edge is withheld at the database level. The result is indistinguishable from the relationship not existing.</p>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_policy_example">Policy Example</h5>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="yaml"><span class="key">id</span>: <span class="string"><span class="content">6100</span></span>
+<span class="key">name</span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Defense Project Access Guard</span><span class="delimiter">&quot;</span></span>
+<span class="key">securityURI</span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">sec://projects/view</span><span class="delimiter">&quot;</span></span>
+<span class="key">effect</span>: <span class="string"><span class="content">ALLOW</span></span>
+<span class="key">andFilterString</span>: <span class="string"><span class="delimiter">&gt;</span><span class="content">
+  hasEdge(&quot;assignedToProject&quot;, &quot;PROJECT-TITAN&quot;, {
+    securityLabel: &quot;SECRET&quot; &amp;&amp;
+    compartments:^ [&quot;ITAR&quot;]
+  })</span></span></code></pre>
+</div>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_4_ai_probabilistic_edge_governance_confidence_assertionmethod_minconfidenceval">3.6.4. 4. AI &amp; Probabilistic Edge Governance (<code>confidence</code>, <code>assertionMethod</code>, <code>@minConfidence(val)</code>)</h4>
+<div class="sect4">
+<h5 id="_business_scenario_automated_anti_money_laundering_aml_ai_entity_deduplication">Business Scenario: Automated Anti-Money Laundering (AML) &amp; AI Entity Deduplication</h5>
+<div class="paragraph">
+<p>A global investment bank ingests corporate registries, transaction histories, and sanctions lists to uncover financial crime. An AI pipeline using Large Language Models and vector embeddings continuously generates graph relationships (e.g., <strong>"Vendor Corp is 85% likely to be an alias of Sanctioned Oligarch Shell Co"</strong>).</p>
+</div>
+<div class="paragraph">
+<p>While fraud investigators require visibility into probabilistic links, automated transaction-blocking systems or multi-million-dollar wire approvals cannot legally act on an 85% probabilistic guess without human certification.</p>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_how_the_feature_supports_the_business_solution_4">How the Feature Supports the Business Solution</h5>
+<div class="paragraph">
+<p>Quantum formalizes confidence scoring and assertion provenance into graph relationships:
+- <strong><code>confidence: Double</code></strong>: Normalized certainty score from <code>0.0</code> (unverified conjecture) to <code>1.0</code> (verified ground truth).
+- <strong><code>assertionMethod: String</code></strong>: Provenance technique (<code>MANUAL</code>, <code>RULE_DERIVED</code>, <code>LLM_INFERENCE</code>, <code>VECTOR_SIMILARITY</code>).
+- <strong><code>@minConfidence(val)</code> Macro</strong>: Shorthand macro expanding directly to <code>confidence:&gt;=val</code> (or <code>edges.confidence:&gt;=val</code>).
+- <strong>Compound Index Scans</strong>: Backed by MongoDB index <code>idx_domain_confidence</code> (<code>{"dataDomain.tenantId": 1, "confidence": 1}</code>).
+- <strong>Risk-Tiered Policy Governance</strong>: High-risk financial operations enforce <code>confidence: 1.0 &amp;&amp; assertionMethod: "MANUAL"</code>, while exploratory investigative views accept <code>@minConfidence(0.70)</code>.</p>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_query_example">Query Example</h5>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code># 1. Mission-Critical Payment Transfer: Strictly require human-verified relationship
+hasEdge(&quot;beneficialOwnerOf&quot;, &quot;ACC-9921&quot;, {
+  confidence: 1.0 &amp;&amp;
+  assertionMethod: &quot;MANUAL&quot;
+})
+
+# 2. Financial Crime Intelligence Dashboard: Permit AI-inferred relationships with &gt;= 80% confidence
+hasEdge(&quot;beneficialOwnerOf&quot;, &quot;ACC-9921&quot;, {
+  @minConfidence(0.80)
+})</code></pre>
+</div>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_5_purpose_based_access_control_pbac_consent_tracking_allowedpurposes_consentid">3.6.5. 5. Purpose-Based Access Control (PBAC) &amp; Consent Tracking (<code>allowedPurposes</code>, <code>consentId</code>)</h4>
+<div class="sect4">
+<h5 id="_business_scenario_healthcare_clinical_trials_gdpr_data_privacy_compliance">Business Scenario: Healthcare Clinical Trials &amp; GDPR Data Privacy Compliance</h5>
+<div class="paragraph">
+<p>Under European General Data Protection Regulation (GDPR Articles 6 and 9) and HIPAA, patient healthcare data cannot be accessed for arbitrary purposes. Each access request must carry a legitimate, declared business purpose (e.g. <code>TREATMENT</code>, <code>BILLING</code>, <code>CLINICAL_RESEARCH</code>, <code>DIRECT_MARKETING</code>).</p>
+</div>
+<div class="paragraph">
+<p>A patient signs a consent agreement allowing their clinical records to be linked to attending physicians for <code>TREATMENT</code> and <code>BILLING</code>, but explicitly withholding consent for <code>CLINICAL_RESEARCH</code>. The hospital&#8217;s centralized data platform must enforce this distinction across clinical trial systems and hospital billing software without duplicating data into isolated silos.</p>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_how_the_feature_supports_the_business_solution_5">How the Feature Supports the Business Solution</h5>
+<div class="paragraph">
+<p>Quantum integrates Purpose-Based Access Control (PBAC) into edge qualification:
+- <strong><code>allowedPurposes: List&lt;String&gt;</code></strong>: Whitelist of declared business purposes for which the relationship may be traversed.
+- <strong><code>consentId: String</code></strong>: Cryptographic or regulatory consent contract identifier.
+- <strong>Dynamic Purpose Evaluation</strong>: The calling principal&#8217;s active request purpose (<code>${principal.requestPurpose}</code>) is matched against the edge&#8217;s <code>allowedPurposes</code> at the datastore query layer:
+  <code>hasEdge("caresForPatient", "${patientId}", { allowedPurposes:^${principal.requestPurpose} })</code>
+- If an attending physician accesses the patient with <code>requestPurpose = "TREATMENT"</code>, the query matches and permits record access. If a pharmaceutical research team queries the same graph with <code>requestPurpose = "CLINICAL_RESEARCH"</code>, the relationship filter rejects the query at the index level.</p>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_policy_example_2">Policy Example</h5>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="yaml"><span class="key">id</span>: <span class="string"><span class="content">7200</span></span>
+<span class="key">name</span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Patient Chart Privacy Policy</span><span class="delimiter">&quot;</span></span>
+<span class="key">securityURI</span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">sec://medical-records/read</span><span class="delimiter">&quot;</span></span>
+<span class="key">effect</span>: <span class="string"><span class="content">ALLOW</span></span>
+<span class="key">andFilterString</span>: <span class="string"><span class="delimiter">&gt;</span><span class="content">
+  hasEdge(&quot;attendingPhysicianOf&quot;, &quot;${patientId}&quot;, {
+    allowedPurposes:^${principal.requestPurpose} &amp;&amp;
+    consentId:~
+  })</span></span></code></pre>
+</div>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_6_cryptographic_attestation_separation_of_duties_edgeattestation_mutuallyexclusivewith">3.6.6. 6. Cryptographic Attestation &amp; Separation of Duties (<code>EdgeAttestation</code>, <code>mutuallyExclusiveWith</code>)</h4>
+<div class="sect4">
+<h5 id="_business_scenario_b2b_cross_tenant_supply_chain_trust_sox_financial_controls">Business Scenario: B2B Cross-Tenant Supply-Chain Trust &amp; SOX Financial Controls</h5>
+<div class="paragraph">
+<p>In an international aerospace manufacturing network, Tier-1 aerospace builders outsource component manufacturing to external suppliers across different enterprise tenants.
+1. <strong>Supply-Chain Integrity</strong>: Supplier A&#8217;s ISO-9001 quality certification edge must be signed by an authorized accredited auditor. The aerospace manufacturer&#8217;s systems must verify this cryptographic signature without needing administrative access to the auditor&#8217;s database.
+2. <strong>Separation of Duties (SoD)</strong>: Under Sarbanes-Oxley (SOX) Section 404, internal financial controls require strict Separation of Duties: an employee who creates a purchase order cannot be the approver of that same purchase order.</p>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_how_the_feature_supports_the_business_solution_6">How the Feature Supports the Business Solution</h5>
+<div class="paragraph">
+<p>Quantum provides cryptographic verification and graph conflict constraints:
+- <strong><code>EdgeAttestation</code></strong>: A tamper-evident cryptographic signature container:
+  * <code>keyId</code>: Identity of the signing public key or certificate thumbprint.
+  * <code>signature</code>: Digital signature (Ed25519 / ECDSA) computed over the canonical edge coordinates <code>(tenantId + src + p + dst)</code>.
+  * <code>algorithm</code>: Cryptographic algorithm used (e.g. <code>"Ed25519"</code>, <code>"ES256"</code>).
+  * <code>timestamp</code>: Precise signature issuance timestamp.
+- <strong><code>mutuallyExclusiveWith: List&lt;String&gt;</code></strong>: Declares incompatible relationship predicates. A subject holding an edge to an entity cannot simultaneously hold any edge listed in <code>mutuallyExclusiveWith</code> to that same entity.</p>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_java_domain_attestation_example">Java Domain &amp; Attestation Example</h5>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="comment">// 1. Creating a cryptographically signed supplier certification edge</span>
+EdgeAttestation attestation = <span class="keyword">new</span> EdgeAttestation(
+    <span class="string"><span class="delimiter">&quot;</span><span class="content">did:key:z6MkuTLjPt...#key-1</span><span class="delimiter">&quot;</span></span>,
+    <span class="string"><span class="delimiter">&quot;</span><span class="content">f83b2...signature_bytes...</span><span class="delimiter">&quot;</span></span>,
+    <span class="string"><span class="delimiter">&quot;</span><span class="content">Ed25519</span><span class="delimiter">&quot;</span></span>,
+    <span class="keyword">new</span> <span class="predefined-type">Date</span>()
+);
+
+EdgeRecord edge = <span class="keyword">new</span> EdgeRecord();
+edge.setSrc(<span class="string"><span class="delimiter">&quot;</span><span class="content">supplier_acme_corp</span><span class="delimiter">&quot;</span></span>);
+edge.setP(<span class="string"><span class="delimiter">&quot;</span><span class="content">certifiedQualitySupplier</span><span class="delimiter">&quot;</span></span>);
+edge.setDst(<span class="string"><span class="delimiter">&quot;</span><span class="content">ISO-9001-STANDARDS</span><span class="delimiter">&quot;</span></span>);
+edge.setAttestation(attestation);
+edge.setMutuallyExclusiveWith(<span class="predefined-type">List</span>.of(<span class="string"><span class="delimiter">&quot;</span><span class="content">blacklistedSupplier</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">suspendedSupplier</span><span class="delimiter">&quot;</span></span>));
+
+edgeRepo.bulkUpsertEdgeRecords(<span class="string"><span class="delimiter">&quot;</span><span class="content">aerospace-realm</span><span class="delimiter">&quot;</span></span>, <span class="predefined-type">List</span>.of(edge));</code></pre>
+</div>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_7_summary_matrix_of_edge_metadata_dimensions_defaults">3.6.7. 7. Summary Matrix of Edge Metadata Dimensions &amp; Defaults</h4>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 14.2857%;">
+<col style="width: 14.2857%;">
+<col style="width: 14.2857%;">
+<col style="width: 28.5714%;">
+<col style="width: 28.5715%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Dimension</th>
+<th class="tableblock halign-left valign-top">Field Name</th>
+<th class="tableblock halign-left valign-top">Data Type</th>
+<th class="tableblock halign-left valign-top">Default Behavior</th>
+<th class="tableblock halign-left valign-top">Supported Index / Query Optimization</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Temporal Validity</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>validFrom</code>, <code>validTo</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>Date</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>null</code> indicates open-ended validity (from the beginning of time / indefinitely).</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>idx_domain_temporal</code> + <code>@asOf(ts)</code> query macro.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Classification &amp; Compartments</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>securityLabel</code>, <code>compartments</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>String</code>, <code>List&lt;String&gt;</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>null</code> indicates standard unclassified data without handling restrictions.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>idx_domain_security</code> + list membership <code>:^</code>.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Certainty &amp; Provenance</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>confidence</code>, <code>assertionMethod</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>Double</code>, <code>String</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>null</code> defaults to untracked confidence (<code>1.0</code> ground truth implied).</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>idx_domain_confidence</code> + <code>@minConfidence(val)</code> query macro.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Purpose &amp; Consent (PBAC)</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>allowedPurposes</code>, <code>consentId</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>List&lt;String&gt;</code>, <code>String</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>null</code> indicates general operational data; queries specifying purpose filter fail closed if omitted.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Compound index scan with list membership <code>:^</code>.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Cryptographic Attestation</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>attestation</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>EdgeAttestation</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>null</code> indicates unsigned internal edge.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">BSON embedded document persistence with tamper verification.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Separation of Duties</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>mutuallyExclusiveWith</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>List&lt;String&gt;</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>null</code> indicates no conflicting predicate constraints.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Schema integrity validation during reasoner materialization.</p></td>
+</tr>
+</tbody>
+</table>
 </div>
 </div>
 </div>
@@ -2444,7 +3007,90 @@ ontology.auto-materialize=true</code></pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_developer_workflow_and_dx_checklist">4.8. Developer workflow and DX checklist</h3>
+<h3 id="provisional-admitted-vocabulary-tier">4.8. Provisional vs. admitted vocabulary tier</h3>
+<div class="paragraph">
+<p>Declaring a predicate in the ontology (the TBox) does not by itself authorize it for use
+in security rules. There are two tiers:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><strong>Provisional</strong> — a predicate declared in the active TBox&#8217;s <code>properties</code>. It is usable for
+facts and materialized edges, but a security rule that references it (for example
+<code>hasEdge("placedInOrg", &#8230;&#8203;)</code>) is rejected.</p>
+</li>
+<li>
+<p><strong>Admitted</strong> — a predicate that has been explicitly admitted for policy use. Only admitted
+predicates may be referenced by security rules.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>The realm-governance set lives on <code>TenantOntologyTBox.admittedPredicates</code>
+(<code>quantum-ontology-mongo</code>) and is three-valued:</p>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top"><code>admittedPredicates</code></th>
+<th class="tableblock halign-left valign-top">Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>null</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Legacy realm: <strong>all declared predicates are admitted</strong>. This is the back-compatible default — realms that predate the tier are unaffected.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">empty set</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Governed realm that admits <strong>no</strong> predicates for rule use; every declared predicate is provisional.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">populated set</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Governed realm: <strong>exactly</strong> these predicates may be referenced by rules; everything else declared is provisional.</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p>Enforcement happens at rule-registration time. When <code>RuleContext</code> adds a rule it fires a
+<code>RuleVocabularyCheck</code>; <code>PolicyVocabularyGuard</code> (<code>quantum-ontology-policy-bridge</code>) observes
+it and runs <code>RuleVocabularyValidator</code> over the predicate literals the rule references.
+A reference to an undeclared predicate (<code>ABSENT</code>) or a declared-but-not-admitted predicate
+(<code>PROVISIONAL</code>) fails rule registration, naming the rule and the offending predicate.</p>
+</div>
+<div class="paragraph">
+<p>This is fail-closed by design. The disposition is read through the three-state
+<code>AdmittedVocabularyResult</code> (<code>LEGACY</code> / <code>GOVERNED</code> / <code>UNAVAILABLE</code>); if the admitted-set
+read fails (for example a transient Mongo outage) the result is <code>UNAVAILABLE</code> and the
+guard refuses to downgrade a governed realm to "all admitted" — rule registration that
+references any predicate is rejected rather than silently re-opening the vocabulary.</p>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+Admitting a predicate is an admin, audited, human-in-the-loop action. Promotion and
+demotion are performed through the enterprise ontology-governance control plane
+(<code>POST /v1/ontology/{realm}/vocabulary/{predicate}:promote</code> and <code>...:demote</code>), which also
+owns TBox admission. The first promote/demote on a legacy realm grandfathers the
+currently-declared predicates so no existing rule is silently de-authorized. See the
+Quantum Enterprise book&#8217;s <strong>Ontology governance control plane</strong> chapter for the admission
+and vocabulary endpoints, the canonical TBox hash version token, and the control-plane /
+data-plane split.
+</td>
+</tr>
+</table>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_developer_workflow_and_dx_checklist">4.9. Developer workflow and DX checklist</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -2463,7 +3109,7 @@ ontology.auto-materialize=true</code></pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_cookbook_end_to_end_example_with_orders_org">4.9. Cookbook: end-to-end example with Orders + Org</h3>
+<h3 id="_cookbook_end_to_end_example_with_orders_org">4.10. Cookbook: end-to-end example with Orders + Org</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -2481,7 +3127,7 @@ ontology.auto-materialize=true</code></pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_migration_notes_for_teams_using_reference">4.10. Migration notes for teams using @Reference</h3>
+<h3 id="_migration_notes_for_teams_using_reference">4.11. Migration notes for teams using @Reference</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -3596,7 +4242,7 @@ Keep overlays additive. If you need to override flags (e.g., mark an existing pr
 <h2 id="ontology-rest-api">8. Exploring the ontology via REST and JointJS</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>This section shows how to inspect your ontology (TBox) and your instance relationships (ABox) through a small, read‑only REST API and how to render the results in a browser using JointJS. These endpoints are implemented in the quantum-ontology-mongo module and are intended for diagnostics, admin tooling, and lightweight visualization.</p>
+<p>This section shows how to inspect your ontology (TBox) and your instance relationships (ABox) through a small, read‑only REST API and how to render the results in a browser using JointJS. These endpoints are implemented in the server-only quantum-ontology-rest module and are intended for diagnostics, admin tooling, and lightweight visualization. The quantum-ontology-mongo module contains the persistence and runtime services without exposing endpoints.</p>
 </div>
 <div class="admonitionblock tip">
 <table>
@@ -3605,7 +4251,7 @@ Keep overlays additive. If you need to override flags (e.g., mark an existing pr
 <i class="fa icon-tip" title="Tip"></i>
 </td>
 <td class="content">
-For a complete, copy‑paste friendly reference of every parameter and more examples, see the module guide at quantum-ontology-mongo/README.md. The summary below is intentionally concise to keep this document flowing without duplication.
+For a complete, copy‑paste friendly reference of every parameter and more examples, see the module guide at quantum-ontology-rest/README.md. The summary below is intentionally concise to keep this document flowing without duplication.
 </td>
 </tr>
 </table>
@@ -3797,7 +4443,7 @@ JointJS will honor the attrs/labels we return. You can add a legend in your UI t
 </ul>
 </div>
 <div class="paragraph">
-<p>For deep dives, parameter matrices, and additional examples (including large graph considerations), consult quantum-ontology-mongo/README.md in this repository.</p>
+<p>For deep dives, parameter matrices, and additional examples (including large graph considerations), consult quantum-ontology-rest/README.md in this repository.</p>
 </div>
 </div>
 </div>
@@ -4098,8 +4744,8 @@ curl -X POST &quot;http://localhost:8080/ontology/admin/drift-repair?realm=defau
 </div>
 <div id="footer">
 <div id="footer-text">
-Version 1.3.1-SNAPSHOT<br>
-Last updated 2026-03-16 19:51:21 -0400
+Version 1.4.2-SNAPSHOT<br>
+Last updated 2026-09-21 13:44:52 -0400
 </div>
 </div>
 </body>

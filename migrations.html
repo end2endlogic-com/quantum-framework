@@ -439,8 +439,8 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <div id="header">
 <h1>Database Migrations and Index Management</h1>
 <div class="details">
-<span id="revnumber">version 1.3.1-SNAPSHOT,</span>
-<span id="revdate">2026-04-13T18:47:11Z</span>
+<span id="revnumber">version 1.4.2-SNAPSHOT,</span>
+<span id="revdate">2026-09-21T22:14:39Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -717,6 +717,12 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <p>Base path: /system/migration</p>
 </div>
 <div class="paragraph">
+<p>The deployable <code>quantum-system-service</code> owns this API by selecting the
+<code>com.end2endlogic:quantum-migration-rest</code> adapter. Application backends and
+SDK-only consumers should omit that artifact so they do not expose database
+administration endpoints.</p>
+</div>
+<div class="paragraph">
 <p>Security: Most endpoints require admin role; dbversion is PermitAll for introspection.</p>
 </div>
 <div class="ulist">
@@ -742,6 +748,18 @@ curl -s <a href="http://localhost:8080/system/migration/dbversion/system-com" cl
 curl -X POST -H "Authorization: Bearer $TOKEN" <a href="http://localhost:8080/system/migration/indexes/applyIndexes/system-com" class="bare">http://localhost:8080/system/migration/indexes/applyIndexes/system-com</a></p>
 </li>
 <li>
+<p>POST /system/migration/indexes/applyIndexes/{realm}/{collection}</p>
+</li>
+<li>
+<p>Admin only. Applies indexes for one mapped collection in the realm.</p>
+</li>
+<li>
+<p>POST /system/migration/indexes/applyAllIndexes/{realm}</p>
+</li>
+<li>
+<p>Admin only. Applies all declared indexes across mapped collections, bypassing data scoping for this system-level operation.</p>
+</li>
+<li>
 <p>POST /system/migration/indexes/dropAllIndexes/{realm}</p>
 </li>
 <li>
@@ -750,6 +768,18 @@ curl -X POST -H "Authorization: Bearer $TOKEN" <a href="http://localhost:8080/sy
 <li>
 <p>Example:
 curl -X POST -H "Authorization: Bearer $TOKEN" <a href="http://localhost:8080/system/migration/indexes/dropAllIndexes/system-com" class="bare">http://localhost:8080/system/migration/indexes/dropAllIndexes/system-com</a></p>
+</li>
+<li>
+<p>POST /system/migration/indexes/drop/{realm}/{collection}</p>
+</li>
+<li>
+<p>Admin only. Drops indexes for one collection in the realm.</p>
+</li>
+<li>
+<p>POST /system/migration/changeSet/execute/{realm}/{beanRefName}</p>
+</li>
+<li>
+<p>Admin only. SSE stream that executes the named change-set bean for the realm.</p>
 </li>
 <li>
 <p>POST /system/migration/initialize/{realm}</p>
@@ -954,8 +984,8 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 </div>
 <div id="footer">
 <div id="footer-text">
-Version 1.3.1-SNAPSHOT<br>
-Last updated 2026-03-23 17:52:05 -0400
+Version 1.4.2-SNAPSHOT<br>
+Last updated 2026-08-07 08:00:40 -0400
 </div>
 </div>
 </body>

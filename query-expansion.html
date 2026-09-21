@@ -542,7 +542,8 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_single_reference_expandcustomer">1.7.1. Single reference: expand(customer)</a></li>
 <li><a href="#_array_of_references_expanditems_product">1.7.2. Array of references: expand(items[*].product)</a></li>
 <li><a href="#_nested_arrays_expandpatient_visits_diagnoses">1.7.3. Nested arrays: expand(patient.visits[<strong>].diagnoses[</strong>])</a></li>
-<li><a href="#_when_is_aggregation_used_vs_filter">1.7.4. When is AGGREGATION used vs FILTER?</a></li>
+<li><a href="#_multi_hop_reference_traversal_chains_expandhop1_expandhop1_hop2">1.7.4. Multi-Hop Reference Traversal Chains: expand(hop1) &amp;&amp; expand(hop1.hop2)</a></li>
+<li><a href="#_when_is_aggregation_used_vs_filter">1.7.5. When is AGGREGATION used vs FILTER?</a></li>
 </ul>
 </li>
 </ul>
@@ -881,14 +882,82 @@ Filtering on related entities will be supported via either:</p>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_when_is_aggregation_used_vs_filter">1.7.4. When is AGGREGATION used vs FILTER?</h4>
+<h4 id="_multi_hop_reference_traversal_chains_expandhop1_expandhop1_hop2">1.7.4. Multi-Hop Reference Traversal Chains: expand(hop1) &amp;&amp; expand(hop1.hop2)</h4>
+<div class="paragraph">
+<p>Multiple relationship hops can be chained together using standard logical conjunction (<code>&amp;&amp;</code>). For example, traversing from a Customer to their Orders, and from each Order to its Supplier:</p>
+</div>
+<div class="paragraph">
+<p>Query</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code>q = &quot;customerName:Cust-1 &amp;&amp; expand(orderRef) &amp;&amp; expand(orderRef.supplierRef)&quot;</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Pipeline Architecture with Inner-Pipeline Pushdown</p>
+</div>
+<div class="paragraph">
+<p>Instead of simple uncorrelated lookups, the compiler generates correlated <code>$lookup</code> stages with dedicated inner pipelines:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">[
+  { <span class="key"><span class="delimiter">&quot;</span><span class="content">$match</span><span class="delimiter">&quot;</span></span>: { <span class="key"><span class="delimiter">&quot;</span><span class="content">dataDomain.tenantId</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">acme</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">customerName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Cust-1</span><span class="delimiter">&quot;</span></span> } },
+  { <span class="key"><span class="delimiter">&quot;</span><span class="content">$lookup</span><span class="delimiter">&quot;</span></span>: {
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">from</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">orders</span><span class="delimiter">&quot;</span></span>,
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">let</span><span class="delimiter">&quot;</span></span>: { <span class="key"><span class="delimiter">&quot;</span><span class="content">ref_id</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">$orderRef._id</span><span class="delimiter">&quot;</span></span> },
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">pipeline</span><span class="delimiter">&quot;</span></span>: [
+        { <span class="key"><span class="delimiter">&quot;</span><span class="content">$match</span><span class="delimiter">&quot;</span></span>: { <span class="key"><span class="delimiter">&quot;</span><span class="content">$expr</span><span class="delimiter">&quot;</span></span>: { <span class="key"><span class="delimiter">&quot;</span><span class="content">$eq</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">$_id</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">$$ref_id</span><span class="delimiter">&quot;</span></span>] } } },
+        { <span class="key"><span class="delimiter">&quot;</span><span class="content">$match</span><span class="delimiter">&quot;</span></span>: { <span class="key"><span class="delimiter">&quot;</span><span class="content">dataDomain.tenantId</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">acme</span><span class="delimiter">&quot;</span></span> } },
+        { <span class="key"><span class="delimiter">&quot;</span><span class="content">$project</span><span class="delimiter">&quot;</span></span>: { <span class="key"><span class="delimiter">&quot;</span><span class="content">secretDiscount</span><span class="delimiter">&quot;</span></span>: <span class="integer">0</span> } }
+      ],
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">as</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">orderRef</span><span class="delimiter">&quot;</span></span>
+  }},
+  { <span class="key"><span class="delimiter">&quot;</span><span class="content">$unwind</span><span class="delimiter">&quot;</span></span>: { <span class="key"><span class="delimiter">&quot;</span><span class="content">path</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">$orderRef</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">preserveNullAndEmptyArrays</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span> } },
+  { <span class="key"><span class="delimiter">&quot;</span><span class="content">$lookup</span><span class="delimiter">&quot;</span></span>: {
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">from</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">suppliers</span><span class="delimiter">&quot;</span></span>,
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">let</span><span class="delimiter">&quot;</span></span>: { <span class="key"><span class="delimiter">&quot;</span><span class="content">ref_id</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">$orderRef.supplierRef._id</span><span class="delimiter">&quot;</span></span> },
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">pipeline</span><span class="delimiter">&quot;</span></span>: [
+        { <span class="key"><span class="delimiter">&quot;</span><span class="content">$match</span><span class="delimiter">&quot;</span></span>: { <span class="key"><span class="delimiter">&quot;</span><span class="content">$expr</span><span class="delimiter">&quot;</span></span>: { <span class="key"><span class="delimiter">&quot;</span><span class="content">$eq</span><span class="delimiter">&quot;</span></span>: [<span class="string"><span class="delimiter">&quot;</span><span class="content">$_id</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">$$ref_id</span><span class="delimiter">&quot;</span></span>] } } },
+        { <span class="key"><span class="delimiter">&quot;</span><span class="content">$match</span><span class="delimiter">&quot;</span></span>: { <span class="key"><span class="delimiter">&quot;</span><span class="content">dataDomain.tenantId</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">acme</span><span class="delimiter">&quot;</span></span> } },
+        { <span class="key"><span class="delimiter">&quot;</span><span class="content">$project</span><span class="delimiter">&quot;</span></span>: { <span class="key"><span class="delimiter">&quot;</span><span class="content">costMargin</span><span class="delimiter">&quot;</span></span>: <span class="integer">0</span> } }
+      ],
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">as</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">orderRef.supplierRef</span><span class="delimiter">&quot;</span></span>
+  }},
+  { <span class="key"><span class="delimiter">&quot;</span><span class="content">$unwind</span><span class="delimiter">&quot;</span></span>: { <span class="key"><span class="delimiter">&quot;</span><span class="content">path</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">$orderRef.supplierRef</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">preserveNullAndEmptyArrays</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span> } }
+]</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Key Security Defaults for Multi-Hop Traversals:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><strong>Per-Stage Row Security</strong>: Each inner pipeline injects a <code>$match</code> stage enforcing target collection <code>DataDomain</code> constraints and rule filters.</p>
+</li>
+<li>
+<p><strong>Monotonic Restriction Accumulation</strong>: Security restrictions strictly accumulate. Upstream constraints are preserved and compounded down the traversal tree, preventing privilege escalation.</p>
+</li>
+<li>
+<p><strong>Cross-Tenant Pruning</strong>: If an entity reference points across tenant boundaries or to a document forbidden by target security rules, the inner pipeline produces 0 matches, evaluating to <code>null</code> or <code>[]</code> without leaking document existence.</p>
+</li>
+<li>
+<p><strong>Field Exclusions (<code>$project</code>)</strong>: Target entity field exclusions defined in <code>RuleContext</code> are pushed down into each inner pipeline so sensitive fields never leave MongoDB.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_when_is_aggregation_used_vs_filter">1.7.5. When is AGGREGATION used vs FILTER?</h4>
 <div class="ulist">
 <ul>
 <li>
 <p>FILTER: no expand(&#8230;&#8203;). Planner returns a Morphia Filter and the gateway executes find with dev.morphia.query.Query.</p>
 </li>
 <li>
-<p>AGGREGATION: one or more expand(&#8230;&#8203;). Planner returns a pipeline with $lookup/$unwind and optional $project stages. Execution requires feature.queryGateway.execution.enabled=true; otherwise, POST /api/query/find returns 501. If any $lookup.from is "<em>unknown</em>", execution returns HTTP 422.</p>
+<p>AGGREGATION: one or more expand(&#8230;&#8203;). Planner returns an aggregation pipeline with per-stage $lookup inner pipelines, $unwind, and $project stages. Execution requires <code>feature.queryGateway.execution.enabled=true</code>; otherwise, POST /api/query/find returns HTTP 501. If any $lookup.from is "<em>unknown</em>", execution returns HTTP 422.</p>
 </li>
 </ul>
 </div>
@@ -899,8 +968,8 @@ Filtering on related entities will be supported via either:</p>
 </div>
 <div id="footer">
 <div id="footer-text">
-Version 1.3.1-SNAPSHOT<br>
-Last updated 2025-10-29 16:37:40 -0400
+Version 1.4.2-SNAPSHOT<br>
+Last updated 2026-09-20 21:57:07 -0400
 </div>
 </div>
 </body>

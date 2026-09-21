@@ -531,17 +531,29 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <ul class="sectlevel1">
 <li><a href="#tenant-models">1. Multi‑Tenancy Models</a>
 <ul class="sectlevel2">
-<li><a href="#_one_tenant_per_database_in_a_mongodb_cluster">1.1. One Tenant per Database (in a MongoDB Cluster)</a></li>
-<li><a href="#_many_tenants_in_one_database_shared_database">1.2. Many Tenants in One Database (Shared Database)</a></li>
+<li><a href="#_dedicated_realm_one_tenant_per_database">1.1. <code>DEDICATED_REALM</code>: One Tenant per Database</a></li>
+<li><a href="#_pooled_realm_many_tenants_in_one_database">1.2. <code>POOLED_REALM</code>: Many Tenants in One Database</a></li>
 <li><a href="#_freemium_and_trial_tenants">1.3. Freemium and Trial Tenants</a></li>
 <li><a href="#tenant-onboarding-and-invites">1.4. Tenant Onboarding and Access Invites</a>
 <ul class="sectlevel3">
 <li><a href="#_1_tenant_provisioning_create_the_tenant_itself">1.4.1. 1. Tenant provisioning: create the tenant itself</a></li>
-<li><a href="#_2_tenant_onboarding_workflow_define_the_journey_after_inviteregistration">1.4.2. 2. Tenant onboarding workflow: define the journey after invite/registration</a></li>
-<li><a href="#_3_registration_requests_capture_onboarding_data_for_approval">1.4.3. 3. Registration requests: capture onboarding data for approval</a></li>
-<li><a href="#_4_access_invites_grant_a_user_into_an_existing_tenant">1.4.4. 4. Access invites: grant a user into an existing tenant</a></li>
-<li><a href="#_invite_extension_points">1.4.5. Invite extension points</a></li>
-<li><a href="#_how_these_pieces_fit_together">1.4.6. How these pieces fit together</a></li>
+<li><a href="#_2_tenant_decommissioning_archive_before_topology_specific_cleanup">1.4.2. 2. Tenant decommissioning: archive before topology-specific cleanup</a></li>
+<li><a href="#_2_tenant_onboarding_workflow_define_the_journey_after_inviteregistration">1.4.3. 2. Tenant onboarding workflow: define the journey after invite/registration</a></li>
+<li><a href="#_3_registration_requests_capture_onboarding_data_for_approval">1.4.4. 3. Registration requests: capture onboarding data for approval</a></li>
+<li><a href="#_4_access_invites_grant_a_user_into_an_existing_tenant">1.4.5. 4. Access invites: grant a user into an existing tenant</a></li>
+<li><a href="#_invite_extension_points">1.4.6. Invite extension points</a></li>
+<li><a href="#_how_these_pieces_fit_together">1.4.7. How these pieces fit together</a></li>
+</ul>
+</li>
+<li><a href="#_choosing_a_tenancy_model_three_options">1.5. Choosing a Tenancy Model: Three Options</a></li>
+<li><a href="#_the_github_like_identity_model_mapped">1.6. The GitHub-Like Identity Model, Mapped</a></li>
+<li><a href="#user-definable-facet-segmentation">1.7. User-Definable Facet Segmentation &amp; Coordinate SPI in Multi-Tenant Environments</a>
+<ul class="sectlevel3">
+<li><a href="#_physical_realm_isolation_vs_logical_facet_segmentation">1.7.1. Physical Realm Isolation vs. Logical Facet Segmentation</a></li>
+<li><a href="#_single_server_instance_with_per_tenant_heterogeneous_policies">1.7.2. Single Server Instance with Per-Tenant Heterogeneous Policies</a></li>
+<li><a href="#_configuring_user_definable_facets">1.7.3. Configuring User-Definable Facets</a></li>
+<li><a href="#_coordinate_resolution_precedence_and_defaults">1.7.4. Coordinate Resolution Precedence and Defaults</a></li>
+<li><a href="#_multi_hop_traversal_isolation">1.7.5. Multi-Hop Traversal Isolation</a></li>
 </ul>
 </li>
 </ul>
@@ -556,8 +568,37 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <div class="paragraph">
 <p>Quantum supports multiple multi-tenant models for MongoDB deployments:</p>
 </div>
+<div class="paragraph">
+<p>Every persisted <code>Realm</code> has a <code>deploymentType</code>:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>DEDICATED</code> is the default. Realm records created before this field existed,
+and any record whose value is absent or null, resolve to <code>DEDICATED</code>.</p>
+</li>
+<li>
+<p><code>SHARED</code> must be set explicitly before the realm can accept pooled tenant
+admissions.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>The system-management realm catalog exposes this value so operators can see
+the database topology directly. Tenant lifecycle requests use
+<code>DEDICATED_REALM</code> and <code>POOLED_REALM</code>; those request values must agree with the
+realm&#8217;s persisted <code>DEDICATED</code> or <code>SHARED</code> type.</p>
+</div>
+<div class="paragraph">
+<p>Database migration <code>1.0.6</code> backfills existing system-realm catalog records.
+It updates only Realm documents where <code>deploymentType</code> is missing or null,
+setting them to <code>DEDICATED</code>; an explicitly configured <code>SHARED</code> value is
+preserved. Deployments should advance <code>quantum.database.version</code> to <code>1.0.6</code>
+and run the normal Quantum migration workflow rather than patching Realm
+documents individually.</p>
+</div>
 <div class="sect2">
-<h3 id="_one_tenant_per_database_in_a_mongodb_cluster">1.1. One Tenant per Database (in a MongoDB Cluster)</h3>
+<h3 id="_dedicated_realm_one_tenant_per_database">1.1. <code>DEDICATED_REALM</code>: One Tenant per Database</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -589,7 +630,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="sect2">
-<h3 id="_many_tenants_in_one_database_shared_database">1.2. Many Tenants in One Database (Shared Database)</h3>
+<h3 id="_pooled_realm_many_tenants_in_one_database">1.2. <code>POOLED_REALM</code>: Many Tenants in One Database</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -615,12 +656,18 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <p>DataDomain is part of every persisted model, enabling programmatic, rule-based filtering.</p>
 </li>
 <li>
-<p>RuleContext and DomainContext can be used to inject tenant-aware filters into repositories and resources.</p>
+<p>RuleContext and DomainContext inject tenant-aware filters into governed repositories and resources.</p>
 </li>
 <li>
 <p>Cross-tenant sharing can be modeled by specific DataDomain fields and RuleContext logic granting read access across tenants on a per-functional-area basis.</p>
 </li>
 </ul>
+</div>
+<div class="paragraph">
+<p>In both modes, realm means MongoDB placement and schema lifecycle while
+DataDomain means row visibility. <code>POOLED_REALM</code> is therefore safe only for
+models and repository paths that participate in governed DataDomain
+filtering. A shared database does not weaken or replace the policy boundary.</p>
 </div>
 </div>
 <div class="sect2">
@@ -655,12 +702,17 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <div class="sect2">
 <h3 id="tenant-onboarding-and-invites">1.4. Tenant Onboarding and Access Invites</h3>
 <div class="paragraph">
-<p>Quantum separates tenant creation from user access and from the user-facing onboarding journey. Those are related, but they are not the same thing:</p>
+<p>Quantum separates realm creation, tenant admission, user access, and the
+user-facing onboarding journey. Those are related, but they are not the same
+thing:</p>
 </div>
 <div class="ulist">
 <ul>
 <li>
-<p>Tenant provisioning creates the tenant realm, runs migrations, and establishes the initial admin user.</p>
+<p>Dedicated provisioning creates the tenant realm, runs realm migrations, and establishes the initial admin user.</p>
+</li>
+<li>
+<p>Pooled admission adds a tenant to an existing realm and does not create or initialize a database.</p>
 </li>
 <li>
 <p>Tenant onboarding workflow defines the steps a tenant user should complete before access is considered fully activated.</p>
@@ -689,7 +741,11 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </ul>
 </div>
 <div class="paragraph">
-<p>Provisioning is intended for <code>admin</code> and <code>system</code> roles. The request creates the tenant catalog entry, initializes the tenant database, and ensures an initial admin credential exists.</p>
+<p>Provisioning is intended for <code>admin</code> and <code>system</code> roles. The same endpoint
+supports both deployment topologies. Omitting <code>deploymentTopology</code> preserves
+the historical <code>DEDICATED_REALM</code> behavior. <code>POOLED_REALM</code> admission succeeds
+only when <code>placementRealmId</code> identifies an existing Realm explicitly marked
+<code>SHARED</code>; legacy and untyped realms are treated as <code>DEDICATED</code>.</p>
 </div>
 <div class="paragraph">
 <p>Request fields:</p>
@@ -735,8 +791,25 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <td class="tableblock halign-left valign-top"><p class="tableblock">Initial password for the admin user</p></td>
 </tr>
 <tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>applicationId</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Application that owns the realm placement; may use the configured default</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>deploymentTopology</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>DEDICATED_REALM</code> or <code>POOLED_REALM</code>; when omitted, uses
+<code>quantum.tenant.provisioning.deployment-topology</code> (default
+<code>DEDICATED_REALM</code>)</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>placementRealmId</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Existing target realm for <code>POOLED_REALM</code>; when omitted, uses
+<code>quantum.tenant.provisioning.pooled-realm</code></p></td>
+</tr>
+<tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>seedArchetypes</code> or <code>archetypes</code></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Optional list of seed archetypes to apply during tenant creation</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Optional list of seed archetypes for dedicated realm creation. Pooled
+admission rejects archetypes until the seed contract can prove all writes are
+tenant-scoped.</p></td>
 </tr>
 </tbody>
 </table>
@@ -803,39 +876,167 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </ul>
 </div>
 <div class="paragraph">
-<p>Provisioning is designed to be largely idempotent. If the same tenant or admin user already exists with matching attributes, the service proceeds and returns warnings instead of blindly recreating state. If existing state conflicts with the request, the service rejects the operation.</p>
-</div>
-<div class="paragraph">
-<p>Deleting a tenant removes:</p>
+<p>For <code>POOLED_REALM</code>, provisioning instead:</p>
 </div>
 <div class="ulist">
 <ul>
 <li>
-<p>the tenant database</p>
+<p>derives a distinct tenant id from <code>tenantEmailDomain</code></p>
 </li>
 <li>
-<p>the tenant&#8217;s <code>Realm</code> catalog entry</p>
+<p>resolves <code>placementRealmId</code> to an existing <code>Realm</code> catalog record</p>
 </li>
 <li>
-<p>matching credentials associated with that tenant setup</p>
+<p>creates a PARTICIPANT <code>RealmTenantMembership</code></p>
+</li>
+<li>
+<p>assigns the tenant&#8217;s users to the shared realm with the tenant&#8217;s own
+<code>DomainContext</code> and <code>DataDomain</code></p>
+</li>
+<li>
+<p>creates only the requested administrator identity and tenant-scoped realm
+assignment; it does not create baseline or demo identities</p>
+</li>
+<li>
+<p>skips realm migrations, base seed packs, archetypes, and index initialization</p>
+</li>
+<li>
+<p>never creates or drops the shared realm/database</p>
 </li>
 </ul>
 </div>
-<div class="admonitionblock caution">
-<table>
-<tr>
-<td class="icon">
-<i class="fa icon-caution" title="Caution"></i>
-</td>
-<td class="content">
-<code>DELETE /admin/tenants/{realmId}</code> is destructive and is intentionally blocked for the configured system realm.
-</td>
-</tr>
-</table>
+<div class="paragraph">
+<p>The pooled realm must therefore be provisioned and migrated before admitting
+tenants. Every persisted model reachable by a pooled tenant must participate
+in governed <code>DataDomain</code> filtering for reads and writes. A user currently has
+one active tenant <code>DataDomain</code> assignment per realm; admitting the same
+identity into a second tenant in that realm fails closed until an explicit
+tenant-selection claim is available.</p>
+</div>
+<div class="paragraph">
+<p>Example pooled admission:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">tenantDisplayName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Acme Logistics</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">tenantEmailDomain</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">acme.example</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">orgRefName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">acme.example</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">accountId</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">1000000001</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">adminUserId</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">admin@acme.example</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">adminPassword</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">change-me-now</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">deploymentTopology</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">POOLED_REALM</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">placementRealmId</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">shared-logistics</span><span class="delimiter">&quot;</span></span>
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Provisioning is designed to be largely idempotent. If the same tenant or admin user already exists with matching attributes, the service proceeds and returns warnings instead of blindly recreating state. If existing state conflicts with the request, the service rejects the operation.</p>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_2_tenant_onboarding_workflow_define_the_journey_after_inviteregistration">1.4.2. 2. Tenant onboarding workflow: define the journey after invite/registration</h4>
+<h4 id="_2_tenant_decommissioning_archive_before_topology_specific_cleanup">1.4.2. 2. Tenant decommissioning: archive before topology-specific cleanup</h4>
+<div class="paragraph">
+<p>Tenant deletion is a governed lifecycle operation, not a direct CRUD delete.
+The placement topology determines the cleanup boundary:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>DEDICATED_REALM</code>: revoke tenant access, create and verify a database
+archive, then drop the tenant database and retire its realm catalog state.</p>
+</li>
+<li>
+<p><code>POOLED_REALM</code>: revoke tenant access, export only rows matching the
+canonical tenant <code>DataDomain</code> identity (<code>orgRefName</code>, <code>accountNum</code>,
+<code>tenantId</code>, and <code>dataSegment</code>), then stamp every matching row with one
+immutable purge batch reference and one <code>purgeAfter</code> timestamp. The shared
+database and realm are never dropped.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>MongoDB TTL cleanup is asynchronous and may remove documents from different
+collections at different times. Revoking tenant access before expiration is
+therefore the logical atomic barrier: users cannot observe a partially drained
+tenant. Before the workflow reports the pooled purge as scheduled, it must
+reconcile archive and expiration counts for every collection declared
+tenant-scoped.</p>
+</div>
+<div class="paragraph">
+<p>Revocation verification includes already-issued tokens or sessions, not only
+future logins. Suspending a system-plane membership by itself is not a safe
+barrier for a stateless tenant plane. A deployment must install a revocation
+provider that invalidates active access (or waits behind an equivalent
+verified write/read fence) before archive and expiration proceed.</p>
+</div>
+<div class="paragraph">
+<p>Before a pooled purge is planned, the persisted collection inventory must be
+reconciled with the collection ownership catalog. Every existing user
+collection must have exactly one scope:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>TENANT_SCOPED</code>: selectable by the canonical tenant identity and eligible
+for tenant archive and expiration.</p>
+</li>
+<li>
+<p><code>REALM_SHARED</code>: shared within the realm and excluded from every individual
+tenant purge.</p>
+</li>
+<li>
+<p><code>SYSTEM_GLOBAL</code>: owned by the system management plane and excluded from
+tenant purge.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>An existing collection without a scope declaration blocks the operation.
+Declaring a collection as shared or global also forbids tenant-selection and
+expiration field mappings for that collection.</p>
+</div>
+<div class="paragraph">
+<p>The default Mongo registry is configured with comma-separated collection
+names:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="properties">quantum.tenant-storage.tenant-scoped-collections=orders,orderEvents,tenantFiles.files,tenantFiles.chunks
+quantum.tenant-storage.realm-shared-collections=realmConfiguration
+quantum.tenant-storage.system-global-collections=</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Only MongoDB internal <code>system.*</code> namespaces are excluded automatically.
+GridFS and other blob collections are ordinary user collections for this
+purpose and must be classified explicitly. Reading the inventory does not
+create a Morphia datastore, collections, or indexes.</p>
+</div>
+<div class="paragraph">
+<p>TTL indexes must exist on the configured <code>purgeAfter</code> field for every
+tenant-scoped collection. Realm bootstrap/migrations should install them; the
+default Mongo expiration provider also creates the absolute-time TTL index
+idempotently before it stamps rows. Large collections may be processed in
+resumable batches, but every batch uses the same purge reference and
+timestamp. Blob payloads owned by tenant rows are part of both archive and
+expiration coverage.</p>
+</div>
+<div class="paragraph">
+<p><code>ownerId</code> is not part of tenant deletion identity. It can narrow policy access,
+but using it for archive or purge selection can leave tenant-owned data behind.
+Direct <code>DELETE /admin/tenants/{realmId}</code> remains disabled until a governed
+control-plane workflow supplies archive verification, collection-scope
+metadata, and purge reconciliation.</p>
+</div>
+<div class="paragraph">
+<p>Direct tenant deletion is disabled. Decommissioning must use the governed
+control-plane lifecycle. In particular, pooled tenant removal is a scoped
+DataDomain operation and must never drop its shared realm/database.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_2_tenant_onboarding_workflow_define_the_journey_after_inviteregistration">1.4.3. 2. Tenant onboarding workflow: define the journey after invite/registration</h4>
 <div class="paragraph">
 <p>Tenant onboarding workflow configuration is exposed at:</p>
 </div>
@@ -879,10 +1080,29 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <p><code>defaultSurveyRefName</code></p>
 </li>
 <li>
+<p><code>defaultInviteEmailTemplateKey</code></p>
+</li>
+<li>
 <p><code>workflowDefinitionJson</code></p>
 </li>
 <li>
 <p><code>completionMessage</code></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p><code>defaultInviteEmailTemplateKey</code> is the email-template key the onboarding flow should use for invite messages. The framework default is <code>tenant-onboarding-invite</code>, which can be satisfied by:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>a classpath template under <code>templates/email/tenant-onboarding-invite/</code></p>
+</li>
+<li>
+<p>a realm-scoped override in <code>email_templates</code></p>
+</li>
+<li>
+<p>a workflow update that points to a different key</p>
 </li>
 </ul>
 </div>
@@ -926,6 +1146,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
   <span class="key"><span class="delimiter">&quot;</span><span class="content">adminApprovalRequired</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span>,
   <span class="key"><span class="delimiter">&quot;</span><span class="content">autoAssignSurveyOnInvite</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span>,
   <span class="key"><span class="delimiter">&quot;</span><span class="content">defaultSurveyRefName</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">tenant-user-onboarding</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">defaultInviteEmailTemplateKey</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">tenant-onboarding-invite</span><span class="delimiter">&quot;</span></span>,
   <span class="key"><span class="delimiter">&quot;</span><span class="content">completionMessage</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">Your tenant onboarding is complete. You can now sign in and begin using the workspace.</span><span class="delimiter">&quot;</span></span>,
   <span class="key"><span class="delimiter">&quot;</span><span class="content">steps</span><span class="delimiter">&quot;</span></span>: [
     { <span class="key"><span class="delimiter">&quot;</span><span class="content">key</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">invite</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">type</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">access_invite</span><span class="delimiter">&quot;</span></span>, <span class="key"><span class="delimiter">&quot;</span><span class="content">required</span><span class="delimiter">&quot;</span></span>: <span class="value">true</span> },
@@ -942,7 +1163,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="sect3">
-<h4 id="_3_registration_requests_capture_onboarding_data_for_approval">1.4.3. 3. Registration requests: capture onboarding data for approval</h4>
+<h4 id="_3_registration_requests_capture_onboarding_data_for_approval">1.4.4. 3. Registration requests: capture onboarding data for approval</h4>
 <div class="paragraph">
 <p>The registration-request endpoints are exposed at:</p>
 </div>
@@ -977,7 +1198,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="sect3">
-<h4 id="_4_access_invites_grant_a_user_into_an_existing_tenant">1.4.4. 4. Access invites: grant a user into an existing tenant</h4>
+<h4 id="_4_access_invites_grant_a_user_into_an_existing_tenant">1.4.5. 4. Access invites: grant a user into an existing tenant</h4>
 <div class="paragraph">
 <p>Access invites are exposed at:</p>
 </div>
@@ -1159,7 +1380,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="sect3">
-<h4 id="_invite_extension_points">1.4.5. Invite extension points</h4>
+<h4 id="_invite_extension_points">1.4.6. Invite extension points</h4>
 <div class="paragraph">
 <p>The invite flow is intentionally extensible through two SPIs:</p>
 </div>
@@ -1201,7 +1422,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 <div class="sect3">
-<h4 id="_how_these_pieces_fit_together">1.4.6. How these pieces fit together</h4>
+<h4 id="_how_these_pieces_fit_together">1.4.7. How these pieces fit together</h4>
 <div class="paragraph">
 <p>A common pattern looks like this:</p>
 </div>
@@ -1245,13 +1466,293 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 </div>
 </div>
 </div>
+<div class="sect2">
+<h3 id="_choosing_a_tenancy_model_three_options">1.5. Choosing a Tenancy Model: Three Options</h3>
+<div class="paragraph">
+<p>With realm membership (see design/realm-membership-adr.adoc) the platform
+supports three deliberate configurations:</p>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 20%;">
+<col style="width: 40%;">
+<col style="width: 40%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Option</th>
+<th class="tableblock halign-left valign-top">Shape</th>
+<th class="tableblock halign-left valign-top">When to use</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">One tenant, one realm (default)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>POST /admin/tenants</code> provisions a realm with a single OWNER membership.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The standard SaaS tenant: full physical isolation, independent lifecycle,
+own backups/residency. This is what a multi-tenant platform provisions per customer.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Shared collaboration realm</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">One OWNER org plus N PARTICIPANT memberships
+(<code>RealmTenantMembership.membershipRole</code>). All parties' data lives in one
+realm; <strong>visibility</strong> is shaped per org by DataDomain stamps plus
+relationship policies (<code>hasEdge</code>) and field-level exclusions.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Multi-party operations against shared entities — e.g. a fulfillment realm
+where carrier, supplier, and customer orgs collaborate on the same sales
+orders and fulfillment plans, each seeing their own slice.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">GitHub-like multi-realm identity</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Users hold ONE global identity and N per-realm role assignments
+(<code>UserRealmRole</code>): ADMIN in realm A, VIEWER in realm B.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Consultants, partners, and platform operators who work across several
+tenants without duplicate accounts.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect2">
+<h3 id="_the_github_like_identity_model_mapped">1.6. The GitHub-Like Identity Model, Mapped</h3>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 50%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">GitHub concept</th>
+<th class="tableblock halign-left valign-top">Quantum primitive</th>
+<th class="tableblock halign-left valign-top">Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Account</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Credential (system realm)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">One global identity; <code>defaultRealm</code> is the personal/default context.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Organization</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Organization + Account entities</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Carry DataDomain identity inside realms.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Org membership + role</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>UserRealmRole</code> (userId, realmRefName, roles[], sponsoringOrgRefName)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">ADMIN in A / VIEWER in B = two documents. <code>status</code>: active/invited/suspended.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Repository</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Realm</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The unit of placement and lifecycle (own database, migrations, seeds).</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Repo transfer / ownership</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>RealmTenantMembership.membershipRole = owner</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Exactly one owner per realm; owner holds lifecycle and billing authority.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Invitation</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">AccessInvite (<code>/access-invites</code>)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Existing invite flow grants a user into a realm; on acceptance a
+<code>UserRealmRole</code> records the granted roles.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Token scopes</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">JWT per-realm role claims</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">At issuance the IdP resolves <code>RealmMembershipService.rolesForUser(user,
+realm)</code>; the tenant plane validates via JWKS and routes by claims — no
+callback to the control plane per request.</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p>Resolution APIs live in <code>RealmMembershipService</code> (quantum-system):
+<code>membershipsForOrg</code>, <code>membersOfRealm</code>, <code>ownerOfRealm</code>, <code>realmsForUser</code>,
+<code>rolesForUser</code>. Embedded deployments resolve locally; remote (tier-2)
+deployments get the same surface backed by the control-plane client (Phase C).</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="user-definable-facet-segmentation">1.7. User-Definable Facet Segmentation &amp; Coordinate SPI in Multi-Tenant Environments</h3>
+<div class="paragraph">
+<p>Traditional multi-tenancy models stop at isolating database collections by a single tenant ID. However, enterprise SaaS platforms often require multidimensional logical segmentation within and across tenants&#8201;&#8212;&#8201;such as isolating data by geographic region, operating subsidiary, business unit, partner channel, or sensitivity facet.</p>
+</div>
+<div class="paragraph">
+<p>Quantum delivers this capability through the <strong>Store-Free Coordinate SPI (<code>DataDomainResolver</code>)</strong> and <strong>User-Definable Facet Segmentation</strong>, allowing a single server instance to support heterogeneous segmentation policies for different tenants.</p>
+</div>
+<div class="sect3">
+<h4 id="_physical_realm_isolation_vs_logical_facet_segmentation">1.7.1. Physical Realm Isolation vs. Logical Facet Segmentation</h4>
+<div class="paragraph">
+<p>Quantum maintains a strict distinction between physical database placement and logical row-level segmentation:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><strong>Physical Realm Isolation</strong>: Dictates MongoDB cluster and database routing (<code>DEDICATED</code> vs <code>SHARED</code>/<code>POOLED</code>). It acts as an inviolate physical admission gate.</p>
+</li>
+<li>
+<p><strong>Logical Facet Segmentation</strong>: Dictates which rows, relationships, and fields within a realm are visible to a given principal based on multidimensional coordinates (e.g. <code>tenantId</code>, <code>orgRefName</code>, <code>department</code>, <code>region</code>, <code>classificationTier</code>).</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_single_server_instance_with_per_tenant_heterogeneous_policies">1.7.2. Single Server Instance with Per-Tenant Heterogeneous Policies</h4>
+<div class="paragraph">
+<p>A single Quantum server instance natively supports distinct, user-defined segmentation policies for different tenants without requiring separate runtime processes or re-deployments:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><strong>Tenant Isolation</strong>: In dedicated realms, policies reside in the tenant&#8217;s own database; in pooled realms, policies are isolated by <code>tenantId</code>.</p>
+</li>
+<li>
+<p><strong>Custom Dimension Modeling</strong>: Tenant A can segment data by <code>department</code> and <code>complianceTier</code>, while Tenant B concurrently segments data by <code>region</code> and <code>partnerId</code>.</p>
+</li>
+<li>
+<p><strong>Dynamic Variable Injection</strong>: Policies automatically bind contextual coordinates into <code>RuleContext</code> (<code>${pTenantId}</code>, <code>${orgRefName}</code>, <code>${ownerId}</code>, <code>${policyFilter}</code>, and custom facet variables), which are evaluated transparently across both single-collection queries and multi-hop aggregation pipelines.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_configuring_user_definable_facets">1.7.3. Configuring User-Definable Facets</h4>
+<div class="paragraph">
+<p>Facet definitions and policy rules are declared via <code>DataDomainComponentBinding</code> and <code>DataDomainPolicyEntry</code>:</p>
+</div>
+<div class="listingblock">
+<div class="title">Configuring Facet Bindings (<code>DataDomainComponentBinding</code>)</div>
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">tenantId</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">tenant-acme</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">name</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">OrderSegmentation</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">facets</span><span class="delimiter">&quot;</span></span>: {
+    <span class="key"><span class="delimiter">&quot;</span><span class="content">region</span><span class="delimiter">&quot;</span></span>: {
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">type</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">FIELD</span><span class="delimiter">&quot;</span></span>,
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">targetPath</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">shippingAddress.region</span><span class="delimiter">&quot;</span></span>
+    },
+    <span class="key"><span class="delimiter">&quot;</span><span class="content">department</span><span class="delimiter">&quot;</span></span>: {
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">type</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">FIELD</span><span class="delimiter">&quot;</span></span>,
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">targetPath</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">departmentCode</span><span class="delimiter">&quot;</span></span>
+    },
+    <span class="key"><span class="delimiter">&quot;</span><span class="content">classification</span><span class="delimiter">&quot;</span></span>: {
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">type</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">VARIABLE</span><span class="delimiter">&quot;</span></span>,
+      <span class="key"><span class="delimiter">&quot;</span><span class="content">targetPath</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">principal.securityClearance</span><span class="delimiter">&quot;</span></span>
+    }
+  }
+}</code></pre>
+</div>
+</div>
+<div class="listingblock">
+<div class="title">Configuring Policy Constraints (<code>DataDomainPolicyEntry</code>)</div>
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">tenantId</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">tenant-acme</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">targetClass</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">com.e2eq.sample.Order</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">action</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">find</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">filter</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">status:!</span><span class="char">\&quot;</span><span class="content">ARCHIVED</span><span class="char">\&quot;</span><span class="content"> &amp;&amp; region:${userRegion}</span><span class="delimiter">&quot;</span></span>,
+  <span class="key"><span class="delimiter">&quot;</span><span class="content">facetFilters</span><span class="delimiter">&quot;</span></span>: {
+    <span class="key"><span class="delimiter">&quot;</span><span class="content">department</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">${userDepartment}</span><span class="delimiter">&quot;</span></span>,
+    <span class="key"><span class="delimiter">&quot;</span><span class="content">classification</span><span class="delimiter">&quot;</span></span>: <span class="string"><span class="delimiter">&quot;</span><span class="content">CONFIDENTIAL</span><span class="delimiter">&quot;</span></span>
+  }
+}</code></pre>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_coordinate_resolution_precedence_and_defaults">1.7.4. Coordinate Resolution Precedence and Defaults</h4>
+<div class="paragraph">
+<p>When a request arrives at <code>QueryGatewayResource</code> or a governed <code>MorphiaRepo</code>, <code>DataDomainResolver</code> resolves coordinates using a strict three-tier precedence hierarchy:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="mermaid">flowchart TD
+    Req[&quot;Incoming Query / Traversal Request&quot;] --&gt; T1{&quot;Tier 1: Tenant-Specific Policy?&lt;br/&gt;(systemDataDomainPolicies for Class + Action)&quot;}
+    T1 -- Yes --&gt; ApplyTenant[&quot;Apply Tenant Policy &amp; Bind Custom Facets&quot;]
+    T1 -- No --&gt; T2{&quot;Tier 2: Global / System Policy Provider?&quot;}
+    T2 -- Yes --&gt; ApplyGlobal[&quot;Apply Global Policy &amp; Bind Standard Facets&quot;]
+    T2 -- No --&gt; T3{&quot;Tier 3: Caller PrincipalContext Present?&lt;br/&gt;(tenantId, ownerId, orgRefName)&quot;}
+    T3 -- Yes --&gt; ApplyPrincipal[&quot;Apply Principal Default Coordinates&quot;]
+    T3 -- No --&gt; FailClosed[&quot;DataDomainResolution.Unresolvable&lt;br/&gt;(FAIL CLOSED - HTTP 500 / 403)&quot;]
+
+    ApplyTenant --&gt; Execute[&quot;Execute Query / Traversal Pipeline&quot;]
+    ApplyGlobal --&gt; Execute
+    ApplyPrincipal --&gt; Execute</code></pre>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_resolution_defaults_table">Resolution Defaults Table</h5>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 20%;">
+<col style="width: 40%;">
+<col style="width: 40%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Resolution Stage</th>
+<th class="tableblock halign-left valign-top">Resolution Source</th>
+<th class="tableblock halign-left valign-top">Default / Fallback Behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Tenant Policy Configured</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>systemDataDomainPolicies</code> collection for tenant.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Employs tenant&#8217;s custom <code>filter</code> and <code>facetFilters</code>. Variables are injected into <code>RuleContext</code>.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>No Tenant Policy Configured</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">System Global Policy Provider.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Employs platform-wide default data domain rules if registered; otherwise falls back to Tier 3.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Fallback (Zero Policy Records)</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Caller&#8217;s <code>PrincipalContext</code>.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Resolves default coordinates directly from user credentials: <code>pTenantId = principal.tenantId</code>, <code>ownerId = principal.userId</code>, <code>orgRefName = principal.orgRefName</code>.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Missing Security Credentials</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">None.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Yields <code>DataDomainResolution.Unresolvable</code>. Fails closed immediately with HTTP 500 (<code>SecurityContextMissing</code>) or HTTP 403.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_multi_hop_traversal_isolation">1.7.5. Multi-Hop Traversal Isolation</h4>
+<div class="paragraph">
+<p>During multi-hop traversals (e.g. <code>Customer &#8594; Order &#8594; Supplier</code> via <code>expand(&#8230;&#8203;)</code>):</p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p><code>DataDomainResolver.resolveForHop(targetClass, viaPath, context)</code> is invoked at each relationship boundary.</p>
+</li>
+<li>
+<p>Target entity policies and row-level security constraints are applied to that hop&#8217;s MongoDB <code>$lookup</code> pipeline.</p>
+</li>
+<li>
+<p>Access constraints <strong>accumulate monotonically</strong>: a caller cannot hop across a foreign reference to bypass tenant boundaries or see records they are not authorized to view in the target domain.</p>
+</li>
+<li>
+<p>References pointing to external tenants or unauthorized records are pruned silently, returning <code>null</code> or empty arrays to eliminate information leakage.</p>
+</li>
+</ol>
+</div>
+</div>
+</div>
 </div>
 </div>
 </div>
 <div id="footer">
 <div id="footer-text">
-Version 1.3.1-SNAPSHOT<br>
-Last updated 2026-04-10 09:31:46 -0400
+Version 1.4.2-SNAPSHOT<br>
+Last updated 2026-09-21 13:44:19 -0400
 </div>
 </div>
 </body>

@@ -563,7 +563,7 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <li><a href="#_see_also">1.3.12. See Also</a></li>
 <li><a href="#_execution_engines_and_listeners">1.3.13. Execution engines and listeners</a></li>
 <li><a href="#ontology-query-language">1.3.14. Expressing Ontology Constraints in Queries (optional)</a></li>
-<li><a href="#_ontology_operators_hasedge_and_hasincomingedge">1.3.15. Ontology operators: hasEdge and hasIncomingEdge</a></li>
+<li><a href="#_ontology_operators_hasedge_hasoutgoingedge_and_hasincomingedge">1.3.15. Ontology operators: hasEdge, hasOutgoingEdge, and hasIncomingEdge</a></li>
 <li><a href="#_root_projection_recap_fields">1.3.16. Root projection recap: fields:[+…,-…]</a></li>
 </ul>
 </li>
@@ -709,10 +709,22 @@ table.CodeRay td.code{padding:0 0 0 .75em}
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Variable</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>${&#8230;&#8203;}</code></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>ownerId:${principalId}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>ownerId:${principalId}</code>, <code>tier:^${facet.allowedTiers}</code>, <code>zone:${coord.salesZone}</code></p></td>
 </tr>
 </tbody>
 </table>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+<strong>Dotted Variable Identifiers &amp; Single-Variable IN</strong>: The query grammar admits dotted variable paths (<code>${facet.&lt;key&gt;}</code>, <code>${coord.&lt;key&gt;}</code>, <code>${principal.&lt;attr&gt;}</code>, <code>${dd.&lt;attr&gt;}</code>). When paired with the list membership operator (<code>:^</code>), a single variable resolving to a Java <code>Collection</code> or array (e.g. <code>allowedTiers = ["TIER_1", "TIER_2"]</code>) can be passed without brackets (<code>tier:^${facet.allowedTiers}</code>), and the query compiler will automatically unpack the elements into a native <code>$in</code> evaluation.
+</td>
+</tr>
+</table>
+</div>
 </div>
 <div class="sect3">
 <h4 id="_logical_operators">1.1.3. Logical Operators</h4>
@@ -782,7 +794,10 @@ name:&quot;WIDGET&quot;        # may or may not match &quot;widget&quot;</code><
 text(&quot;priority escalation&quot;)
 
 # Combine text search with other filters
-text(&quot;priority escalation&quot;) &amp;&amp; status:&quot;OPEN&quot;</code></pre>
+text(&quot;priority escalation&quot;) &amp;&amp; status:&quot;OPEN&quot;
+
+# Valid: top-level text AND a grouped OR of non-text predicates
+text(&quot;priority&quot;) &amp;&amp; (status:&quot;OPEN&quot; || status:&quot;PENDING&quot;)</code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -797,7 +812,13 @@ text(&quot;priority escalation&quot;) &amp;&amp; status:&quot;OPEN&quot;</code><
 <p>MongoDB allows only one <code>text(&#8230;&#8203;)</code> clause per query.</p>
 </li>
 <li>
-<p>Text search must be backed by a text index on the target collection.</p>
+<p>Text search must be backed by a text index on the target collection. If the collection has no text index, MongoDB returns an error (Quantum does not pre-check index existence).</p>
+</li>
+<li>
+<p>The lexer keyword <code>text</code> is also accepted as a normal field name or unquoted value, so queries such as <code>type:text</code> and <code>text:active</code> remain valid.</p>
+</li>
+<li>
+<p>In-memory evaluation (policy/tests) approximates <code>$text</code> with case-insensitive <strong>whole-word</strong> matching (tokenized contains-any). It does not implement stemming or stop words. Example: <code>text("cat")</code> matches <code>"the cat sat"</code> but not <code>"category"</code>.</p>
 </li>
 </ul>
 </div>
@@ -1734,62 +1755,214 @@ id:^${idsByPlacedInOrg}</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_ontology_operators_hasedge_and_hasincomingedge">1.3.15. Ontology operators: hasEdge and hasIncomingEdge</h4>
+<h4 id="_ontology_operators_hasedge_hasoutgoingedge_and_hasincomingedge">1.3.15. Ontology operators: hasEdge, hasOutgoingEdge, and hasIncomingEdge</h4>
 <div class="paragraph">
-<p>When the ontology module is enabled and edges are materialized, you can constrain results by semantic relationships using <code>hasEdge</code> and <code>hasIncomingEdge</code>.</p>
+<p>When the ontology module is enabled and edges are materialized in MongoDB, you can constrain results by semantic graph relationships using <code>hasEdge</code>, <code>hasOutgoingEdge</code>, and <code>hasIncomingEdge</code>.</p>
 </div>
+<div class="sect4">
+<h5 id="_syntax">Syntax</h5>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code># Standard 2-argument form (relationship existence)
+hasEdge(predicate, dst)
+hasOutgoingEdge(predicate, dst)
+hasIncomingEdge(predicate, src)
+
+# Qualified 3-argument form (relationship existence WITH edge property constraints)
+hasEdge(predicate, dst, { edgeFilter })
+hasOutgoingEdge(predicate, dst, { edgeFilter })
+hasIncomingEdge(predicate, src, { edgeFilter })</code></pre>
+</div>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_arguments">Arguments</h5>
 <div class="ulist">
 <ul>
 <li>
-<p>Syntax: <code>hasEdge(predicate, dst)</code></p>
+<p><code>predicate</code>: Relationship identifier. Can be an unquoted identifier (<code>placedInOrg</code>), a quoted string (<code>"placedInOrg"</code>), or a variable expression (<code>${orgPredicate}</code>).</p>
 </li>
 <li>
-<p>Finds entities (sources) that have an edge with the specified <code>predicate</code> pointing TO the <code>dst</code>.</p>
+<p><code>dst</code> / <code>src</code>: Target or source entity coordinate. Can be a string literal (<code>"OrgA"</code>), an ObjectId, a reference literal (<code>@@507f1f77bcf86cd799439011</code>), or a variable placeholder (<code>${orgRefName}</code>, <code>${principalId}</code>).</p>
 </li>
 <li>
-<p>Syntax: <code>hasIncomingEdge(predicate, src)</code></p>
-</li>
-<li>
-<p>Finds entities (targets) that have an edge with the specified <code>predicate</code> coming FROM the <code>src</code>.</p>
+<p><code>{ edgeFilter }</code>: (Optional) A bracketed sub-query containing filtering expressions evaluated directly against the properties of the matching edge in the <code>edges</code> collection.</p>
 </li>
 </ul>
 </div>
-<div class="paragraph">
-<p>Arguments:
-- <code>predicate</code> can be an unquoted string, a quoted string, or a <code>${var}</code> placeholder.
-- <code>dst</code> / <code>src</code> can be a literal id, a variable like <code>${principalId}</code>, an ObjectId, or a reference literal <code>@@&#8230;&#8203;</code>.</p>
 </div>
+<div class="sect4">
+<h5 id="_edge_property_scoping_and_mechanics">Edge Property Scoping and Mechanics</h5>
 <div class="paragraph">
-<p>Examples:</p>
+<p>When querying an edge with property constraints:</p>
 </div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p><strong>Automatic Field Scoping</strong>: Any attribute referenced inside the <code>{ &#8230;&#8203; }</code> block that is not a reserved root edge attribute (<code>src</code>, <code>dst</code>, <code>p</code>, <code>dstType</code>, <code>dataDomain</code>, <code>_id</code>) is automatically rewritten to target dynamic edge properties stored under <code>props.&lt;field&gt;</code>. For example, <code>{ role:"PRIMARY" &amp;&amp; active:true }</code> is compiled to <code>props.role == "PRIMARY" AND props.active == true</code>.</p>
+</li>
+<li>
+<p><strong>MongoDB Compound Index Utilization</strong>: Edge property filters are pushed down directly into MongoDB queries on the <code>edges</code> collection. They take advantage of compound indexes:</p>
+<div class="ulist">
+<ul>
+<li>
+<p><code>idx_domain_p_dst_props</code>: <code>{"dataDomain": 1, "p": 1, "dst": 1, "props": 1}</code> (for <code>hasEdge</code> / <code>hasOutgoingEdge</code>)</p>
+</li>
+<li>
+<p><code>idx_domain_src_p_props</code>: <code>{"dataDomain": 1, "src": 1, "p": 1, "props": 1}</code> (for <code>hasIncomingEdge</code>)</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p><strong>Supported Operators</strong>: All standard BIAPI equality (<code>:</code>), inequality (<code>:!</code>), comparisons (<code>:&gt;</code>, <code>:&lt;</code>, <code>:&gt;=</code>, <code>:&#8656;</code>), list membership (<code>:^</code>, <code>:!^</code>), existence (<code>:~</code>), and logical compositions (<code>&amp;&amp;</code>, <code>||</code>, <code>!!</code>) are supported on edge properties.</p>
+</li>
+<li>
+<p><strong>Prohibited Operators</strong>: Full-text search <code>text(&#8230;&#8203;)</code> is prohibited inside <code>{ edgeFilter }</code> blocks because MongoDB does not permit <code>$text</code> inside embedded document conditions or sub-filters; queries containing <code>text(&#8230;&#8203;)</code> within edge filters are rejected at query validation time.</p>
+</li>
+</ol>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_defaults_and_fallback_behavior">Defaults and Fallback Behavior</h5>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 16.6666%;">
+<col style="width: 33.3333%;">
+<col style="width: 50.0001%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Element</th>
+<th class="tableblock halign-left valign-top">Default Behavior</th>
+<th class="tableblock halign-left valign-top">Rationale</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Omitted <code>{ edgeFilter }</code></strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Matches any edge with the specified <code>predicate</code> and target/source, regardless of properties.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Preserves 100% backward compatibility for standard 2-argument calls.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Missing Edge Properties</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Evaluates to <code>false</code> (no match). If an edge does not contain the queried property in its <code>props</code> map, the filter fails closed.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Predictable fail-closed semantics for dynamic schemas.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Tenant Scoping &amp; Missing Security Context</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Tenant ID is resolved from the active <code>SecurityContext</code> / <code>RuleContext</code> (<code>${pTenantId}</code>). If the query is executed without an active tenant or security context, the edge lookup returns empty results (<code>_id: "<em>none</em>"</code>).</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Inviolate multi-tenant data isolation; queries never leak edge relationships across realms or unauthenticated callers.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Dynamic Model Schema Validation</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">When query schema validation is enabled (<code>ValidatingQueryToFilterListener</code>), edge property keys bypass static entity model field validation.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Edge properties are open and dynamic; static entity models do not need predefined getters or schema mappings for edge property names.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect4">
+<h5 id="_examples">Examples</h5>
 <div class="listingblock">
+<div class="title">Basic edge existence check (2-argument default)</div>
 <div class="content">
-<pre class="CodeRay highlight"><code># Orders placed in a specific organization (find sources)
+<pre class="CodeRay highlight"><code># Find orders placed in an organization (finds source Order entities)
 hasEdge(&quot;placedInOrg&quot;, ${orgRefName})
 
-# Tickets routed to a region by id
-hasEdge(routedToRegion, @@507f1f77bcf86cd799439011)
-
-# Find locations that an associate can access (find targets)
-# assumes an edge exists: Associate --canAccessLocation--&gt; Location
+# Find locations accessible by a specific associate (finds target Location entities)
 hasIncomingEdge(canAccessLocation, ${principalId})</code></pre>
 </div>
 </div>
-<div class="paragraph">
-<p>Semantics:</p>
+<div class="listingblock">
+<div class="title">Qualified edge filtering with exact property match</div>
+<div class="content">
+<pre class="CodeRay highlight"><code># Find accounts where user has a PRIMARY role
+hasIncomingEdge(&quot;memberOf&quot;, ${principalId}, { role:&quot;PRIMARY&quot; })
+
+# Find orders routed to a facility with an expedited service level
+hasEdge(&quot;routedToFacility&quot;, &quot;FAC-901&quot;, { serviceLevel:&quot;EXPEDITED&quot; })</code></pre>
 </div>
+</div>
+<div class="listingblock">
+<div class="title">Qualified edge filtering with multi-attribute constraints</div>
+<div class="content">
+<pre class="CodeRay highlight"><code># Find suppliers with valid certified relationships and confidence &gt;= 0.90
+hasEdge(&quot;suppliedBy&quot;, @@507f1f77bcf86cd799439011, { certified:true &amp;&amp; confidence:&gt;=##0.90 })
+
+# Find assets with active status and priority in high tiers
+hasEdge(&quot;assignedToTeam&quot;, &quot;TEAM-ALPHA&quot;, { active:true &amp;&amp; tier:^[#1, #2] })</code></pre>
+</div>
+</div>
+<div class="listingblock">
+<div class="title">Combining edge traversal filters with root entity filters</div>
+<div class="content">
+<pre class="CodeRay highlight"><code># Orders in pending state placed in ORG-1 with a high-priority edge tag
+hasEdge(&quot;placedInOrg&quot;, &quot;ORG-1&quot;, { priority:&quot;HIGH&quot; }) &amp;&amp; status:&quot;PENDING&quot; &amp;&amp; total:&gt;##500.00</code></pre>
+</div>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_query_macros_for_temporal_ai_confidence_governance">Query Macros for Temporal &amp; AI Confidence Governance</h5>
+<div class="paragraph">
+<p>To simplify complex temporal and probabilistic filtering, the query preprocessor recognizes two high-level macros:</p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p><strong><code>@asOf(timestamp)</code></strong>:</p>
 <div class="ulist">
 <ul>
 <li>
-<p>These operators narrow the result set based on the existence of edges in the ontology edges collection.</p>
+<p>Compiles to bitemporal range matching: <code>validFrom:&#8656;ts || validFrom:null) &amp;&amp; (validTo:&gt;=ts || validTo:null</code> (or prefixed with <code>edges.</code> inside expansion/traversal contexts).</p>
 </li>
 <li>
-<p>They compose with other filters using <code>&amp;&amp;</code>, <code>||</code>, and <code>!!</code>.</p>
+<p>Backed by compound index <code>idx_domain_temporal</code>.</p>
 </li>
 <li>
-<p>Tenancy: edge resolution is always scoped by tenant/realm.</p>
+<p>Strips surrounding quotes so ISO-8601 timestamps parse cleanly as ANTLR <code>DATE</code> / <code>DATETIME</code> tokens.</p>
+</li>
+<li>
+<p><strong>Business Scenario &amp; Solution</strong>: Point-in-time compliance audits (e.g. healthcare HIPAA audits or financial regulatory inquiries) can reproduce past authorization states without maintaining separate historical snapshot tables or running deletion cron jobs.</p>
 </li>
 </ul>
+</div>
+</li>
+<li>
+<p><strong><code>@minConfidence(threshold)</code></strong>:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Compiles to confidence threshold filtering: <code>confidence:&gt;=threshold</code> (or <code>edges.confidence:&gt;=threshold</code>).</p>
+</li>
+<li>
+<p>Backed by compound index <code>idx_domain_confidence</code>.</p>
+</li>
+<li>
+<p><strong>Business Scenario &amp; Solution</strong>: AI and LLM graph derivation governance (e.g. anti-money laundering beneficial ownership links). Mission-critical operations require human-certified links (<code>confidence: 1.0</code>), while exploratory analysis accepts AI-inferred relationships (<code>@minConfidence(0.80)</code>).</p>
+</li>
+</ul>
+</div>
+</li>
+</ol>
+</div>
+<div class="listingblock">
+<div class="title">Query Macro Examples</div>
+<div class="content">
+<pre class="CodeRay highlight"><code># Temporal Point-in-Time Audit: Did associate have active role on September 1st, 2026?
+hasEdge(&quot;assignedToBranch&quot;, &quot;BRANCH-NY&quot;, { @asOf(2026-09-01T00:00:00Z) &amp;&amp; role:&quot;MANAGER&quot; })
+
+# Probabilistic AI Governance: Only traverse high-confidence vendor relationships
+hasEdge(&quot;subsidiaryOf&quot;, &quot;PARENT-CORP&quot;, { @minConfidence(0.85) &amp;&amp; assertionMethod:&quot;LLM_INFERENCE&quot; })
+
+# Combining temporal validity, AI confidence, and security classification
+hasEdge(&quot;operatesInFacility&quot;, &quot;FAC-901&quot;, {
+  @asOf(2026-09-20T00:00:00Z) &amp;&amp;
+  @minConfidence(0.90) &amp;&amp;
+  securityLabel:&quot;CONFIDENTIAL&quot;
+})</code></pre>
+</div>
+</div>
 </div>
 </div>
 <div class="sect3">
@@ -1835,8 +2008,8 @@ expand(customer) &amp;&amp; fields:[+_id,+customer,+total]</code></pre>
 </div>
 <div id="footer">
 <div id="footer-text">
-Version 1.3.1-SNAPSHOT<br>
-Last updated 2026-02-02 19:08:34 -0500
+Version 1.4.2-SNAPSHOT<br>
+Last updated 2026-09-20 22:56:10 -0400
 </div>
 </div>
 </body>

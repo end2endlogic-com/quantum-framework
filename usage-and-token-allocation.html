@@ -5,7 +5,7 @@
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="generator" content="Asciidoctor 2.0.23">
-<title>Usage Metering and Token Allocation</title>
+<title>REST Usage Governance and Metering Boundaries</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Open+Sans:300,300italic,400,400italic,600,600italic%7CNoto+Serif:400,400italic,700,700italic%7CDroid+Sans+Mono:400,700">
 <style>
 /*! Asciidoctor default stylesheet | MIT License | https://asciidoctor.org */
@@ -434,26 +434,112 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 @media amzn-kf8{#header,#content,#footnotes,#footer{padding:0}}
 </style>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+<style>
+/*! Stylesheet for CodeRay to loosely match GitHub themes | MIT License */
+pre.CodeRay{background:#f7f7f8}
+.CodeRay .line-numbers{border-right:1px solid;opacity:.35;padding:0 .5em 0 0;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;user-select:none}
+.CodeRay span.line-numbers{display:inline-block;margin-right:.75em}
+.CodeRay .line-numbers strong{color:#000}
+table.CodeRay{border-collapse:separate;border:0;margin-bottom:0;background:none}
+table.CodeRay td{vertical-align:top;line-height:inherit}
+table.CodeRay td.line-numbers{text-align:right}
+table.CodeRay td.code{padding:0 0 0 .75em}
+.CodeRay .debug{color:#fff!important;background:navy!important}
+.CodeRay .annotation{color:#007}
+.CodeRay .attribute-name{color:navy}
+.CodeRay .attribute-value{color:#700}
+.CodeRay .binary{color:#509}
+.CodeRay .comment{color:#998;font-style:italic}
+.CodeRay .char{color:#04d}
+.CodeRay .char .content{color:#04d}
+.CodeRay .char .delimiter{color:#039}
+.CodeRay .class{color:#458;font-weight:bold}
+.CodeRay .complex{color:#a08}
+.CodeRay .constant,.CodeRay .predefined-constant{color:teal}
+.CodeRay .color{color:#099}
+.CodeRay .class-variable{color:#369}
+.CodeRay .decorator{color:#b0b}
+.CodeRay .definition{color:#099}
+.CodeRay .delimiter{color:#000}
+.CodeRay .doc{color:#970}
+.CodeRay .doctype{color:#34b}
+.CodeRay .doc-string{color:#d42}
+.CodeRay .escape{color:#666}
+.CodeRay .entity{color:#800}
+.CodeRay .error{color:#808}
+.CodeRay .exception{color:inherit}
+.CodeRay .filename{color:#099}
+.CodeRay .function{color:#900;font-weight:bold}
+.CodeRay .global-variable{color:teal}
+.CodeRay .hex{color:#058}
+.CodeRay .integer,.CodeRay .float{color:#099}
+.CodeRay .include{color:#555}
+.CodeRay .inline{color:#000}
+.CodeRay .inline .inline{background:#ccc}
+.CodeRay .inline .inline .inline{background:#bbb}
+.CodeRay .inline .inline-delimiter{color:#d14}
+.CodeRay .inline-delimiter{color:#d14}
+.CodeRay .important{color:#555;font-weight:bold}
+.CodeRay .interpreted{color:#b2b}
+.CodeRay .instance-variable{color:teal}
+.CodeRay .label{color:#970}
+.CodeRay .local-variable{color:#963}
+.CodeRay .octal{color:#40e}
+.CodeRay .predefined{color:#369}
+.CodeRay .preprocessor{color:#579}
+.CodeRay .pseudo-class{color:#555}
+.CodeRay .directive{font-weight:bold}
+.CodeRay .type{font-weight:bold}
+.CodeRay .predefined-type{color:inherit}
+.CodeRay .reserved,.CodeRay .keyword{color:#000;font-weight:bold}
+.CodeRay .key{color:#808}
+.CodeRay .key .delimiter{color:#606}
+.CodeRay .key .char{color:#80f}
+.CodeRay .value{color:#088}
+.CodeRay .regexp .delimiter{color:#808}
+.CodeRay .regexp .content{color:#808}
+.CodeRay .regexp .modifier{color:#808}
+.CodeRay .regexp .char{color:#d14}
+.CodeRay .regexp .function{color:#404;font-weight:bold}
+.CodeRay .string{color:#d20}
+.CodeRay .string .string .string{background:#ffd0d0}
+.CodeRay .string .content{color:#d14}
+.CodeRay .string .char{color:#d14}
+.CodeRay .string .delimiter{color:#d14}
+.CodeRay .shell{color:#d14}
+.CodeRay .shell .delimiter{color:#d14}
+.CodeRay .symbol{color:#990073}
+.CodeRay .symbol .content{color:#a60}
+.CodeRay .symbol .delimiter{color:#630}
+.CodeRay .tag{color:teal}
+.CodeRay .tag-special{color:#d70}
+.CodeRay .variable{color:#036}
+.CodeRay .insert{background:#afa}
+.CodeRay .delete{background:#faa}
+.CodeRay .change{color:#aaf;background:#007}
+.CodeRay .head{color:#f8f;background:#505}
+.CodeRay .insert .insert{color:#080}
+.CodeRay .delete .delete{color:#800}
+.CodeRay .change .change{color:#66f}
+.CodeRay .head .head{color:#f4f}
+</style>
 </head>
 <body id="usage-and-token-allocation" class="book toc2 toc-left">
 <div id="header">
-<h1>Usage Metering and Token Allocation</h1>
+<h1>REST Usage Governance and Metering Boundaries</h1>
 <div class="details">
-<span id="revnumber">version 1.3.1-SNAPSHOT,</span>
-<span id="revdate">2026-04-13T18:47:11Z</span>
+<span id="revnumber">version 1.4.2-SNAPSHOT,</span>
+<span id="revdate">2026-09-21T22:14:39Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
 <ul class="sectlevel1">
-<li><a href="#_overview">1. Overview</a></li>
-<li><a href="#_token_types">2. Token Types</a></li>
-<li><a href="#_scope_assigning_pools_to_apis_and_toolsllm_configs">3. Scope: Assigning Pools to APIs and Tools/LLM Configs</a></li>
-<li><a href="#_usage_records">4. Usage Records</a></li>
-<li><a href="#_billing_interval_and_replenishment_per_tenant">5. Billing Interval and Replenishment (per tenant)</a></li>
-<li><a href="#_blocking_when_tokens_run_out">6. Blocking When Tokens Run Out</a></li>
-<li><a href="#configuration">7. Configuration</a></li>
-<li><a href="#_integrating_metering">8. Integrating Metering</a></li>
-<li><a href="#_billing_and_reporting">9. Billing and Reporting</a></li>
+<li><a href="#_runtime_modes">1. Runtime modes</a></li>
+<li><a href="#_stable_identity">2. Stable identity</a></li>
+<li><a href="#_property_manifest">3. Property manifest</a></li>
+<li><a href="#_extension_contracts">4. Extension contracts</a></li>
+<li><a href="#_storage_and_scaling_boundary">5. Storage and scaling boundary</a></li>
+<li><a href="#_network_guard_boundary">6. Network guard boundary</a></li>
 </ul>
 </div>
 </div>
@@ -461,204 +547,259 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <div id="preamble">
 <div class="sectionbody">
 <div class="paragraph">
-<p>This section describes how to meter API and LLM usage per tenant and how to allocate <strong>token pools</strong> that can be assigned to different sets of APIs and Tools/LLM configurations for usage-based billing and quotas.</p>
-</div>
-<div class="paragraph">
-<p><strong>Opt-in:</strong> Token metering is <strong>disabled by default</strong>. To use it you must enable it in <code>application.properties</code> (see <a href="#configuration">Configuration</a>). When disabled, no usage is recorded and no quotas apply.</p>
+<p>Quantum REST usage governance is opt-in and defaults to <code>OFF</code>. It provides
+automatic post-authentication endpoint admission, a bounded per-JVM token
+bucket, and an OSS observation SPI. It does not use a MongoDB request counter,
+does not poll, and does not enable a pre-authentication network limiter.</p>
 </div>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_overview">1. Overview</h2>
+<h2 id="_runtime_modes">1. Runtime modes</h2>
 <div class="sectionbody">
+<div class="dlist">
+<dl>
+<dt class="hdlist1"><code>OFF</code></dt>
+<dd>
+<p>The default. The filter performs no policy lookup, bucket allocation,
+or observation.</p>
+</dd>
+<dt class="hdlist1"><code>OBSERVE</code></dt>
+<dd>
+<p>The filter resolves the same trusted endpoint and principal
+identity used by enforcement, consumes the local bucket, and emits an
+observation. Exhaustion is recorded as <code>WOULD_REJECT</code>; the request continues.
+Unavailable enforcement state is recorded as <code>ENFORCEMENT_ERROR</code>; the request
+continues. Registry capacity pressure is recorded as <code>CAPACITY_BYPASSED</code>; the
+request continues without allocating an unbounded key.</p>
+</dd>
+<dt class="hdlist1"><code>ENFORCE</code></dt>
+<dd>
+<p>Exhaustion returns HTTP 429 with the typed
+<code>QuantumUsageGovernanceError</code> body and a whole-second <code>Retry-After</code> header.
+Missing endpoint identity, trusted principal identity, or policy state returns
+a typed HTTP 503 and does not invoke the endpoint. Bucket-registry capacity is
+never allowed to become a cross-tenant 503 primitive.</p>
+</dd>
+</dl>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_stable_identity">2. Stable identity</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The policy key is:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>policy id/version + functional area/domain/OpenAPI operationId + tenant + subject</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The area and domain come from <code>@FunctionalMapping</code>, including model mappings
+made available by the security runtime. The operation identity comes from an
+explicit <code>@Operation(operationId = "&#8230;&#8203;")</code>; the stable JAX-RS method name is
+the runtime fallback and requires the matching SmallRye <code>METHOD</code> OpenAPI
+operation-ID strategy. Mutable URL paths are not policy identity. When governance is
+active, OpenAPI generation validates that operation IDs are present and unique
+and that exact configured selectors refer to generated operations.</p>
+</div>
+<div class="paragraph">
+<p>Tenant and subject are read only from the effective framework
+<code>PrincipalContext</code> established by <code>SecurityFilter</code>. The tenant is the effective
+data-domain tenant after validated realm override; the subject is the provider
+subject with framework user ID as fallback. Raw identity attributes, headers,
+query parameters, and payload fields are not identity authorities.
+Endpoints explicitly annotated <code>@PermitAll</code> are outside this post-auth layer
+and need separately managed edge/network controls where appropriate. A
+class-level <code>@PermitAll</code> does not exempt a method that declares
+<code>@Authenticated</code>, <code>@RolesAllowed</code>, or <code>@DenyAll</code>.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_property_manifest">3. Property manifest</h2>
+<div class="sectionbody">
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 28.5714%;">
+<col style="width: 14.2857%;">
+<col style="width: 57.1429%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Property</th>
+<th class="tableblock halign-left valign-top">Default</th>
+<th class="tableblock halign-left valign-top">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>quantum.rest.usage.mode</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>OFF</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>OFF</code>, <code>OBSERVE</code>, or <code>ENFORCE</code>.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>quantum.rest.usage.policy.id</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>default-rest-usage</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Stable policy identifier.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>quantum.rest.usage.policy.version</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>1</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Policy version included in bucket identity.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>quantum.rest.usage.policy.request-limit</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>1000</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Bucket capacity and refill token count.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>quantum.rest.usage.policy.refill-period</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>PT5S</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Positive ISO-8601 refill period.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>quantum.rest.usage.policy.endpoints</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>*</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Comma-separated <code>area:domain:operationId</code> selectors or <code>*</code>.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>quantum.rest.usage.allow-unmatched-endpoints</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>true</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">When <code>ENFORCE</code> resolves a trusted endpoint but the policy source returns no
+matching policy, admit it as <code>BYPASSED</code>. Set to <code>false</code> to fail closed with the
+typed <code>USAGE_POLICY_NOT_FOUND</code> 503. This flag never covers indeterminate
+endpoint, identity, source, or bucket state; those always fail closed.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>quantum.rest.usage.bucket.max-tracked-keys</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>10000</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Strict per-JVM bound for policy/endpoint/tenant/subject keys.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>quantum.rest.usage.bucket.idle-timeout</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>PT10M</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Positive ISO-8601 idle period before request-triggered eviction.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>mp.openapi.extensions.smallrye.operationIdStrategy</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Must be explicitly set to <code>METHOD</code> whenever governance is active so generated
+OpenAPI and runtime operation identities cannot diverge.</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p>Invalid active configuration stops startup. <code>OFF</code> deliberately leaves dormant
+policy values unparsed so an upgrade remains inert. A typical observation-first
+rollout is:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="properties">quantum.rest.usage.mode=OBSERVE
+mp.openapi.extensions.smallrye.operationIdStrategy=METHOD
+quantum.rest.usage.policy.id=standard-api
+quantum.rest.usage.policy.version=2026-08-15
+quantum.rest.usage.policy.request-limit=100
+quantum.rest.usage.policy.refill-period=PT1M
+quantum.rest.usage.policy.endpoints=sales:order:listOrders,sales:order:createOrder
+quantum.rest.usage.allow-unmatched-endpoints=true</code></pre>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_extension_contracts">4. Extension contracts</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The reusable policy, admission, observation, identity, and error contracts live
+in <code>quantum-contract-core</code>. This is the acyclic leaf: <code>quantum-rest-core</code> was
+rejected because it depends on <code>quantum-morphia-repos</code>, and <code>quantum-models</code>
+was rejected because it directly carries Morphia persistence types.</p>
+</div>
+<div class="paragraph">
+<p><code>UsagePolicySource</code> is the policy lookup SPI. Its default CDI implementation is
+<code>PropertyUsagePolicySource</code>; applications can provide another implementation
+without changing the filter. A source receives <code>UsageRequest</code> and returns
+<code>Optional&lt;UsagePolicy&gt;</code>. Returning an inapplicable policy, returning <code>null</code>, or
+throwing is an explicit policy-state failure.</p>
+</div>
+<div class="paragraph">
+<p><code>UsageObserver</code> is the downstream observation SPI. <code>UsageObservation</code> contains:</p>
+</div>
 <div class="ulist">
 <ul>
 <li>
-<p><strong>Usage records</strong> — Each API call and each LLM/agent tool invocation can be recorded with tenant, caller (or runAs user), and API/tool identity. Records are persisted so you can aggregate by tenant, user, API, or tool for billing.</p>
+<p>endpoint, tenant, subject, and HTTP method;</p>
 </li>
 <li>
-<p><strong>Token allocation</strong> — Per tenant you define <strong>allocations</strong>: a token type (e.g. API calls, LLM requests, input/output tokens), a <strong>scope</strong> (which APIs or tools this pool applies to), an allocated amount per period, and a <strong>billing interval</strong> and <strong>replenishment</strong> (frequency and amount). Consumption is debited from the matching allocation when usage is recorded. When the period ends, the allocation is replenished (consumed reset, period advanced).</p>
+<p>response status and latency;</p>
 </li>
 <li>
-<p><strong>Token types</strong> — Different kinds of tokens can be assigned to different API sets and Tools/LLM configs. For example: one pool for "Premium API" (integration/query/find, integration/query/save), another for "LLM Standard" (tools query_find, query_save with a specific LLM config key).</p>
+<p>request and response byte counts (<code>-1</code> when unknown); and</p>
 </li>
 <li>
-<p><strong>Blocking when tokens run out</strong> — When enforce-quota is enabled, APIs and tools covered by an allocation are <strong>blocked</strong> when tokens run out. The framework returns HTTP 402 (Payment Required) with a message that includes the allocation name and the <strong>next replenishment date</strong> when configured.</p>
-</li>
-</ul>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_token_types">2. Token Types</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>The framework supports these consumable token kinds:</p>
-</div>
-<div class="paragraph">
-<p>| Token type | Unit | Typical scope |
-|------------|------|----------------|
-| <code>API_CALL</code> | 1 per API request | API identifiers (area/domain/action) |
-| <code>LLM_REQUEST</code> | 1 per tool invocation | Tool names (e.g. query_find, query_save) |
-| <code>LLM_INPUT_TOKENS</code> | Token count | Tool names and/or LLM config keys |
-| <code>LLM_OUTPUT_TOKENS</code> | Token count | Tool names and/or LLM config keys |</p>
-</div>
-<div class="paragraph">
-<p>You create a <strong>TenantTokenAllocation</strong> per tenant: name, token type, scope (which APIs/tools/LLM configs), allocated amount, <strong>billing interval</strong> (e.g. MONTHLY, YEARLY), and <strong>replenishment amount</strong> (tokens added each period). When usage is recorded, the framework finds an allocation whose scope matches the request, replenishes the allocation if its period has ended, then debits consumption.</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_scope_assigning_pools_to_apis_and_toolsllm_configs">3. Scope: Assigning Pools to APIs and Tools/LLM Configs</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Each allocation has a <strong>UsageScope</strong> that defines which usage consumes from that pool:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p><strong>API scope</strong> — List of API identifiers in the form <code>area/domain/action</code> (e.g. <code>integration/query/find</code>, <code>integration/query/save</code>). Only API calls that match one of these identifiers consume from this allocation.</p>
-</li>
-<li>
-<p><strong>Tool scope</strong> — List of agent tool names (e.g. <code>query_find</code>, <code>query_save</code>). Only LLM/tool invocations that match one of these names consume from this allocation.</p>
-</li>
-<li>
-<p><strong>LLM config scope</strong> — Optional list of LLM config keys. When present, only usage for those LLM configurations consumes from this allocation. This lets you assign different token pools to different LLM configurations (e.g. "Standard" vs "Premium" model).</p>
+<p><code>ADMITTED</code>, <code>WOULD_REJECT</code>, <code>REJECTED</code>, <code>BYPASSED</code>, <code>CAPACITY_BYPASSED</code>, or
+<code>ENFORCEMENT_ERROR</code>, plus policy/retry/error details in the admission result.</p>
 </li>
 </ul>
 </div>
 <div class="paragraph">
-<p>You can combine scope types: for example, one allocation with tool scope <code>[query_find, query_save]</code> and llmConfigKeys <code>[standard]</code>, and another with the same tools and llmConfigKeys <code>[premium]</code>, so that standard and premium LLM usage are billed from different pools.</p>
+<p>Observers run after a response exists. Tenant and subject identifiers are
+sensitive; trusted observer implementations must not log them unredacted or
+export them to untrusted sinks. An observer can bridge to metrics,
+events, or durable billing, but its failure cannot retroactively change
+admission. Keep exporters bounded and nonblocking.</p>
 </div>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_usage_records">4. Usage Records</h2>
+<h2 id="_storage_and_scaling_boundary">5. Storage and scaling boundary</h2>
 <div class="sectionbody">
-<div class="ulist">
-<ul>
-<li>
-<p><strong>ApiCallUsageRecord</strong> — One record per API call: realm, callerUserId, area, functionalDomain, action, optional path, timestamp. Optional link to the allocation that was debited.</p>
-</li>
-<li>
-<p><strong>LlmUsageRecord</strong> — One record per LLM/agent tool use: realm, runAsUserId (effective user), toolName, optional llmConfigKey, optional inputTokens/outputTokens, timestamp. Optional link to the allocation that was debited.</p>
-</li>
-</ul>
+<div class="paragraph">
+<p>The admission bucket is a framework-owned atomic in-memory token bucket with
+an injectable monotonic clock. The registry is strictly bounded and evicts
+idle entries opportunistically during requests; there is no polling, scheduler,
+or third-party bucket runtime. When the bound is reached, a new key is admitted
+without a bucket and observed as <code>CAPACITY_BYPASSED</code>; this preserves the memory
+bound without allowing one tenant&#8217;s cardinality to deny another tenant.</p>
 </div>
 <div class="paragraph">
-<p>Records are stored in the tenant&#8217;s realm database so you can query by tenant, user, time range, or allocation for billing and reporting.</p>
+<p>Each application replica has its own allowance. Therefore a deployment with
+three replicas has approximately three times the configured aggregate request
+capacity. Phase 1 intentionally prefers a deterministic, bounded OSS request
+path over a MongoDB read/modify/write counter. Cluster-wide entitlement and
+durable billing can consume the OSS contracts in a later, separately reviewed
+integration.</p>
+</div>
+<div class="paragraph">
+<p>The existing <code>UsageMeteringService</code> and persistent token-allocation models are
+manual durable metering APIs. They are not called by <code>UsageGovernanceFilter</code>
+and must not be inserted into its admission path. If used, connect them
+downstream through an observer or event boundary with explicit delivery and
+backpressure semantics.</p>
 </div>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_billing_interval_and_replenishment_per_tenant">5. Billing Interval and Replenishment (per tenant)</h2>
+<h2 id="_network_guard_boundary">6. Network guard boundary</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>Each <strong>TenantTokenAllocation</strong> can have:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p><strong>Billing interval</strong> — <code>BillingInterval.MONTHLY</code> or <code>BillingInterval.YEARLY</code>. Defines the period length; when the period ends, the allocation is replenished.</p>
-</li>
-<li>
-<p><strong>Replenishment amount</strong> — Number of tokens to add at the start of each period (often the same as the allocated amount). When the period ends, consumed is reset to 0 and allocated amount is set to this value (or unchanged if 0).</p>
-</li>
-<li>
-<p><strong>Period start / period end</strong> — The current period window. The framework advances the period automatically when it has ended and the allocation is next used.</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>Replenishment is applied lazily: when a matching API or tool is used and the allocation&#8217;s period has ended, the framework resets consumed, advances the period, and then checks quota. This avoids a separate scheduler; you can still run a job to advance periods if you prefer.</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_blocking_when_tokens_run_out">6. Blocking When Tokens Run Out</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>When <code>quantum.metering.enforce-quota</code> is <code>true</code> and a request would exceed the matching allocation&#8217;s remaining amount:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>The framework throws <code>UsageMeteringService.QuotaExceededException</code>.</p>
-</li>
-<li>
-<p>The exception is mapped to <strong>HTTP 402 Payment Required</strong> with a JSON body that includes a clear message, for example: <strong>"Usage limit reached for \"Premium API\". The associated APIs or tools are blocked until the next replenishment on 2025-03-01."</strong></p>
-</li>
-<li>
-<p>When no replenishment is configured (no billing interval), the message states that the associated APIs or tools are blocked and no replenishment is configured.</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>Clients can use the response body to show the user when the limit will reset.</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="configuration">7. Configuration</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Token metering is <strong>opt-in</strong>. By default it is <strong>not</strong> used; you must enable it in <code>application.properties</code> to record usage or enforce quotas.</p>
-</div>
-<div class="paragraph">
-<p>| Property | Default | Description |
-|----------|---------|-------------|
-| <code>quantum.metering.enabled</code> | <code>false</code> | Set to <code>true</code> to enable token metering. When false, no usage is recorded and no quotas apply. |
-| <code>quantum.metering.enforce-quota</code> | <code>false</code> | When true (and metering enabled), APIs/tools covered by an allocation are blocked when tokens run out (HTTP 402 with message including next replenishment date when available). |</p>
-</div>
-<div class="paragraph">
-<p>Morphia must map the usage entities: include <code>com.e2eq.framework.model.persistent.usage</code> in <code>quarkus.morphia.packages</code>.</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_integrating_metering">8. Integrating Metering</h2>
-<div class="sectionbody">
-<div class="ulist">
-<ul>
-<li>
-<p><strong>API calls</strong> — Call <code>UsageMeteringService.recordApiCall(realm, callerUserId, area, functionalDomain, action, path)</code> from a request filter or after successful API handling. The service records the usage and, if a matching API_CALL allocation exists, debits it.</p>
-</li>
-<li>
-<p><strong>LLM/agent tool usage</strong> — Call <code>UsageMeteringService.recordLlmUsage(realm, runAsUserId, toolName, llmConfigKey, inputTokens, outputTokens)</code> from the agent execute path (e.g. after <code>AgentExecuteHandler.execute</code>). The service records the usage and, if a matching LLM allocation exists, debits by request count or token count.</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>When <code>enforce-quota</code> is true, recording throws <code>UsageMeteringService.QuotaExceededException</code> if the allocation would be exceeded; the framework maps this to HTTP 402 with a message that includes the allocation name and next replenishment date when available.</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_billing_and_reporting">9. Billing and Reporting</h2>
-<div class="sectionbody">
-<div class="ulist">
-<ul>
-<li>
-<p><strong>By tenant</strong> — Query usage records by realm and time range; optionally group by callerUserId, area/domain/action, or toolName.</p>
-</li>
-<li>
-<p><strong>By allocation</strong> — Usage records can store the allocationId that was debited; you can aggregate consumption per allocation for billing.</p>
-</li>
-<li>
-<p><strong>Remaining quota</strong> — <code>TenantTokenAllocation.getRemainingAmount()</code> returns allocated minus consumed for the current period. Allocations have periodStart/periodEnd and optional billing interval (MONTHLY, YEARLY) for replenishment.</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>See the implementation classes: <code>TenantTokenAllocation</code>, <code>BillingInterval</code>, <code>UsageScope</code>, <code>ApiCallUsageRecord</code>, <code>LlmUsageRecord</code>, <code>UsageMeteringService</code>, and the usage repos in <code>com.e2eq.framework.model.persistent.morphia.usage</code>.</p>
+<p>Post-auth usage governance does not protect public authentication work.
+Deployments that need source-network denial-of-service protection
+should configure an edge or HTTP-layer guard separately. Such a guard uses a
+network identity and must never be described as tenant, subject, quota, or
+billing enforcement.</p>
 </div>
 </div>
 </div>
 </div>
 <div id="footer">
 <div id="footer-text">
-Version 1.3.1-SNAPSHOT<br>
-Last updated 2026-02-17 20:19:15 -0500
+Version 1.4.2-SNAPSHOT<br>
+Last updated 2026-08-15 20:07:01 -0400
 </div>
 </div>
 </body>

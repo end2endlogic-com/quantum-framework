@@ -5,7 +5,7 @@
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="generator" content="Asciidoctor 2.0.23">
-<title>Query Gateway Ontology Support — Design</title>
+<title>Application Registration</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Open+Sans:300,300italic,400,400italic,600,600italic%7CNoto+Serif:400,400italic,700,700italic%7CDroid+Sans+Mono:400,700">
 <style>
 /*! Asciidoctor default stylesheet | MIT License | https://asciidoctor.org */
@@ -434,10 +434,99 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 @media amzn-kf8{#header,#content,#footnotes,#footer{padding:0}}
 </style>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+<style>
+/*! Stylesheet for CodeRay to loosely match GitHub themes | MIT License */
+pre.CodeRay{background:#f7f7f8}
+.CodeRay .line-numbers{border-right:1px solid;opacity:.35;padding:0 .5em 0 0;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;user-select:none}
+.CodeRay span.line-numbers{display:inline-block;margin-right:.75em}
+.CodeRay .line-numbers strong{color:#000}
+table.CodeRay{border-collapse:separate;border:0;margin-bottom:0;background:none}
+table.CodeRay td{vertical-align:top;line-height:inherit}
+table.CodeRay td.line-numbers{text-align:right}
+table.CodeRay td.code{padding:0 0 0 .75em}
+.CodeRay .debug{color:#fff!important;background:navy!important}
+.CodeRay .annotation{color:#007}
+.CodeRay .attribute-name{color:navy}
+.CodeRay .attribute-value{color:#700}
+.CodeRay .binary{color:#509}
+.CodeRay .comment{color:#998;font-style:italic}
+.CodeRay .char{color:#04d}
+.CodeRay .char .content{color:#04d}
+.CodeRay .char .delimiter{color:#039}
+.CodeRay .class{color:#458;font-weight:bold}
+.CodeRay .complex{color:#a08}
+.CodeRay .constant,.CodeRay .predefined-constant{color:teal}
+.CodeRay .color{color:#099}
+.CodeRay .class-variable{color:#369}
+.CodeRay .decorator{color:#b0b}
+.CodeRay .definition{color:#099}
+.CodeRay .delimiter{color:#000}
+.CodeRay .doc{color:#970}
+.CodeRay .doctype{color:#34b}
+.CodeRay .doc-string{color:#d42}
+.CodeRay .escape{color:#666}
+.CodeRay .entity{color:#800}
+.CodeRay .error{color:#808}
+.CodeRay .exception{color:inherit}
+.CodeRay .filename{color:#099}
+.CodeRay .function{color:#900;font-weight:bold}
+.CodeRay .global-variable{color:teal}
+.CodeRay .hex{color:#058}
+.CodeRay .integer,.CodeRay .float{color:#099}
+.CodeRay .include{color:#555}
+.CodeRay .inline{color:#000}
+.CodeRay .inline .inline{background:#ccc}
+.CodeRay .inline .inline .inline{background:#bbb}
+.CodeRay .inline .inline-delimiter{color:#d14}
+.CodeRay .inline-delimiter{color:#d14}
+.CodeRay .important{color:#555;font-weight:bold}
+.CodeRay .interpreted{color:#b2b}
+.CodeRay .instance-variable{color:teal}
+.CodeRay .label{color:#970}
+.CodeRay .local-variable{color:#963}
+.CodeRay .octal{color:#40e}
+.CodeRay .predefined{color:#369}
+.CodeRay .preprocessor{color:#579}
+.CodeRay .pseudo-class{color:#555}
+.CodeRay .directive{font-weight:bold}
+.CodeRay .type{font-weight:bold}
+.CodeRay .predefined-type{color:inherit}
+.CodeRay .reserved,.CodeRay .keyword{color:#000;font-weight:bold}
+.CodeRay .key{color:#808}
+.CodeRay .key .delimiter{color:#606}
+.CodeRay .key .char{color:#80f}
+.CodeRay .value{color:#088}
+.CodeRay .regexp .delimiter{color:#808}
+.CodeRay .regexp .content{color:#808}
+.CodeRay .regexp .modifier{color:#808}
+.CodeRay .regexp .char{color:#d14}
+.CodeRay .regexp .function{color:#404;font-weight:bold}
+.CodeRay .string{color:#d20}
+.CodeRay .string .string .string{background:#ffd0d0}
+.CodeRay .string .content{color:#d14}
+.CodeRay .string .char{color:#d14}
+.CodeRay .string .delimiter{color:#d14}
+.CodeRay .shell{color:#d14}
+.CodeRay .shell .delimiter{color:#d14}
+.CodeRay .symbol{color:#990073}
+.CodeRay .symbol .content{color:#a60}
+.CodeRay .symbol .delimiter{color:#630}
+.CodeRay .tag{color:teal}
+.CodeRay .tag-special{color:#d70}
+.CodeRay .variable{color:#036}
+.CodeRay .insert{background:#afa}
+.CodeRay .delete{background:#faa}
+.CodeRay .change{color:#aaf;background:#007}
+.CodeRay .head{color:#f8f;background:#505}
+.CodeRay .insert .insert{color:#080}
+.CodeRay .delete .delete{color:#800}
+.CodeRay .change .change{color:#66f}
+.CodeRay .head .head{color:#f4f}
+</style>
 </head>
-<body class="book toc2 toc-left">
+<body id="application-registration" class="book toc2 toc-left">
 <div id="header">
-<h1>Query Gateway Ontology Support — Design</h1>
+<h1>Application Registration</h1>
 <div class="details">
 <span id="revnumber">version 1.4.2-SNAPSHOT,</span>
 <span id="revdate">2026-09-21T22:14:39Z</span>
@@ -445,26 +534,22 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
 <ul class="sectlevel1">
-<li><a href="#_current_state">1. Current State</a>
+<li><a href="#_enabling_it">1. Enabling It</a>
 <ul class="sectlevel2">
-<li><a href="#_query_gateway">1.1. Query Gateway</a></li>
-<li><a href="#_planner_and_filter_building">1.2. Planner and Filter Building</a></li>
-<li><a href="#_grammar">1.3. Grammar</a></li>
-<li><a href="#_documentation">1.4. Documentation</a></li>
+<li><a href="#_why_the_environment_is_configured_not_discovered">1.1. Why the environment is configured, not discovered</a></li>
 </ul>
 </li>
-<li><a href="#_goals">2. Goals</a></li>
-<li><a href="#_design">3. Design</a>
+<li><a href="#_implementing_a_registrar">2. Implementing a Registrar</a>
 <ul class="sectlevel2">
-<li><a href="#_1_pass_realmtenant_or_full_variable_map_into_planning_required">3.1. 1. Pass realm/tenant (or full variable map) into planning (required)</a></li>
-<li><a href="#_2_optional_add_hasedgeany_and_nothasedge_to_biapi_grammar_and_listener">3.2. 2. Optional: Add hasEdgeAny and notHasEdge to BIAPI grammar and listener</a></li>
-<li><a href="#_3_documentation_updates">3.3. 3. Documentation updates</a></li>
-<li><a href="#_4_optional_ontology_context_via_gateway">3.4. 4. Optional: Ontology context via gateway</a></li>
+<li><a href="#_startup_must_be_a_one_time_hit">2.1. Startup must be a one-time hit</a></li>
+<li><a href="#_two_rules_that_are_easy_to_get_wrong">2.2. Two rules that are easy to get wrong</a></li>
 </ul>
 </li>
-<li><a href="#_dependencies_and_backward_compatibility">4. Dependencies and Backward Compatibility</a></li>
-<li><a href="#_implementation_order">5. Implementation Order</a></li>
-<li><a href="#_summary">6. Summary</a></li>
+<li><a href="#_what_the_environment_answers">3. What the Environment Answers</a></li>
+<li><a href="#_when_it_runs">4. When It Runs</a></li>
+<li><a href="#_failure_policy">5. Failure Policy</a></li>
+<li><a href="#_registration_is_not_configuration">6. Registration Is Not Configuration</a></li>
+<li><a href="#_see_also">7. See Also</a></li>
 </ul>
 </div>
 </div>
@@ -472,461 +557,268 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <div id="preamble">
 <div class="sectionbody">
 <div class="paragraph">
-<p><strong>Implementation status:</strong> Section 1 (pass realm/tenant into planning) is implemented: QueryPlanner and MorphiaUtils accept an optional variableMap; QueryGatewayResource builds variableMap from SecurityContext or from the request realm and passes it to convertToPlannedQuery in find() and deleteMany(). Integration test: <code>QueryGatewayResourceIT.find_with_hasEdge_receives_tenant_context_and_returns_200</code>.</p>
+<p>A service that has started is not an environment that has been provisioned.
+Liveness probes report that a process is running; nothing about a green container says the realm it reads was ever migrated, or that its seeds were ever applied.
+When they were not, the symptoms surface deep in the request path&#8201;&#8212;&#8201;an unresolvable subject, a missing functional domain, a <code>403</code> on an annotated route&#8201;&#8212;&#8201;and each reads as a separate defect rather than the one cause they share: the application was never installed into this environment.</p>
 </div>
 <div class="paragraph">
-<p><strong>Delete prevention:</strong> Query Gateway delete and deleteMany now enforce the same referential integrity as MorphiaRepo: <code>DeleteValidationService</code> runs before each delete (back-reference check for <code>@TrackReferences</code> and all <code>PreDeleteHook</code> beans, e.g. ontology BLOCK_IF_REFERENCED). On violation the gateway returns 409 (ReferentialIntegrity or DeleteBlocked). deleteMany loads matching entities (capped by <code>quantum.queryGateway.deleteMany.maxMatches</code>, default 2000), validates each, then deletes only those ids.</p>
+<p>Application registration closes that gap.
+An application announces itself to its environment at startup, and the environment answers with what it knows&#8201;&#8212;&#8201;installing, seeding, and migrating on first arrival, or naming precisely what remains.</p>
 </div>
 <div class="paragraph">
-<p><strong>Row- and field-level governance (implemented):</strong> The generic query path previously
-ran a raw <code>ds.find(&#8230;&#8203;)</code> and bypassed both row- and field-level security. That gap is
-now closed. <code>find</code>, <code>count</code>, <code>delete</code>, <code>deleteMany</code>, and <code>export</code> build their row
-filter with <code>QueryGatewayResource.securedFilterArray(&#8230;&#8203;)</code>, which ANDs the parsed query
-filter with the caller&#8217;s DataDomain scope plus the <code>RuleContext</code> rule
-<code>filterConstraints</code> (mirroring <code>MorphiaRepo</code> / <code>RepoSecurityFilterBuilder</code>). <code>find</code>
-additionally applies <code>applyExcludedFieldProjection(&#8230;&#8203;)</code>, projecting away the deny-wins
-<code>RuleContext.getExcludedFieldPaths(&#8230;&#8203;)</code> at the MongoDB level. When neither
-<code>SecurityContext.isIgnoringRules()</code> is set nor a <code>PrincipalContext</code>/<code>ResourceContext</code>
-are present, the gateway <strong>fails closed</strong> with HTTP 500 <code>SecurityContextMissing</code> rather
-than running ungoverned. <code>delete</code> ANDs the <code>_id</code> filter with the secured filter, so an
-entity outside the caller&#8217;s DataDomain returns HTTP 404 (no row-existence leak).</p>
-</div>
-<div class="paragraph">
-<p><strong>AGGREGATION/expand still ungoverned (501-gated):</strong> The <code>expand(&#8230;&#8203;)</code> / AGGREGATION path
-is NOT yet governed and is intentionally gated. <code>POST /api/query/find</code> returns HTTP 501
-for an AGGREGATION-mode query even when <code>feature.queryGateway.execution.enabled=true</code>,
-because a leading secured <code>$match</code> stage and an <code>excludedFields</code> <code>$project</code> have not yet
-been wired into the aggregation pipeline. <code>count</code> and <code>deleteMany</code> reject <code>expand(&#8230;&#8203;)</code>
-with HTTP 400 (<code>InvalidQuery</code>). Re-enabling governed aggregation execution is the
-tracked follow-up below; see also
-<a href="../user-guide/planner-and-query-gateway.html#query-gateway-governance">Planner and QueryGateway: row- and field-level governance</a>.</p>
-</div>
-<div class="paragraph">
-<p>This document describes how to add ontology support to the Query Gateway API (<code>POST /api/query/find</code>, <code>POST /api/query/plan</code>, and related endpoints) so that callers can use ontology edge predicates (<code>hasEdge</code>, <code>hasOutgoingEdge</code>, <code>hasIncomingEdge</code>, and optionally <code>hasEdgeAny</code>, <code>notHasEdge</code>) in the query string and get correct, tenant-scoped results.</p>
+<p>This is an <strong>optional</strong> capability.
+The framework defines the contract and never the control plane: with registration disabled, which is the default, nothing here runs and the framework starts exactly as it does without it.</p>
 </div>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_current_state">1. Current State</h2>
+<h2 id="_enabling_it">1. Enabling It</h2>
 <div class="sectionbody">
-<div class="sect2">
-<h3 id="_query_gateway">1.1. Query Gateway</h3>
-<div class="ulist">
-<ul>
-<li>
-<p><strong>QueryGatewayResource</strong> (quantum-framework) exposes:</p>
-<div class="ulist">
-<ul>
-<li>
-<p><code>POST /api/query/find</code> — executes a BIAPI query and returns a Collection envelope (rows, offset, limit).</p>
-</li>
-<li>
-<p><code>POST /api/query/plan</code> — returns mode (FILTER vs AGGREGATION) and expand paths.</p>
-</li>
-<li>
-<p><code>GET /api/query/rootTypes</code>, <code>POST /api/query/save</code>, <code>POST /api/query/delete</code>, <code>POST /api/query/deleteMany</code>.</p>
-</li>
-</ul>
+<div class="paragraph">
+<p>Registration is enabled by configuration and satisfied by an implementation on the classpath.</p>
 </div>
-</li>
-<li>
-<p>For FILTER mode, the gateway calls <code>MorphiaUtils.convertToPlannedQuery(req.query, root, limit, skip, sortFields)</code> and then applies <code>planned.getFilter()</code> to <code>ds.find(root)</code>. No realm or variable map is passed into planning.</p>
-</li>
-</ul>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="properties">quantum.application-registration.enabled=true
+quantum.application-registration.provider=system-manager
+quantum.application-registration.application-id=my-app
+quantum.application-registration.environment=production
+quantum.application-registration.realms=my-app-P1,my-app-P2</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p><code>provider</code> selects the implementation.
+It matches either the registrar&#8217;s <code>getName()</code> or its fully-qualified class name, so both of the following are valid:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="properties">quantum.application-registration.provider=system-manager
+quantum.application-registration.provider=com.e2eq.system.client.registration.SystemManagerRegistrar</code></pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_planner_and_filter_building">1.2. Planner and Filter Building</h3>
-<div class="ulist">
-<ul>
-<li>
-<p><strong>QueryPlanner.plan(query, modelClass, limit, skip, sortFields)</strong> (quantum-morphia-repos):</p>
-<div class="ulist">
-<ul>
-<li>
-<p>In FILTER mode it calls <code>MorphiaUtils.convertToFilter(query, modelClass)</code> — the two-argument overload that passes <code>null, null</code> for context (see MorphiaUtils.convertToFilterWContext).</p>
-</li>
-<li>
-<p>In AGGREGATION mode it builds a root filter by calling <code>MorphiaUtils.convertToFilter(filterOnly, modelClass)</code> again without context.</p>
-</li>
-</ul>
+<h3 id="_why_the_environment_is_configured_not_discovered">1.1. Why the environment is configured, not discovered</h3>
+<div class="paragraph">
+<p><code>application-id</code> and <code>environment</code> are required and are never inferred.
+Discovery is tempting and wrong: the thing that would answer "which environment am I in" is the registry we are trying to reach, and a service that guesses can register into the <strong>wrong</strong> environment.
+That is worse than failing to start&#8201;&#8212;&#8201;the wrong environment&#8217;s directory then claims a service that is not there, and the right one never learns about it.</p>
 </div>
-</li>
-<li>
-<p><strong>MorphiaUtils.convertToFilter(queryString, modelClass)</strong> delegates to <code>convertToFilterWContext(queryString, null, null, modelClass)</code>. When <code>pcontext</code> and <code>rcontext</code> are null, the listener is created as <code>new QueryToFilterListener(modelClass)</code> — i.e. no PrincipalContext, so no variableMap.</p>
-</li>
-<li>
-<p><strong>QueryToFilterListener</strong> (quantum-morphia-repos) already implements:</p>
-<div class="ulist">
-<ul>
-<li>
-<p><code>enterHasEdgeExpr</code>, <code>enterHasOutgoingEdgeExpr</code>, <code>enterHasIncomingEdgeExpr</code> — they read <code>tenantId</code> from <code>variableMap</code> (keys <code>pTenantId</code> or <code>tenantId</code>), then use CDI to look up <code>OntologyEdgeRepo</code> and call <code>srcIdsByDst(tenantId, predicate, dst)</code> (or the inverse for hasIncomingEdge). If <code>variableMap</code> is null or <code>tenantId</code> is blank, the ontology lookup is skipped and the listener pushes <code>Filters.eq("_id", "<em>none</em>")</code> (fail closed, no results).</p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p>Conclusion: When the gateway runs a find with a query that contains <code>hasEdge(&#8230;&#8203;)</code>, the filter is built with <strong>no variableMap</strong>, so <strong>tenantId is null</strong> and ontology lookups never run with a valid tenant. Result: hasEdge in the gateway effectively returns no rows for ontology-predicate queries.</p>
-</li>
-</ul>
-</div>
-</div>
-<div class="sect2">
-<h3 id="_grammar">1.3. Grammar</h3>
-<div class="ulist">
-<ul>
-<li>
-<p>BIAPIQuery.g4 (quantum-models) already defines:</p>
-<div class="ulist">
-<ul>
-<li>
-<p><code>hasEdgeExpr</code>: <code>hasEdge(predicate, dst)</code></p>
-</li>
-<li>
-<p><code>hasOutgoingEdgeExpr</code>: <code>hasOutgoingEdge(predicate, dst)</code></p>
-</li>
-<li>
-<p><code>hasIncomingEdgeExpr</code>: <code>hasIncomingEdge(predicate, src)</code></p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p>It does <strong>not</strong> define <code>hasEdgeAny(predicate, [id1, id2, &#8230;&#8203;])</code> or <code>notHasEdge(predicate, dst)</code>. Those exist only in <strong>ListQueryRewriter</strong> (quantum-ontology-policy-bridge) and are used by OntologyAwareResource, not by the BIAPI parser.</p>
-</li>
-</ul>
-</div>
-</div>
-<div class="sect2">
-<h3 id="_documentation">1.4. Documentation</h3>
-<div class="ulist">
-<ul>
-<li>
-<p>ai-agent-integration.adoc and QueryHintsProvider state that "for the generic query gateway find, use attribute filters; for ontology-constrained lists, use the resource&#8217;s ontology list endpoint." So the docs currently direct agents <strong>away</strong> from using ontology predicates in the gateway.</p>
-</li>
-</ul>
+<div class="paragraph">
+<p>For the same reason, the address of the control plane is a configured seed.
+The chicken-and-egg is broken by configuration, deliberately, at exactly one point.</p>
 </div>
 </div>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_goals">2. Goals</h2>
+<h2 id="_implementing_a_registrar">2. Implementing a Registrar</h2>
 <div class="sectionbody">
-<div class="olist arabic">
-<ol class="arabic">
-<li>
-<p><strong>Enable ontology edge predicates in the gateway find</strong> — When the request has a valid realm (or principal context with tenantId), <code>hasEdge</code>, <code>hasOutgoingEdge</code>, and <code>hasIncomingEdge</code> in the query string should resolve via OntologyEdgeRepo and return the correct entity set for that tenant.</p>
-</li>
-<li>
-<p><strong>Single integration point</strong> — Agents and UIs can use <code>POST /api/query/find</code> with ontology predicates instead of being directed to per-resource ontology list endpoints when they want relationship-based filtering.</p>
-</li>
-<li>
-<p><strong>Optional: hasEdgeAny and notHasEdge</strong> — Parity with ListQueryRewriter and OntologyAwareResource constraint semantics (e.g. "invoices for any of these customers", "exclude this org").</p>
-</li>
-</ol>
+<div class="paragraph">
+<p>Implement <code>ApplicationRegistrar</code> and make it a CDI bean.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="directive">public</span> <span class="type">interface</span> <span class="class">ApplicationRegistrar</span> {
+    <span class="predefined-type">String</span> getName();
+    <span class="type">boolean</span> isRegistered(RegistrationContext context);
+    RegistrationOutcome register(RegistrationContext context) <span class="directive">throws</span> RegistrationException;
+}</code></pre>
 </div>
 </div>
+<div class="paragraph">
+<p><code>ApplicationRegistrarFactory</code> discovers implementations through CDI and resolves the configured one, mirroring how <code>AuthProviderFactory</code> resolves authentication providers.
+There is deliberately one way to plug an implementation into the framework rather than two.</p>
 </div>
-<div class="sect1">
-<h2 id="_design">3. Design</h2>
-<div class="sectionbody">
 <div class="sect2">
-<h3 id="_1_pass_realmtenant_or_full_variable_map_into_planning_required">3.1. 1. Pass realm/tenant (or full variable map) into planning (required)</h3>
+<h3 id="_startup_must_be_a_one_time_hit">2.1. Startup must be a one-time hit</h3>
 <div class="paragraph">
-<p><strong>Problem:</strong> The gateway never passes realm or PrincipalContext into the planner, so the filter is built with no variableMap and hasEdge gets no tenantId.</p>
-</div>
-<div class="paragraph">
-<p><strong>Approach:</strong></p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p><strong>QueryGatewayResource.find(FindRequest req):</strong></p>
-<div class="ulist">
-<ul>
-<li>
-<p>Resolve realm as today: <code>String realm = resolveRealm(req.realm);</code></p>
-</li>
-<li>
-<p>Build a <strong>variable map</strong> for planning:</p>
-<div class="ulist">
-<ul>
-<li>
-<p>If <code>SecurityContext.getPrincipalContext()</code> is present, use <code>MorphiaUtils.createStandardVariableMapFrom(pcontext, resourceContext)</code> so that pTenantId, tenantId, principalId, etc. are set (and ontology + permission rules behave as in other resources). Pass a minimal ResourceContext for the gateway (e.g. area=integration, functionalDomain=query, action=find).</p>
-</li>
-<li>
-<p>Else, build a minimal map with at least <code>pTenantId</code> and <code>tenantId</code> set to <code>realm</code>, so ontology lookups have a tenant even when the request is not fully authenticated (e.g. server-to-server with realm in the body).</p>
-</li>
-</ul>
-</div>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p><strong>MorphiaUtils</strong> (quantum-morphia-repos):</p>
-<div class="ulist">
-<ul>
-<li>
-<p>Add overloads that accept an optional variable map and pass it into the listener:
-<strong>*
-  convertToFilter(String queryString, Class&lt;?&gt; modelClass, Map&lt;String, String&gt; variableMap)
-  → if variableMap != null, use convertToFilter(queryString, variableMap, new StringSubstitutor(variableMap), modelClass); else current behavior (null context).
-</strong>*
-  Existing <code>convertToFilter(String, Map&lt;String,String&gt;, StringSubstitutor, Class)</code> already builds a listener with that variableMap; reuse it.</p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p><strong>QueryPlanner</strong> (quantum-morphia-repos):</p>
-<div class="ulist">
-<ul>
-<li>
-<p>Add an overload <code>plan(String query, Class&lt;T&gt; modelClass, Integer limit, Integer skip, List&lt;SortSpec.Field&gt; sortFields, Map&lt;String, String&gt; variableMap)</code>.</p>
-</li>
-<li>
-<p>In FILTER mode: call <code>MorphiaUtils.convertToFilter(query, modelClass, variableMap)</code> instead of <code>convertToFilter(query, modelClass)</code>.</p>
-</li>
-<li>
-<p>In AGGREGATION mode: when building the root filter from the stripped query, call <code>convertToFilter(filterOnly, modelClass, variableMap)</code> so that any hasEdge in the filter part is also tenant-scoped.</p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p><strong>MorphiaUtils</strong>:</p>
-<div class="ulist">
-<ul>
-<li>
-<p>Add <code>convertToPlannedQuery(String query, Class&lt;T&gt; modelClass, Integer limit, Integer skip, List&lt;SortSpec.Field&gt; sortFields, Map&lt;String, String&gt; variableMap)</code> that calls <code>planner.plan(&#8230;&#8203;, variableMap)</code>.</p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p><strong>QueryGatewayResource</strong>:</p>
-<div class="ulist">
-<ul>
-<li>
-<p>In <code>find()</code>, build variableMap as above, then call <code>MorphiaUtils.convertToPlannedQuery(req.query, root, limit, skip, sortFields, variableMap)</code> (or a new overload that takes variableMap). In <code>deleteMany()</code>, do the same when building the planned query for the delete filter.</p>
-</li>
-</ul>
-</div>
-</li>
-</ul>
+<p>Registration runs on every start but must only be <strong>paid for</strong> once.</p>
 </div>
 <div class="paragraph">
-<p><strong>Result:</strong> hasEdge / hasOutgoingEdge / hasIncomingEdge in the gateway find query will receive a tenantId and OntologyEdgeRepo will return the correct source IDs for that tenant. No change to QueryToFilterListener ontology logic; only the gateway and planner must pass the map through.</p>
+<p><code>isRegistered(context)</code> is the cheap path and is called first on every boot.
+<code>register(context)</code> runs only when it answers <code>false</code>.</p>
+</div>
+<div class="admonitionblock important">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-important" title="Important"></i>
+</td>
+<td class="content">
+<div class="paragraph">
+<p><code>isRegistered</code> <strong>must not perform a remote call</strong>.
+It runs on the path that decides whether the expensive work is needed at all.
+An implementation that asks the control plane "have I registered?" on every boot turns a one-time install into a per-restart round trip&#8201;&#8212;&#8201;and a crash-looping service into a load generator against the control plane.</p>
+</div>
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p>Answer it from a locally persisted receipt keyed by <code>RegistrationContext.getFingerprint()</code>: a single indexed local read.</p>
+</div>
+<div class="paragraph">
+<p>The fingerprint covers everything whose change should force re-registration:</p>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Component</th>
+<th class="tableblock halign-left valign-top">Why it is included</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>applicationId</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">A different application is a different registration.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>applicationVersion</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">A new build may declare new realms, new contracts, or new seeds.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>environmentRef</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The same build in a different environment has registered nowhere yet.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>requiredRealms</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">A newly required realm may be unmigrated even though the application is known.</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p>The same build redeployed into the same environment produces the same fingerprint and costs one local read.
+A version bump or a newly required realm produces a different one and registers again.</p>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_2_optional_add_hasedgeany_and_nothasedge_to_biapi_grammar_and_listener">3.2. 2. Optional: Add hasEdgeAny and notHasEdge to BIAPI grammar and listener</h3>
+<h3 id="_two_rules_that_are_easy_to_get_wrong">2.2. Two rules that are easy to get wrong</h3>
 <div class="paragraph">
-<p><strong>Goal:</strong> Align gateway query syntax with ListQueryRewriter and OntologyAwareResource (e.g. "receivables for any of these customers", "orders not in this org").</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p><strong>BIAPIQuery.g4</strong> (quantum-models):</p>
-<div class="ulist">
-<ul>
-<li>
-<p>Add rules, e.g.:
-<strong>*
-  hasEdgeAnyExpr: HASEDGEANY LPAREN predicate=(STRING|QUOTED_STRING|VARIABLE) COMMA dstList=valueListExpr RPAREN;
-  notHasEdgeExpr: NOTHASEDGE LPAREN predicate=(STRING|QUOTED_STRING|VARIABLE) COMMA dst=(STRING|QUOTED_STRING|VARIABLE|OID|REFERENCE) RPAREN;
-</strong>*</p>
-</li>
-<li>
-<p>Add tokens: <code>HASEDGEANY: 'hasEdgeAny';</code> <code>NOTHASEDGE: 'notHasEdge';</code></p>
-</li>
-<li>
-<p>Add to allowedExpr: <code>hasEdgeAnyExpr | notHasEdgeExpr</code>.</p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p><strong>QueryToFilterListener</strong> (quantum-morphia-repos):</p>
-<div class="ulist">
-<ul>
-<li>
-<p>Implement <code>enterHasEdgeAnyExpr</code>: resolve tenantId from variableMap; for each value in dstList, call OntologyEdgeRepo.srcIdsByDst(tenantId, predicate, dst) and take the union of IDs; push <code>Filters.in("_id", objectIds)</code> (or <code>Filters.eq("_id", "<em>none</em>")</code> if empty). Reuse the same CDI/reflection pattern as hasEdge so that quantum-ontology-mongo remains an optional dependency.</p>
-</li>
-<li>
-<p>Implement <code>enterNotHasEdgeExpr</code>: resolve tenantId; get source IDs for that (predicate, dst); then push <code>Filters.nin("_id", objectIds)</code> (entities whose id is <strong>not</strong> in the set that have the edge). If the set is empty, do not restrict (all entities pass the notHasEdge clause).</p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p>Regenerate ANTLR lexer/parser after grammar changes; add/update unit tests for the new expressions.</p>
-</li>
-</ul>
+<p>Return <code>false</code> from <code>isRegistered</code> when unsure.
+A redundant registration is idempotent and cheap to absorb; a skipped one leaves an application running against an environment that was never prepared for it.</p>
 </div>
 <div class="paragraph">
-<p><strong>Priority:</strong> Can be done in a follow-up once realm/variableMap wiring (design 1) is in place and hasEdge works in the gateway.</p>
-</div>
-</div>
-<div class="sect2">
-<h3 id="_3_documentation_updates">3.3. 3. Documentation updates</h3>
-<div class="ulist">
-<ul>
-<li>
-<p><strong>planner-and-query-gateway.adoc</strong>:</p>
-<div class="ulist">
-<ul>
-<li>
-<p>In "Request/Response: /api/query/find", state that the query string may include ontology edge predicates: <code>hasEdge(predicate, dst)</code>, <code>hasOutgoingEdge(predicate, dst)</code>, <code>hasIncomingEdge(predicate, src)</code>. When the application includes quantum-ontology-mongo and the request has a valid realm (or principal context with tenantId), these predicates restrict results to entities that have the corresponding ontology relationship in the current tenant. If realm/tenant is missing or ontology is not wired, hasEdge-style predicates evaluate to no results (fail closed).</p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p><strong>ai-agent-integration.adoc</strong> and <strong>QueryHintsProvider</strong>:</p>
-<div class="ulist">
-<ul>
-<li>
-<p>Update the ontologyEdges / didYouKnow text to say that the <strong>query gateway find</strong> supports hasEdge / hasOutgoingEdge / hasIncomingEdge when a realm (or principal) is present; agents can use these in the same query string as attribute filters and expand(&#8230;&#8203;). Optionally mention hasEdgeAny and notHasEdge if implemented.</p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p><strong>ontology.adoc</strong> (or rest-crud):</p>
-<div class="ulist">
-<ul>
-<li>
-<p>Add a short subsection that the Query Gateway (<code>POST /api/query/find</code>) honors ontology edge predicates in the BIAPI query when the request supplies a realm or the principal context has a tenantId; OntologyEdgeRepo (quantum-ontology-mongo) must be on the classpath.</p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p><strong>permissions.adoc</strong> (done):</p>
-<div class="ulist">
-<ul>
-<li>
-<p>The "Row Filter Computation (Data Scoping)" section documents how list/query filters are derived — the static variable map (<code>${pTenantId}</code> is the only default scope; org/account/segment are opt-in via authored rules), and the dynamic <code>AccessListResolver</code> variables (e.g. <code>${accessibleLocationIds}</code>) including the ontology-edge-backed <code>ListQueryRewriter</code> path. The gateway&#8217;s "pass the variableMap into planning" fix above is what makes those <code>${&#8230;&#8203;}</code> values resolve for <code>POST /api/query/find</code>; without it the filter is built tenant-blind exactly as the Current State notes.</p>
-</li>
-</ul>
-</div>
-</li>
-</ul>
-</div>
-</div>
-<div class="sect2">
-<h3 id="_4_optional_ontology_context_via_gateway">3.4. 4. Optional: Ontology context via gateway</h3>
-<div class="ulist">
-<ul>
-<li>
-<p>Some clients may want "ontology edges for entity X" without calling a resource-specific endpoint. Options:</p>
-<div class="ulist">
-<ul>
-<li>
-<p>(a) Do not add a gateway endpoint; keep using <code>GET /{basePath}/id/{id}/ontology</code> per OntologyAwareResource.</p>
-</li>
-<li>
-<p>(b) Add <code>GET /api/query/ontologyContext?rootType=&#8230;&#8203;&amp;id=&#8230;&#8203;</code> (or POST with body) that resolves rootType to a collection, looks up OntologyContextEnricher (or OntologyEdgeRepo), and returns the same shape as the existing ontology context response. This requires the gateway (or a shared service) to depend on quantum-ontology-mongo and to know how to get DataDomain from the request (realm/principal). Low priority unless we want a single discovery surface for agents.</p>
-</li>
-</ul>
-</div>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>Recommendation: Omit (b) for the first iteration; document that ontology <strong>context</strong> (edges for one entity) remains on OntologyAwareResource detail endpoints.</p>
+<p>Record the receipt only on <strong>fully successful</strong> registration.
+Writing one for a partial install makes the next boot skip work that never finished.</p>
 </div>
 </div>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_dependencies_and_backward_compatibility">4. Dependencies and Backward Compatibility</h2>
+<h2 id="_what_the_environment_answers">3. What the Environment Answers</h2>
 <div class="sectionbody">
-<div class="ulist">
-<ul>
-<li>
-<p><strong>quantum-framework</strong> already depends on quantum-morphia-repos. It does not depend on quantum-ontology-mongo or quantum-ontology-policy-bridge. QueryToFilterListener uses CDI + reflection to resolve OntologyEdgeRepo and OntologyAliasResolver, so when those beans are not present, hasEdge fails closed (no results). No new compile dependency is required for the gateway; applications that want ontology in the gateway must include quantum-ontology-mongo (and typically quantum-ontology-policy-bridge) as today.</p>
-</li>
-<li>
-<p>Passing a variableMap from the gateway into the planner is backward compatible: when variableMap is null, behavior stays as today (convertToFilter(query, modelClass) with no context). Existing callers of convertToPlannedQuery without variableMap are unchanged.</p>
-</li>
-</ul>
+<div class="paragraph">
+<p><code>register</code> returns a <code>RegistrationOutcome</code>:</p>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Status</th>
+<th class="tableblock halign-left valign-top">Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>REGISTERED</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Registered during this call.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>ALREADY_REGISTERED</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Already registered; nothing was written.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>NOT_READY</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The environment is reachable but not ready to serve this application.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>REFUSED</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The environment refused this registration outright.</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p><code>NOT_READY</code> carries <code>getRemainingActions()</code>&#8201;&#8212;&#8201;ordered, human-actionable steps.
+This is the part that repays the protocol.
+A service that cannot be served by its environment says which step is missing, instead of starting anyway and failing later inside an unrelated request.</p>
 </div>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_implementation_order">5. Implementation Order</h2>
+<h2 id="_when_it_runs">4. When It Runs</h2>
 <div class="sectionbody">
-<div class="olist arabic">
-<ol class="arabic">
-<li>
-<p><strong>Phase 1 — Realm/variableMap in gateway (required):</strong></p>
-<div class="ulist">
-<ul>
-<li>
-<p>MorphiaUtils: add <code>convertToFilter(query, modelClass, variableMap)</code> (delegate to existing overload when variableMap != null).</p>
-</li>
-<li>
-<p>QueryPlanner: add <code>plan(&#8230;&#8203;, Map&lt;String, String&gt; variableMap)</code> and use convertToFilter with variableMap in both FILTER and AGGREGATION paths.</p>
-</li>
-<li>
-<p>MorphiaUtils: add <code>convertToPlannedQuery(&#8230;&#8203;, Map&lt;String, String&gt; variableMap)</code>.</p>
-</li>
-<li>
-<p>QueryGatewayResource.find(): build variableMap (from PrincipalContext or minimal map from resolveRealm), call convertToPlannedQuery(&#8230;&#8203;, variableMap).</p>
-</li>
-<li>
-<p>QueryGatewayResource.deleteMany(): same when building the filter for the delete query.</p>
-</li>
-<li>
-<p>Test: integration test that POST /api/query/find with query containing hasEdge(predicate, dst) and valid realm returns expected rows when ontology edges exist.</p>
-</li>
-</ul>
+<div class="paragraph">
+<p>Registration runs <strong>after</strong> startup completes, on a background thread, not inside the startup sequence.</p>
 </div>
-</li>
-<li>
-<p><strong>Phase 2 — Docs:</strong></p>
-<div class="ulist">
-<ul>
-<li>
-<p>Update planner-and-query-gateway.adoc, ai-agent-integration.adoc, QueryHintsProvider, and ontology/rest-crud as in section 3.</p>
-</li>
-</ul>
+<div class="paragraph">
+<p>This is not an optimisation. Registering can cause the environment to call back into the very service that is registering&#8201;&#8212;&#8201;installing an application provisions its realm by asking that application&#8217;s own tenant plane to do it. Startup observers run before the HTTP server accepts connections, so registering inline deadlocks a service against itself: it waits for a callback it cannot yet answer.</p>
 </div>
-</li>
-<li>
-<p><strong>Phase 3 — Optional hasEdgeAny / notHasEdge:</strong></p>
-<div class="ulist">
-<ul>
-<li>
-<p>Grammar + listener + tests; then document.</p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p><strong>Phase 4 — Optional ontology context endpoint:</strong> Only if required; otherwise keep context on OntologyAwareResource.</p>
-</li>
-</ol>
+<div class="paragraph">
+<p>The service therefore becomes <strong>live</strong> first and registers immediately afterwards. This is the same reason registration belongs in front of readiness rather than liveness: a service whose environment is not provisioned is running, and should not be serving traffic.</p>
 </div>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_summary">6. Summary</h2>
+<h2 id="_failure_policy">5. Failure Policy</h2>
 <div class="sectionbody">
-<div class="paragraph">
-<p>| Item | Action |
-|------|--------|
-| <strong>Realm/tenant in planning</strong> | Gateway builds variableMap (from PrincipalContext or minimal { pTenantId, tenantId } = realm) and passes it into MorphiaUtils.convertToPlannedQuery / QueryPlanner.plan. MorphiaUtils and QueryPlanner gain overloads that accept variableMap and pass it to convertToFilter. |
-| <strong>hasEdge in find</strong> | No change to QueryToFilterListener; once variableMap contains tenantId, existing hasEdge/hasOutgoingEdge/hasIncomingEdge logic works. |
-| <strong>hasEdgeAny / notHasEdge</strong> | Optional: add to BIAPI grammar and QueryToFilterListener so gateway find supports the same semantics as ListQueryRewriter. |
-| <strong>Documentation</strong> | State that gateway find supports ontology edge predicates when realm/tenant is set and quantum-ontology-mongo is on the classpath; update agent hints. |
-| <strong>Ontology context</strong> | Leave on OntologyAwareResource; no gateway endpoint in first iteration. |</p>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="properties">quantum.application-registration.fail-on-error=true</code></pre>
+</div>
 </div>
 <div class="paragraph">
-<p>This design adds ontology support to the query gateway API in a minimal, backward-compatible way by threading the existing realm/principal context into the filter-building path so that ontology edge predicates already implemented in QueryToFilterListener receive a tenantId and behave correctly.</p>
+<p>Defaults to <code>true</code>, which shuts the service down.</p>
+</div>
+<div class="paragraph">
+<p>Because registration runs off the startup thread, throwing would stop nothing&#8201;&#8212;&#8201;the exception would be swallowed by a background worker and the service would go on serving traffic against an environment that does not know it. Shutting down is what "fail on error" has to mean once registration is asynchronous.</p>
+</div>
+<div class="paragraph">
+<p>An application whose environment does not know it is an application whose realms may be unmigrated and whose seeds may be absent; starting anyway converts one clear startup error into a stream of unrelated-looking failures later.</p>
+</div>
+<div class="paragraph">
+<p>Set it to <code>false</code> where that trade is wrong&#8201;&#8212;&#8201;a developer machine with no control plane running, for instance.
+Whether a failed registration should stop the service is a property of the deployment, not of the code that failed, which is why it is configuration and not a decision the registrar makes.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_registration_is_not_configuration">6. Registration Is Not Configuration</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Registration answers one question: <strong>did this application land in this environment?</strong>
+That is infrastructure&#8201;&#8212;&#8201;the realm&#8217;s datastore, its migrations, its seeds.</p>
+</div>
+<div class="paragraph">
+<p>It deliberately does not answer <strong>is this application fully configured?</strong>
+An application missing, say, an API key is installed; it is not fully configured.
+Those are different problems, with different owners and different remedies.</p>
+</div>
+<div class="paragraph">
+<p>Feature-level configuration gaps are reported through scoped action enablement (<code>quantum-action-enablement-quarkus</code>), which names which actions are unavailable and what is blocking each one.
+A blocker carries a <code>severity</code>: <code>error</code> withholds the feature, <code>warn</code> is advisory.
+Deciding what a given severity gates is the consuming control plane&#8217;s call, not the framework&#8217;s.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_see_also">7. See Also</h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p><a href="multiple-auth-providers.html">Multiple Authentication Providers</a>&#8201;&#8212;&#8201;the same SPI-plus-configuration pattern for identity</p>
+</li>
+<li>
+<p><a href="control-plane-architecture.html">Control Plane Architecture</a></p>
+</li>
+</ul>
 </div>
 </div>
 </div>
@@ -934,7 +826,7 @@ tracked follow-up below; see also
 <div id="footer">
 <div id="footer-text">
 Version 1.4.2-SNAPSHOT<br>
-Last updated 2026-08-07 08:00:40 -0400
+Last updated 2026-09-14 18:57:27 -0400
 </div>
 </div>
 </body>

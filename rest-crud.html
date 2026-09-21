@@ -2000,7 +2000,7 @@ curl -X POST \
 <div class="ulist">
 <ul>
 <li>
-<p>Always set the auth provider name in stored credentials so records can be traced to the correct provider.</p>
+<p>Record the auth provider name in stored credentials as informational provenance. It tells callers which provider resolved the credential or token; it is not an authentication routing or authorization binding.</p>
 </li>
 <li>
 <p>Reuse the role merge/remove patterns to avoid accidental role loss.</p>
@@ -2169,7 +2169,7 @@ curl -X POST \
 </dd>
 <dt class="hdlist1">authProviderName</dt>
 <dd>
-<p>The name of the provider that owns this credential (e.g., “custom”, “oidc”), enabling multi-provider operations and audits.</p>
+<p>Informational provenance naming the provider that resolved this credential or token (e.g., “custom”, “oidc”). Provider selection comes from an explicit request override or the ordered <code>auth.provider</code> configuration, never from this field.</p>
 </dd>
 </dl>
 </div>
@@ -2534,8 +2534,8 @@ collection.find(rewritten).iterator();</code></pre>
 </div>
 <div id="footer">
 <div id="footer-text">
-Version 1.3.1-SNAPSHOT<br>
-Last updated 2026-03-16 19:51:21 -0400
+Version 1.4.2-SNAPSHOT<br>
+Last updated 2026-08-07 08:00:40 -0400
 </div>
 </div>
 </body>

@@ -439,8 +439,8 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <div id="header">
 <h1>Quantum Reference Guide</h1>
 <div class="details">
-<span id="revnumber">version 1.3.1-SNAPSHOT,</span>
-<span id="revdate">2026-04-13T18:47:11Z</span>
+<span id="revnumber">version 1.4.2-SNAPSHOT,</span>
+<span id="revdate">2026-09-21T22:14:39Z</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -499,10 +499,16 @@ Use it to jump directly to a subject and then explore details in context.</p>
 <p>Domain modeling: <a href="../tutorials/quantum-tutorial.html#sec-modeling">Domain modeling fundamentals</a></p>
 </li>
 <li>
+<p>Dynamic edge properties and facet segmentation: <a href="./ontology.html#ontology-facet-segmentation">Open edge properties, edge filtering, and facet segmentation</a></p>
+</li>
+<li>
 <p>Completion tasks and groups: <a href="./modeling.html#completion-tasks">CompletionTasks, CompletionTaskGroups, payloads, and event stream</a></p>
 </li>
 <li>
 <p>Tenant models and realms: <a href="../tutorials/quantum-tutorial.html#sec-tenant-models">Multi-tenant model and realm separation</a></p>
+</li>
+<li>
+<p>User-definable facet segmentation &amp; coordinate SPI: <a href="./tenant-models.html#user-definable-facet-segmentation">Multi-tenant coordinate SPI and facet resolution</a></p>
 </li>
 <li>
 <p>Tenant onboarding and access invites: <a href="./tenant-models.html#tenant-onboarding-and-invites">Provision tenants, configure onboarding workflow, and invite users into a tenant</a></p>
@@ -524,6 +530,12 @@ Use it to jump directly to a subject and then explore details in context.</p>
 </li>
 <li>
 <p>Query language: <a href="../tutorials/quantum-tutorial.html#sec-query-language">Query language and filtering</a></p>
+</li>
+<li>
+<p>Planner and QueryGateway: <a href="./planner-and-query-gateway.html">Governed aggregation pipelines, multi-hop traversal, and REST endpoints</a></p>
+</li>
+<li>
+<p>Relationship hydration: <a href="./query-expansion.html">Relationship hydration with expand(path)</a></p>
 </li>
 <li>
 <p>Scoped action enablement: <a href="./action-enablement.html#action-enablement">Why an action is unavailable: policy, feature flags, settings, and readiness blockers</a></p>
@@ -562,6 +574,9 @@ Use it to jump directly to a subject and then explore details in context.</p>
 <p>Shared links: <a href="./shared-links.html">Shared Links</a> (time-bound link sharing, HMAC signing, access logging, revocation)</p>
 </li>
 <li>
+<p>Comment chains and media: <a href="./comment-chains-and-media.html">Comment Chains and Media References</a> (hierarchical discussion, governed object metadata, short-lived grants)</p>
+</li>
+<li>
 <p>OAuth server: <a href="./oauth-server.html">OAuth Server Module</a> (built-in OAuth 2.0/OIDC authorization server, ChatGPT/Gemini/Grok integration, no external IdP needed)</p>
 </li>
 <li>
@@ -594,6 +609,9 @@ Use it to jump directly to a subject and then explore details in context.</p>
 <li>
 <p>Seed packs (deep dive document): <a href="./seed-packs.html">Seed packs and declarative tenant seeding</a></p>
 </li>
+<li>
+<p>Bootstrap packs: <a href="./bootstrap-packs.html">Bootstrap Packs</a> (runtime orchestration, step handlers, startup application, admin APIs, and when to choose them over seed packs)</p>
+</li>
 </ul>
 </div>
 </div>
@@ -604,7 +622,7 @@ Use it to jump directly to a subject and then explore details in context.</p>
 <div class="ulist">
 <ul>
 <li>
-<p>Email templates: <a href="./email-templates.html">Email Templates</a> (Qute rendering, classpath defaults, realm overrides, Postmark delivery)</p>
+<p>Email templates: <a href="./email-templates.html">Email Templates</a> (Qute rendering, classpath defaults, realm overrides, preview APIs, onboarding template keys, Postmark delivery)</p>
 </li>
 </ul>
 </div>
@@ -651,8 +669,8 @@ Use it to jump directly to a subject and then explore details in context.</p>
 </div>
 <div id="footer">
 <div id="footer-text">
-Version 1.3.1-SNAPSHOT<br>
-Last updated 2026-04-10 09:31:46 -0400
+Version 1.4.2-SNAPSHOT<br>
+Last updated 2026-09-20 21:57:07 -0400
 </div>
 </div>
 </body>

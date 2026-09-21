@@ -5,7 +5,7 @@
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="generator" content="Asciidoctor 2.0.23">
-<title>Query Gateway Ontology Support — Design</title>
+<title>ADR: Realm Membership and Identity Model</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Open+Sans:300,300italic,400,400italic,600,600italic%7CNoto+Serif:400,400italic,700,700italic%7CDroid+Sans+Mono:400,700">
 <style>
 /*! Asciidoctor default stylesheet | MIT License | https://asciidoctor.org */
@@ -437,7 +437,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 </head>
 <body class="book toc2 toc-left">
 <div id="header">
-<h1>Query Gateway Ontology Support — Design</h1>
+<h1>ADR: Realm Membership and Identity Model</h1>
 <div class="details">
 <span id="revnumber">version 1.4.2-SNAPSHOT,</span>
 <span id="revdate">2026-09-21T22:14:39Z</span>
@@ -445,488 +445,141 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
 <ul class="sectlevel1">
-<li><a href="#_current_state">1. Current State</a>
-<ul class="sectlevel2">
-<li><a href="#_query_gateway">1.1. Query Gateway</a></li>
-<li><a href="#_planner_and_filter_building">1.2. Planner and Filter Building</a></li>
-<li><a href="#_grammar">1.3. Grammar</a></li>
-<li><a href="#_documentation">1.4. Documentation</a></li>
-</ul>
-</li>
-<li><a href="#_goals">2. Goals</a></li>
-<li><a href="#_design">3. Design</a>
-<ul class="sectlevel2">
-<li><a href="#_1_pass_realmtenant_or_full_variable_map_into_planning_required">3.1. 1. Pass realm/tenant (or full variable map) into planning (required)</a></li>
-<li><a href="#_2_optional_add_hasedgeany_and_nothasedge_to_biapi_grammar_and_listener">3.2. 2. Optional: Add hasEdgeAny and notHasEdge to BIAPI grammar and listener</a></li>
-<li><a href="#_3_documentation_updates">3.3. 3. Documentation updates</a></li>
-<li><a href="#_4_optional_ontology_context_via_gateway">3.4. 4. Optional: Ontology context via gateway</a></li>
-</ul>
-</li>
-<li><a href="#_dependencies_and_backward_compatibility">4. Dependencies and Backward Compatibility</a></li>
-<li><a href="#_implementation_order">5. Implementation Order</a></li>
-<li><a href="#_summary">6. Summary</a></li>
+<li><a href="#_status">1. Status</a></li>
+<li><a href="#_context">2. Context</a></li>
+<li><a href="#_decision">3. Decision</a></li>
+<li><a href="#_consequences">4. Consequences</a></li>
 </ul>
 </div>
 </div>
 <div id="content">
-<div id="preamble">
+<div class="sect1">
+<h2 id="_status">1. Status</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p><strong>Implementation status:</strong> Section 1 (pass realm/tenant into planning) is implemented: QueryPlanner and MorphiaUtils accept an optional variableMap; QueryGatewayResource builds variableMap from SecurityContext or from the request realm and passes it to convertToPlannedQuery in find() and deleteMany(). Integration test: <code>QueryGatewayResourceIT.find_with_hasEdge_receives_tenant_context_and_returns_200</code>.</p>
-</div>
-<div class="paragraph">
-<p><strong>Delete prevention:</strong> Query Gateway delete and deleteMany now enforce the same referential integrity as MorphiaRepo: <code>DeleteValidationService</code> runs before each delete (back-reference check for <code>@TrackReferences</code> and all <code>PreDeleteHook</code> beans, e.g. ontology BLOCK_IF_REFERENCED). On violation the gateway returns 409 (ReferentialIntegrity or DeleteBlocked). deleteMany loads matching entities (capped by <code>quantum.queryGateway.deleteMany.maxMatches</code>, default 2000), validates each, then deletes only those ids.</p>
-</div>
-<div class="paragraph">
-<p><strong>Row- and field-level governance (implemented):</strong> The generic query path previously
-ran a raw <code>ds.find(&#8230;&#8203;)</code> and bypassed both row- and field-level security. That gap is
-now closed. <code>find</code>, <code>count</code>, <code>delete</code>, <code>deleteMany</code>, and <code>export</code> build their row
-filter with <code>QueryGatewayResource.securedFilterArray(&#8230;&#8203;)</code>, which ANDs the parsed query
-filter with the caller&#8217;s DataDomain scope plus the <code>RuleContext</code> rule
-<code>filterConstraints</code> (mirroring <code>MorphiaRepo</code> / <code>RepoSecurityFilterBuilder</code>). <code>find</code>
-additionally applies <code>applyExcludedFieldProjection(&#8230;&#8203;)</code>, projecting away the deny-wins
-<code>RuleContext.getExcludedFieldPaths(&#8230;&#8203;)</code> at the MongoDB level. When neither
-<code>SecurityContext.isIgnoringRules()</code> is set nor a <code>PrincipalContext</code>/<code>ResourceContext</code>
-are present, the gateway <strong>fails closed</strong> with HTTP 500 <code>SecurityContextMissing</code> rather
-than running ungoverned. <code>delete</code> ANDs the <code>_id</code> filter with the secured filter, so an
-entity outside the caller&#8217;s DataDomain returns HTTP 404 (no row-existence leak).</p>
-</div>
-<div class="paragraph">
-<p><strong>AGGREGATION/expand still ungoverned (501-gated):</strong> The <code>expand(&#8230;&#8203;)</code> / AGGREGATION path
-is NOT yet governed and is intentionally gated. <code>POST /api/query/find</code> returns HTTP 501
-for an AGGREGATION-mode query even when <code>feature.queryGateway.execution.enabled=true</code>,
-because a leading secured <code>$match</code> stage and an <code>excludedFields</code> <code>$project</code> have not yet
-been wired into the aggregation pipeline. <code>count</code> and <code>deleteMany</code> reject <code>expand(&#8230;&#8203;)</code>
-with HTTP 400 (<code>InvalidQuery</code>). Re-enabling governed aggregation execution is the
-tracked follow-up below; see also
-<a href="../user-guide/planner-and-query-gateway.html#query-gateway-governance">Planner and QueryGateway: row- and field-level governance</a>.</p>
-</div>
-<div class="paragraph">
-<p>This document describes how to add ontology support to the Query Gateway API (<code>POST /api/query/find</code>, <code>POST /api/query/plan</code>, and related endpoints) so that callers can use ontology edge predicates (<code>hasEdge</code>, <code>hasOutgoingEdge</code>, <code>hasIncomingEdge</code>, and optionally <code>hasEdgeAny</code>, <code>notHasEdge</code>) in the query string and get correct, tenant-scoped results.</p>
+<p>Accepted (2026-06-11) — implemented incrementally on the integration branch.</p>
 </div>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_current_state">1. Current State</h2>
+<h2 id="_context">2. Context</h2>
 <div class="sectionbody">
-<div class="sect2">
-<h3 id="_query_gateway">1.1. Query Gateway</h3>
-<div class="ulist">
-<ul>
-<li>
-<p><strong>QueryGatewayResource</strong> (quantum-framework) exposes:</p>
-<div class="ulist">
-<ul>
-<li>
-<p><code>POST /api/query/find</code> — executes a BIAPI query and returns a Collection envelope (rows, offset, limit).</p>
-</li>
-<li>
-<p><code>POST /api/query/plan</code> — returns mode (FILTER vs AGGREGATION) and expand paths.</p>
-</li>
-<li>
-<p><code>GET /api/query/rootTypes</code>, <code>POST /api/query/save</code>, <code>POST /api/query/delete</code>, <code>POST /api/query/deleteMany</code>.</p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p>For FILTER mode, the gateway calls <code>MorphiaUtils.convertToPlannedQuery(req.query, root, limit, skip, sortFields)</code> and then applies <code>planned.getFilter()</code> to <code>ds.find(root)</code>. No realm or variable map is passed into planning.</p>
-</li>
-</ul>
-</div>
-</div>
-<div class="sect2">
-<h3 id="_planner_and_filter_building">1.2. Planner and Filter Building</h3>
-<div class="ulist">
-<ul>
-<li>
-<p><strong>QueryPlanner.plan(query, modelClass, limit, skip, sortFields)</strong> (quantum-morphia-repos):</p>
-<div class="ulist">
-<ul>
-<li>
-<p>In FILTER mode it calls <code>MorphiaUtils.convertToFilter(query, modelClass)</code> — the two-argument overload that passes <code>null, null</code> for context (see MorphiaUtils.convertToFilterWContext).</p>
-</li>
-<li>
-<p>In AGGREGATION mode it builds a root filter by calling <code>MorphiaUtils.convertToFilter(filterOnly, modelClass)</code> again without context.</p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p><strong>MorphiaUtils.convertToFilter(queryString, modelClass)</strong> delegates to <code>convertToFilterWContext(queryString, null, null, modelClass)</code>. When <code>pcontext</code> and <code>rcontext</code> are null, the listener is created as <code>new QueryToFilterListener(modelClass)</code> — i.e. no PrincipalContext, so no variableMap.</p>
-</li>
-<li>
-<p><strong>QueryToFilterListener</strong> (quantum-morphia-repos) already implements:</p>
-<div class="ulist">
-<ul>
-<li>
-<p><code>enterHasEdgeExpr</code>, <code>enterHasOutgoingEdgeExpr</code>, <code>enterHasIncomingEdgeExpr</code> — they read <code>tenantId</code> from <code>variableMap</code> (keys <code>pTenantId</code> or <code>tenantId</code>), then use CDI to look up <code>OntologyEdgeRepo</code> and call <code>srcIdsByDst(tenantId, predicate, dst)</code> (or the inverse for hasIncomingEdge). If <code>variableMap</code> is null or <code>tenantId</code> is blank, the ontology lookup is skipped and the listener pushes <code>Filters.eq("_id", "<em>none</em>")</code> (fail closed, no results).</p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p>Conclusion: When the gateway runs a find with a query that contains <code>hasEdge(&#8230;&#8203;)</code>, the filter is built with <strong>no variableMap</strong>, so <strong>tenantId is null</strong> and ontology lookups never run with a valid tenant. Result: hasEdge in the gateway effectively returns no rows for ontology-predicate queries.</p>
-</li>
-</ul>
-</div>
-</div>
-<div class="sect2">
-<h3 id="_grammar">1.3. Grammar</h3>
-<div class="ulist">
-<ul>
-<li>
-<p>BIAPIQuery.g4 (quantum-models) already defines:</p>
-<div class="ulist">
-<ul>
-<li>
-<p><code>hasEdgeExpr</code>: <code>hasEdge(predicate, dst)</code></p>
-</li>
-<li>
-<p><code>hasOutgoingEdgeExpr</code>: <code>hasOutgoingEdge(predicate, dst)</code></p>
-</li>
-<li>
-<p><code>hasIncomingEdgeExpr</code>: <code>hasIncomingEdge(predicate, src)</code></p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p>It does <strong>not</strong> define <code>hasEdgeAny(predicate, [id1, id2, &#8230;&#8203;])</code> or <code>notHasEdge(predicate, dst)</code>. Those exist only in <strong>ListQueryRewriter</strong> (quantum-ontology-policy-bridge) and are used by OntologyAwareResource, not by the BIAPI parser.</p>
-</li>
-</ul>
-</div>
-</div>
-<div class="sect2">
-<h3 id="_documentation">1.4. Documentation</h3>
-<div class="ulist">
-<ul>
-<li>
-<p>ai-agent-integration.adoc and QueryHintsProvider state that "for the generic query gateway find, use attribute filters; for ontology-constrained lists, use the resource&#8217;s ontology list endpoint." So the docs currently direct agents <strong>away</strong> from using ontology predicates in the gateway.</p>
-</li>
-</ul>
-</div>
+<div class="paragraph">
+<p>The framework had three half-articulated concepts: realms (a Mongo database
+with a catalog entry), DataDomain (org/account/tenant/owner/segment stamps on
+every document), and RealmTenantMembership (an onboarding record). What was
+undefined: what <strong>delineates</strong> a realm, how multiple orgs collaborate inside
+one realm, and how one user holds different roles in different realms. The
+a multi-tenant platform two-plane split and the fulfillment-style collaboration model
+(carrier/supplier/customer orgs against shared sales orders and fulfillment
+plans) both need these answers to be explicit.</p>
 </div>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_goals">2. Goals</h2>
+<h2 id="_decision">3. Decision</h2>
 <div class="sectionbody">
 <div class="olist arabic">
 <ol class="arabic">
 <li>
-<p><strong>Enable ontology edge predicates in the gateway find</strong> — When the request has a valid realm (or principal context with tenantId), <code>hasEdge</code>, <code>hasOutgoingEdge</code>, and <code>hasIncomingEdge</code> in the query string should resolve via OntologyEdgeRepo and return the correct entity set for that tenant.</p>
+<p><strong>Realm = placement + lifecycle.</strong> A realm selects a logical Mongo
+database (and possibly its own connection or cluster) and owns migration,
+index, seed, backup, residency, and destructive lifecycle. A dedicated
+realm has one tenant OWNER. A pooled realm has one platform/operator OWNER
+plus many tenant PARTICIPANT memberships. When you ask "what can be
+dropped/backed up/migrated as one unit", the answer is a realm, never an
+individual participant in a pooled realm. <code>Realm.deploymentType</code> persists
+this invariant as <code>DEDICATED</code> or <code>SHARED</code>. Missing legacy values resolve to
+<code>DEDICATED</code>; only an explicit <code>SHARED</code> value permits pooled admission.</p>
 </li>
 <li>
-<p><strong>Single integration point</strong> — Agents and UIs can use <code>POST /api/query/find</code> with ontology predicates instead of being directed to per-resource ontology list endpoints when they want relationship-based filtering.</p>
+<p><strong>DataDomain = visibility.</strong> Org/account/tenant/owner/segment stamps plus
+the policy engine (row filters, relationship policies via
+<code>hasEdge</code>, field-level exclusions) control <strong>who sees what inside</strong> a realm.
+Placement never substitutes for policy, and policy never substitutes for
+placement.</p>
 </li>
 <li>
-<p><strong>Optional: hasEdgeAny and notHasEdge</strong> — Parity with ListQueryRewriter and OntologyAwareResource constraint semantics (e.g. "invoices for any of these customers", "exclude this org").</p>
+<p><strong>Orgs/accounts are MEMBERS of realms, with exactly one OWNER.</strong>
+<code>RealmTenantMembership.membershipRole</code>: the OWNER provisioned the realm
+and holds lifecycle/billing authority; PARTICIPANTs are collaborating
+orgs whose visibility comes entirely from DataDomain + policies. The
+<code>POST /admin/tenants</code> defaults to <code>DEDICATED_REALM</code> (one tenant OWNER) and
+accepts <code>POOLED_REALM</code> to deliberately admit a PARTICIPANT to an existing
+realm whose persisted deployment type is <code>SHARED</code>.</p>
+</li>
+<li>
+<p><strong>Users have ONE global identity and N realm-role assignments.</strong> The
+credential (system realm) is the identity — the GitHub account.
+<code>UserRealmRole</code> documents are the org-membership analog: (userId, realm,
+roles[], sponsoring org, status). ADMIN in realm A / VIEWER in realm B is
+two documents. <code>credential.roles[]</code> keeps meaning "roles in the default
+realm" for compatibility. Invitations reuse <code>AccessInviteResource</code>.</p>
+</li>
+<li>
+<p><strong>The IdP unions assignments into per-realm claims.</strong> At token issuance
+the control plane resolves <code>RealmMembershipService.rolesForUser(user,
+realm)</code>; the tenant plane routes by claims with no callback (JWKS
+validation). Embedded mode resolves the same service locally.</p>
+</li>
+<li>
+<p><strong>Tenant decommission follows placement topology.</strong> A dedicated tenant is
+decommissioned by revoking access, verifying a whole-database archive, and
+dropping its realm database. A pooled tenant is decommissioned by revoking
+access, verifying an export selected by the canonical DataDomain tuple
+(<code>orgRefName</code>, <code>accountNum</code>, <code>tenantId</code>, <code>dataSegment</code>), and assigning one
+purge batch plus one <code>purgeAfter</code> timestamp to all of its rows. Mongo TTL
+cleanup may drain collections asynchronously; the access revocation is the
+externally atomic barrier, and per-collection count reconciliation is the
+completion gate. The pooled workflow never drops or migrates the shared
+realm. Revocation must cover already-issued sessions/tokens as well as
+future authentication; suspending only the catalog membership is not a
+verified barrier for stateless tenant planes. TTL indexes are installed
+during realm initialization and verified
+or created idempotently by the expiration provider before stamping. Blob
+payloads participate in archive and expiration coverage. Before planning
+the purge, the runtime
+reconciles every existing user collection against an explicit
+<code>TENANT_SCOPED</code>, <code>REALM_SHARED</code>, or <code>SYSTEM_GLOBAL</code> declaration.
+Unclassified collections fail closed; only existing collections declared
+<code>TENANT_SCOPED</code> enter the purge plan.</p>
+</li>
+<li>
+<p><strong>Pooled admission is metadata-only.</strong> The target realm must already be
+migrated, indexed, and seeded. Admitting a participant creates the tenant
+membership and requested administrator assignment, but does not run
+migrations, base seeds, archetypes, or compatibility/demo identity setup.
+A user has at most one active tenant DataDomain assignment in a realm until
+token issuance supports explicit tenant selection.</p>
 </li>
 </ol>
 </div>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_design">3. Design</h2>
-<div class="sectionbody">
-<div class="sect2">
-<h3 id="_1_pass_realmtenant_or_full_variable_map_into_planning_required">3.1. 1. Pass realm/tenant (or full variable map) into planning (required)</h3>
-<div class="paragraph">
-<p><strong>Problem:</strong> The gateway never passes realm or PrincipalContext into the planner, so the filter is built with no variableMap and hasEdge gets no tenantId.</p>
-</div>
-<div class="paragraph">
-<p><strong>Approach:</strong></p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p><strong>QueryGatewayResource.find(FindRequest req):</strong></p>
-<div class="ulist">
-<ul>
-<li>
-<p>Resolve realm as today: <code>String realm = resolveRealm(req.realm);</code></p>
-</li>
-<li>
-<p>Build a <strong>variable map</strong> for planning:</p>
-<div class="ulist">
-<ul>
-<li>
-<p>If <code>SecurityContext.getPrincipalContext()</code> is present, use <code>MorphiaUtils.createStandardVariableMapFrom(pcontext, resourceContext)</code> so that pTenantId, tenantId, principalId, etc. are set (and ontology + permission rules behave as in other resources). Pass a minimal ResourceContext for the gateway (e.g. area=integration, functionalDomain=query, action=find).</p>
-</li>
-<li>
-<p>Else, build a minimal map with at least <code>pTenantId</code> and <code>tenantId</code> set to <code>realm</code>, so ontology lookups have a tenant even when the request is not fully authenticated (e.g. server-to-server with realm in the body).</p>
-</li>
-</ul>
-</div>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p><strong>MorphiaUtils</strong> (quantum-morphia-repos):</p>
-<div class="ulist">
-<ul>
-<li>
-<p>Add overloads that accept an optional variable map and pass it into the listener:
-<strong>*
-  convertToFilter(String queryString, Class&lt;?&gt; modelClass, Map&lt;String, String&gt; variableMap)
-  → if variableMap != null, use convertToFilter(queryString, variableMap, new StringSubstitutor(variableMap), modelClass); else current behavior (null context).
-</strong>*
-  Existing <code>convertToFilter(String, Map&lt;String,String&gt;, StringSubstitutor, Class)</code> already builds a listener with that variableMap; reuse it.</p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p><strong>QueryPlanner</strong> (quantum-morphia-repos):</p>
-<div class="ulist">
-<ul>
-<li>
-<p>Add an overload <code>plan(String query, Class&lt;T&gt; modelClass, Integer limit, Integer skip, List&lt;SortSpec.Field&gt; sortFields, Map&lt;String, String&gt; variableMap)</code>.</p>
-</li>
-<li>
-<p>In FILTER mode: call <code>MorphiaUtils.convertToFilter(query, modelClass, variableMap)</code> instead of <code>convertToFilter(query, modelClass)</code>.</p>
-</li>
-<li>
-<p>In AGGREGATION mode: when building the root filter from the stripped query, call <code>convertToFilter(filterOnly, modelClass, variableMap)</code> so that any hasEdge in the filter part is also tenant-scoped.</p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p><strong>MorphiaUtils</strong>:</p>
-<div class="ulist">
-<ul>
-<li>
-<p>Add <code>convertToPlannedQuery(String query, Class&lt;T&gt; modelClass, Integer limit, Integer skip, List&lt;SortSpec.Field&gt; sortFields, Map&lt;String, String&gt; variableMap)</code> that calls <code>planner.plan(&#8230;&#8203;, variableMap)</code>.</p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p><strong>QueryGatewayResource</strong>:</p>
-<div class="ulist">
-<ul>
-<li>
-<p>In <code>find()</code>, build variableMap as above, then call <code>MorphiaUtils.convertToPlannedQuery(req.query, root, limit, skip, sortFields, variableMap)</code> (or a new overload that takes variableMap). In <code>deleteMany()</code>, do the same when building the planned query for the delete filter.</p>
-</li>
-</ul>
-</div>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p><strong>Result:</strong> hasEdge / hasOutgoingEdge / hasIncomingEdge in the gateway find query will receive a tenantId and OntologyEdgeRepo will return the correct source IDs for that tenant. No change to QueryToFilterListener ontology logic; only the gateway and planner must pass the map through.</p>
-</div>
-</div>
-<div class="sect2">
-<h3 id="_2_optional_add_hasedgeany_and_nothasedge_to_biapi_grammar_and_listener">3.2. 2. Optional: Add hasEdgeAny and notHasEdge to BIAPI grammar and listener</h3>
-<div class="paragraph">
-<p><strong>Goal:</strong> Align gateway query syntax with ListQueryRewriter and OntologyAwareResource (e.g. "receivables for any of these customers", "orders not in this org").</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p><strong>BIAPIQuery.g4</strong> (quantum-models):</p>
-<div class="ulist">
-<ul>
-<li>
-<p>Add rules, e.g.:
-<strong>*
-  hasEdgeAnyExpr: HASEDGEANY LPAREN predicate=(STRING|QUOTED_STRING|VARIABLE) COMMA dstList=valueListExpr RPAREN;
-  notHasEdgeExpr: NOTHASEDGE LPAREN predicate=(STRING|QUOTED_STRING|VARIABLE) COMMA dst=(STRING|QUOTED_STRING|VARIABLE|OID|REFERENCE) RPAREN;
-</strong>*</p>
-</li>
-<li>
-<p>Add tokens: <code>HASEDGEANY: 'hasEdgeAny';</code> <code>NOTHASEDGE: 'notHasEdge';</code></p>
-</li>
-<li>
-<p>Add to allowedExpr: <code>hasEdgeAnyExpr | notHasEdgeExpr</code>.</p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p><strong>QueryToFilterListener</strong> (quantum-morphia-repos):</p>
-<div class="ulist">
-<ul>
-<li>
-<p>Implement <code>enterHasEdgeAnyExpr</code>: resolve tenantId from variableMap; for each value in dstList, call OntologyEdgeRepo.srcIdsByDst(tenantId, predicate, dst) and take the union of IDs; push <code>Filters.in("_id", objectIds)</code> (or <code>Filters.eq("_id", "<em>none</em>")</code> if empty). Reuse the same CDI/reflection pattern as hasEdge so that quantum-ontology-mongo remains an optional dependency.</p>
-</li>
-<li>
-<p>Implement <code>enterNotHasEdgeExpr</code>: resolve tenantId; get source IDs for that (predicate, dst); then push <code>Filters.nin("_id", objectIds)</code> (entities whose id is <strong>not</strong> in the set that have the edge). If the set is empty, do not restrict (all entities pass the notHasEdge clause).</p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p>Regenerate ANTLR lexer/parser after grammar changes; add/update unit tests for the new expressions.</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p><strong>Priority:</strong> Can be done in a follow-up once realm/variableMap wiring (design 1) is in place and hasEdge works in the gateway.</p>
-</div>
-</div>
-<div class="sect2">
-<h3 id="_3_documentation_updates">3.3. 3. Documentation updates</h3>
-<div class="ulist">
-<ul>
-<li>
-<p><strong>planner-and-query-gateway.adoc</strong>:</p>
-<div class="ulist">
-<ul>
-<li>
-<p>In "Request/Response: /api/query/find", state that the query string may include ontology edge predicates: <code>hasEdge(predicate, dst)</code>, <code>hasOutgoingEdge(predicate, dst)</code>, <code>hasIncomingEdge(predicate, src)</code>. When the application includes quantum-ontology-mongo and the request has a valid realm (or principal context with tenantId), these predicates restrict results to entities that have the corresponding ontology relationship in the current tenant. If realm/tenant is missing or ontology is not wired, hasEdge-style predicates evaluate to no results (fail closed).</p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p><strong>ai-agent-integration.adoc</strong> and <strong>QueryHintsProvider</strong>:</p>
-<div class="ulist">
-<ul>
-<li>
-<p>Update the ontologyEdges / didYouKnow text to say that the <strong>query gateway find</strong> supports hasEdge / hasOutgoingEdge / hasIncomingEdge when a realm (or principal) is present; agents can use these in the same query string as attribute filters and expand(&#8230;&#8203;). Optionally mention hasEdgeAny and notHasEdge if implemented.</p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p><strong>ontology.adoc</strong> (or rest-crud):</p>
-<div class="ulist">
-<ul>
-<li>
-<p>Add a short subsection that the Query Gateway (<code>POST /api/query/find</code>) honors ontology edge predicates in the BIAPI query when the request supplies a realm or the principal context has a tenantId; OntologyEdgeRepo (quantum-ontology-mongo) must be on the classpath.</p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p><strong>permissions.adoc</strong> (done):</p>
-<div class="ulist">
-<ul>
-<li>
-<p>The "Row Filter Computation (Data Scoping)" section documents how list/query filters are derived — the static variable map (<code>${pTenantId}</code> is the only default scope; org/account/segment are opt-in via authored rules), and the dynamic <code>AccessListResolver</code> variables (e.g. <code>${accessibleLocationIds}</code>) including the ontology-edge-backed <code>ListQueryRewriter</code> path. The gateway&#8217;s "pass the variableMap into planning" fix above is what makes those <code>${&#8230;&#8203;}</code> values resolve for <code>POST /api/query/find</code>; without it the filter is built tenant-blind exactly as the Current State notes.</p>
-</li>
-</ul>
-</div>
-</li>
-</ul>
-</div>
-</div>
-<div class="sect2">
-<h3 id="_4_optional_ontology_context_via_gateway">3.4. 4. Optional: Ontology context via gateway</h3>
-<div class="ulist">
-<ul>
-<li>
-<p>Some clients may want "ontology edges for entity X" without calling a resource-specific endpoint. Options:</p>
-<div class="ulist">
-<ul>
-<li>
-<p>(a) Do not add a gateway endpoint; keep using <code>GET /{basePath}/id/{id}/ontology</code> per OntologyAwareResource.</p>
-</li>
-<li>
-<p>(b) Add <code>GET /api/query/ontologyContext?rootType=&#8230;&#8203;&amp;id=&#8230;&#8203;</code> (or POST with body) that resolves rootType to a collection, looks up OntologyContextEnricher (or OntologyEdgeRepo), and returns the same shape as the existing ontology context response. This requires the gateway (or a shared service) to depend on quantum-ontology-mongo and to know how to get DataDomain from the request (realm/principal). Low priority unless we want a single discovery surface for agents.</p>
-</li>
-</ul>
-</div>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>Recommendation: Omit (b) for the first iteration; document that ontology <strong>context</strong> (edges for one entity) remains on OntologyAwareResource detail endpoints.</p>
-</div>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_dependencies_and_backward_compatibility">4. Dependencies and Backward Compatibility</h2>
+<h2 id="_consequences">4. Consequences</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
 <li>
-<p><strong>quantum-framework</strong> already depends on quantum-morphia-repos. It does not depend on quantum-ontology-mongo or quantum-ontology-policy-bridge. QueryToFilterListener uses CDI + reflection to resolve OntologyEdgeRepo and OntologyAliasResolver, so when those beans are not present, hasEdge fails closed (no results). No new compile dependency is required for the gateway; applications that want ontology in the gateway must include quantum-ontology-mongo (and typically quantum-ontology-policy-bridge) as today.</p>
+<p>The fulfillment collaboration model is expressible without new isolation
+machinery: one realm, one owner org, N participant orgs, relationship<br>
+field policies shaping each org&#8217;s slice.</p>
 </li>
 <li>
-<p>Passing a variableMap from the gateway into the planner is backward compatible: when variableMap is null, behavior stays as today (convertToFilter(query, modelClass) with no context). Existing callers of convertToPlannedQuery without variableMap are unchanged.</p>
+<p>Cross-realm queries stay forbidden; anything cross-realm goes through the
+control plane&#8217;s denormalized registry (design review §2.2).</p>
+</li>
+<li>
+<p>Phase C&#8217;s control-plane API must expose membership resolution alongside the
+realm catalog (same seam, same fail-loud remote behavior).</p>
+</li>
+<li>
+<p>GitHub-model mapping for product docs: account→credential, org→org,
+org membership→UserRealmRole, repo→realm, repo role→roles[] per realm,
+invitation→AccessInvite, personal default context→credential.defaultRealm.</p>
 </li>
 </ul>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_implementation_order">5. Implementation Order</h2>
-<div class="sectionbody">
-<div class="olist arabic">
-<ol class="arabic">
-<li>
-<p><strong>Phase 1 — Realm/variableMap in gateway (required):</strong></p>
-<div class="ulist">
-<ul>
-<li>
-<p>MorphiaUtils: add <code>convertToFilter(query, modelClass, variableMap)</code> (delegate to existing overload when variableMap != null).</p>
-</li>
-<li>
-<p>QueryPlanner: add <code>plan(&#8230;&#8203;, Map&lt;String, String&gt; variableMap)</code> and use convertToFilter with variableMap in both FILTER and AGGREGATION paths.</p>
-</li>
-<li>
-<p>MorphiaUtils: add <code>convertToPlannedQuery(&#8230;&#8203;, Map&lt;String, String&gt; variableMap)</code>.</p>
-</li>
-<li>
-<p>QueryGatewayResource.find(): build variableMap (from PrincipalContext or minimal map from resolveRealm), call convertToPlannedQuery(&#8230;&#8203;, variableMap).</p>
-</li>
-<li>
-<p>QueryGatewayResource.deleteMany(): same when building the filter for the delete query.</p>
-</li>
-<li>
-<p>Test: integration test that POST /api/query/find with query containing hasEdge(predicate, dst) and valid realm returns expected rows when ontology edges exist.</p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p><strong>Phase 2 — Docs:</strong></p>
-<div class="ulist">
-<ul>
-<li>
-<p>Update planner-and-query-gateway.adoc, ai-agent-integration.adoc, QueryHintsProvider, and ontology/rest-crud as in section 3.</p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p><strong>Phase 3 — Optional hasEdgeAny / notHasEdge:</strong></p>
-<div class="ulist">
-<ul>
-<li>
-<p>Grammar + listener + tests; then document.</p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p><strong>Phase 4 — Optional ontology context endpoint:</strong> Only if required; otherwise keep context on OntologyAwareResource.</p>
-</li>
-</ol>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_summary">6. Summary</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>| Item | Action |
-|------|--------|
-| <strong>Realm/tenant in planning</strong> | Gateway builds variableMap (from PrincipalContext or minimal { pTenantId, tenantId } = realm) and passes it into MorphiaUtils.convertToPlannedQuery / QueryPlanner.plan. MorphiaUtils and QueryPlanner gain overloads that accept variableMap and pass it to convertToFilter. |
-| <strong>hasEdge in find</strong> | No change to QueryToFilterListener; once variableMap contains tenantId, existing hasEdge/hasOutgoingEdge/hasIncomingEdge logic works. |
-| <strong>hasEdgeAny / notHasEdge</strong> | Optional: add to BIAPI grammar and QueryToFilterListener so gateway find supports the same semantics as ListQueryRewriter. |
-| <strong>Documentation</strong> | State that gateway find supports ontology edge predicates when realm/tenant is set and quantum-ontology-mongo is on the classpath; update agent hints. |
-| <strong>Ontology context</strong> | Leave on OntologyAwareResource; no gateway endpoint in first iteration. |</p>
-</div>
-<div class="paragraph">
-<p>This design adds ontology support to the query gateway API in a minimal, backward-compatible way by threading the existing realm/principal context into the filter-building path so that ontology edge predicates already implemented in QueryToFilterListener receive a tenantId and behave correctly.</p>
 </div>
 </div>
 </div>
