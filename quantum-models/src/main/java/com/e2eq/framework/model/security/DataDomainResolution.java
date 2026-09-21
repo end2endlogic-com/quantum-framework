@@ -30,27 +30,45 @@ public abstract sealed class DataDomainResolution
         if (dataDomain == null) {
             throw new IllegalArgumentException("Resolved DataDomainResolution requires a non-null DataDomain");
         }
-        return new Resolved(dataDomain);
+        return new Resolved(dataDomain, null, null);
+    }
+
+    public static DataDomainResolution resolved(DataDomain dataDomain, String policyFilter, java.util.Map<String, Object> facetFilters) {
+        if (dataDomain == null) {
+            throw new IllegalArgumentException("Resolved DataDomainResolution requires a non-null DataDomain");
+        }
+        return new Resolved(dataDomain, policyFilter, facetFilters);
     }
 
     public static DataDomainResolution unresolvable(String reason) {
         return new Unresolvable(reason == null ? "unresolvable" : reason);
     }
 
-    /** A successful placement carrying the concrete DataDomain. */
+    /** A successful placement carrying the concrete DataDomain and optional facet scope filters. */
     public static final class Resolved extends DataDomainResolution {
         private final DataDomain dataDomain;
+        private final String policyFilter;
+        private final java.util.Map<String, Object> facetFilters;
 
         private Resolved(DataDomain dataDomain) {
+            this(dataDomain, null, null);
+        }
+
+        private Resolved(DataDomain dataDomain, String policyFilter, java.util.Map<String, Object> facetFilters) {
             this.dataDomain = dataDomain;
+            this.policyFilter = policyFilter;
+            this.facetFilters = facetFilters != null ? java.util.Map.copyOf(facetFilters) : java.util.Map.of();
         }
 
         @Override public boolean isResolved() { return true; }
         @Override public DataDomain dataDomain() { return dataDomain; }
         @Override public String reason() { return null; }
 
+        public String policyFilter() { return policyFilter; }
+        public java.util.Map<String, Object> facetFilters() { return facetFilters; }
+
         @Override public String toString() {
-            return "Resolved[" + dataDomain + "]";
+            return "Resolved[" + dataDomain + (policyFilter != null ? ", filter=" + policyFilter : "") + "]";
         }
     }
 

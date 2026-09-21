@@ -3,6 +3,8 @@ package com.e2eq.framework.model.persistent.morphia;
 import com.e2eq.framework.grammar.BIAPIQueryLexer;
 import com.e2eq.framework.grammar.BIAPIQueryParser;
 import com.e2eq.framework.model.persistent.base.*;
+import com.e2eq.framework.model.security.DataDomainResolution;
+import com.e2eq.framework.model.security.DataDomainResolver;
 import com.e2eq.framework.model.security.DomainContext;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
@@ -128,19 +130,59 @@ public class MorphiaUtils {
    }
 
    public static Map<String, String> createStandardVariableMapFrom(PrincipalContext pcontext, ResourceContext rcontext) {
-      Map<String, String> variableMap = new HashMap<>();
-      variableMap.put("principalId", pcontext.getUserId());
-       variableMap.put("pAccountId", pcontext.getDataDomain().getAccountNum());
-       variableMap.put("pTenantId", pcontext.getDataDomain().getTenantId());
-       variableMap.put("pDataSegment", String.valueOf(pcontext.getDataDomain().getDataSegment()));
-       variableMap.put("systemTenantId", pcontext.getDataDomain().getTenantId()); // fallback for legacy rules
-      variableMap.put("ownerId", pcontext.getDataDomain().getOwnerId());
-      variableMap.put("orgRefName", pcontext.getDataDomain().getOrgRefName());
-      variableMap.put("resourceId", rcontext.getResourceId());
+      return createStandardVariableMapFrom(pcontext, rcontext, null, null);
+   }
 
-      variableMap.put("action", rcontext.getAction());
-      variableMap.put("functionalDomain", rcontext.getFunctionalDomain());
-      variableMap.put("area", rcontext.getArea());
+   public static Map<String, String> createStandardVariableMapFrom(
+           PrincipalContext pcontext,
+           ResourceContext rcontext,
+           Class<?> modelClass,
+           DataDomainResolver resolver
+   ) {
+      Map<String, String> variableMap = new HashMap<>();
+      if (pcontext == null) {
+         return variableMap;
+      }
+      variableMap.put("principalId", pcontext.getUserId());
+
+      DataDomain effectiveDd = null;
+      if (resolver != null && rcontext != null) {
+         DataDomainResolution resolution = resolver.resolveForQuery(pcontext, rcontext.getArea(), rcontext.getFunctionalDomain(), modelClass);
+         if (resolution != null && resolution.isResolved()) {
+            effectiveDd = resolution.dataDomain();
+            if (resolution instanceof DataDomainResolution.Resolved resolved) {
+               if (resolved.policyFilter() != null) {
+                  variableMap.put("policyFilter", resolved.policyFilter());
+               }
+               if (resolved.facetFilters() != null && !resolved.facetFilters().isEmpty()) {
+                  resolved.facetFilters().forEach((k, v) -> {
+                     if (v != null) {
+                        variableMap.put(k, String.valueOf(v));
+                     }
+                  });
+               }
+            }
+         }
+      }
+      if (effectiveDd == null) {
+         effectiveDd = pcontext.getDataDomain();
+      }
+
+      if (effectiveDd != null) {
+         variableMap.put("pAccountId", effectiveDd.getAccountNum());
+         variableMap.put("pTenantId", effectiveDd.getTenantId());
+         variableMap.put("pDataSegment", String.valueOf(effectiveDd.getDataSegment()));
+         variableMap.put("systemTenantId", effectiveDd.getTenantId()); // fallback for legacy rules
+         variableMap.put("ownerId", effectiveDd.getOwnerId());
+         variableMap.put("orgRefName", effectiveDd.getOrgRefName());
+      }
+
+      if (rcontext != null) {
+         variableMap.put("resourceId", rcontext.getResourceId());
+         variableMap.put("action", rcontext.getAction());
+         variableMap.put("functionalDomain", rcontext.getFunctionalDomain());
+         variableMap.put("area", rcontext.getArea());
+      }
       
       // Add defaultRealm so permission filters can dynamically scope by current realm
       // This is critical for X-Realm functionality - when realm switches, filters adapt automatically
@@ -179,15 +221,41 @@ public class MorphiaUtils {
            ResourceContext rcontext,
            Map<String, Object> extraObjects
    ) {
-      Map<String, String> s = createStandardVariableMapFrom(pcontext, rcontext);
+      return buildVariableBundle(pcontext, rcontext, extraObjects, null, null);
+   }
+
+   public static VariableBundle buildVariableBundle(
+           PrincipalContext pcontext,
+           ResourceContext rcontext,
+           Map<String, Object> extraObjects,
+           Class<?> modelClass,
+           DataDomainResolver resolver
+   ) {
+      Map<String, String> s = createStandardVariableMapFrom(pcontext, rcontext, modelClass, resolver);
       Map<String, Object> o = new HashMap<>();
       o.putAll(s);
 
+      // If resolver provided facetFilters as typed objects, add them to o
+      if (resolver != null && pcontext != null && rcontext != null) {
+         DataDomainResolution resolution = resolver.resolveForQuery(pcontext, rcontext.getArea(), rcontext.getFunctionalDomain(), modelClass);
+         if (resolution instanceof DataDomainResolution.Resolved resolved) {
+            if (resolved.facetFilters() != null && !resolved.facetFilters().isEmpty()) {
+               resolved.facetFilters().forEach((k, v) -> {
+                  if (v != null) {
+                     o.put(k, v);
+                  }
+               });
+            }
+         }
+      }
+
       // Add custom properties to objects map (preserving their original types for typed filter construction)
       // This allows collections to be used directly in $in queries
-      Map<String, Object> customProps = pcontext.getCustomProperties();
-      if (customProps != null && !customProps.isEmpty()) {
-         o.putAll(customProps);
+      if (pcontext != null) {
+         Map<String, Object> customProps = pcontext.getCustomProperties();
+         if (customProps != null && !customProps.isEmpty()) {
+            o.putAll(customProps);
+         }
       }
 
       if (extraObjects != null) {

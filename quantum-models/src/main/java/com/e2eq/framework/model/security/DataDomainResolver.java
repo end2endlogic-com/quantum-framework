@@ -4,6 +4,7 @@ import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Universal DataDomain coordinate and scope resolution engine.
@@ -98,6 +99,14 @@ public interface DataDomainResolver {
             );
             for (String key : keys) {
                 DataDomainPolicyEntry entry = policy.getPolicyEntries().get(key);
+                if (entry == null) {
+                    for (Map.Entry<String, DataDomainPolicyEntry> e : policy.getPolicyEntries().entrySet()) {
+                        if (e.getKey() != null && e.getKey().equalsIgnoreCase(key)) {
+                            entry = e.getValue();
+                            break;
+                        }
+                    }
+                }
                 if (entry != null) {
                     DataDomainPolicyEntry.ResolutionMode mode = entry.getResolutionMode() != null
                         ? entry.getResolutionMode()
@@ -105,11 +114,11 @@ public interface DataDomainResolver {
                     if (mode == DataDomainPolicyEntry.ResolutionMode.FIXED) {
                         if (entry.getDataDomains() != null && !entry.getDataDomains().isEmpty()) {
                             DataDomain dd = entry.getDataDomains().get(0);
-                            if (dd != null) return DataDomainResolution.resolved(dd);
+                            if (dd != null) return DataDomainResolution.resolved(dd, entry.getFilter(), entry.getFacetFilters());
                         }
                     } else if (mode == DataDomainPolicyEntry.ResolutionMode.FROM_CREDENTIAL) {
                         if (principal.getDataDomain() != null) {
-                            return DataDomainResolution.resolved(principal.getDataDomain());
+                            return DataDomainResolution.resolved(principal.getDataDomain(), entry.getFilter(), entry.getFacetFilters());
                         }
                     }
                 }
@@ -155,6 +164,14 @@ public interface DataDomainResolver {
             );
             for (String key : keys) {
                 DataDomainPolicyEntry entry = policy.getPolicyEntries().get(key);
+                if (entry == null) {
+                    for (Map.Entry<String, DataDomainPolicyEntry> e : policy.getPolicyEntries().entrySet()) {
+                        if (e.getKey() != null && e.getKey().equalsIgnoreCase(key)) {
+                            entry = e.getValue();
+                            break;
+                        }
+                    }
+                }
                 if (entry != null) {
                     DataDomainPolicyEntry.ResolutionMode mode = entry.getResolutionMode() != null
                         ? entry.getResolutionMode()
@@ -162,11 +179,11 @@ public interface DataDomainResolver {
                     if (mode == DataDomainPolicyEntry.ResolutionMode.FIXED) {
                         if (entry.getDataDomains() != null && !entry.getDataDomains().isEmpty()) {
                             DataDomain dd = entry.getDataDomains().get(0);
-                            if (dd != null) return DataDomainResolution.resolved(dd);
+                            if (dd != null) return DataDomainResolution.resolved(dd, entry.getFilter(), entry.getFacetFilters());
                         }
                     } else if (mode == DataDomainPolicyEntry.ResolutionMode.FROM_CREDENTIAL) {
                         if (principal.getDataDomain() != null) {
-                            return DataDomainResolution.resolved(principal.getDataDomain());
+                            return DataDomainResolution.resolved(principal.getDataDomain(), entry.getFilter(), entry.getFacetFilters());
                         }
                     }
                 }

@@ -2,6 +2,7 @@ package com.e2eq.framework.security.runtime;
 
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.persistent.morphia.MorphiaUtils;
+import com.e2eq.framework.model.security.DataDomainResolver;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
 import io.quarkus.logging.Log;
@@ -15,9 +16,15 @@ import java.util.Map;
 final class RuleVariableBundleResolver {
 
     private final Instance<AccessListResolver> resolvers;
+    private final Instance<DataDomainResolver> dataDomainResolvers;
 
     RuleVariableBundleResolver(Instance<AccessListResolver> resolvers) {
+        this(resolvers, null);
+    }
+
+    RuleVariableBundleResolver(Instance<AccessListResolver> resolvers, Instance<DataDomainResolver> dataDomainResolvers) {
         this.resolvers = resolvers;
+        this.dataDomainResolvers = dataDomainResolvers;
     }
 
     MorphiaUtils.VariableBundle resolveVariableBundle(
@@ -47,7 +54,8 @@ final class RuleVariableBundleResolver {
             }
         }
 
-        MorphiaUtils.VariableBundle bundle = MorphiaUtils.buildVariableBundle(pcontext, rcontext, extraObjects);
+        DataDomainResolver ddResolver = (dataDomainResolvers != null && !dataDomainResolvers.isUnsatisfied()) ? dataDomainResolvers.get() : null;
+        MorphiaUtils.VariableBundle bundle = MorphiaUtils.buildVariableBundle(pcontext, rcontext, extraObjects, modelClass, ddResolver);
         if (Log.isDebugEnabled()) {
             Log.debugf("resolveVariableBundle: customProperties=%s, extraObjects=%s, final objects keys=%s",
                     pcontext != null ? pcontext.getCustomProperties().keySet() : "null",
