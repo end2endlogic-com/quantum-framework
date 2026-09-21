@@ -1481,7 +1481,25 @@ The following standard variables are available in andFilterString/orFilterString
 |`${dcDataSegment}`
 |DomainContext.dataSegment
 |Data segment number from domain context
+
+|`${facet.<key>}`
+|DataDomainPolicyEntry.facetFilters
+|Tenant-configured facet filters (e.g. `${facet.allowedTiers}`)
+
+|`${coord.<key>}`
+|DataDomainResolution coordinates
+|Custom coordinate variables (e.g. `${coord.salesZone}`)
+
+|`${principal.<attr>}`
+|PrincipalContext attributes
+|Authenticated principal attributes and claims
+
+|`${dd.<attr>}`
+|DataDomain fields
+|Target DataDomain partition coordinates
 |===
+
+NOTE: **Dotted Variable Identifiers & Single-Variable IN**: Variables with dotted paths (`${facet.tier}`, `${coord.salesZone}`) resolve in a strict hierarchy. When evaluated with the list membership operator (`:^`), single variables resolving to a Java `Collection` (e.g. `allowedTiers = ["FLAGSHIP", "REGIONAL"]`) can be passed without brackets (`tier:^${facet.allowedTiers}`), automatically unpacking into native MongoDB `$in` clauses.
 
 **X-Realm integration**: When `X-Realm` is used, `${defaultRealm}` automatically reflects the target realm. This enables permission filters to dynamically scope data based on the active realm:
 
@@ -2342,14 +2360,57 @@ Examples
 
 [NOTE]
 ====
-In `andFilterString` and `orFilterString`, use standard BIAPI syntax for these functions: `hasEdge(predicate, dst)` and `hasIncomingEdge(predicate, src)`. In `postconditionScript`, use the JavaScript helper counterparts: `hasEdge(predicate, dst)` and `hasIncomingEdge(predicate, src)`.
+In `andFilterString` and `orFilterString`, use standard BIAPI syntax:
+- 2-argument existence check: `hasEdge(predicate, dst)` and `hasIncomingEdge(predicate, src)`.
+- 3-argument qualified check: `hasEdge(predicate, dst, { edgeFilter })` and `hasIncomingEdge(predicate, src, { edgeFilter })`.
+- Query macros: `@asOf(timestamp)` for bitemporal validity and `@minConfidence(threshold)` for probabilistic trust.
+In `postconditionScript`, use the JavaScript helper counterparts: `hasEdge(predicate, dst, propsOrFn)` and `hasIncomingEdge(predicate, src, propsOrFn)`.
 ====
+
+=== Business Scenarios & Policy Enforcement Solutions
+
+==== Business Scenario 1: Healthcare Temporary On-Call Staffing & Regulatory Audits
+In a hospital network, physicians hold temporary appointments (e.g. "Acting Chief of Emergency Medicine" from Monday 08:00 to Friday 17:00). Policies must guarantee zero-latency expiration without relying on deletion batch cron jobs, while preserving historical audit trails for HIPAA compliance.
+
+*Solution in Permission Rules*:
+Using the `@asOf(ts)` macro inside a qualified edge filter ensures that access expires automatically the moment `now >= validTo`, and enables point-in-time compliance audits:
+[source,yaml]
+----
+- name: emergency-department-chart-access
+  priority: 100
+  securityURI:
+    header: { identity: PHYSICIAN, area: clinical, functionalDomain: charts, action: view }
+    body:   { realm: '*', orgRefName: '*', accountNumber: '*', tenantId: '*', ownerId: '*', dataSegment: '*', resourceId: '*' }
+  effect: ALLOW
+  andFilterString: >
+    hasEdge("actingChiefOf", "DEPT-EMERGENCY", { @asOf(2026-09-20T22:00:00Z) && status:"ACTIVE" })
+----
+
+==== Business Scenario 2: Aerospace Defense Project Classification Guard
+In defense environments, the association between an engineering contractor and a classified stealth program (`PROJECT-TITAN`) has a security classification of `SECRET` with an `ITAR` handling compartment. An uncleared sub-contractor querying their project dashboard must not discover that `PROJECT-TITAN` exists or is linked to their team.
+
+*Solution in Permission Rules*:
+Using Mandatory Access Control (MAC) edge properties pushed into the compound index scan (`idx_domain_security`), the relationship is withheld at the database level:
+[source,yaml]
+----
+- name: defense-classified-project-view
+  priority: 105
+  securityURI:
+    header: { identity: CONTRACTOR, area: engineering, functionalDomain: projects, action: view }
+    body:   { realm: '*', orgRefName: '*', accountNumber: '*', tenantId: '*', ownerId: '*', dataSegment: '*', resourceId: '*' }
+  effect: ALLOW
+  andFilterString: >
+    hasEdge("assignedToProject", "PROJECT-TITAN", {
+      securityLabel: "SECRET" &&
+      compartments:^ ["ITAR"]
+    })
+----
 
 Under the hood
 
 - Policy evaluation resolves dstIdOrVar / srcIdOrVar against RuleContext (for example, principal.orgRefName → "OrgP").
 - The list/filter query is rewritten using ListQueryRewriter.rewriteForHasEdge(...) or rewriteForHasIncomingEdge(...), which turns the predicate and resolved ID into a set of target/source IDs and merges it with the base query efficiently.
-- OntologyEdgeDao must be indexed on (tenantId, p, dst) and (tenantId, src, p) for performance.
+- MongoDB compound indexes `idx_domain_p_dst_props`, `idx_domain_temporal`, `idx_domain_security`, and `idx_domain_confidence` accelerate edge lookups directly at the datastore layer.
 
 Full end-to-end example (implementation pattern)
 
@@ -2389,6 +2450,13 @@ Another example using `hasIncomingEdge`:
       area: core
       functionalDomain: location
       action: view
+    body:
+      realm: '*'
+      accountNumber: '*'
+      tenantId: '*'
+      dataSegment: '*'
+      ownerId: '*'
+      resourceId: '*'
   effect: ALLOW
   # Find locations that the current user has a "canAccessLocation" edge to
   andFilterString: "hasIncomingEdge(canAccessLocation, ${principalId})"
