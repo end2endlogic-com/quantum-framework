@@ -1,7 +1,13 @@
 package com.e2eq.framework.tests.query;
 
+import com.e2eq.framework.grammar.BIAPIQueryLexer;
+import com.e2eq.framework.grammar.BIAPIQueryParser;
 import com.e2eq.framework.query.runtime.QueryPredicates;
+import com.e2eq.framework.query.runtime.ValidatingQueryToPredicateJsonListener;
 import com.fasterxml.jackson.databind.JsonNode;
+import org.antlr.v4.runtime.CharStreams;
+import org.antlr.v4.runtime.CommonTokenStream;
+import org.antlr.v4.runtime.tree.ParseTreeWalker;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashMap;
@@ -249,5 +255,73 @@ public class QueryToPredicateJsonListenerTest {
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> pred("text(\"\")"));
         assertTrue(ex.getMessage().toLowerCase().contains("empty") || ex.getMessage().contains("non-empty"));
+    }
+
+    @Test
+    void testExpandExpressionEvaluatesAsPassThrough() {
+        JsonNode openNode = nodeOf(Map.of("id", "ord-1", "status", "OPEN", "price", 10.0));
+        JsonNode closedNode = nodeOf(Map.of("id", "ord-2", "status", "CLOSED", "price", 10.0));
+
+        // Solo expand expression returns true (pass-through)
+        assertTrue(pred("expand(orderRef)").test(openNode));
+        assertTrue(pred("expand(orderRef)").test(closedNode));
+
+        // expand(...) && condition evaluates the condition
+        assertTrue(pred("expand(orderRef)&&status:OPEN").test(openNode));
+        assertFalse(pred("expand(orderRef)&&status:OPEN").test(closedNode));
+
+        // condition && expand(...) evaluates the condition
+        assertTrue(pred("status:OPEN&&expand(orderRef)").test(openNode));
+        assertFalse(pred("status:OPEN&&expand(orderRef)").test(closedNode));
+
+        // Complex expand path with wildcard
+        assertTrue(pred("expand(items[*].product)&&price:>#5").test(openNode));
+    }
+
+    @Test
+    void testHasEdgeFailsClosedWhenRepoUnavailable() {
+        JsonNode node = nodeOf(Map.of("id", "usr-1", "status", "OPEN"));
+
+        // Fails closed (returns false) without throwing
+        assertFalse(pred("hasEdge(\"placedInOrg\", \"OrgA\")").test(node));
+        assertFalse(pred("hasOutgoingEdge(\"placedInOrg\", \"OrgA\")").test(node));
+        assertFalse(pred("hasIncomingEdge(\"canSeeLocation\", \"Loc1\")").test(node));
+
+        // Compound query with hasEdge fails closed
+        assertFalse(pred("hasEdge(\"placedInOrg\", \"OrgA\")&&status:OPEN").test(node));
+    }
+
+    @Test
+    void testHasEdgeWithEdgePropertyFilter() {
+        JsonNode node = nodeOf(Map.of("id", "usr-1", "status", "OPEN"));
+
+        // With edge property filter block - verifies stack markers, composite scoping, and fail-closed behavior
+        assertFalse(pred("hasEdge(\"placedInOrg\", \"OrgA\", { role:\"PRIMARY\" && status:\"ACTIVE\" })").test(node));
+        assertFalse(pred("hasOutgoingEdge(\"placedInOrg\", \"OrgA\", { role:\"PRIMARY\" })&&status:OPEN").test(node));
+        assertFalse(pred("hasIncomingEdge(\"canSeeLocation\", \"Loc1\", { permission:\"READ\" })").test(node));
+    }
+
+    @Test
+    void testValidatingListenerWithEdgeFilterDoesNotRejectDynamicEdgeProperties() {
+        Set<String> validModelFields = Set.of("id", "status", "name");
+
+        // 1. Dynamic edge properties (role, edgeWeight) inside { edgeFilter } are NOT rejected
+        String validQuery = "hasEdge(\"placedInOrg\", \"OrgA\", { role:\"PRIMARY\" && edgeWeight:>#5 })&&status:OPEN";
+        BIAPIQueryLexer lexer = new BIAPIQueryLexer(CharStreams.fromString(validQuery));
+        BIAPIQueryParser parser = new BIAPIQueryParser(new CommonTokenStream(lexer));
+        ValidatingQueryToPredicateJsonListener listener = new ValidatingQueryToPredicateJsonListener(validModelFields);
+        ParseTreeWalker.DEFAULT.walk(listener, parser.query());
+
+        assertFalse(listener.hasValidationErrors(), "Dynamic edge properties should not trigger validation errors");
+
+        // 2. An invalid field on the root model outside { edgeFilter } IS rejected
+        String invalidQuery = "hasEdge(\"placedInOrg\", \"OrgA\", { role:\"PRIMARY\" })&&unknownField:foo";
+        BIAPIQueryLexer lexer2 = new BIAPIQueryLexer(CharStreams.fromString(invalidQuery));
+        BIAPIQueryParser parser2 = new BIAPIQueryParser(new CommonTokenStream(lexer2));
+        ValidatingQueryToPredicateJsonListener listener2 = new ValidatingQueryToPredicateJsonListener(validModelFields);
+        ParseTreeWalker.DEFAULT.walk(listener2, parser2.query());
+
+        assertTrue(listener2.hasValidationErrors(), "Unknown root model field should trigger validation error");
+        assertTrue(listener2.getValidationErrors().stream().anyMatch(e -> e.contains("unknownField")));
     }
 }

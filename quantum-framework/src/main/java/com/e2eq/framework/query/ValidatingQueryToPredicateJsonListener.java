@@ -17,17 +17,17 @@ public class ValidatingQueryToPredicateJsonListener extends QueryToPredicateJson
     private final QueryFieldValidator validator;
 
     public ValidatingQueryToPredicateJsonListener(Class<? extends UnversionedBaseModel> modelClass) {
-        super();
+        super(modelClass);
         this.validator = QueryFieldValidator.forModelClass(modelClass);
     }
 
     public ValidatingQueryToPredicateJsonListener(Map<String, String> variableMap, Class<? extends UnversionedBaseModel> modelClass) {
-        super(variableMap);
+        super(variableMap, modelClass);
         this.validator = QueryFieldValidator.forModelClass(modelClass);
     }
 
     public ValidatingQueryToPredicateJsonListener(Map<String, String> variableMap, Map<String, Object> objectVars, StringSubstitutor sub, Class<? extends UnversionedBaseModel> modelClass) {
-        super(variableMap, objectVars, sub);
+        super(variableMap, objectVars, sub, modelClass);
         this.validator = QueryFieldValidator.forModelClass(modelClass);
     }
 
@@ -56,7 +56,7 @@ public class ValidatingQueryToPredicateJsonListener extends QueryToPredicateJson
     }
 
     private void validateField(Token fieldToken) {
-        if (fieldToken != null) {
+        if (fieldToken != null && !isInsideEdgeFilter()) {
             validator.validateField(fieldToken.getText());
         }
     }
