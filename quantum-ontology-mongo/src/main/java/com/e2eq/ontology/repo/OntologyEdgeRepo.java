@@ -929,7 +929,7 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
     /**
      * Group source IDs by destination for edges with given predicate, within the DataDomain.
      */
-    public Map<String, Set<String>> srcIdsByDstGrouped(DataDomain dataDomain, String p, Collection<String> dstIds) {
+    public Map<String, Set<String>> srcIdsByDstGrouped(DataDomain dataDomain, String p, Collection<String> dstIds, Filter... edgeFilters) {
         Map<String, Set<String>> map = new HashMap<>();
         if (dstIds == null || dstIds.isEmpty()) return map;
         validateDataDomain(dataDomain);
@@ -937,74 +937,140 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
         for (Filter f : dataDomainFilters(dataDomain)) {
             q.filter(f);
         }
-        for (OntologyEdge e : q.filter(Filters.eq("p", p)).filter(Filters.in("dst", dstIds)).iterator().toList()) {
+        q.filter(Filters.eq("p", p)).filter(Filters.in("dst", dstIds));
+        if (edgeFilters != null) {
+            for (Filter ef : edgeFilters) {
+                if (ef != null) q.filter(ef);
+            }
+        }
+        for (OntologyEdge e : q.iterator().toList()) {
             map.computeIfAbsent(e.getDst(), k -> new HashSet<>()).add(e.getSrc());
         }
         return map;
     }
 
+    public Map<String, Set<String>> srcIdsByDstGrouped(DataDomain dataDomain, String p, Collection<String> dstIds) {
+        return srcIdsByDstGrouped(dataDomain, p, dstIds, (Filter[]) null);
+    }
+
     /**
      * Find all edges from the given source within the DataDomain.
      */
-    public List<OntologyEdge> findBySrc(DataDomain dataDomain, String src) {
-        return findBySrc(resolveRealmId(dataDomain), dataDomain, src);
+    public List<OntologyEdge> findBySrc(DataDomain dataDomain, String src, Filter... edgeFilters) {
+        return findBySrc(resolveRealmId(dataDomain), dataDomain, src, edgeFilters);
     }
 
-    public List<OntologyEdge> findBySrc(String realmId, DataDomain dataDomain, String src) {
+    public List<OntologyEdge> findBySrc(DataDomain dataDomain, String src) {
+        return findBySrc(resolveRealmId(dataDomain), dataDomain, src, (Filter[]) null);
+    }
+
+    public List<OntologyEdge> findBySrc(String realmId, DataDomain dataDomain, String src, Filter... edgeFilters) {
         validateDataDomain(dataDomain);
         Query<OntologyEdge> q = ds(realmId).find(OntologyEdge.class);
         for (Filter f : dataDomainFilters(dataDomain)) {
             q.filter(f);
         }
-        return q.filter(Filters.eq("src", src)).iterator().toList();
+        q.filter(Filters.eq("src", src));
+        if (edgeFilters != null) {
+            for (Filter ef : edgeFilters) {
+                if (ef != null) q.filter(ef);
+            }
+        }
+        return q.iterator().toList();
+    }
+
+    public List<OntologyEdge> findBySrc(String realmId, DataDomain dataDomain, String src) {
+        return findBySrc(realmId, dataDomain, src, (Filter[]) null);
     }
 
     /**
      * Find all edges pointing to the given destination within the DataDomain.
      */
-    public List<OntologyEdge> findByDst(DataDomain dataDomain, String dst) {
-        return findByDst(resolveRealmId(dataDomain), dataDomain, dst);
+    public List<OntologyEdge> findByDst(DataDomain dataDomain, String dst, Filter... edgeFilters) {
+        return findByDst(resolveRealmId(dataDomain), dataDomain, dst, edgeFilters);
     }
 
-    public List<OntologyEdge> findByDst(String realmId, DataDomain dataDomain, String dst) {
+    public List<OntologyEdge> findByDst(DataDomain dataDomain, String dst) {
+        return findByDst(resolveRealmId(dataDomain), dataDomain, dst, (Filter[]) null);
+    }
+
+    public List<OntologyEdge> findByDst(String realmId, DataDomain dataDomain, String dst, Filter... edgeFilters) {
         validateDataDomain(dataDomain);
         Query<OntologyEdge> q = ds(realmId).find(OntologyEdge.class);
         for (Filter f : dataDomainFilters(dataDomain)) {
             q.filter(f);
         }
-        return q.filter(Filters.eq("dst", dst)).iterator().toList();
+        q.filter(Filters.eq("dst", dst));
+        if (edgeFilters != null) {
+            for (Filter ef : edgeFilters) {
+                if (ef != null) q.filter(ef);
+            }
+        }
+        return q.iterator().toList();
+    }
+
+    public List<OntologyEdge> findByDst(String realmId, DataDomain dataDomain, String dst) {
+        return findByDst(realmId, dataDomain, dst, (Filter[]) null);
     }
 
     /**
      * Find edges with given predicate pointing to destination, within the DataDomain.
      */
-    public List<OntologyEdge> findByDstAndP(DataDomain dataDomain, String dst, String p) {
-        return findByDstAndP(resolveRealmId(dataDomain), dataDomain, dst, p);
+    public List<OntologyEdge> findByDstAndP(DataDomain dataDomain, String dst, String p, Filter... edgeFilters) {
+        return findByDstAndP(resolveRealmId(dataDomain), dataDomain, dst, p, edgeFilters);
     }
 
-    public List<OntologyEdge> findByDstAndP(String realmId, DataDomain dataDomain, String dst, String p) {
+    public List<OntologyEdge> findByDstAndP(DataDomain dataDomain, String dst, String p) {
+        return findByDstAndP(resolveRealmId(dataDomain), dataDomain, dst, p, (Filter[]) null);
+    }
+
+    public List<OntologyEdge> findByDstAndP(String realmId, DataDomain dataDomain, String dst, String p, Filter... edgeFilters) {
         validateDataDomain(dataDomain);
         Query<OntologyEdge> q = ds(realmId).find(OntologyEdge.class);
         for (Filter f : dataDomainFilters(dataDomain)) {
             q.filter(f);
         }
-        return q.filter(Filters.eq("dst", dst)).filter(Filters.eq("p", p)).iterator().toList();
+        q.filter(Filters.eq("dst", dst)).filter(Filters.eq("p", p));
+        if (edgeFilters != null) {
+            for (Filter ef : edgeFilters) {
+                if (ef != null) q.filter(ef);
+            }
+        }
+        return q.iterator().toList();
+    }
+
+    public List<OntologyEdge> findByDstAndP(String realmId, DataDomain dataDomain, String dst, String p) {
+        return findByDstAndP(realmId, dataDomain, dst, p, (Filter[]) null);
     }
 
     /**
      * Find edges from source with given predicate, within the DataDomain.
      */
-    public List<OntologyEdge> findBySrcAndP(DataDomain dataDomain, String src, String p) {
-        return findBySrcAndP(resolveRealmId(dataDomain), dataDomain, src, p);
+    public List<OntologyEdge> findBySrcAndP(DataDomain dataDomain, String src, String p, Filter... edgeFilters) {
+        return findBySrcAndP(resolveRealmId(dataDomain), dataDomain, src, p, edgeFilters);
     }
 
-    public List<OntologyEdge> findBySrcAndP(String realmId, DataDomain dataDomain, String src, String p) {
+    public List<OntologyEdge> findBySrcAndP(DataDomain dataDomain, String src, String p) {
+        return findBySrcAndP(resolveRealmId(dataDomain), dataDomain, src, p, (Filter[]) null);
+    }
+
+    public List<OntologyEdge> findBySrcAndP(String realmId, DataDomain dataDomain, String src, String p, Filter... edgeFilters) {
         validateDataDomain(dataDomain);
         Query<OntologyEdge> q = ds(realmId).find(OntologyEdge.class);
         for (Filter f : dataDomainFilters(dataDomain)) {
             q.filter(f);
         }
-        return q.filter(Filters.eq("src", src)).filter(Filters.eq("p", p)).iterator().toList();
+        q.filter(Filters.eq("src", src)).filter(Filters.eq("p", p));
+        if (edgeFilters != null) {
+            for (Filter ef : edgeFilters) {
+                if (ef != null) q.filter(ef);
+            }
+        }
+        return q.iterator().toList();
+    }
+
+    public List<OntologyEdge> findBySrcAndP(String realmId, DataDomain dataDomain, String src, String p) {
+        return findBySrcAndP(realmId, dataDomain, src, p, (Filter[]) null);
     }
 
     /**
