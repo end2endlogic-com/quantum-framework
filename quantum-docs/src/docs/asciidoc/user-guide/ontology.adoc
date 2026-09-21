@@ -620,6 +620,269 @@ var isHighTier = hasEdge("assignedToTeam", "SUPPORT", function(props) {
 
 The ontology TBox vocabulary validator (`RuleVocabularyValidator`) validates 3-argument `hasEdge` statements at deployment/registration time against the admitted properties defined in your ontology schema.
 
+[[ontology-edge-metadata-and-variable-resolution]]
+=== Graph Edge Metadata, Temporal Validity, and Custom Coordinates Variable Resolution
+
+While open property maps (`props`) allow storing unstructured key-value attributes on graph relationships, complex enterprise deployments require **first-class governance metadata** directly on ontology edges (`OntologyEdge` and `EdgeRecord`). 
+
+To address regulatory compliance, zero-trust security, AI trust boundaries, and dynamic multi-tenant segmentation, Quantum provides structured edge metadata, query language macros (`@asOf`, `@minConfidence`), and dotted custom coordinate resolution (`${facet.*}`, `${coord.*}`).
+
+==== 1. Custom Coordinates & Dynamic Variable Resolution (`${facet.*}`, `${coord.*}`)
+
+===== Business Scenario: Multi-Tenant Retail Franchise & Partner Distribution Network
+A national retail holding company operates diverse franchised store brands (e.g. Supermarkets, Convenience, and Pharmacies) sharing a centralized product catalog, procurement platform, and order routing pipeline. 
+
+Franchise operators, regional distribution managers, and store associates access the same central API endpoints. However, access is governed not by static role names, but by multidimensional business coordinates:
+- The store's assigned **tier** (e.g. `FLAGSHIP`, `REGIONAL`, `EXPRESS`),
+- The manager's **geographic zone** (e.g. `US_NORTHEAST`, `US_MIDWEST`), and
+- The partner's **distribution channel** (e.g. `DIRECT`, `WHOLESALE`).
+
+===== How the Feature Supports the Business Solution
+Without dynamic variable resolution, administrators must either maintain thousands of redundant, hardcoded security rules per franchise, or require application developers to write brittle custom filtering logic into service endpoints.
+
+Quantum solves this by supporting **dotted variable identifiers** (`${facet.tier}`, `${coord.salesZone}`) directly within ANTLR grammar queries and policy rules, resolved dynamically by the store-free `DataDomainResolver` SPI:
+1. **Dotted Identifiers in ANTLR**: The query lexer admits `${facet.name}`, `${coord.name}`, `${principal.attr}`, and `${dd.field}` as first-class variable tokens.
+2. **Namespace Precedence**: During variable bundle compilation (`MorphiaUtils.buildVariableBundle`), namespaces resolve in a deterministic hierarchy:
+   * `${facet.<key>}` & `${coord.<key>}`: Evaluated from tenant `DataDomainPolicyEntry.facetFilters` or contextual coordinates.
+   * `${principal.<attr>}`: Extracted from authenticated principal claims (`userId`, `defaultRealm`, `tenantId`, custom attributes).
+   * `${dd.<attr>}`: Extracted from target `DataDomain` coordinates (`tenantId`, `orgRefName`, `accountNum`, `dataSegment`, `ownerId`).
+3. **Bracketless Single-Variable `IN` Evaluation (`field:^${var}`)**: When a variable evaluates to a Java `Collection` (e.g. `allowedTiers = ["FLAGSHIP", "REGIONAL"]`), the query listener automatically unpacks the collection into a native MongoDB `$in` operator without requiring bracket syntax `[${var}]`.
+4. **Fail-Closed Isolation**: If an unauthenticated caller or unresolvable coordinate is encountered, variable evaluation fails closed, preventing cross-franchise data leakage.
+
+===== Policy & Query Example
+[source,yaml]
+----
+# Declarative Security Rule enforcing custom franchise tiers and geographic zone
+id: 5012
+name: "Franchise Regional Inventory Access"
+securityURI: "sec://inventory/read"
+effect: ALLOW
+andFilterString: >
+  hasEdge("allocatedToStore", "${dcOrgRefName}", { active: true }) &&
+  tier:^${facet.allowedTiers} &&
+  zone:${coord.salesZone} &&
+  status:AVAILABLE
+----
+
+When an authenticated manager with `allowedTiers = ["FLAGSHIP", "REGIONAL"]` and `salesZone = "US_NORTHEAST"` queries inventory, the query automatically compiles to:
+[source,json]
+----
+{
+  "tier": { "$in": ["FLAGSHIP", "REGIONAL"] },
+  "zone": "US_NORTHEAST",
+  "status": "AVAILABLE"
+}
+----
+
+==== 2. Temporal Edge Validity (`validFrom` / `validTo`) & the `@asOf(ts)` Macro
+
+===== Business Scenario: Hospital Emergency Staffing Rotations & Point-in-Time Audits
+In a regional hospital network, medical doctors and nursing staff rotate through shifts and departments on a temporary basis (e.g., Dr. Smith is assigned as "Acting Chief of Emergency Medicine" strictly from Monday 08:00 to Friday 17:00). 
+
+Furthermore, under HIPAA and Joint Commission regulatory standards, the hospital must undergo historical point-in-time compliance audits: *"Did Dr. Smith have authorization to access Patient X's intensive care psychiatric records on October 14th at 14:30?"*
+
+===== How the Feature Supports the Business Solution
+Traditional authorization systems attempt to handle temporary access using asynchronous batch cron jobs that delete expired relationship records. This introduces severe vulnerabilities:
+- **Polling Latency**: The user retains unauthorized access between actual expiration and the next cron run.
+- **Audit Destruction**: Deleting expired edges permanently destroys historical lineage, making historical point-in-time compliance audits impossible.
+
+Quantum introduces first-class temporal validity directly onto `OntologyEdge` and `EdgeRecord`:
+- **`validFrom: Date`**: Inclusive timestamp when the relationship becomes active (or `null` for beginning of time).
+- **`validTo: Date`**: Exclusive timestamp when the relationship expires (or `null` for indefinite validity).
+- **Compound Temporal Index**: Backed by MongoDB index `idx_domain_temporal` (`{"dataDomain.tenantId": 1, "validFrom": 1, "validTo": 1}`).
+- **The `@asOf(timestamp)` Macro**: The query normalizer transforms `@asOf(ts)` into an optimized range comparison:
+  `((validFrom:<=ts || validFrom:null) && (validTo:>=ts || validTo:null))` (or `edges.` prefixed in traversal contexts).
+
+===== Query & Code Example
+[source]
+----
+# 1. Real-time access policy: Edge must be active right now
+hasEdge("actingChiefOf", "DEPT-EMERGENCY", { @asOf(2026-09-20T22:00:00Z) && status:"ACTIVE" })
+
+# 2. Historical audit query: Was the physician assigned to this patient on October 14th?
+@asOf(2026-10-14T14:30:00Z) && hasEdge("assignedPhysician", "PATIENT-8891")
+----
+
+In Java domain code:
+[source,java]
+----
+EdgeRecord edge = new EdgeRecord();
+edge.setSrc("physician_smith");
+edge.setP("actingChiefOf");
+edge.setDst("DEPT-EMERGENCY");
+edge.setValidFrom(Date.from(Instant.parse("2026-09-21T08:00:00Z")));
+edge.setValidTo(Date.from(Instant.parse("2026-09-25T17:00:00Z")));
+edgeRepo.bulkUpsertEdgeRecords(realmId, List.of(edge));
+----
+
+==== 3. Security Classification & Compartments (`securityLabel`, `compartments`)
+
+===== Business Scenario: Aerospace Defense Contracting & Sensitive Mergers & Acquisitions
+An aerospace defense conglomerate collaborates with defense ministries (DoD, NATO) and commercial aerospace manufacturers. In classified defense programs, **the existence of a relationship is itself classified**. For example, the association between an engineering contractor and `PROJECT-TITAN` has a security classification of `SECRET` with an `ITAR` (International Traffic in Arms Regulations) handling compartment.
+
+If an uncleared sub-contractor or foreign national queries their project dashboard, the query must not reveal that `PROJECT-TITAN` is linked to their team, nor leak information via query timing or error messages.
+
+===== How the Feature Supports the Business Solution
+Quantum implements Mandatory Access Control (MAC) directly in the graph datastore layer:
+- **`securityLabel: String`**: Hierarchical classification level (e.g. `UNCLASSIFIED`, `CONFIDENTIAL`, `SECRET`, `TOP_SECRET`).
+- **`compartments: List<String>`**: Need-to-know compartment restriction codes (e.g. `ITAR`, `NOFORN`, `FINANCE`, `LEGAL`).
+- **Index Scan Pushdown**: Backed by compound index `idx_domain_security` (`{"dataDomain.tenantId": 1, "securityLabel": 1}`). Security constraints are enforced inside the database index scan:
+  `hasEdge("assignedToProject", "PROJECT-TITAN", { securityLabel: "SECRET" && compartments:^ ["ITAR"] })`
+- **Zero Information Leakage**: If the caller's `PrincipalContext` lacks the required clearance or compartment entitlements, the edge is withheld at the database level. The result is indistinguishable from the relationship not existing.
+
+===== Policy Example
+[source,yaml]
+----
+id: 6100
+name: "Defense Project Access Guard"
+securityURI: "sec://projects/view"
+effect: ALLOW
+andFilterString: >
+  hasEdge("assignedToProject", "PROJECT-TITAN", {
+    securityLabel: "SECRET" &&
+    compartments:^ ["ITAR"]
+  })
+----
+
+==== 4. AI & Probabilistic Edge Governance (`confidence`, `assertionMethod`, `@minConfidence(val)`)
+
+===== Business Scenario: Automated Anti-Money Laundering (AML) & AI Entity Deduplication
+A global investment bank ingests corporate registries, transaction histories, and sanctions lists to uncover financial crime. An AI pipeline using Large Language Models and vector embeddings continuously generates graph relationships (e.g., *"Vendor Corp is 85% likely to be an alias of Sanctioned Oligarch Shell Co"*).
+
+While fraud investigators require visibility into probabilistic links, automated transaction-blocking systems or multi-million-dollar wire approvals cannot legally act on an 85% probabilistic guess without human certification.
+
+===== How the Feature Supports the Business Solution
+Quantum formalizes confidence scoring and assertion provenance into graph relationships:
+- **`confidence: Double`**: Normalized certainty score from `0.0` (unverified conjecture) to `1.0` (verified ground truth).
+- **`assertionMethod: String`**: Provenance technique (`MANUAL`, `RULE_DERIVED`, `LLM_INFERENCE`, `VECTOR_SIMILARITY`).
+- **`@minConfidence(val)` Macro**: Shorthand macro expanding directly to `confidence:>=val` (or `edges.confidence:>=val`).
+- **Compound Index Scans**: Backed by MongoDB index `idx_domain_confidence` (`{"dataDomain.tenantId": 1, "confidence": 1}`).
+- **Risk-Tiered Policy Governance**: High-risk financial operations enforce `confidence: 1.0 && assertionMethod: "MANUAL"`, while exploratory investigative views accept `@minConfidence(0.70)`.
+
+===== Query Example
+[source]
+----
+# 1. Mission-Critical Payment Transfer: Strictly require human-verified relationship
+hasEdge("beneficialOwnerOf", "ACC-9921", {
+  confidence: 1.0 &&
+  assertionMethod: "MANUAL"
+})
+
+# 2. Financial Crime Intelligence Dashboard: Permit AI-inferred relationships with >= 80% confidence
+hasEdge("beneficialOwnerOf", "ACC-9921", {
+  @minConfidence(0.80)
+})
+----
+
+==== 5. Purpose-Based Access Control (PBAC) & Consent Tracking (`allowedPurposes`, `consentId`)
+
+===== Business Scenario: Healthcare Clinical Trials & GDPR Data Privacy Compliance
+Under European General Data Protection Regulation (GDPR Articles 6 and 9) and HIPAA, patient healthcare data cannot be accessed for arbitrary purposes. Each access request must carry a legitimate, declared business purpose (e.g. `TREATMENT`, `BILLING`, `CLINICAL_RESEARCH`, `DIRECT_MARKETING`).
+
+A patient signs a consent agreement allowing their clinical records to be linked to attending physicians for `TREATMENT` and `BILLING`, but explicitly withholding consent for `CLINICAL_RESEARCH`. The hospital's centralized data platform must enforce this distinction across clinical trial systems and hospital billing software without duplicating data into isolated silos.
+
+===== How the Feature Supports the Business Solution
+Quantum integrates Purpose-Based Access Control (PBAC) into edge qualification:
+- **`allowedPurposes: List<String>`**: Whitelist of declared business purposes for which the relationship may be traversed.
+- **`consentId: String`**: Cryptographic or regulatory consent contract identifier.
+- **Dynamic Purpose Evaluation**: The calling principal's active request purpose (`${principal.requestPurpose}`) is matched against the edge's `allowedPurposes` at the datastore query layer:
+  `hasEdge("caresForPatient", "${patientId}", { allowedPurposes:^${principal.requestPurpose} })`
+- If an attending physician accesses the patient with `requestPurpose = "TREATMENT"`, the query matches and permits record access. If a pharmaceutical research team queries the same graph with `requestPurpose = "CLINICAL_RESEARCH"`, the relationship filter rejects the query at the index level.
+
+===== Policy Example
+[source,yaml]
+----
+id: 7200
+name: "Patient Chart Privacy Policy"
+securityURI: "sec://medical-records/read"
+effect: ALLOW
+andFilterString: >
+  hasEdge("attendingPhysicianOf", "${patientId}", {
+    allowedPurposes:^${principal.requestPurpose} &&
+    consentId:~
+  })
+----
+
+==== 6. Cryptographic Attestation & Separation of Duties (`EdgeAttestation`, `mutuallyExclusiveWith`)
+
+===== Business Scenario: B2B Cross-Tenant Supply-Chain Trust & SOX Financial Controls
+In an international aerospace manufacturing network, Tier-1 aerospace builders outsource component manufacturing to external suppliers across different enterprise tenants.
+1. **Supply-Chain Integrity**: Supplier A's ISO-9001 quality certification edge must be signed by an authorized accredited auditor. The aerospace manufacturer's systems must verify this cryptographic signature without needing administrative access to the auditor's database.
+2. **Separation of Duties (SoD)**: Under Sarbanes-Oxley (SOX) Section 404, internal financial controls require strict Separation of Duties: an employee who creates a purchase order cannot be the approver of that same purchase order.
+
+===== How the Feature Supports the Business Solution
+Quantum provides cryptographic verification and graph conflict constraints:
+- **`EdgeAttestation`**: A tamper-evident cryptographic signature container:
+  * `keyId`: Identity of the signing public key or certificate thumbprint.
+  * `signature`: Digital signature (Ed25519 / ECDSA) computed over the canonical edge coordinates `(tenantId + src + p + dst)`.
+  * `algorithm`: Cryptographic algorithm used (e.g. `"Ed25519"`, `"ES256"`).
+  * `timestamp`: Precise signature issuance timestamp.
+- **`mutuallyExclusiveWith: List<String>`**: Declares incompatible relationship predicates. A subject holding an edge to an entity cannot simultaneously hold any edge listed in `mutuallyExclusiveWith` to that same entity.
+
+===== Java Domain & Attestation Example
+[source,java]
+----
+// 1. Creating a cryptographically signed supplier certification edge
+EdgeAttestation attestation = new EdgeAttestation(
+    "did:key:z6MkuTLjPt...#key-1",
+    "f83b2...signature_bytes...",
+    "Ed25519",
+    new Date()
+);
+
+EdgeRecord edge = new EdgeRecord();
+edge.setSrc("supplier_acme_corp");
+edge.setP("certifiedQualitySupplier");
+edge.setDst("ISO-9001-STANDARDS");
+edge.setAttestation(attestation);
+edge.setMutuallyExclusiveWith(List.of("blacklistedSupplier", "suspendedSupplier"));
+
+edgeRepo.bulkUpsertEdgeRecords("aerospace-realm", List.of(edge));
+----
+
+==== 7. Summary Matrix of Edge Metadata Dimensions & Defaults
+
+[cols="1,1,1,2,2"]
+|===
+| Dimension | Field Name | Data Type | Default Behavior | Supported Index / Query Optimization
+
+| **Temporal Validity**
+| `validFrom`, `validTo`
+| `Date`
+| `null` indicates open-ended validity (from the beginning of time / indefinitely).
+| `idx_domain_temporal` + `@asOf(ts)` query macro.
+
+| **Classification & Compartments**
+| `securityLabel`, `compartments`
+| `String`, `List<String>`
+| `null` indicates standard unclassified data without handling restrictions.
+| `idx_domain_security` + list membership `:^`.
+
+| **Certainty & Provenance**
+| `confidence`, `assertionMethod`
+| `Double`, `String`
+| `null` defaults to untracked confidence (`1.0` ground truth implied).
+| `idx_domain_confidence` + `@minConfidence(val)` query macro.
+
+| **Purpose & Consent (PBAC)**
+| `allowedPurposes`, `consentId`
+| `List<String>`, `String`
+| `null` indicates general operational data; queries specifying purpose filter fail closed if omitted.
+| Compound index scan with list membership `:^`.
+
+| **Cryptographic Attestation**
+| `attestation`
+| `EdgeAttestation`
+| `null` indicates unsigned internal edge.
+| BSON embedded document persistence with tamper verification.
+
+| **Separation of Duties**
+| `mutuallyExclusiveWith`
+| `List<String>`
+| `null` indicates no conflicting predicate constraints.
+| Schema integrity validation during reasoner materialization.
+|===
+
 [[ontology-integration-morphia-permissions-section]]
 == Integrating Ontology with Morphia, Permissions, and Multi-tenancy
 

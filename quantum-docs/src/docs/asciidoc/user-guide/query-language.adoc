@@ -37,8 +37,10 @@ Quantum uses an ANTLR-based query language (BIAPIQuery.g4) for filtering, search
 |Null |none |`description:null`
 |ObjectId |none |`id:507f1f77bcf86cd799439011`
 |Reference |`@@` |`parentId:@@507f1f77bcf86cd799439011`
-|Variable |`${...}` |`ownerId:${principalId}`
+|Variable |`${...}` |`ownerId:${principalId}`, `tier:^${facet.allowedTiers}`, `zone:${coord.salesZone}`
 |===
+
+NOTE: **Dotted Variable Identifiers & Single-Variable IN**: The query grammar admits dotted variable paths (`${facet.<key>}`, `${coord.<key>}`, `${principal.<attr>}`, `${dd.<attr>}`). When paired with the list membership operator (`:^`), a single variable resolving to a Java `Collection` or array (e.g. `allowedTiers = ["TIER_1", "TIER_2"]`) can be passed without brackets (`tier:^${facet.allowedTiers}`), and the query compiler will automatically unpack the elements into a native `$in` evaluation.
 
 ==== Logical Operators
 
@@ -899,6 +901,37 @@ hasEdge("assignedToTeam", "TEAM-ALPHA", { active:true && tier:^[#1, #2] })
 hasEdge("placedInOrg", "ORG-1", { priority:"HIGH" }) && status:"PENDING" && total:>##500.00
 ----
 
+===== Query Macros for Temporal & AI Confidence Governance
+
+To simplify complex temporal and probabilistic filtering, the query preprocessor recognizes two high-level macros:
+
+1. **`@asOf(timestamp)`**:
+   - Compiles to bitemporal range matching: `((validFrom:<=ts || validFrom:null) && (validTo:>=ts || validTo:null))` (or prefixed with `edges.` inside expansion/traversal contexts).
+   - Backed by compound index `idx_domain_temporal`.
+   - Strips surrounding quotes so ISO-8601 timestamps parse cleanly as ANTLR `DATE` / `DATETIME` tokens.
+   - *Business Scenario & Solution*: Point-in-time compliance audits (e.g. healthcare HIPAA audits or financial regulatory inquiries) can reproduce past authorization states without maintaining separate historical snapshot tables or running deletion cron jobs.
+
+2. **`@minConfidence(threshold)`**:
+   - Compiles to confidence threshold filtering: `confidence:>=threshold` (or `edges.confidence:>=threshold`).
+   - Backed by compound index `idx_domain_confidence`.
+   - *Business Scenario & Solution*: AI and LLM graph derivation governance (e.g. anti-money laundering beneficial ownership links). Mission-critical operations require human-certified links (`confidence: 1.0`), while exploratory analysis accepts AI-inferred relationships (`@minConfidence(0.80)`).
+
+.Query Macro Examples
+[source]
+----
+# Temporal Point-in-Time Audit: Did associate have active role on September 1st, 2026?
+hasEdge("assignedToBranch", "BRANCH-NY", { @asOf(2026-09-01T00:00:00Z) && role:"MANAGER" })
+
+# Probabilistic AI Governance: Only traverse high-confidence vendor relationships
+hasEdge("subsidiaryOf", "PARENT-CORP", { @minConfidence(0.85) && assertionMethod:"LLM_INFERENCE" })
+
+# Combining temporal validity, AI confidence, and security classification
+hasEdge("operatesInFacility", "FAC-901", {
+  @asOf(2026-09-20T00:00:00Z) &&
+  @minConfidence(0.90) &&
+  securityLabel:"CONFIDENTIAL"
+})
+----
 
 ==== Root projection recap: fields:[+…,-…]
 
