@@ -1,6 +1,7 @@
 package com.e2eq.ontology.it;
 
 import com.e2eq.framework.model.persistent.base.DataDomain;
+import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import com.e2eq.ontology.core.ForwardChainingReasoner;
 import com.e2eq.ontology.core.OntologyRegistry;
 import com.e2eq.ontology.core.Reasoner;
@@ -169,29 +170,33 @@ public class HasEdgeQueryIT {
     }
 
     private void createOrder(String refName, String status) {
-        TestOrder order = new TestOrder();
-        order.setRefName(refName);
-        order.setStatus(status);
-        datastore.save(order);
+        try (SecurityCallScope.Scope ignored = SecurityCallScope.openIgnoringRules()) {
+            TestOrder order = new TestOrder();
+            order.setRefName(refName);
+            order.setStatus(status);
+            datastore.save(order);
+        }
     }
 
     private void setupOrderInOrg(String orderId, String customerId, String orgId) {
-        // Store explicit edges
-        edgeRepo.upsert(testDataDomain, "Order", orderId, "placedBy", "Customer", customerId, false, null);
-        edgeRepo.upsert(testDataDomain, "Customer", customerId, "memberOf", "Organization", orgId, false, null);
+        try (SecurityCallScope.Scope ignored = SecurityCallScope.openIgnoringRules()) {
+            // Store explicit edges
+            edgeRepo.upsert(testDataDomain, "Order", orderId, "placedBy", "Customer", customerId, false, null);
+            edgeRepo.upsert(testDataDomain, "Customer", customerId, "memberOf", "Organization", orgId, false, null);
 
-        // Infer placedInOrg edge
-        List<Reasoner.Edge> explicitEdges = List.of(
-                new Reasoner.Edge(orderId, "Order", "placedBy", customerId, "Customer", false, Optional.empty()),
-                new Reasoner.Edge(customerId, "Customer", "memberOf", orgId, "Organization", false, Optional.empty())
-        );
+            // Infer placedInOrg edge
+            List<Reasoner.Edge> explicitEdges = List.of(
+                    new Reasoner.Edge(orderId, "Order", "placedBy", customerId, "Customer", false, Optional.empty()),
+                    new Reasoner.Edge(customerId, "Customer", "memberOf", orgId, "Organization", false, Optional.empty())
+            );
 
-        Reasoner.EntitySnapshot snapshot = new Reasoner.EntitySnapshot(TENANT, orderId, "Order", explicitEdges);
-        Reasoner.InferenceResult result = reasoner.infer(snapshot, ontologyRegistry);
+            Reasoner.EntitySnapshot snapshot = new Reasoner.EntitySnapshot(TENANT, orderId, "Order", explicitEdges);
+            Reasoner.InferenceResult result = reasoner.infer(snapshot, ontologyRegistry);
 
-        for (Reasoner.Edge edge : result.addEdges()) {
-            Map<String, Object> prov = edge.prov().map(p -> Map.<String, Object>of("rule", p)).orElse(null);
-            edgeRepo.upsert(testDataDomain, edge.srcType(), edge.srcId(), edge.p(), edge.dstType(), edge.dstId(), edge.inferred(), prov);
+            for (Reasoner.Edge edge : result.addEdges()) {
+                Map<String, Object> prov = edge.prov().map(p -> Map.<String, Object>of("rule", p)).orElse(null);
+                edgeRepo.upsert(testDataDomain, edge.srcType(), edge.srcId(), edge.p(), edge.dstType(), edge.dstId(), edge.inferred(), prov);
+            }
         }
     }
 }

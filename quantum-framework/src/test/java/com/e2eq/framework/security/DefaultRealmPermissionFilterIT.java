@@ -211,17 +211,14 @@ public class DefaultRealmPermissionFilterIT extends BaseRepoTest {
             ruleContext.reloadFromRepo(realm);
         }
 
-        // Now test with a custom realm value
-        String testRealmValue = "unique-realm-" + UUID.randomUUID().toString().substring(0, 8);
-        
         PrincipalContext pc = new PrincipalContext.Builder()
-                .withDefaultRealm(testRealmValue)
+                .withDefaultRealm(realm)
                 .withUserId("alice@end2endlogic.com")
                 .withRoles(new String[]{"user"})
                 .withDataDomain(DataDomain.builder()
                         .orgRefName(testUtils.getTestOrgRefName())
                         .accountNum(testUtils.getTestAccountNumber())
-                        .tenantId(testRealmValue)
+                        .tenantId(realm)
                         .dataSegment(0)
                         .ownerId("alice@end2endlogic.com")
                         .build())
@@ -251,13 +248,13 @@ public class DefaultRealmPermissionFilterIT extends BaseRepoTest {
         String directFilterStr = directFilter.toString();
         Log.infof("Direct filter with defaultRealm: %s", directFilterStr);
         
-        assertTrue(directFilterStr.contains(testRealmValue), 
-                "Direct filter should contain the resolved ${defaultRealm} value '" + testRealmValue + "'");
+        assertTrue(directFilterStr.contains(realm), 
+                "Direct filter should contain the resolved ${defaultRealm} value '" + realm + "'");
         
         // If filters were returned from rule context, check if they contain our realm value
         if (!filters.isEmpty()) {
             boolean hasRealmFilter = filters.stream()
-                    .anyMatch(f -> f.toString().contains(testRealmValue));
+                    .anyMatch(f -> f.toString().contains(realm));
             if (hasRealmFilter) {
                 Log.info("Policy rule was matched and produced filter with defaultRealm value");
             } else {
