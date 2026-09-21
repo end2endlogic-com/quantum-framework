@@ -95,6 +95,25 @@ import java.util.Map;
                @Field("src"),
                @Field("p"),
                @Field("props")
+           }),
+    // Index for temporal edge validity queries (@asOf)
+    @Index(options = @IndexOptions(name = "idx_domain_temporal"),
+           fields = {
+               @Field("dataDomain.tenantId"),
+               @Field("validFrom"),
+               @Field("validTo")
+           }),
+    // Index for security classification filtering
+    @Index(options = @IndexOptions(name = "idx_domain_security"),
+           fields = {
+               @Field("dataDomain.tenantId"),
+               @Field("securityLabel")
+           }),
+    // Index for AI confidence threshold filtering (@minConfidence)
+    @Index(options = @IndexOptions(name = "idx_domain_confidence"),
+           fields = {
+               @Field("dataDomain.tenantId"),
+               @Field("confidence")
            })
 })
 public class OntologyEdge extends UnversionedBaseModel {
@@ -110,6 +129,26 @@ public class OntologyEdge extends UnversionedBaseModel {
     protected Map<String, Object> prov;
     protected List<Support> support; // provenance support for derived edges
     protected Date ts;
+
+    // Temporal validity
+    protected Date validFrom;
+    protected Date validTo;
+
+    // Security & Classification
+    protected String securityLabel;
+    protected List<String> compartments;
+
+    // AI & Confidence Governance
+    protected Double confidence;
+    protected String assertionMethod;
+
+    // Purpose-Based Access Control (PBAC) & Consent
+    protected List<String> allowedPurposes;
+    protected String consentId;
+
+    // Provenance Attestation & Separation of Duties
+    protected com.e2eq.ontology.core.EdgeAttestation attestation;
+    protected List<String> mutuallyExclusiveWith;
 
     public Object getProperty(String key) {
         return props != null ? props.get(key) : null;

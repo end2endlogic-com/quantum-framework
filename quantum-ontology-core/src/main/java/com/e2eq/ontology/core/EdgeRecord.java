@@ -22,6 +22,16 @@ public class EdgeRecord {
     private Map<String, Object> prov;
     private List<Support> support; // provenance support: list of rules and path edge ids
     private Date ts;
+    private Date validFrom;
+    private Date validTo;
+    private String securityLabel;
+    private List<String> compartments;
+    private Double confidence;
+    private String assertionMethod;
+    private List<String> allowedPurposes;
+    private String consentId;
+    private EdgeAttestation attestation;
+    private List<String> mutuallyExclusiveWith;
 
     public EdgeRecord() { }
 
@@ -109,6 +119,36 @@ public class EdgeRecord {
     public void setSupport(List<Support> support) { this.support = support; }
     public Date getTs() { return ts; }
     public void setTs(Date ts) { this.ts = ts; }
+
+    public Date getValidFrom() { return validFrom; }
+    public void setValidFrom(Date validFrom) { this.validFrom = validFrom; }
+
+    public Date getValidTo() { return validTo; }
+    public void setValidTo(Date validTo) { this.validTo = validTo; }
+
+    public String getSecurityLabel() { return securityLabel; }
+    public void setSecurityLabel(String securityLabel) { this.securityLabel = securityLabel; }
+
+    public List<String> getCompartments() { return compartments; }
+    public void setCompartments(List<String> compartments) { this.compartments = compartments; }
+
+    public Double getConfidence() { return confidence; }
+    public void setConfidence(Double confidence) { this.confidence = confidence; }
+
+    public String getAssertionMethod() { return assertionMethod; }
+    public void setAssertionMethod(String assertionMethod) { this.assertionMethod = assertionMethod; }
+
+    public List<String> getAllowedPurposes() { return allowedPurposes; }
+    public void setAllowedPurposes(List<String> allowedPurposes) { this.allowedPurposes = allowedPurposes; }
+
+    public String getConsentId() { return consentId; }
+    public void setConsentId(String consentId) { this.consentId = consentId; }
+
+    public EdgeAttestation getAttestation() { return attestation; }
+    public void setAttestation(EdgeAttestation attestation) { this.attestation = attestation; }
+
+    public List<String> getMutuallyExclusiveWith() { return mutuallyExclusiveWith; }
+    public void setMutuallyExclusiveWith(List<String> mutuallyExclusiveWith) { this.mutuallyExclusiveWith = mutuallyExclusiveWith; }
 
     public static class Support {
         private String ruleId;

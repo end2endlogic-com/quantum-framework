@@ -169,7 +169,10 @@ public class MorphiaUtils {
                if (resolved.facetFilters() != null && !resolved.facetFilters().isEmpty()) {
                   resolved.facetFilters().forEach((k, v) -> {
                      if (v != null) {
-                        variableMap.put(k, String.valueOf(v));
+                        String valStr = String.valueOf(v);
+                        variableMap.put(k, valStr);
+                        variableMap.put("facet." + k, valStr);
+                        variableMap.put("coord." + k, valStr);
                      }
                   });
                }
@@ -187,6 +190,13 @@ public class MorphiaUtils {
          variableMap.put("systemTenantId", effectiveDd.getTenantId()); // fallback for legacy rules
          variableMap.put("ownerId", effectiveDd.getOwnerId());
          variableMap.put("orgRefName", effectiveDd.getOrgRefName());
+
+         // Explicit tuple coordinate aliases
+         variableMap.put("dd.tenantId", effectiveDd.getTenantId());
+         variableMap.put("dd.accountNum", effectiveDd.getAccountNum());
+         variableMap.put("dd.dataSegment", String.valueOf(effectiveDd.getDataSegment()));
+         variableMap.put("dd.ownerId", effectiveDd.getOwnerId());
+         variableMap.put("dd.orgRefName", effectiveDd.getOrgRefName());
       }
 
       if (rcontext != null) {
@@ -199,6 +209,12 @@ public class MorphiaUtils {
       // Add defaultRealm so permission filters can dynamically scope by current realm
       // This is critical for X-Realm functionality - when realm switches, filters adapt automatically
       variableMap.put("defaultRealm", pcontext.getDefaultRealm());
+
+      // Add explicit principal identity variables
+      variableMap.put("principal.userId", pcontext.getUserId());
+      if (pcontext.getDefaultRealm() != null) {
+         variableMap.put("principal.defaultRealm", pcontext.getDefaultRealm());
+      }
 
       // Add DomainContext-sourced variables for richer realm context
       // These provide direct access to the domain context fields (which may differ from DataDomain when X-Realm is used)
@@ -216,11 +232,14 @@ public class MorphiaUtils {
       if (customProps != null && !customProps.isEmpty()) {
          for (Map.Entry<String, Object> entry : customProps.entrySet()) {
             Object value = entry.getValue();
-            if (value instanceof String) {
-               variableMap.put(entry.getKey(), (String) value);
+            if (value instanceof String sVal) {
+               variableMap.put(entry.getKey(), sVal);
+               variableMap.put("principal." + entry.getKey(), sVal);
             } else if (value != null) {
                // For collections and other objects, convert to string representation
-               variableMap.put(entry.getKey(), String.valueOf(value));
+               String sVal = String.valueOf(value);
+               variableMap.put(entry.getKey(), sVal);
+               variableMap.put("principal." + entry.getKey(), sVal);
             }
          }
       }
@@ -255,6 +274,8 @@ public class MorphiaUtils {
                resolved.facetFilters().forEach((k, v) -> {
                   if (v != null) {
                      o.put(k, v);
+                     o.put("facet." + k, v);
+                     o.put("coord." + k, v);
                   }
                });
             }
@@ -267,6 +288,11 @@ public class MorphiaUtils {
          Map<String, Object> customProps = pcontext.getCustomProperties();
          if (customProps != null && !customProps.isEmpty()) {
             o.putAll(customProps);
+            customProps.forEach((k, v) -> {
+               if (v != null) {
+                  o.put("principal." + k, v);
+               }
+            });
          }
       }
 
@@ -293,18 +319,56 @@ public class MorphiaUtils {
       return listener.getFilter();
    }
 
-   private static String normalizeOperators(String q) {
+   public static String normalizeOperators(String q) {
       if (q == null) return null;
       // Legacy normalization: historically ':=[' was used for IN. Normalize to the current ':^[' form.
-      // Keep this for backward compatibility with stored rules; all other operators are now handled by the grammar.
-      return q.replace(":=[", ":^[");
+      String normalized = q.replace(":=[", ":^[");
+
+      // Expand edges.@asOf(...) and @asOf(...)
+      java.util.regex.Matcher m = java.util.regex.Pattern.compile("(edges\\.)?@asOf\\s*\\(\\s*([^)]+)\\s*\\)").matcher(normalized);
+      if (m.find()) {
+         StringBuffer sb = new StringBuffer();
+         do {
+            boolean hasEdges = m.group(1) != null;
+            String arg = m.group(2).trim();
+            if ((arg.startsWith("\"") && arg.endsWith("\"")) || (arg.startsWith("'") && arg.endsWith("'"))) {
+               arg = arg.substring(1, arg.length() - 1);
+            }
+            String prefix = hasEdges ? "edges." : "";
+            String rep = "((" + prefix + "validFrom:<=" + arg + " || " + prefix + "validFrom:null) && (" + prefix + "validTo:>=" + arg + " || " + prefix + "validTo:null))";
+            m.appendReplacement(sb, java.util.regex.Matcher.quoteReplacement(rep));
+         } while (m.find());
+         m.appendTail(sb);
+         normalized = sb.toString();
+      }
+
+      // Expand edges.@minConfidence(...) and @minConfidence(...)
+      java.util.regex.Matcher mc = java.util.regex.Pattern.compile("(edges\\.)?@minConfidence\\s*\\(\\s*([^)]+)\\s*\\)").matcher(normalized);
+      if (mc.find()) {
+         StringBuffer sb = new StringBuffer();
+         do {
+            boolean hasEdges = mc.group(1) != null;
+            String arg = mc.group(2).trim();
+            if ((arg.startsWith("\"") && arg.endsWith("\"")) || (arg.startsWith("'") && arg.endsWith("'"))) {
+               arg = arg.substring(1, arg.length() - 1);
+            }
+            String prefix = hasEdges ? "edges." : "";
+            String rep = prefix + "confidence:>=" + arg;
+            mc.appendReplacement(sb, java.util.regex.Matcher.quoteReplacement(rep));
+         } while (mc.find());
+         mc.appendTail(sb);
+         normalized = sb.toString();
+      }
+
+      return normalized;
    }
 
 
    public static Filter convertToFilter(String queryString, @NotNull Map<String, String> variableMap, StringSubstitutor sub, Class<? extends UnversionedBaseModel> modelClass) {
       Objects.requireNonNull(modelClass, "Model class cannot be null");
       if (queryString != null && !queryString.isEmpty()) {
-         BIAPIQueryLexer lexer = new BIAPIQueryLexer(CharStreams.fromString(queryString));
+         String normalized = normalizeOperators(queryString);
+         BIAPIQueryLexer lexer = new BIAPIQueryLexer(CharStreams.fromString(normalized));
          BIAPIQueryParser parser = new BIAPIQueryParser(new CommonTokenStream(lexer));
          parser.addErrorListener(new BaseErrorListener() {
             @Override
@@ -336,7 +400,8 @@ public class MorphiaUtils {
          return Optional.empty();
       }
 
-      BIAPIQueryLexer lexer = new BIAPIQueryLexer(CharStreams.fromString(queryString));
+      String normalized = normalizeOperators(queryString);
+      BIAPIQueryLexer lexer = new BIAPIQueryLexer(CharStreams.fromString(normalized));
       BIAPIQueryParser parser = new BIAPIQueryParser(new CommonTokenStream(lexer));
       parser.addErrorListener(new BaseErrorListener() {
          @Override

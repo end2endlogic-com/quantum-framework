@@ -324,4 +324,37 @@ public class QueryToPredicateJsonListenerTest {
         assertTrue(listener2.hasValidationErrors(), "Unknown root model field should trigger validation error");
         assertTrue(listener2.getValidationErrors().stream().anyMatch(e -> e.contains("unknownField")));
     }
+
+    @Test
+    void testQueryMacrosAndNamespacedVariablesInMemory() throws Exception {
+        // Node with edge metadata fields
+        String json = """
+            {
+                "status": "ACTIVE",
+                "tier": "GOLD",
+                "confidence": 0.92,
+                "validFrom": "2026-01-01T00:00:00Z",
+                "validTo": "2026-12-31T23:59:59Z"
+            }
+            """;
+        JsonNode node = new com.fasterxml.jackson.databind.ObjectMapper().readTree(json);
+
+        // 1. Dotted variable and bracketless IN expansion
+        Map<String, String> vars = Map.of("facet.tier", "GOLD");
+        Map<String, Object> objVars = Map.of("facet.allowedTiers", List.of("SILVER", "GOLD"));
+        Predicate<JsonNode> p1 = QueryPredicates.compilePredicate("tier:^${facet.allowedTiers}", vars, objVars);
+        assertTrue(p1.test(node), "Should match tier via ${facet.allowedTiers}");
+
+        // 2. Query macros: @asOf and @minConfidence
+        Predicate<JsonNode> p2 = QueryPredicates.compilePredicate("@asOf(2026-06-15T12:00:00Z) && @minConfidence(0.85)", vars, objVars);
+        assertTrue(p2.test(node), "Should match @asOf inside validity range and above min confidence");
+
+        // 3. Negative check: @minConfidence higher than actual
+        Predicate<JsonNode> p3 = QueryPredicates.compilePredicate("@minConfidence(0.95)", vars, objVars);
+        assertFalse(p3.test(node), "Should not match when confidence is below required threshold");
+
+        // 4. Negative check: @asOf outside validity range
+        Predicate<JsonNode> p4 = QueryPredicates.compilePredicate("@asOf(2027-01-01T00:00:00Z)", vars, objVars);
+        assertFalse(p4.test(node), "Should not match when asOf date is after validTo");
+    }
 }

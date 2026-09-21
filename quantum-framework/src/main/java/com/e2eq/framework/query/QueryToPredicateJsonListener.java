@@ -754,8 +754,15 @@ public class QueryToPredicateJsonListener extends BIAPIQueryBaseListener {
         if (edgeFilterCtx == null) return null;
         try {
             Class<?> qtfClass = Class.forName("com.e2eq.framework.model.persistent.morphia.QueryToFilterListener");
-            java.lang.reflect.Constructor<?> ctor = qtfClass.getConstructor(Map.class, StringSubstitutor.class, Class.class);
-            Object listener = ctor.newInstance(variableMap, sub, null);
+            java.lang.reflect.Constructor<?> ctor;
+            Object listener;
+            try {
+                ctor = qtfClass.getConstructor(Map.class, Map.class, StringSubstitutor.class, Class.class);
+                listener = ctor.newInstance(objectVars, variableMap, sub, null);
+            } catch (NoSuchMethodException e) {
+                ctor = qtfClass.getConstructor(Map.class, StringSubstitutor.class, Class.class);
+                listener = ctor.newInstance(variableMap, sub, null);
+            }
             org.antlr.v4.runtime.tree.ParseTreeWalker.DEFAULT.walk((org.antlr.v4.runtime.tree.ParseTreeListener) listener, edgeFilterCtx);
             java.lang.reflect.Method getFilter = qtfClass.getMethod("getFilter");
             return getFilter.invoke(listener);
@@ -890,8 +897,39 @@ public class QueryToPredicateJsonListener extends BIAPIQueryBaseListener {
             case BIAPIQueryParser.GTE -> node -> relational(node, field, value, ">=");
             case BIAPIQueryParser.LT -> node -> relational(node, field, value, "<");
             case BIAPIQueryParser.LTE -> node -> relational(node, field, value, "<=");
+            case BIAPIQueryParser.IN -> node -> inRelational(node, field, value);
             default -> throw new IllegalArgumentException("Operator invalid:" + opTok.getText());
         };
+    }
+
+    private boolean inRelational(JsonNode node, String field, Object value) {
+        Set<Object> set = new HashSet<>();
+        if (value instanceof Collection<?> coll) {
+            for (Object item : coll) {
+                set.add(coerceValue(item));
+            }
+        } else if (value != null && value.getClass().isArray()) {
+            int len = java.lang.reflect.Array.getLength(value);
+            for (int i = 0; i < len; i++) {
+                set.add(coerceValue(java.lang.reflect.Array.get(value, i)));
+            }
+        } else if (value instanceof String s) {
+            for (String part : s.split(",")) {
+                if (!part.isBlank()) set.add(coerceValue(part.trim()));
+            }
+        } else if (value != null) {
+            set.add(coerceValue(value));
+        }
+
+        JsonNode fv = getNodeAt(node, field);
+        if (fv == null || fv.isMissingNode() || fv.isNull()) return false;
+        if (fv.isArray()) {
+            for (JsonNode el : fv) {
+                if (containsMatch(set, coerceFromJsonNode(el))) return true;
+            }
+            return false;
+        }
+        return containsMatch(set, coerceFromJsonNode(fv));
     }
 
     private Object coerceFromTokenMaybeSubstitute(Object tokenOrValue) {
@@ -903,7 +941,17 @@ public class QueryToPredicateJsonListener extends BIAPIQueryBaseListener {
             switch (t) {
                 case BIAPIQueryParser.STRING, BIAPIQueryParser.TEXT, BIAPIQueryParser.QUOTED_STRING -> { return tok.getText(); }
                 case BIAPIQueryParser.OID -> { return new ObjectId(tok.getText()); }
-                case BIAPIQueryParser.VARIABLE -> { String rep = (sub != null) ? sub.replace(tok.getText()) : tok.getText(); return coerceValue(rep); }
+                case BIAPIQueryParser.VARIABLE -> {
+                    String text = tok.getText();
+                    String varName = (text.startsWith("${") && text.endsWith("}"))
+                            ? text.substring(2, text.length() - 1)
+                            : text;
+                    if (objectVars != null && objectVars.containsKey(varName)) {
+                        return objectVars.get(varName);
+                    }
+                    String rep = (sub != null) ? sub.replace(text) : text;
+                    return coerceValue(rep);
+                }
                 case BIAPIQueryParser.NUMBER -> { return Double.parseDouble(tok.getText()); }
                 case BIAPIQueryParser.WHOLENUMBER -> { return Long.parseLong(tok.getText()); }
                 case BIAPIQueryParser.DATE -> {

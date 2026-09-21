@@ -453,6 +453,22 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
             if (e.getProps() != null) {
                 setDoc.append("props", new Document(e.getProps()));
             }
+            if (e.getValidFrom() != null) setDoc.append("validFrom", e.getValidFrom());
+            if (e.getValidTo() != null) setDoc.append("validTo", e.getValidTo());
+            if (e.getSecurityLabel() != null) setDoc.append("securityLabel", e.getSecurityLabel());
+            if (e.getCompartments() != null) setDoc.append("compartments", e.getCompartments());
+            if (e.getConfidence() != null) setDoc.append("confidence", e.getConfidence());
+            if (e.getAssertionMethod() != null) setDoc.append("assertionMethod", e.getAssertionMethod());
+            if (e.getAllowedPurposes() != null) setDoc.append("allowedPurposes", e.getAllowedPurposes());
+            if (e.getConsentId() != null) setDoc.append("consentId", e.getConsentId());
+            if (e.getAttestation() != null) {
+                Document attDoc = new Document("keyId", e.getAttestation().getKeyId())
+                        .append("signature", e.getAttestation().getSignature())
+                        .append("algorithm", e.getAttestation().getAlgorithm())
+                        .append("timestamp", e.getAttestation().getTimestamp());
+                setDoc.append("attestation", attDoc);
+            }
+            if (e.getMutuallyExclusiveWith() != null) setDoc.append("mutuallyExclusiveWith", e.getMutuallyExclusiveWith());
             Document update = new Document("$setOnInsert", setOnInsert)
                     .append("$set", setDoc);
             if (e.getSupport() != null) {
