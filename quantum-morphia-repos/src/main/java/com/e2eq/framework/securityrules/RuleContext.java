@@ -1145,7 +1145,7 @@ public class RuleContext {
     @Inject
     LabelService labelService;
 
-    boolean runScript(PrincipalContext pcontext, ResourceContext rcontext, String script) {
+    public boolean runScript(PrincipalContext pcontext, ResourceContext rcontext, String script) {
         return new RuleScriptExecutor(labelService).runScript(scriptingTimeoutMillis, pcontext, rcontext, script);
     }
 
