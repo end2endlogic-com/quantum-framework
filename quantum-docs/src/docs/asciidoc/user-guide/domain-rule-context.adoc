@@ -46,13 +46,28 @@ This pattern ensures consistent enforcement across all CRUD operations, independ
 
 RuleContext can attach FILTERs (not only ALLOW/DENY) to repository queries using rule fields and filter strings. Variables inside those filter strings are populated from:
 
-- PrincipalContext and ResourceContext standard variables: principalId, pAccountId, pTenantId, ownerId, orgRefName, resourceId, action, functionalDomain, area
+- PrincipalContext and ResourceContext standard variables: `principalId`, `pAccountId`, `pTenantId`, `ownerId`, `orgRefName`, `resourceId`, `action`, `functionalDomain`, `area`
+- Dotted coordinate namespaces:
+  * `${facet.<key>}` & `${coord.<key>}`: Resolved dynamically from tenant `DataDomainPolicyEntry.facetFilters` or contextual coordinate maps
+  * `${principal.<attr>}`: Extracted from authenticated principal claims (`userId`, `defaultRealm`, `tenantId`, custom attributes)
+  * `${dd.<attr>}`: Extracted from target `DataDomain` coordinates (`tenantId`, `orgRefName`, `accountNum`, `dataSegment`, `ownerId`)
 - AccessListResolver SPI implementations: per-request computed Collections (e.g., customer IDs the caller can access)
 
 Implementation highlights:
 - AccessListResolver has methods key(), supports(...), resolve(...). Resolvers are injected and invoked for each request; results are published as variables by key.
-- MorphiaUtils.VariableBundle carries both string variables and object variables (including collections) to the query listener.
-- The QueryToFilterListener supports IN clauses using a single ${var} inside brackets, expanding Collections/arrays and coercing types (ObjectId, numbers, booleans, dates).
+- `MorphiaUtils.VariableBundle` carries both string variables and typed object variables (including Collections and arrays) to the query listener.
+- The `QueryToFilterListener` and in-memory `QueryToPredicateJsonListener` support single-variable IN clauses with or without brackets (`field:^${var}` or `field:^[${var}]`), expanding Collections/arrays into native `$in` filters and coercing types (ObjectId, numbers, booleans, dates).
+
+=== Business Scenario: Multi-Tenant Franchise & Dynamic Partner Segmentation
+A national retail brand operates diverse franchised store chains sharing a centralized inventory platform. Access is governed not by static roles, but by custom dynamic coordinates: store tiers (`facet.tier: ["FLAGSHIP", "REGIONAL"]`) and sales zones (`coord.salesZone: "NORTHEAST"`).
+
+=== How the Feature Supports the Business Solution
+Administrators define a single generic security policy:
+[source]
+----
+tier:^${facet.allowedTiers} && zone:${coord.salesZone} && status:AVAILABLE
+----
+The `DataDomainResolver` SPI binds the caller's credentials into typed facet collections and zone variables at request time. Bracketless `IN` (`tier:^${facet.allowedTiers}`) automatically unpacks collections into native MongoDB `$in` operators. Unauthenticated or foreign-tenant requests fail closed.
 
 Authoring examples:
 - Constrain by principal domain:
@@ -62,11 +77,11 @@ Authoring examples:
 orgRefName:${orgRefName} && dataDomain.tenantId:${pTenantId}
 ----
 
-- Access list resolver for customer visibility:
+- Bracketless single-variable IN for customer visibility or facet tiers:
 +
 [source]
 ----
-customerId:^[${accessibleCustomerIds}]
+customerId:^${accessibleCustomerIds} && tier:^${facet.allowedTiers}
 ----
 
 For the complete query language reference, see xref:query-language.adoc#query-language[Query Language].
