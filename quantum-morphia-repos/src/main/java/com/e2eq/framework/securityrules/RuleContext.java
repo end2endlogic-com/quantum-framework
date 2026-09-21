@@ -6,6 +6,7 @@ import com.e2eq.framework.model.persistent.morphia.PolicyRepo;
 import com.e2eq.framework.model.auth.AuthProvider;
 import com.e2eq.framework.model.auth.AuthProviderFactory;
 import com.e2eq.framework.model.auth.AuthorizationProvider;
+import com.e2eq.framework.model.security.DataDomainResolver;
 import com.e2eq.framework.model.security.Policy;
 import com.e2eq.framework.model.security.Rule;
 import com.e2eq.framework.model.securityrules.*;
@@ -59,6 +60,9 @@ public class RuleContext {
 
     @Inject
     Instance<AccessListResolver> resolvers;
+
+    @Inject
+    Instance<DataDomainResolver> dataDomainResolvers;
 
     /**
      * Fired for every registered rule so ontology-aware observers can
@@ -2019,7 +2023,7 @@ public class RuleContext {
             Class<? extends UnversionedBaseModel> modelClass,
             Object resourceInstance,
             com.e2eq.framework.model.securityrules.MatchEvent matchEvent) {
-        return new RuleFilterApplicabilityEvaluator(new RuleVariableBundleResolver(resolvers))
+        return new RuleFilterApplicabilityEvaluator(new RuleVariableBundleResolver(resolvers, dataDomainResolvers))
                 .evaluate(pcontext, rcontext, rule, modelClass, resourceInstance, matchEvent);
     }
 
@@ -2094,7 +2098,7 @@ public class RuleContext {
             @Valid @NotNull(message = "Resource Context can not be null") ResourceContext rcontext,
             Class<? extends UnversionedBaseModel> modelClass
     ) {
-        return new RuleVariableBundleResolver(resolvers).resolveVariableBundle(pcontext, rcontext, modelClass);
+        return new RuleVariableBundleResolver(resolvers, dataDomainResolvers).resolveVariableBundle(pcontext, rcontext, modelClass);
     }
 
     /**
@@ -2181,8 +2185,9 @@ public class RuleContext {
             }
         }
 
+        DataDomainResolver ddResolver = (dataDomainResolvers != null && !dataDomainResolvers.isUnsatisfied()) ? dataDomainResolvers.get() : null;
         org.apache.commons.text.StringSubstitutor sub = new org.apache.commons.text.StringSubstitutor(
-                MorphiaUtils.buildVariableBundle(pcontext, rcontext, null).strings);
+                MorphiaUtils.buildVariableBundle(pcontext, rcontext, null, null, ddResolver).strings);
 
         List<String> governedClauses = new ArrayList<>();
         List<com.e2eq.framework.model.securityrules.GovernedFilterProjection.RuleTrim> ruleTrims =

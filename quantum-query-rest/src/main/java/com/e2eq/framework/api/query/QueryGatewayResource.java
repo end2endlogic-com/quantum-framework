@@ -15,6 +15,7 @@ import com.e2eq.framework.model.persistent.morphia.planner.PlannerResult;
 import com.e2eq.framework.model.persistent.morphia.query.QueryGateway;
 import com.e2eq.framework.model.persistent.morphia.query.QueryGatewayImpl;
 import com.e2eq.framework.model.persistent.imports.ImportSessionRow;
+import com.e2eq.framework.model.security.DataDomainResolver;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.model.securityrules.SecurityContext;
@@ -139,6 +140,9 @@ public class QueryGatewayResource {
     @Inject
     ImportSessionRowRepo importSessionRowRepo;
 
+    @Inject
+    Instance<DataDomainResolver> dataDomainResolvers;
+
     @ConfigProperty(name = "quantum.realm.testRealm", defaultValue = "defaultRealm")
     String defaultRealm;
 
@@ -218,7 +222,7 @@ public class QueryGatewayResource {
         }
         Integer limit = (req.page != null) ? req.page.limit : null;
         Integer skip = (req.page != null) ? req.page.skip : null;
-        Map<String, String> variableMap = variableMapForQuery(req.realm);
+        Map<String, String> variableMap = variableMapForQuery(req.realm, root);
         PlannedQuery planned = MorphiaUtils.convertToPlannedQuery(req.query, root, limit, skip, sortFields, variableMap);
         if (planned.getMode() == PlannerResult.Mode.AGGREGATION) {
             if (!aggregationExecutionEnabled) {
@@ -322,7 +326,7 @@ public class QueryGatewayResource {
             // caller's DataDomain. Mirrors the governed read path in MorphiaRepo.
             List<Filter> baseFilters = new ArrayList<>();
             if (req.query != null && !req.query.isBlank()) {
-                Map<String, String> variableMap = variableMapForQuery(req.realm);
+                Map<String, String> variableMap = variableMapForQuery(req.realm, root);
                 PlannedQuery planned = MorphiaUtils.convertToPlannedQuery(req.query, root, null, null, null, variableMap);
                 if (planned.getMode() == PlannerResult.Mode.AGGREGATION) {
                     Map<String, Object> error = new HashMap<>();
@@ -621,7 +625,7 @@ public class QueryGatewayResource {
 
             // Apply query filter if provided
             if (req.query != null && !req.query.isBlank()) {
-                Map<String, String> variableMap = variableMapForQuery(req.realm);
+                Map<String, String> variableMap = variableMapForQuery(req.realm, root);
                 PlannedQuery planned = MorphiaUtils.convertToPlannedQuery(req.query, root, null, null, null, variableMap);
                 if (planned.getMode() == PlannerResult.Mode.AGGREGATION) {
                     Map<String, Object> error = new HashMap<>();
@@ -1110,10 +1114,15 @@ public class QueryGatewayResource {
     }
 
     private Map<String, String> variableMapForQuery(String requestRealm) {
+        return variableMapForQuery(requestRealm, null);
+    }
+
+    private Map<String, String> variableMapForQuery(String requestRealm, Class<? extends UnversionedBaseModel> modelClass) {
         java.util.Optional<PrincipalContext> pc = SecurityContext.getPrincipalContext();
         java.util.Optional<ResourceContext> rc = SecurityContext.getResourceContext();
         if (pc.isPresent() && rc.isPresent()) {
-            return MorphiaUtils.createStandardVariableMapFrom(pc.get(), rc.get());
+            DataDomainResolver resolver = (dataDomainResolvers != null && !dataDomainResolvers.isUnsatisfied()) ? dataDomainResolvers.get() : null;
+            return MorphiaUtils.createStandardVariableMapFrom(pc.get(), rc.get(), modelClass, resolver);
         }
         // Fallback: minimal map so ontology predicates get tenant/realm
         String realm = resolveRealm(requestRealm);

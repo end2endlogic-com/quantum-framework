@@ -145,4 +145,81 @@ class DefaultDataDomainResolverQueryAndHopTest {
         assertEquals("supplier-tenant", res.dataDomain().getTenantId());
         assertEquals("supplierOrg", res.dataDomain().getOrgRefName());
     }
+
+    @Test
+    void testResolveForQuery_carriesPolicyFilterAndFacetFilters() {
+        DataDomain fixedDD = createDataDomain("corpOrg", "111", "corp-tenant", 2, "corpUser");
+        DataDomainPolicyEntry entry = new DataDomainPolicyEntry();
+        entry.setResolutionMode(DataDomainPolicyEntry.ResolutionMode.FIXED);
+        entry.setDataDomains(List.of(fixedDD));
+        entry.setFilter("status:ACTIVE && category:SUPPLIER");
+        entry.setFacetFilters(Map.of("category", "SUPPLIER", "regionId", 42));
+
+        DataDomainPolicy policy = new DataDomainPolicy();
+        policy.setPolicyEntries(Map.of("Procurement:Suppliers", entry));
+
+        DataDomain principalDD = createDataDomain("credOrg", "222", "cred-tenant", 0, "principalUser");
+        PrincipalContext principal = new PrincipalContext.Builder()
+                .withUserId("principalUser")
+                .withDataDomain(principalDD)
+                .withDataDomainPolicy(policy)
+                .build();
+
+        DefaultDataDomainResolver resolver = createResolver(null);
+        DataDomainResolution res = resolver.resolveForQuery(principal, "Procurement", "Suppliers", null);
+        assertTrue(res.isResolved());
+        assertInstanceOf(DataDomainResolution.Resolved.class, res);
+        DataDomainResolution.Resolved resolved = (DataDomainResolution.Resolved) res;
+        assertEquals("corp-tenant", resolved.dataDomain().getTenantId());
+        assertEquals("status:ACTIVE && category:SUPPLIER", resolved.policyFilter());
+        assertEquals("SUPPLIER", resolved.facetFilters().get("category"));
+        assertEquals(42, resolved.facetFilters().get("regionId"));
+    }
+
+    @Test
+    void testMorphiaUtils_variableBundle_usesDataDomainResolverCoordinatesAndFacets() {
+        DataDomain resolvedDD = createDataDomain("scopedOrg", "999", "scoped-tenant", 3, "scopedUser");
+        DataDomainPolicyEntry entry = new DataDomainPolicyEntry();
+        entry.setResolutionMode(DataDomainPolicyEntry.ResolutionMode.FIXED);
+        entry.setDataDomains(List.of(resolvedDD));
+        entry.setFilter("supplierStatus:APPROVED");
+        entry.setFacetFilters(Map.of("divisionId", "DIV-A", "minRating", 4));
+
+        DataDomainPolicy policy = new DataDomainPolicy();
+        policy.setPolicyEntries(Map.of("Procurement:Suppliers", entry));
+
+        DataDomain principalDD = createDataDomain("credOrg", "111", "cred-tenant", 0, "credUser");
+        PrincipalContext principal = new PrincipalContext.Builder()
+                .withUserId("credUser")
+                .withDataDomain(principalDD)
+                .withDataDomainPolicy(policy)
+                .build();
+
+        com.e2eq.framework.model.securityrules.ResourceContext rcontext =
+                new com.e2eq.framework.model.securityrules.ResourceContext.Builder()
+                        .withRealm("cred-tenant")
+                        .withArea("Procurement")
+                        .withFunctionalDomain("Suppliers")
+                        .withAction("view")
+                        .build();
+
+        DefaultDataDomainResolver resolver = createResolver(null);
+
+        com.e2eq.framework.model.persistent.morphia.MorphiaUtils.VariableBundle bundle =
+                com.e2eq.framework.model.persistent.morphia.MorphiaUtils.buildVariableBundle(
+                        principal, rcontext, null, null, resolver);
+
+        assertNotNull(bundle);
+        // Coordinate resolution overrides credential domain
+        assertEquals("scoped-tenant", bundle.strings.get("pTenantId"));
+        assertEquals("999", bundle.strings.get("pAccountId"));
+        assertEquals("scopedOrg", bundle.strings.get("orgRefName"));
+        assertEquals("3", bundle.strings.get("pDataSegment"));
+
+        // Policy filter and facet filters propagated
+        assertEquals("supplierStatus:APPROVED", bundle.strings.get("policyFilter"));
+        assertEquals("DIV-A", bundle.strings.get("divisionId"));
+        assertEquals("4", bundle.strings.get("minRating"));
+        assertEquals(4, bundle.objects.get("minRating"));
+    }
 }
