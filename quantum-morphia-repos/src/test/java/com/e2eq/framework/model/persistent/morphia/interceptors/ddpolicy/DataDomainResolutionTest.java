@@ -4,6 +4,8 @@ import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.security.DataDomainComponentBinding;
 import com.e2eq.framework.model.security.DataDomainPolicy;
 import com.e2eq.framework.model.security.DataDomainPolicyEntry;
+import com.e2eq.framework.model.security.DataDomainResolution;
+import com.e2eq.framework.model.security.SourceAttributes;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashMap;
