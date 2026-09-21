@@ -2,6 +2,10 @@ package com.e2eq.framework.query.runtime;
 
 import com.e2eq.framework.grammar.BIAPIQueryBaseListener;
 import com.e2eq.framework.grammar.BIAPIQueryParser;
+import com.e2eq.framework.model.persistent.base.DataDomain;
+import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
+import com.e2eq.framework.model.securityrules.PrincipalContext;
+import com.e2eq.framework.model.securityrules.SecurityContext;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.antlr.v4.runtime.CommonToken;
 import org.antlr.v4.runtime.Token;
@@ -37,6 +41,8 @@ public class QueryToPredicateJsonListener extends BIAPIQueryBaseListener {
     // Track nesting so text(...) is rejected in positions MongoDB forbids for $text.
     private int notNestingDepth = 0;
     private int elemMatchNestingDepth = 0;
+    private int edgeFilterNestingDepth = 0;
+    private Class<? extends UnversionedBaseModel> modelClass = null;
 
     private static final Pattern SPECIAL_REGEX_CHARS = Pattern.compile("[{}()\\[\\].+*?^$\\\\|\\-]");
     /** Split field values into word tokens (letters/digits); approximates MongoDB $text word matching. */
@@ -46,7 +52,14 @@ public class QueryToPredicateJsonListener extends BIAPIQueryBaseListener {
      * Creates a listener with no variable substitution. Useful for queries without ${vars} or object variables.
      */
     public QueryToPredicateJsonListener() {
-        this(null, null, null);
+        this(null, null, null, null);
+    }
+
+    /**
+     * Creates a listener configured with a modelClass.
+     */
+    public QueryToPredicateJsonListener(Class<? extends UnversionedBaseModel> modelClass) {
+        this(null, null, null, modelClass);
     }
 
     /**
@@ -54,7 +67,14 @@ public class QueryToPredicateJsonListener extends BIAPIQueryBaseListener {
      * @param variableMap name/value pairs used for StringSubstitutor (${var}) expansion; may be null
      */
     public QueryToPredicateJsonListener(Map<String, String> variableMap) {
-        this(variableMap, null, variableMap != null ? new StringSubstitutor(variableMap) : null);
+        this(variableMap, null, variableMap != null ? new StringSubstitutor(variableMap) : null, null);
+    }
+
+    /**
+     * Creates a listener with variable substitution and modelClass.
+     */
+    public QueryToPredicateJsonListener(Map<String, String> variableMap, Class<? extends UnversionedBaseModel> modelClass) {
+        this(variableMap, null, variableMap != null ? new StringSubstitutor(variableMap) : null, modelClass);
     }
 
     /**
@@ -64,9 +84,21 @@ public class QueryToPredicateJsonListener extends BIAPIQueryBaseListener {
      * @param sub optional custom StringSubstitutor to use; if null and variableMap is non-null, a default will be created.
      */
     public QueryToPredicateJsonListener(Map<String, String> variableMap, Map<String, Object> objectVars, StringSubstitutor sub) {
+        this(variableMap, objectVars, sub, null);
+    }
+
+    /**
+     * Full constructor with variable, object variable, and modelClass support.
+     */
+    public QueryToPredicateJsonListener(Map<String, String> variableMap, Map<String, Object> objectVars, StringSubstitutor sub, Class<? extends UnversionedBaseModel> modelClass) {
         this.variableMap = variableMap;
         this.objectVars = (objectVars == null) ? Collections.emptyMap() : objectVars;
-        this.sub = (sub != null) ? sub : (variableMap != null ? new StringSubstitutor(variableMap) : null);
+        this.sub = (sub != null) ? sub : new StringSubstitutor(variableMap != null ? variableMap : Collections.emptyMap());
+        this.modelClass = modelClass;
+    }
+
+    public boolean isInsideEdgeFilter() {
+        return edgeFilterNestingDepth > 0;
     }
 
     /**
@@ -385,6 +417,451 @@ public class QueryToPredicateJsonListener extends BIAPIQueryBaseListener {
             }
             return false;
         }, isTextBearing(inner)));
+    }
+
+    // ---- expand directive ----
+    /** {@inheritDoc} */
+    @Override
+    public void enterExpandExpr(BIAPIQueryParser.ExpandExprContext ctx) {
+        predicateStack.push(wrap(node -> true, false));
+    }
+
+    // ---- ontology edge expressions ----
+    /** {@inheritDoc} */
+    @Override
+    public void enterHasEdgeExpr(BIAPIQueryParser.HasEdgeExprContext ctx) {
+        if (ctx.edgeFilter != null) {
+            opTypeMarkers.push(opTypeStack.size());
+            predStackMarkers.push(predicateStack.size());
+            edgeFilterNestingDepth++;
+        }
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public void exitHasEdgeExpr(BIAPIQueryParser.HasEdgeExprContext ctx) {
+        Predicate<JsonNode> edgeFilterPred = null;
+        if (ctx.edgeFilter != null) {
+            edgeFilterNestingDepth--;
+            int startOp = opTypeMarkers.pop();
+            int startPred = predStackMarkers.pop();
+            buildCompositeSince(startOp, startPred);
+            if (predicateStack.size() > startPred) {
+                edgeFilterPred = predicateStack.pop();
+            }
+        }
+        processHasEdge(ctx.predicate, ctx.dst, edgeFilterPred, ctx.edgeFilter);
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public void enterHasOutgoingEdgeExpr(BIAPIQueryParser.HasOutgoingEdgeExprContext ctx) {
+        if (ctx.edgeFilter != null) {
+            opTypeMarkers.push(opTypeStack.size());
+            predStackMarkers.push(predicateStack.size());
+            edgeFilterNestingDepth++;
+        }
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public void exitHasOutgoingEdgeExpr(BIAPIQueryParser.HasOutgoingEdgeExprContext ctx) {
+        Predicate<JsonNode> edgeFilterPred = null;
+        if (ctx.edgeFilter != null) {
+            edgeFilterNestingDepth--;
+            int startOp = opTypeMarkers.pop();
+            int startPred = predStackMarkers.pop();
+            buildCompositeSince(startOp, startPred);
+            if (predicateStack.size() > startPred) {
+                edgeFilterPred = predicateStack.pop();
+            }
+        }
+        processHasEdge(ctx.predicate, ctx.dst, edgeFilterPred, ctx.edgeFilter);
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public void enterHasIncomingEdgeExpr(BIAPIQueryParser.HasIncomingEdgeExprContext ctx) {
+        if (ctx.edgeFilter != null) {
+            opTypeMarkers.push(opTypeStack.size());
+            predStackMarkers.push(predicateStack.size());
+            edgeFilterNestingDepth++;
+        }
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public void exitHasIncomingEdgeExpr(BIAPIQueryParser.HasIncomingEdgeExprContext ctx) {
+        Predicate<JsonNode> edgeFilterPred = null;
+        if (ctx.edgeFilter != null) {
+            edgeFilterNestingDepth--;
+            int startOp = opTypeMarkers.pop();
+            int startPred = predStackMarkers.pop();
+            buildCompositeSince(startOp, startPred);
+            if (predicateStack.size() > startPred) {
+                edgeFilterPred = predicateStack.pop();
+            }
+        }
+        processHasIncomingEdge(ctx.predicate, ctx.src, edgeFilterPred, ctx.edgeFilter);
+    }
+
+    private void processHasEdge(Token predicateToken, Token dstToken, Predicate<JsonNode> edgeFilterPred, BIAPIQueryParser.QueryContext edgeFilterCtx) {
+        String predicate = predicateToken.getText();
+        String dst = dstToken.getText();
+        if (sub != null) {
+            predicate = sub.replace(predicate);
+            dst = sub.replace(dst);
+        }
+        predicate = cleanString(predicate);
+        dst = cleanString(dst);
+
+        String tenantId = null;
+        if (variableMap != null) {
+            tenantId = variableMap.get("pTenantId");
+            if (tenantId == null) tenantId = variableMap.get("tenantId");
+        }
+
+        predicate = canonicalizePredicate(predicate);
+
+        if (modelClass != null && !isPredicateApplicableToModelSafe(predicate, modelClass)) {
+            predicateStack.push(wrap(node -> false, false));
+            return;
+        }
+
+        DataDomain dataDomain = resolveOntologyDataDomain(tenantId);
+        Object morphiaFilter = compileEdgeFilterToMorphia(edgeFilterCtx);
+        Set<String> ids = ontologySrcIdsByDst(dataDomain, predicate, dst, morphiaFilter);
+        pushIdPredicate(ids);
+    }
+
+    private void processHasIncomingEdge(Token predicateToken, Token srcToken, Predicate<JsonNode> edgeFilterPred, BIAPIQueryParser.QueryContext edgeFilterCtx) {
+        String predicate = predicateToken.getText();
+        String src = srcToken.getText();
+        if (sub != null) {
+            predicate = sub.replace(predicate);
+            src = sub.replace(src);
+        }
+        predicate = cleanString(predicate);
+        src = cleanString(src);
+
+        String tenantId = null;
+        if (variableMap != null) {
+            tenantId = variableMap.get("pTenantId");
+            if (tenantId == null) tenantId = variableMap.get("tenantId");
+        }
+
+        predicate = canonicalizePredicate(predicate);
+
+        if (modelClass != null && !isPredicateRangeApplicableToModelSafe(predicate, modelClass)) {
+            predicateStack.push(wrap(node -> false, false));
+            return;
+        }
+
+        DataDomain dataDomain = resolveOntologyDataDomain(tenantId);
+        Object morphiaFilter = compileEdgeFilterToMorphia(edgeFilterCtx);
+        Set<String> ids = ontologyDstIdsBySrc(dataDomain, predicate, src, morphiaFilter);
+        pushIdPredicate(ids);
+    }
+
+    private String canonicalizePredicate(String predicate) {
+        try {
+            var cdi = jakarta.enterprise.inject.spi.CDI.current();
+            if (cdi != null) {
+                Class<?> aliasCls = Class.forName("com.e2eq.ontology.core.OntologyAliasResolver");
+                var aliasSel = cdi.select(aliasCls);
+                Object resolver = aliasSel.isUnsatisfied() ? null : aliasSel.get();
+                if (resolver != null) {
+                    java.lang.reflect.Method cm = aliasCls.getMethod("canonical", String.class);
+                    Object can = cm.invoke(resolver, predicate);
+                    if (can instanceof String s) return s;
+                }
+            }
+        } catch (Throwable ignored) { }
+        return predicate;
+    }
+
+    private boolean isPredicateApplicableToModelSafe(String predicate, Class<?> modelClass) {
+        try {
+            var cdi = jakarta.enterprise.inject.spi.CDI.current();
+            if (cdi != null) {
+                Class<?> regIface = Class.forName("com.e2eq.ontology.core.OntologyRegistry");
+                var regSel = cdi.select(regIface);
+                Object registry = regSel.isUnsatisfied() ? null : regSel.get();
+                if (registry != null) {
+                    return isPredicateApplicableToModel(registry, regIface, predicate, modelClass);
+                }
+            }
+        } catch (Throwable ignored) { }
+        return true;
+    }
+
+    private boolean isPredicateRangeApplicableToModelSafe(String predicate, Class<?> modelClass) {
+        try {
+            var cdi = jakarta.enterprise.inject.spi.CDI.current();
+            if (cdi != null) {
+                Class<?> regIface = Class.forName("com.e2eq.ontology.core.OntologyRegistry");
+                var regSel = cdi.select(regIface);
+                Object registry = regSel.isUnsatisfied() ? null : regSel.get();
+                if (registry != null) {
+                    return isPredicateRangeApplicableToModel(registry, regIface, predicate, modelClass);
+                }
+            }
+        } catch (Throwable ignored) { }
+        return true;
+    }
+
+    private boolean isPredicateApplicableToModel(Object registry, Class<?> regIface, String predicate, Class<?> modelClass) {
+        try {
+            java.lang.reflect.Method propertyOf = regIface.getMethod("propertyOf", String.class);
+            Object optProp = propertyOf.invoke(registry, predicate);
+            if (!(optProp instanceof java.util.Optional<?> opt) || opt.isEmpty()) return true;
+            Object propDef = opt.get();
+            java.lang.reflect.Method domainMethod = propDef.getClass().getMethod("domain");
+            Object optDomain = domainMethod.invoke(propDef);
+            if (!(optDomain instanceof java.util.Optional<?> od) || od.isEmpty()) return true;
+            Object domainIdObj = od.get();
+            if (!(domainIdObj instanceof String domainId)) return true;
+
+            String modelId = classIdOf(modelClass);
+            if (modelId.equals(domainId)) return true;
+            return isA(registry, regIface, modelId, domainId);
+        } catch (Throwable t) {
+            return true;
+        }
+    }
+
+    private boolean isPredicateRangeApplicableToModel(Object registry, Class<?> regIface, String predicate, Class<?> modelClass) {
+        try {
+            java.lang.reflect.Method propertyOf = regIface.getMethod("propertyOf", String.class);
+            Object optProp = propertyOf.invoke(registry, predicate);
+            if (!(optProp instanceof java.util.Optional<?> opt) || opt.isEmpty()) return true;
+            Object propDef = opt.get();
+            java.lang.reflect.Method rangeMethod = propDef.getClass().getMethod("range");
+            Object optRange = rangeMethod.invoke(propDef);
+            if (!(optRange instanceof java.util.Optional<?> or) || or.isEmpty()) return true;
+            Object rangeIdObj = or.get();
+            if (!(rangeIdObj instanceof String rangeId)) return true;
+
+            String modelId = classIdOf(modelClass);
+            if (modelId.equals(rangeId)) return true;
+            return isA(registry, regIface, modelId, rangeId);
+        } catch (Throwable t) {
+            return true;
+        }
+    }
+
+    private boolean isA(Object registry, Class<?> regIface, String typeId, String targetSuperId) {
+        if (typeId == null || targetSuperId == null) return false;
+        if (typeId.equals(targetSuperId)) return true;
+        try {
+            java.lang.reflect.Method classOf = regIface.getMethod("classOf", String.class);
+            java.util.Set<String> visited = new java.util.HashSet<>();
+            String current = typeId;
+            while (current != null && visited.add(current)) {
+                Object optCls = classOf.invoke(registry, current);
+                if (optCls instanceof java.util.Optional<?> opt && opt.isPresent()) {
+                    Object classDef = opt.get();
+                    java.lang.reflect.Method parentsMethod = classDef.getClass().getMethod("parents");
+                    Object parentsObj = parentsMethod.invoke(classDef);
+                    if (parentsObj instanceof java.util.Set<?> parents) {
+                        for (Object p : parents) {
+                            if (p instanceof String ps) {
+                                if (ps.equals(targetSuperId)) return true;
+                                if (!visited.contains(ps)) {
+                                    if (isA(registry, regIface, ps, targetSuperId)) return true;
+                                }
+                            }
+                        }
+                        return false;
+                    }
+                }
+                return false;
+            }
+            return false;
+        } catch (Throwable t) {
+            return true;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private String classIdOf(Class<?> clazz) {
+        try {
+            Class<?> annoClass = Class.forName("com.e2eq.ontology.annotations.OntologyClass");
+            java.lang.annotation.Annotation a = clazz.getAnnotation((Class<java.lang.annotation.Annotation>) annoClass);
+            if (a != null) {
+                java.lang.reflect.Method idMethod = annoClass.getMethod("id");
+                Object id = idMethod.invoke(a);
+                if (id instanceof String s && !s.isEmpty()) return s;
+            }
+        } catch (Throwable ignored) { }
+        return clazz.getSimpleName();
+    }
+
+    private DataDomain resolveOntologyDataDomain(String requestedTenantId) {
+        try {
+            Optional<PrincipalContext> principalContext = SecurityContext.getPrincipalContext();
+            if (principalContext.isPresent()) {
+                DataDomain principalDataDomain = principalContext.get().getDataDomain();
+                if (principalDataDomain != null) {
+                    if (requestedTenantId != null && !requestedTenantId.isBlank()
+                            && !Objects.equals(requestedTenantId, principalDataDomain.getTenantId())) {
+                        throw new SecurityException(
+                                "Ontology relationship tenant does not match the authenticated principal DataDomain");
+                    }
+                    return principalDataDomain;
+                }
+            }
+
+            String tenantId = firstNonBlank(requestedTenantId, variable("pTenantId"), variable("tenantId"));
+            String orgRefName = firstNonBlank(variable("orgRefName"), variable("dcOrgRefName"));
+            String accountNum = firstNonBlank(variable("pAccountId"), variable("dcAccountId"));
+            String dataSegmentValue = firstNonBlank(variable("pDataSegment"), variable("dcDataSegment"));
+            if (tenantId == null || orgRefName == null || accountNum == null || dataSegmentValue == null) {
+                return null;
+            }
+
+            int dataSegment = Integer.parseInt(dataSegmentValue);
+            DataDomain dataDomain = new DataDomain();
+            dataDomain.setTenantId(tenantId);
+            dataDomain.setOrgRefName(orgRefName);
+            dataDomain.setAccountNum(accountNum);
+            dataDomain.setDataSegment(dataSegment);
+            String ownerId = variable("ownerId");
+            if (ownerId != null && !ownerId.isBlank()) {
+                dataDomain.setOwnerId(ownerId);
+            }
+            return dataDomain;
+        } catch (SecurityException se) {
+            throw se;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    private String variable(String name) {
+        return variableMap == null ? null : variableMap.get(name);
+    }
+
+    private static String firstNonBlank(String... values) {
+        if (values == null) return null;
+        for (String v : values) {
+            if (v != null && !v.isBlank()) return v;
+        }
+        return null;
+    }
+
+    private Object compileEdgeFilterToMorphia(BIAPIQueryParser.QueryContext edgeFilterCtx) {
+        if (edgeFilterCtx == null) return null;
+        try {
+            Class<?> qtfClass = Class.forName("com.e2eq.framework.model.persistent.morphia.QueryToFilterListener");
+            java.lang.reflect.Constructor<?> ctor = qtfClass.getConstructor(Map.class, StringSubstitutor.class, Class.class);
+            Object listener = ctor.newInstance(variableMap, sub, null);
+            org.antlr.v4.runtime.tree.ParseTreeWalker.DEFAULT.walk((org.antlr.v4.runtime.tree.ParseTreeListener) listener, edgeFilterCtx);
+            java.lang.reflect.Method getFilter = qtfClass.getMethod("getFilter");
+            return getFilter.invoke(listener);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    protected Set<String> ontologySrcIdsByDst(DataDomain dataDomain, String predicate, String dst, Object edgeFilter) {
+        if (dataDomain == null) return Collections.emptySet();
+        try {
+            var cdi = jakarta.enterprise.inject.spi.CDI.current();
+            if (cdi == null) return Collections.emptySet();
+            Class<?> edgeRepoClass = Class.forName("com.e2eq.ontology.repo.OntologyEdgeRepo");
+            var selection = cdi.select(edgeRepoClass);
+            if (selection.isUnsatisfied()) return Collections.emptySet();
+            Object edgeRepo = selection.get();
+            if (edgeFilter != null) {
+                for (java.lang.reflect.Method m : edgeRepoClass.getMethods()) {
+                    if (m.getName().equals("srcIdsByDst") && m.getParameterCount() == 4 && m.getParameterTypes()[0].equals(DataDomain.class)) {
+                        Object filterArray = java.lang.reflect.Array.newInstance(m.getParameterTypes()[3].getComponentType(), 1);
+                        java.lang.reflect.Array.set(filterArray, 0, edgeFilter);
+                        Object result = m.invoke(edgeRepo, dataDomain, predicate, dst, filterArray);
+                        if (result instanceof Set<?> set) return (Set<String>) set;
+                    }
+                }
+            }
+            java.lang.reflect.Method method = edgeRepoClass.getMethod("srcIdsByDst", DataDomain.class, String.class, String.class);
+            Object result = method.invoke(edgeRepo, dataDomain, predicate, dst);
+            if (result instanceof Set<?> set) return (Set<String>) set;
+        } catch (Throwable ignored) { }
+        return Collections.emptySet();
+    }
+
+    @SuppressWarnings("unchecked")
+    protected Set<String> ontologyDstIdsBySrc(DataDomain dataDomain, String predicate, String src, Object edgeFilter) {
+        if (dataDomain == null) return Collections.emptySet();
+        try {
+            var cdi = jakarta.enterprise.inject.spi.CDI.current();
+            if (cdi == null) return Collections.emptySet();
+            Class<?> edgeRepoClass = Class.forName("com.e2eq.ontology.repo.OntologyEdgeRepo");
+            var selection = cdi.select(edgeRepoClass);
+            if (selection.isUnsatisfied()) return Collections.emptySet();
+            Object edgeRepo = selection.get();
+            if (edgeFilter != null) {
+                for (java.lang.reflect.Method m : edgeRepoClass.getMethods()) {
+                    if (m.getName().equals("dstIdsBySrc") && m.getParameterCount() == 4 && m.getParameterTypes()[0].equals(DataDomain.class)) {
+                        Object filterArray = java.lang.reflect.Array.newInstance(m.getParameterTypes()[3].getComponentType(), 1);
+                        java.lang.reflect.Array.set(filterArray, 0, edgeFilter);
+                        Object result = m.invoke(edgeRepo, dataDomain, predicate, src, filterArray);
+                        if (result instanceof Set<?> set) return (Set<String>) set;
+                    }
+                }
+            }
+            java.lang.reflect.Method method = edgeRepoClass.getMethod("dstIdsBySrc", DataDomain.class, String.class, String.class);
+            Object result = method.invoke(edgeRepo, dataDomain, predicate, src);
+            if (result instanceof Set<?> set) return (Set<String>) set;
+        } catch (Throwable ignored) { }
+        return Collections.emptySet();
+    }
+
+    private void pushIdPredicate(Set<String> ids) {
+        if (ids == null || ids.isEmpty()) {
+            predicateStack.push(wrap(node -> false, false));
+            return;
+        }
+        Set<String> targetIds = new HashSet<>(ids);
+        predicateStack.push(wrap(node -> {
+            if (node == null || !node.isObject()) return false;
+            if (matchesId(node, targetIds)) return true;
+            if (node.hasNonNull("resource") && node.get("resource").isObject()) {
+                if (matchesId(node.get("resource"), targetIds)) return true;
+            }
+            return false;
+        }, false));
+    }
+
+    private static boolean matchesId(JsonNode node, Set<String> targetIds) {
+        if (node.hasNonNull("id") && targetIds.contains(node.get("id").asText())) {
+            return true;
+        }
+        if (node.hasNonNull("_id")) {
+            JsonNode idNode = node.get("_id");
+            if (idNode.isObject() && idNode.hasNonNull("$oid") && targetIds.contains(idNode.get("$oid").asText())) {
+                return true;
+            }
+            if (targetIds.contains(idNode.asText())) {
+                return true;
+            }
+        }
+        if (node.hasNonNull("refName") && targetIds.contains(node.get("refName").asText())) {
+            return true;
+        }
+        return false;
+    }
+
+    private static String cleanString(String s) {
+        if (s == null) return null;
+        String trimmed = s.trim();
+        if ((trimmed.startsWith("\"") && trimmed.endsWith("\"")) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+            if (trimmed.length() >= 2) {
+                return trimmed.substring(1, trimmed.length() - 1);
+            }
+        }
+        return trimmed;
     }
 
     // ---- helpers ----

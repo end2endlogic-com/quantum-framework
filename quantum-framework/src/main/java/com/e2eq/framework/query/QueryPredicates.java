@@ -2,6 +2,7 @@ package com.e2eq.framework.query.runtime;
 
 import com.e2eq.framework.grammar.BIAPIQueryLexer;
 import com.e2eq.framework.grammar.BIAPIQueryParser;
+import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.antlr.v4.runtime.CharStream;
@@ -30,13 +31,25 @@ public final class QueryPredicates {
      * @return a {@link java.util.function.Predicate Predicate} that evaluates a {@link com.fasterxml.jackson.databind.JsonNode JsonNode} according to the compiled query
      */
     public static Predicate<JsonNode> compilePredicate(String query, Map<String, String> vars, Map<String, Object> objectVars) {
+        return compilePredicate(query, vars, objectVars, null);
+    }
+
+    /**
+     * Compiles a BIAPI query string into a {@code Predicate<JsonNode>} using the ANTLR parser with model context.
+     * @param query the BIAPI query string to compile
+     * @param vars variables for ${var} substitution during parsing; may be null
+     * @param objectVars object-valued variables; may be null
+     * @param modelClass target model class for ontology domain/range validation; may be null
+     * @return a {@link java.util.function.Predicate Predicate} that evaluates a {@link com.fasterxml.jackson.databind.JsonNode JsonNode} according to the compiled query
+     */
+    public static Predicate<JsonNode> compilePredicate(String query, Map<String, String> vars, Map<String, Object> objectVars, Class<? extends UnversionedBaseModel> modelClass) {
         CharStream cs = CharStreams.fromString(query);
         BIAPIQueryLexer lexer = new BIAPIQueryLexer(cs);
         CommonTokenStream tokens = new CommonTokenStream(lexer);
         BIAPIQueryParser parser = new BIAPIQueryParser(tokens);
         BIAPIQueryParser.QueryContext tree = parser.query();
 
-        QueryToPredicateJsonListener listener = new QueryToPredicateJsonListener(vars, objectVars, new StringSubstitutor(vars));
+        QueryToPredicateJsonListener listener = new QueryToPredicateJsonListener(vars, objectVars, new StringSubstitutor(vars != null ? vars : java.util.Collections.emptyMap()), modelClass);
         ParseTreeWalker.DEFAULT.walk(listener, tree);
         return listener.getPredicate();
     }
