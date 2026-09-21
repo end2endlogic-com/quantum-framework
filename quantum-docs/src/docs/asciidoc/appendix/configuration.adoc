@@ -313,8 +313,8 @@ Registry modes
 Edges collection and indexes
 
 - The MongoDB `edges` collection (default name configured via `ontology.mongo.collection.edges`) supports open edge qualification via compound indexes:
-  - `idx_domain_p_dst_props`: `{ "dataDomain": 1, "p": 1, "dst": 1, "props": 1 }` &mdash; optimizes `hasEdge` / `srcIdsByDst` lookups.
-  - `idx_domain_src_p_props`: `{ "dataDomain": 1, "src": 1, "p": 1, "props": 1 }` &mdash; optimizes `hasIncomingEdge` / `dstIdsBySrc` lookups.
+  - `idx_domain_p_dst_props`: `{ "dataDomain": 1, "p": 1, "dst": 1, "props": 1 }` -- optimizes `hasEdge` / `srcIdsByDst` lookups.
+  - `idx_domain_src_p_props`: `{ "dataDomain": 1, "src": 1, "p": 1, "props": 1 }` -- optimizes `hasIncomingEdge` / `dstIdsBySrc` lookups.
 - Inferred edges carry `inferred: true` with provenance and timestamp metadata for maintenance and TTL eviction.
 
 Materialization hooks

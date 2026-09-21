@@ -584,7 +584,7 @@ deployments get the same surface backed by the control-plane client (Phase C).
 [[user-definable-facet-segmentation]]
 === User-Definable Facet Segmentation & Coordinate SPI in Multi-Tenant Environments
 
-Traditional multi-tenancy models stop at isolating database collections by a single tenant ID. However, enterprise SaaS platforms often require multidimensional logical segmentation within and across tenants &mdash; such as isolating data by geographic region, operating subsidiary, business unit, partner channel, or sensitivity facet.
+Traditional multi-tenancy models stop at isolating database collections by a single tenant ID. However, enterprise SaaS platforms often require multidimensional logical segmentation within and across tenants -- such as isolating data by geographic region, operating subsidiary, business unit, partner channel, or sensitivity facet.
 
 Quantum delivers this capability through the **Store-Free Coordinate SPI (`DataDomainResolver`)** and **User-Definable Facet Segmentation**, allowing a single server instance to support heterogeneous segmentation policies for different tenants.
 

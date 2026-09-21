@@ -538,8 +538,8 @@ Every `OntologyEdge` and transport-neutral `EdgeRecord` includes a flexible `pro
 
 - **Entity Model (`OntologyEdge`)**: Holds arbitrary key-value metadata characterizing the relationship (e.g. `role`, `validFrom`, `validTo`, `serviceLevel`, `department`).
 - **Compound Index Scans**: The underlying MongoDB `edges` collection is backed by compound read-optimizing indexes:
-  * `idx_domain_p_dst_props`: `{"dataDomain": 1, "p": 1, "dst": 1, "props": 1}` &mdash; optimizes `hasEdge` / `srcIdsByDst` lookups.
-  * `idx_domain_src_p_props`: `{"dataDomain": 1, "src": 1, "p": 1, "props": 1}` &mdash; optimizes `hasIncomingEdge` / `dstIdsBySrc` lookups.
+  * `idx_domain_p_dst_props`: `{"dataDomain": 1, "p": 1, "dst": 1, "props": 1}` -- optimizes `hasEdge` / `srcIdsByDst` lookups.
+  * `idx_domain_src_p_props`: `{"dataDomain": 1, "src": 1, "p": 1, "props": 1}` -- optimizes `hasIncomingEdge` / `dstIdsBySrc` lookups.
 - **Dynamic Property Scoping**: When querying edges via `{ edgeFilter }`, all non-root field references are automatically prefixed with `props.` so queries can naturally write `{ role:"ADMIN" }` instead of `{ props.role:"ADMIN" }`.
 
 ==== 2. Store-Free Coordinate SPI (`DataDomainResolver`)
