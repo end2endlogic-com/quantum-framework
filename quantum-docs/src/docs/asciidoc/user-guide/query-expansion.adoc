@@ -227,7 +227,59 @@ Caveats
 - Depth and mixed object/array hops are bounded; traversal stops at a non-reference boundary.
 - For very large arrays, prefer targeted filtering before expansion to reduce fan-out.
 
+==== Multi-Hop Reference Traversal Chains: expand(hop1) && expand(hop1.hop2)
+
+Multiple relationship hops can be chained together using standard logical conjunction (`&&`). For example, traversing from a Customer to their Orders, and from each Order to its Supplier:
+
+Query
+
+[source]
+----
+q = "customerName:Cust-1 && expand(orderRef) && expand(orderRef.supplierRef)"
+----
+
+Pipeline Architecture with Inner-Pipeline Pushdown
+
+Instead of simple uncorrelated lookups, the compiler generates correlated `$lookup` stages with dedicated inner pipelines:
+
+[source,json]
+----
+[
+  { "$match": { "dataDomain.tenantId": "acme", "customerName": "Cust-1" } },
+  { "$lookup": {
+      "from": "orders",
+      "let": { "ref_id": "$orderRef._id" },
+      "pipeline": [
+        { "$match": { "$expr": { "$eq": ["$_id", "$$ref_id"] } } },
+        { "$match": { "dataDomain.tenantId": "acme" } },
+        { "$project": { "secretDiscount": 0 } }
+      ],
+      "as": "orderRef"
+  }},
+  { "$unwind": { "path": "$orderRef", "preserveNullAndEmptyArrays": true } },
+  { "$lookup": {
+      "from": "suppliers",
+      "let": { "ref_id": "$orderRef.supplierRef._id" },
+      "pipeline": [
+        { "$match": { "$expr": { "$eq": ["$_id", "$$ref_id"] } } },
+        { "$match": { "dataDomain.tenantId": "acme" } },
+        { "$project": { "costMargin": 0 } }
+      ],
+      "as": "orderRef.supplierRef"
+  }},
+  { "$unwind": { "path": "$orderRef.supplierRef", "preserveNullAndEmptyArrays": true } }
+]
+----
+
+Key Security Defaults for Multi-Hop Traversals:
+
+- **Per-Stage Row Security**: Each inner pipeline injects a `$match` stage enforcing target collection `DataDomain` constraints and rule filters.
+- **Monotonic Restriction Accumulation**: Security restrictions strictly accumulate. Upstream constraints are preserved and compounded down the traversal tree, preventing privilege escalation.
+- **Cross-Tenant Pruning**: If an entity reference points across tenant boundaries or to a document forbidden by target security rules, the inner pipeline produces 0 matches, evaluating to `null` or `[]` without leaking document existence.
+- **Field Exclusions (`$project`)**: Target entity field exclusions defined in `RuleContext` are pushed down into each inner pipeline so sensitive fields never leave MongoDB.
+
 ==== When is AGGREGATION used vs FILTER?
 
 - FILTER: no expand(...). Planner returns a Morphia Filter and the gateway executes find with dev.morphia.query.Query.
-- AGGREGATION: one or more expand(...). Planner returns a pipeline with $lookup/$unwind and optional $project stages. Execution requires feature.queryGateway.execution.enabled=true; otherwise, POST /api/query/find returns 501. If any $lookup.from is "__unknown__", execution returns HTTP 422.
+- AGGREGATION: one or more expand(...). Planner returns an aggregation pipeline with per-stage $lookup inner pipelines, $unwind, and $project stages. Execution requires `feature.queryGateway.execution.enabled=true`; otherwise, POST /api/query/find returns HTTP 501. If any $lookup.from is "__unknown__", execution returns HTTP 422.
+

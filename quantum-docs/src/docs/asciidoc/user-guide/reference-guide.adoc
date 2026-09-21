@@ -18,8 +18,10 @@ Use it to jump directly to a subject and then explore details in context.
 - Integration with Morphia/permissions: xref:./ontology.adoc#ontology-integration-morphia-permissions-section[Integrating ontology with rules and repos]
 
 - Domain modeling: xref:../tutorials/quantum-tutorial.adoc#sec-modeling[Domain modeling fundamentals]
+- Dynamic edge properties and facet segmentation: xref:./ontology.adoc#ontology-facet-segmentation[Open edge properties, edge filtering, and facet segmentation]
 - Completion tasks and groups: xref:./modeling.adoc#completion-tasks[CompletionTasks, CompletionTaskGroups, payloads, and event stream]
 - Tenant models and realms: xref:../tutorials/quantum-tutorial.adoc#sec-tenant-models[Multi-tenant model and realm separation]
+- User-definable facet segmentation & coordinate SPI: xref:./tenant-models.adoc#user-definable-facet-segmentation[Multi-tenant coordinate SPI and facet resolution]
 - Tenant onboarding and access invites: xref:./tenant-models.adoc#tenant-onboarding-and-invites[Provision tenants, configure onboarding workflow, and invite users into a tenant]
 - Domain rule context: xref:../tutorials/quantum-tutorial.adoc#sec-domain-rule-context[Domain rule context]
 
@@ -27,7 +29,10 @@ Use it to jump directly to a subject and then explore details in context.
 
 - REST CRUD: xref:../tutorials/quantum-tutorial.adoc#sec-rest-crud[Building RESTful CRUD APIs]
 - Query language: xref:../tutorials/quantum-tutorial.adoc#sec-query-language[Query language and filtering]
+- Planner and QueryGateway: xref:./planner-and-query-gateway.adoc[Governed aggregation pipelines, multi-hop traversal, and REST endpoints]
+- Relationship hydration: xref:./query-expansion.adoc[Relationship hydration with expand(path)]
 - Scoped action enablement: xref:./action-enablement.adoc#action-enablement[Why an action is unavailable: policy, feature flags, settings, and readiness blockers]
+
 - AI Agent integration: xref:./ai-agent-integration.adoc[AI Agent Integration] (tools discovery, schema, execute, session/trace)
 - MCP Server and Client: xref:./mcp-server-and-client.adoc[MCP Server and Client] (Claude/Cursor integration, ontology tools, end-to-end example)
 

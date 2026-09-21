@@ -312,19 +312,45 @@ Registry modes
 
 Edges collection and indexes
 
-- Create an edges collection (name of your choice) when enabling ontology. Ensure the following indexes:
-  - Compound: { tenantId:1, p:1, dst:1 }
-  - Compound: { tenantId:1, src:1, p:1 }
-- Optionally, add a TTL on ts for inferred edges if you plan periodic full recomputes.
+- The MongoDB `edges` collection (default name configured via `ontology.mongo.collection.edges`) supports open edge qualification via compound indexes:
+  - `idx_domain_p_dst_props`: `{ "dataDomain": 1, "p": 1, "dst": 1, "props": 1 }` &mdash; optimizes `hasEdge` / `srcIdsByDst` lookups.
+  - `idx_domain_src_p_props`: `{ "dataDomain": 1, "src": 1, "p": 1, "props": 1 }` &mdash; optimizes `hasIncomingEdge` / `dstIdsBySrc` lookups.
+- Inferred edges carry `inferred: true` with provenance and timestamp metadata for maintenance and TTL eviction.
 
 Materialization hooks
 
-- Use OntologyMaterializer to recompute inferred edges when entities change (sources and intermediates for your property chains).
+- Use `OntologyMaterializer` to recompute inferred edges when entities change (sources and intermediates for your property chains).
+
+==== Query Gateway Configuration
+
+[cols="2,1,3"]
+|===
+|Property |Default |Description
+
+|`feature.queryGateway.execution.enabled`
+|`false`
+|Guards execution of `POST /api/query/find` for `AGGREGATION`-mode queries. When `false`, aggregation queries return HTTP 501 (`ExecutionDisabled`). Must be set to `true` to allow the gateway to execute governed MongoDB aggregation pipelines (with inner-pipeline `$lookup` pushdown and multi-hop traversals).
+
+|`feature.queryGateway.maxPageSize`
+|`1000`
+|Maximum page size allowed for `/api/query/find` requests.
+
+|`ontology.mongo.database`
+|`quantum`
+|Default database name for the ontology edges collection when not overridden by realm context.
+
+|`ontology.mongo.collection.edges`
+|`edges`
+|Collection name storing ontology edge documents.
+|===
 
 See also
 
 - xref:../user-guide/ontology.adoc[Ontologies in Quantum]
-- xref:../user-guide/ontology.adoc#ontology-integration-morphia-permissions-section[Integrating Ontology]
+- xref:../user-guide/ontology.adoc#ontology-facet-segmentation[Dynamic Edge Properties & Facet Segmentation]
+- xref:../user-guide/planner-and-query-gateway.adoc[Planner and Query Gateway]
+- xref:../user-guide/tenant-models.adoc#user-definable-facet-segmentation[User-Definable Facet Segmentation & Coordinate SPI]
+
 
 ==== Control-plane split (deployment mode)
 
