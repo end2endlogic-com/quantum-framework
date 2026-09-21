@@ -59,14 +59,14 @@ public class AuthResponse {
         return expires_at;
     }
 
-    /** @deprecated Use {@link #getActiveApplicationId()}; retained for 2.x wire compatibility. */
+    /** @deprecated Use {@code activeApplicationId}; retained for 2.x wire compatibility. */
     @Deprecated
     @JsonProperty("activeApplication")
     public String getActiveApplication() {
         return activeApplicationId;
     }
 
-    /** @deprecated Use {@link #setActiveApplicationId(String)}; retained for 2.x source compatibility. */
+    /** @deprecated Use {@code activeApplicationId}; retained for 2.x source compatibility. */
     @Deprecated
     @JsonProperty("activeApplication")
     public void setActiveApplication(String activeApplication) {

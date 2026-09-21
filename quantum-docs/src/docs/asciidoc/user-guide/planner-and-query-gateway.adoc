@@ -80,12 +80,12 @@ The gateway (`QueryGatewayResource`, `@Path("/api/query")`,
 `@FunctionalMapping(area="integration", domain="query")`) exposes a planner endpoint
 plus generic governed query operations:
 
-- `POST /api/query/plan` &mdash; returns planner mode (`FILTER` vs `AGGREGATION`) and expand paths detected
-- `POST /api/query/find` &mdash; executes governed `FILTER` and `AGGREGATION` queries, returning the standard `Collection<T>` envelope
-- `POST /api/query/count` &mdash; returns the governed count for a `FILTER`-mode query
-- `POST /api/query/delete` &mdash; deletes a single entity by id (governed; 404 across DataDomain boundaries)
-- `POST /api/query/deleteMany` &mdash; deletes the matching `FILTER`-mode set
-- `POST /api/query/export` &mdash; streams a governed CSV export
+- `POST /api/query/plan` -- returns planner mode (`FILTER` vs `AGGREGATION`) and expand paths detected
+- `POST /api/query/find` -- executes governed `FILTER` and `AGGREGATION` queries, returning the standard `Collection<T>` envelope
+- `POST /api/query/count` -- returns the governed count for a `FILTER`-mode query
+- `POST /api/query/delete` -- deletes a single entity by id (governed; 404 across DataDomain boundaries)
+- `POST /api/query/deleteMany` -- deletes the matching `FILTER`-mode set
+- `POST /api/query/export` -- streams a governed CSV export
 
 [[query-gateway-governance]]
 === Row- and Field-Level Governance
@@ -132,7 +132,7 @@ flowchart TD
 
 1. **Root Pre-Filtering**: The root collection pipeline begins with a leading `$match` enforcing the root model's `DataDomain` policy and security rules.
 2. **Inner Pipeline `$lookup` Security**: For each expansion hop, target entity row-level constraints are pushed directly into the inner `pipeline: [ ... ]` of MongoDB's `$lookup` stage.
-3. **Monotonic Restriction Accumulation**: Security restrictions accumulate along multi-hop paths (e.g. Customer &rarr; Order &rarr; Supplier). Downstream hops inherit and compound upstream access constraints, ensuring that traversal can never be exploited to elevate privileges or bypass intermediate isolation boundaries.
+3. **Monotonic Restriction Accumulation**: Security restrictions accumulate along multi-hop paths (e.g. Customer -> Order -> Supplier). Downstream hops inherit and compound upstream access constraints, ensuring that traversal can never be exploited to elevate privileges or bypass intermediate isolation boundaries.
 4. **Target Field Exclusion Pushdown**: Target entity field exclusions (`excludedFieldPaths`) are pushed into the inner pipeline as a `$project` stage, redacting sensitive fields directly within the MongoDB engine.
 5. **Cross-Tenant Reference Pruning**: If a foreign reference points to an entity in a different tenant or an entity that fails target row security, the inner `$match` stage filters it out. The populated property resolves to an empty array or `null`, completely preventing cross-tenant data leakage.
 
