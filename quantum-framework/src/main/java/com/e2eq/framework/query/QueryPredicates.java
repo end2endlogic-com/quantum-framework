@@ -43,7 +43,8 @@ public final class QueryPredicates {
      * @return a {@link java.util.function.Predicate Predicate} that evaluates a {@link com.fasterxml.jackson.databind.JsonNode JsonNode} according to the compiled query
      */
     public static Predicate<JsonNode> compilePredicate(String query, Map<String, String> vars, Map<String, Object> objectVars, Class<? extends UnversionedBaseModel> modelClass) {
-        CharStream cs = CharStreams.fromString(query);
+        String normalized = normalizeQuery(query);
+        CharStream cs = CharStreams.fromString(normalized);
         BIAPIQueryLexer lexer = new BIAPIQueryLexer(cs);
         CommonTokenStream tokens = new CommonTokenStream(lexer);
         BIAPIQueryParser parser = new BIAPIQueryParser(tokens);
@@ -52,6 +53,54 @@ public final class QueryPredicates {
         QueryToPredicateJsonListener listener = new QueryToPredicateJsonListener(vars, objectVars, new StringSubstitutor(vars != null ? vars : java.util.Collections.emptyMap()), modelClass);
         ParseTreeWalker.DEFAULT.walk(listener, tree);
         return listener.getPredicate();
+    }
+
+    /**
+     * Normalizes operators and query macros (@asOf, @minConfidence) prior to parsing.
+     * @param query query string to normalize
+     * @return normalized query string
+     */
+    public static String normalizeQuery(String query) {
+        if (query == null) return null;
+        String normalized = query.replace(":=[", ":^[");
+
+        // Expand edges.@asOf(...) and @asOf(...)
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("(edges\\.)?@asOf\\s*\\(\\s*([^)]+)\\s*\\)").matcher(normalized);
+        if (m.find()) {
+            StringBuffer sb = new StringBuffer();
+            do {
+                boolean hasEdges = m.group(1) != null;
+                String arg = m.group(2).trim();
+                if ((arg.startsWith("\"") && arg.endsWith("\"")) || (arg.startsWith("'") && arg.endsWith("'"))) {
+                    arg = arg.substring(1, arg.length() - 1);
+                }
+                String prefix = hasEdges ? "edges." : "";
+                String rep = "((" + prefix + "validFrom:<=" + arg + " || " + prefix + "validFrom:null) && (" + prefix + "validTo:>=" + arg + " || " + prefix + "validTo:null))";
+                m.appendReplacement(sb, java.util.regex.Matcher.quoteReplacement(rep));
+            } while (m.find());
+            m.appendTail(sb);
+            normalized = sb.toString();
+        }
+
+        // Expand edges.@minConfidence(...) and @minConfidence(...)
+        java.util.regex.Matcher mc = java.util.regex.Pattern.compile("(edges\\.)?@minConfidence\\s*\\(\\s*([^)]+)\\s*\\)").matcher(normalized);
+        if (mc.find()) {
+            StringBuffer sb = new StringBuffer();
+            do {
+                boolean hasEdges = mc.group(1) != null;
+                String arg = mc.group(2).trim();
+                if ((arg.startsWith("\"") && arg.endsWith("\"")) || (arg.startsWith("'") && arg.endsWith("'"))) {
+                    arg = arg.substring(1, arg.length() - 1);
+                }
+                String prefix = hasEdges ? "edges." : "";
+                String rep = prefix + "confidence:>=" + arg;
+                mc.appendReplacement(sb, java.util.regex.Matcher.quoteReplacement(rep));
+            } while (mc.find());
+            mc.appendTail(sb);
+            normalized = sb.toString();
+        }
+
+        return normalized;
     }
 
     /**

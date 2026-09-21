@@ -126,7 +126,7 @@ NUMBER:'##'('-'?[0-9]+'.'[0-9]+)
      setText(s);
    }
    ;
-VARIABLE: '$''{' IDENT '}';
+VARIABLE: '$''{' IDENT ('.' IDENT)* '}';
 
 fragment IDENT: IDENT_START IDENT_PART*;
 fragment IDENT_START: [a-zA-Z_];

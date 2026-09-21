@@ -1095,20 +1095,27 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
                     value = new ObjectId(tok.getText());
                     break;
                 case BIAPIQueryParser.VARIABLE: {
-                    String replaced = (sub != null) ? sub.replace(tok.getText()) : tok.getText();
-                    // Check if variable was not resolved (still contains ${...} pattern)
-                    // Only check when we have a substitutor - if no substitutor, variables are expected to remain unresolved
-                    if (sub != null && replaced != null && replaced.contains("${")) {
-                        Log.errorf("Unresolved variable '%s' for field '%s'. " +
-                                "This likely means the AccessListResolver's supports() method returned false for the current context, " +
-                                "or the variable is not provided by any resolver. " +
-                                "Ensure your resolver supports all area/functionalDomain/action combinations where this variable is used.",
-                                tok.getText(), field.getText());
-                        throw new IllegalStateException(
-                            "Unresolved resolver variable '" + tok.getText() + "' for field '" + field.getText() + "'. " +
-                            "The AccessListResolver's supports() method must return true for the current request context.");
+                    String varName = (tok.getText().startsWith("${") && tok.getText().endsWith("}"))
+                            ? tok.getText().substring(2, tok.getText().length() - 1)
+                            : tok.getText();
+                    if (objectVars != null && objectVars.containsKey(varName)) {
+                        value = objectVars.get(varName);
+                    } else {
+                        String replaced = (sub != null) ? sub.replace(tok.getText()) : tok.getText();
+                        // Check if variable was not resolved (still contains ${...} pattern)
+                        // Only check when we have a substitutor - if no substitutor, variables are expected to remain unresolved
+                        if (sub != null && replaced != null && replaced.contains("${")) {
+                            Log.errorf("Unresolved variable '%s' for field '%s'. " +
+                                    "This likely means the AccessListResolver's supports() method returned false for the current context, " +
+                                    "or the variable is not provided by any resolver. " +
+                                    "Ensure your resolver supports all area/functionalDomain/action combinations where this variable is used.",
+                                    tok.getText(), field.getText());
+                            throw new IllegalStateException(
+                                "Unresolved resolver variable '" + tok.getText() + "' for field '" + field.getText() + "'. " +
+                                "The AccessListResolver's supports() method must return true for the current request context.");
+                        }
+                        value = coerceValue(replaced);
                     }
-                    value = coerceValue(replaced);
                 }
                     break;
                 case BIAPIQueryParser.NUMBER: {
@@ -1167,6 +1174,21 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
                     filter = Filters.nor(regexFilter(fieldName, "^" + escapeRegexChars((String) value) + "$", false));
                 } else {
                     filter = Filters.ne(fieldName, value);
+                }
+                break;
+            case BIAPIQueryParser.IN:
+                if (value instanceof Iterable<?> iter) {
+                    filter = Filters.in(fieldName, iter);
+                } else if (value != null && value.getClass().isArray()) {
+                    filter = Filters.in(fieldName, java.util.Arrays.asList((Object[]) value));
+                } else if (value instanceof String s) {
+                    List<String> list = java.util.Arrays.stream(s.split(","))
+                            .map(String::trim)
+                            .filter(x -> !x.isEmpty())
+                            .toList();
+                    filter = Filters.in(fieldName, list);
+                } else {
+                    filter = Filters.in(fieldName, Collections.singletonList(value));
                 }
                 break;
             case BIAPIQueryParser.GT:

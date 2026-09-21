@@ -338,6 +338,17 @@ public class OntologyMaterializer {
             }
             rec.setSupport(sup);
         }
+        rec.setProps(e.getProps());
+        rec.setValidFrom(e.getValidFrom());
+        rec.setValidTo(e.getValidTo());
+        rec.setSecurityLabel(e.getSecurityLabel());
+        rec.setCompartments(e.getCompartments());
+        rec.setConfidence(e.getConfidence());
+        rec.setAssertionMethod(e.getAssertionMethod());
+        rec.setAllowedPurposes(e.getAllowedPurposes());
+        rec.setConsentId(e.getConsentId());
+        rec.setAttestation(e.getAttestation());
+        rec.setMutuallyExclusiveWith(e.getMutuallyExclusiveWith());
         rec.setTs(e.getTs() != null ? e.getTs() : new Date());
         return rec;
     }
@@ -348,6 +359,17 @@ public class OntologyMaterializer {
         if (!Objects.equals(existing.isDerived(), updated.isDerived())) return true;
         if (!Objects.equals(existing.getProv(), updated.getProv())) return true;
         if (!Objects.equals(existing.getSupport(), updated.getSupport())) return true;
+        if (!Objects.equals(existing.getProps(), updated.getProps())) return true;
+        if (!Objects.equals(existing.getValidFrom(), updated.getValidFrom())) return true;
+        if (!Objects.equals(existing.getValidTo(), updated.getValidTo())) return true;
+        if (!Objects.equals(existing.getSecurityLabel(), updated.getSecurityLabel())) return true;
+        if (!Objects.equals(existing.getCompartments(), updated.getCompartments())) return true;
+        if (!Objects.equals(existing.getConfidence(), updated.getConfidence())) return true;
+        if (!Objects.equals(existing.getAssertionMethod(), updated.getAssertionMethod())) return true;
+        if (!Objects.equals(existing.getAllowedPurposes(), updated.getAllowedPurposes())) return true;
+        if (!Objects.equals(existing.getConsentId(), updated.getConsentId())) return true;
+        if (!Objects.equals(existing.getAttestation(), updated.getAttestation())) return true;
+        if (!Objects.equals(existing.getMutuallyExclusiveWith(), updated.getMutuallyExclusiveWith())) return true;
         return false;
     }
 
@@ -356,6 +378,17 @@ public class OntologyMaterializer {
         if (existing.isInferred() != updated.isInferred()) return true;
         if (!Objects.equals(existing.isDerived(), updated.isDerived())) return true;
         if (!Objects.equals(existing.getProv(), updated.getProv())) return true;
+        if (!Objects.equals(existing.getProps(), updated.getProps())) return true;
+        if (!Objects.equals(existing.getValidFrom(), updated.getValidFrom())) return true;
+        if (!Objects.equals(existing.getValidTo(), updated.getValidTo())) return true;
+        if (!Objects.equals(existing.getSecurityLabel(), updated.getSecurityLabel())) return true;
+        if (!Objects.equals(existing.getCompartments(), updated.getCompartments())) return true;
+        if (!Objects.equals(existing.getConfidence(), updated.getConfidence())) return true;
+        if (!Objects.equals(existing.getAssertionMethod(), updated.getAssertionMethod())) return true;
+        if (!Objects.equals(existing.getAllowedPurposes(), updated.getAllowedPurposes())) return true;
+        if (!Objects.equals(existing.getConsentId(), updated.getConsentId())) return true;
+        if (!Objects.equals(existing.getAttestation(), updated.getAttestation())) return true;
+        if (!Objects.equals(existing.getMutuallyExclusiveWith(), updated.getMutuallyExclusiveWith())) return true;
         return false;
     }
 
