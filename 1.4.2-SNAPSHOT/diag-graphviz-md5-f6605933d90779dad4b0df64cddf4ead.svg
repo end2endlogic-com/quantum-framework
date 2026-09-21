@@ -1,0 +1,66 @@
+<?xml version='1.0' encoding='UTF-8' standalone='no'?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd"><svg height='127pt' preserveAspectRatio='xMidYMid meet' viewBox='0.00 0.00 717.00 127.00' width='717pt' xmlns:xlink='http://www.w3.org/1999/xlink' xmlns='http://www.w3.org/2000/svg'>
+<g class='graph' id='graph0' transform='scale(1 1) rotate(0) translate(4 123)'>
+<title>G</title>
+<polygon fill='white' points='-4,4 -4,-123 713,-123 713,4 -4,4' stroke='none'/>
+
+<g class='node' id='node1'>
+<title>O1</title>
+<polygon fill='none' points='67.75,-66 0,-66 0,-30 67.75,-30 67.75,-66' stroke='black'/>
+<text font-family='Times,serif' font-size='14.00' xml:space='preserve' text-anchor='middle' x='33.88' y='-42.95'>Order O1</text>
+</g>
+
+<g class='node' id='node2'>
+<title>C9</title>
+<polygon fill='none' points='243.5,-119 154.75,-119 154.75,-83 243.5,-83 243.5,-119' stroke='black'/>
+<text font-family='Times,serif' font-size='14.00' xml:space='preserve' text-anchor='middle' x='199.12' y='-95.95'>Customer C9</text>
+</g>
+
+<g class='edge' id='edge1'>
+<title>O1&#45;&gt;C9</title>
+<path d='M67.91,-58.73C89.58,-65.76 118.43,-75.13 143.47,-83.26' fill='none' stroke='black'/>
+<polygon fill='black' points='142.27,-86.55 152.86,-86.3 144.43,-79.89 142.27,-86.55' stroke='black'/>
+<text font-family='Times,serif' font-size='14.00' xml:space='preserve' text-anchor='middle' x='111.25' y='-84.01'>placedBy</text>
+</g>
+
+<g class='node' id='node3'>
+<title>OrgA</title>
+<polygon fill='none' points='468,-66 347,-66 347,-30 468,-30 468,-66' stroke='black'/>
+<text font-family='Times,serif' font-size='14.00' xml:space='preserve' text-anchor='middle' x='407.5' y='-42.95'>Organization OrgA</text>
+</g>
+
+<g class='edge' id='edge4'>
+<title>O1&#45;&gt;OrgA</title>
+<path d='M68.18,-48C128.04,-48 255.02,-48 335.26,-48' fill='none' stroke='#666666' stroke-dasharray='5,2'/>
+<polygon fill='#666666' points='335.23,-51.5 345.23,-48 335.23,-44.5 335.23,-51.5' stroke='#666666'/>
+<text font-family='Times,serif' font-size='14.00' xml:space='preserve' text-anchor='middle' x='199.12' y='-51.2'>placedInOrg</text>
+</g>
+
+<g class='node' id='node4'>
+<title>OrgParent</title>
+<polygon fill='none' points='709,-36 563.25,-36 563.25,0 709,0 709,-36' stroke='black'/>
+<text font-family='Times,serif' font-size='14.00' xml:space='preserve' text-anchor='middle' x='636.12' y='-12.95'>Organization OrgParent</text>
+</g>
+
+<g class='edge' id='edge5'>
+<title>O1&#45;&gt;OrgParent</title>
+<path d='M67.89,-44.86C112,-40.71 192.6,-33.23 261.5,-27.5 299.48,-24.34 308.93,-22.64 347,-21 415.88,-18.03 494.09,-17.39 551.64,-17.43' fill='none' stroke='#666666' stroke-dasharray='5,2'/>
+<polygon fill='#666666' points='551.34,-20.93 561.35,-17.44 551.35,-13.93 551.34,-20.93' stroke='#666666'/>
+<text font-family='Times,serif' font-size='14.00' xml:space='preserve' text-anchor='middle' x='295.25' y='-30.7'>placedInOrg</text>
+</g>
+
+<g class='edge' id='edge2'>
+<title>C9&#45;&gt;OrgA</title>
+<path d='M243.89,-89.76C270.55,-82.91 305.24,-74 335.73,-66.18' fill='none' stroke='black'/>
+<polygon fill='black' points='336.47,-69.6 345.28,-63.72 334.72,-62.82 336.47,-69.6' stroke='black'/>
+<text font-family='Times,serif' font-size='14.00' xml:space='preserve' text-anchor='middle' x='295.25' y='-87.06'>memberOf</text>
+</g>
+
+<g class='edge' id='edge3'>
+<title>OrgA&#45;&gt;OrgParent</title>
+<path d='M468.34,-40.08C493.81,-36.71 523.96,-32.72 551.57,-29.06' fill='none' stroke='black'/>
+<polygon fill='black' points='551.87,-32.55 561.32,-27.77 550.95,-25.61 551.87,-32.55' stroke='black'/>
+<text font-family='Times,serif' font-size='14.00' xml:space='preserve' text-anchor='middle' x='515.62' y='-40.64'>ancestorOf</text>
+</g>
+</g>
+</svg>
