@@ -58,7 +58,13 @@ public class DefaultMetadataRegistry implements MetadataRegistry {
             if (EntityReference.class.isAssignableFrom(elementType)) {
                 // We discovered a reference hop
                 isReference = true;
-                current = elementType; // continue, though in v1 we stop at first reference for joins
+                com.e2eq.framework.model.persistent.base.ReferenceTarget rt =
+                        f.getAnnotation(com.e2eq.framework.model.persistent.base.ReferenceTarget.class);
+                if (rt != null && rt.target() != null && rt.target() != void.class) {
+                    current = rt.target();
+                } else {
+                    current = elementType;
+                }
             } else {
                 // Not an EntityReference; we mark boundary and stop traversing for join semantics
                 stoppedAtBoundary = true;
@@ -107,7 +113,7 @@ public class DefaultMetadataRegistry implements MetadataRegistry {
         }
         Class<?> target = ann.target();
         dev.morphia.annotations.Entity e = target.getAnnotation(dev.morphia.annotations.Entity.class);
-        if (e != null && e.value() != null && !e.value().isBlank()) {
+        if (e != null && e.value() != null && !e.value().isBlank() && !e.value().equals(".") && !e.value().equals(dev.morphia.mapping.Mapper.IGNORED_FIELDNAME)) {
             return e.value();
         }
         String simpleName = target.getSimpleName();
@@ -138,6 +144,14 @@ public class DefaultMetadataRegistry implements MetadataRegistry {
                     }
                 }
                 current = Object.class;
+            } else if (EntityReference.class.isAssignableFrom(fieldType)) {
+                com.e2eq.framework.model.persistent.base.ReferenceTarget rt =
+                        last.getAnnotation(com.e2eq.framework.model.persistent.base.ReferenceTarget.class);
+                if (rt != null && rt.target() != null && rt.target() != void.class) {
+                    current = rt.target();
+                } else {
+                    current = fieldType;
+                }
             } else {
                 current = fieldType;
             }
