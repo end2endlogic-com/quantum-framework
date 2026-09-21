@@ -3,6 +3,7 @@ package com.e2eq.ontology.it;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.morphia.QueryToFilterListener;
 import com.e2eq.framework.model.securityrules.SecurityContext;
+import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import com.e2eq.framework.grammar.BIAPIQueryLexer;
 import com.e2eq.framework.grammar.BIAPIQueryParser;
 import com.e2eq.ontology.core.ForwardChainingReasoner;
@@ -170,10 +171,12 @@ public class HasEdgeGrammarIT {
     public void testHasEdgeGrammar_DoesNotLeakAcrossDataDomainsInSameTenant() {
         createOrder("ORDER-LOCAL", "OPEN");
         createOrder("ORDER-FOREIGN", "OPEN");
-        edgeRepo.upsert(testDataDomain, "Order", "ORDER-LOCAL", "placedInOrg",
-                "Organization", "ORG-SHARED", false, null);
-        edgeRepo.upsert(otherOrgDataDomain, "Order", "ORDER-FOREIGN", "placedInOrg",
-                "Organization", "ORG-SHARED", false, null);
+        try (SecurityCallScope.Scope ignored = SecurityCallScope.openIgnoringRules()) {
+            edgeRepo.upsert(testDataDomain, "Order", "ORDER-LOCAL", "placedInOrg",
+                    "Organization", "ORG-SHARED", false, null);
+            edgeRepo.upsert(otherOrgDataDomain, "Order", "ORDER-FOREIGN", "placedInOrg",
+                    "Organization", "ORG-SHARED", false, null);
+        }
 
         Filter grammarFilter = parseQuery("hasEdge(placedInOrg, ORG-SHARED)", TENANT);
         List<TestOrder> results = datastore.find(TestOrder.class)
@@ -186,10 +189,12 @@ public class HasEdgeGrammarIT {
     }
 
     private void createOrder(String refName, String status) {
-        TestOrder order = new TestOrder();
-        order.setRefName(refName);
-        order.setStatus(status);
-        datastore.save(order);
+        try (SecurityCallScope.Scope ignored = SecurityCallScope.openIgnoringRules()) {
+            TestOrder order = new TestOrder();
+            order.setRefName(refName);
+            order.setStatus(status);
+            datastore.save(order);
+        }
     }
 
     private Filter parseQuery(String query, String tenantId) {
@@ -210,20 +215,22 @@ public class HasEdgeGrammarIT {
     }
     
     private void setupOrderInOrg(String orderId, String customerId, String orgId) {
-        edgeRepo.upsert(testDataDomain, "Order", orderId, "placedBy", "Customer", customerId, false, null);
-        edgeRepo.upsert(testDataDomain, "Customer", customerId, "memberOf", "Organization", orgId, false, null);
+        try (SecurityCallScope.Scope ignored = SecurityCallScope.openIgnoringRules()) {
+            edgeRepo.upsert(testDataDomain, "Order", orderId, "placedBy", "Customer", customerId, false, null);
+            edgeRepo.upsert(testDataDomain, "Customer", customerId, "memberOf", "Organization", orgId, false, null);
 
-        List<Reasoner.Edge> explicitEdges = List.of(
-                new Reasoner.Edge(orderId, "Order", "placedBy", customerId, "Customer", false, Optional.empty()),
-                new Reasoner.Edge(customerId, "Customer", "memberOf", orgId, "Organization", false, Optional.empty())
-        );
+            List<Reasoner.Edge> explicitEdges = List.of(
+                    new Reasoner.Edge(orderId, "Order", "placedBy", customerId, "Customer", false, Optional.empty()),
+                    new Reasoner.Edge(customerId, "Customer", "memberOf", orgId, "Organization", false, Optional.empty())
+            );
 
-        Reasoner.EntitySnapshot snapshot = new Reasoner.EntitySnapshot(TENANT, orderId, "Order", explicitEdges);
-        Reasoner.InferenceResult result = reasoner.infer(snapshot, ontologyRegistry);
+            Reasoner.EntitySnapshot snapshot = new Reasoner.EntitySnapshot(TENANT, orderId, "Order", explicitEdges);
+            Reasoner.InferenceResult result = reasoner.infer(snapshot, ontologyRegistry);
 
-        for (Reasoner.Edge edge : result.addEdges()) {
-            Map<String, Object> prov = edge.prov().map(p -> Map.<String, Object>of("rule", p)).orElse(null);
-            edgeRepo.upsert(testDataDomain, edge.srcType(), edge.srcId(), edge.p(), edge.dstType(), edge.dstId(), edge.inferred(), prov);
+            for (Reasoner.Edge edge : result.addEdges()) {
+                Map<String, Object> prov = edge.prov().map(p -> Map.<String, Object>of("rule", p)).orElse(null);
+                edgeRepo.upsert(testDataDomain, edge.srcType(), edge.srcId(), edge.p(), edge.dstType(), edge.dstId(), edge.inferred(), prov);
+            }
         }
     }
 }
