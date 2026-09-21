@@ -10,6 +10,8 @@ Related:
   §06 the binding record, §11 the receipt, §19 realm model, workstream 5, open decision 2
 - `docs/companion-smolvm-execution-isolation-design-2026-09.md` — the same
   authority-split pattern applied to execution
+- `framework/docs/design/ontology-relationship-filtering-and-metadata-spec.md` — policy-driven
+  relationship filtering grammar, enforcement mechanics, and edge metadata extensions
 - `helixor-employee/docs/QUANTUM_DURABLE_STATE.md` — the current realm/DataDomain
   tenancy model and its explicit "no raw pymongo" rule
 - `helixor-entity-governance/README.md` — existing precedent: deterministic engine
