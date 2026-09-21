@@ -183,4 +183,53 @@ public class MongoAggregationCompilerTest {
         assertEquals(0, projDoc.get("taxId"));
         assertEquals(0, projDoc.get("internalRating"));
     }
+
+    @Test
+    void compile_multiHop_producesChainedLookupsAndProjects() {
+        JoinSpec orderJs = new JoinSpec("orders", "_id", "order.entityId", "dataDomain.tenantId", false);
+        LogicalPlan.Expand orderExp = new LogicalPlan.Expand("order", 1, null, false, orderJs);
+
+        JoinSpec supplierJs = new JoinSpec("suppliers", "_id", "order.supplier.entityId", "dataDomain.tenantId", false);
+        LogicalPlan.Expand supplierExp = new LogicalPlan.Expand("order.supplier", 2, null, false, supplierJs);
+
+        LogicalPlan plan = new LogicalPlan(Dummy.class, null, List.of(orderExp, supplierExp), null, null);
+
+        MongoAggregationCompiler c = new MongoAggregationCompiler();
+        MongoAggregationCompiler.StagePolicy supplierPolicy = new MongoAggregationCompiler.StagePolicy(
+                Filters.eq("active", true),
+                java.util.Set.of("taxId", "wholesaleCost")
+        );
+
+        List<Bson> pipeline = c.compile(plan, java.util.Map.of("order.supplier", supplierPolicy));
+
+        // Find both $lookup stages in order
+        List<Document> lookups = pipeline.stream()
+                .filter(b -> b instanceof Document && ((Document) b).containsKey("$lookup"))
+                .map(b -> ((Document) b).get("$lookup", Document.class))
+                .toList();
+
+        assertEquals(2, lookups.size(), "Should have two $lookup stages for 2-hop traversal");
+
+        // Hop 1: orders
+        assertEquals("orders", lookups.get(0).getString("from"));
+        assertEquals("__exp_order", lookups.get(0).getString("as"));
+
+        // Hop 2: suppliers
+        assertEquals("suppliers", lookups.get(1).getString("from"));
+        assertEquals("__exp_order_supplier", lookups.get(1).getString("as"));
+
+        // Verify inner pipeline for Hop 2 contains security match and redaction project
+        List<?> hop2Stages = lookups.get(1).getList("pipeline", Object.class);
+        assertEquals(3, hop2Stages.size(), "Hop 2 should have join $match, policy $match, and policy $project");
+
+        Document hop2PolicyMatch = (Document) hop2Stages.get(1);
+        assertTrue(hop2PolicyMatch.containsKey("$match"));
+        assertEquals(true, ((Document) hop2PolicyMatch.get("$match")).get("active"));
+
+        Document hop2Redaction = (Document) hop2Stages.get(2);
+        assertTrue(hop2Redaction.containsKey("$project"));
+        Document redactionDoc = (Document) hop2Redaction.get("$project");
+        assertEquals(0, redactionDoc.get("taxId"));
+        assertEquals(0, redactionDoc.get("wholesaleCost"));
+    }
 }

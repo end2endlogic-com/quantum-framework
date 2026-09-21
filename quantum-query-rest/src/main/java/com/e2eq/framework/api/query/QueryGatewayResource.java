@@ -14,6 +14,11 @@ import com.e2eq.framework.model.persistent.morphia.planner.PlannedQuery;
 import com.e2eq.framework.model.persistent.morphia.planner.PlannerResult;
 import com.e2eq.framework.model.persistent.morphia.query.QueryGateway;
 import com.e2eq.framework.model.persistent.morphia.query.QueryGatewayImpl;
+import com.e2eq.framework.model.persistent.morphia.compiler.mongo.MongoAggregationCompiler;
+import com.e2eq.framework.model.persistent.morphia.metadata.DefaultMetadataRegistry;
+import com.e2eq.framework.model.persistent.morphia.metadata.JoinSpec;
+import com.e2eq.framework.model.persistent.morphia.metadata.MetadataRegistry;
+import org.bson.Document;
 import com.e2eq.framework.model.persistent.imports.ImportSessionRow;
 import com.e2eq.framework.model.security.DataDomainResolver;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
@@ -54,11 +59,13 @@ import java.io.InputStream;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 
 /**
@@ -223,7 +230,34 @@ public class QueryGatewayResource {
         Integer limit = (req.page != null) ? req.page.limit : null;
         Integer skip = (req.page != null) ? req.page.skip : null;
         Map<String, String> variableMap = variableMapForQuery(req.realm, root);
-        PlannedQuery planned = MorphiaUtils.convertToPlannedQuery(req.query, root, limit, skip, sortFields, variableMap);
+        // Derive stage policies for any expand hops
+        com.e2eq.framework.model.persistent.morphia.planner.QueryPlanner planner =
+                new com.e2eq.framework.model.persistent.morphia.planner.QueryPlanner();
+        com.e2eq.framework.model.persistent.morphia.planner.PlannerResult pr = planner.analyze(req.query);
+        Map<String, MongoAggregationCompiler.StagePolicy> stagePolicies = new HashMap<>();
+        if (pr.getMode() == PlannerResult.Mode.AGGREGATION && pr.getExpandPaths() != null) {
+            MetadataRegistry md = new DefaultMetadataRegistry();
+            for (String path : pr.getExpandPaths()) {
+                try {
+                    JoinSpec js = md.resolveJoin(root, path);
+                    if (js != null && js.targetType != null && UnversionedBaseModel.class.isAssignableFrom(js.targetType)) {
+                        @SuppressWarnings("unchecked")
+                        Class<? extends UnversionedBaseModel> targetModel = (Class<? extends UnversionedBaseModel>) js.targetType;
+                        Filter[] targetSecured = securedFilterArray(Collections.emptyList(), targetModel);
+                        Filter rowFilter = null;
+                        if (targetSecured != null && targetSecured.length > 0) {
+                            rowFilter = (targetSecured.length == 1) ? targetSecured[0] : Filters.and(targetSecured);
+                        }
+                        Set<String> targetExcluded = excludedFieldPaths(targetModel);
+                        stagePolicies.put(path, new MongoAggregationCompiler.StagePolicy(rowFilter, targetExcluded));
+                    }
+                } catch (Exception ex) {
+                    // QueryPlanner will report appropriate error if join metadata cannot be resolved
+                }
+            }
+        }
+
+        PlannedQuery planned = MorphiaUtils.convertToPlannedQuery(req.query, root, limit, skip, sortFields, variableMap, stagePolicies);
         if (planned.getMode() == PlannerResult.Mode.AGGREGATION) {
             if (!aggregationExecutionEnabled) {
                 Map<String, Object> body = new HashMap<>();
@@ -231,21 +265,7 @@ public class QueryGatewayResource {
                 body.put("message", "Aggregation execution is disabled. Enable feature.queryGateway.execution.enabled to execute expand(...)");
                 return Response.status(Response.Status.NOT_IMPLEMENTED).entity(body).build();
             }
-            // SECURITY: the expand/aggregation path cannot yet inject the row-level security
-            // $match (DataDomain + rule filterConstraints) nor the excluded-field $project that the
-            // FILTER path enforces below. Executing it would bypass governance and leak rows/fields
-            // across DataDomain boundaries. Until the secured $match is reproduced for aggregation,
-            // short-circuit to 501 even when the feature flag is enabled so confidentiality never
-            // regresses on this path. FOLLOW-UP: translate securedFilterArray(...) into a leading
-            // $match stage and excludedFieldPaths() into a $project, then re-enable execution.
-            {
-                Map<String, Object> body = new HashMap<>();
-                body.put("error", "NotImplemented");
-                body.put("message", "Aggregation/expand execution is not governed by row-level and field-level security yet and is disabled to prevent data leakage. Tracked as a follow-up.");
-                return Response.status(Response.Status.NOT_IMPLEMENTED).entity(body).build();
-            }
-            // Execution is enabled, but ensure the pipeline is executable
-            /* UNREACHABLE until the secured $match is implemented (see SECURITY note above).
+
             var pipeline = planned.getAggregation();
             boolean hasUnknownFrom = pipeline.stream()
                     .filter(d -> d instanceof org.bson.Document)
@@ -259,18 +279,47 @@ public class QueryGatewayResource {
                 body.put("message", "Aggregation pipeline contains an unresolved $lookup.from. MetadataRegistry must resolve target collections.");
                 return Response.status(422).entity(body).build();
             }
+
             // Execute aggregation pipeline against the root collection
             String realm = resolveRealm(req.realm);
-            Datastore ds = morphiaDataStoreWrapper.getDataStore(realm);
-            String rootCollection = resolveCollectionName(root);
+            MorphiaDatastore ds = morphiaDataStoreWrapper.getDataStore(realm);
+            String rootCollection = resolveCollectionName(root, ds);
 
-            // Strip out non-executable marker stages and build a clean pipeline
+            // SECURITY: derive root row-level security filters (DataDomain scope + rule constraints)
+            Filter[] securedFilters = securedFilterArray(Collections.emptyList(), root);
+            MongoAggregationCompiler compiler = new MongoAggregationCompiler(ds);
+            Document securedMatch = null;
+            if (securedFilters != null && securedFilters.length > 0) {
+                Filter combined = (securedFilters.length == 1)
+                        ? securedFilters[0]
+                        : Filters.and(securedFilters);
+                securedMatch = compiler.compileMatch(combined);
+            }
+
+            // Strip out non-executable marker stages and prepend row security
             List<org.bson.conversions.Bson> clean = new java.util.ArrayList<>();
+            if (securedMatch != null && !securedMatch.isEmpty()) {
+                clean.add(new Document("$match", securedMatch));
+            }
             for (org.bson.conversions.Bson s : pipeline) {
                 if (s instanceof org.bson.Document d && d.containsKey("$plannedExpandPaths")) {
                     continue; // drop marker
                 }
                 clean.add(s);
+            }
+
+            // SECURITY: apply field-level exclusions at the root level so forbidden fields never leave Mongo
+            Set<String> excludedFields = excludedFieldPaths(root);
+            if (excludedFields != null && !excludedFields.isEmpty()) {
+                Document projectDoc = new Document();
+                for (String field : excludedFields) {
+                    if (field != null && !field.isBlank()) {
+                        projectDoc.append(field, 0);
+                    }
+                }
+                if (!projectDoc.isEmpty()) {
+                    clean.add(new Document("$project", projectDoc));
+                }
             }
 
             // Determine paging values for the Collection envelope
@@ -284,7 +333,6 @@ public class QueryGatewayResource {
                     .into(new java.util.ArrayList<>());
             Collection<org.bson.Document> col = new Collection<>(rows, effSkip, effLimit, req.query);
             return Response.ok(col).build();
-            END OF UNREACHABLE AGGREGATION BLOCK */
         }
         // FILTER path using Morphia
         String realm = resolveRealm(req.realm);
@@ -302,7 +350,7 @@ public class QueryGatewayResource {
         int fSkip = req.page != null && req.page.skip != null ? req.page.skip : 0;
         FindOptions fo = new FindOptions().limit(fLimit).skip(fSkip);
         // SECURITY: strip field-level excluded paths (deny-wins) at the datastore.
-        applyExcludedFieldProjection(fo);
+        applyExcludedFieldProjection(fo, root);
         List<?> rows = q.iterator(fo).toList();
         Collection<?> col = new Collection<>(rows, fSkip, fLimit, req.query);
         return Response.ok(col).build();
@@ -999,8 +1047,23 @@ public class QueryGatewayResource {
     }
 
     private String resolveCollectionName(Class<? extends UnversionedBaseModel> root) {
+        return resolveCollectionName(root, null);
+    }
+
+    private String resolveCollectionName(Class<? extends UnversionedBaseModel> root, MorphiaDatastore ds) {
+        if (ds != null) {
+            try {
+                EntityModel em = ds.getMapper().getEntityModel(root);
+                if (em != null && em.collectionName() != null && !em.collectionName().isBlank() && !em.collectionName().equals(".")) {
+                    return em.collectionName();
+                }
+            } catch (Exception ignored) {}
+            try {
+                return ds.getCollection(root).getNamespace().getCollectionName();
+            } catch (Exception ignored) {}
+        }
         dev.morphia.annotations.Entity e = root.getAnnotation(dev.morphia.annotations.Entity.class);
-        if (e != null && e.value() != null && !e.value().isBlank()) {
+        if (e != null && e.value() != null && !e.value().isBlank() && !e.value().equals(".") && !e.value().equals(Mapper.IGNORED_FIELDNAME)) {
             return e.value();
         }
         return root.getSimpleName();
@@ -1080,6 +1143,10 @@ public class QueryGatewayResource {
      * ignore-rules scope; missing request security context fails closed.
      */
     private java.util.Set<String> excludedFieldPaths() {
+        return excludedFieldPaths(null);
+    }
+
+    private java.util.Set<String> excludedFieldPaths(Class<? extends UnversionedBaseModel> targetModel) {
         if (SecurityContext.isIgnoringRules()) {
             return java.util.Set.of();
         }
@@ -1097,7 +1164,27 @@ public class QueryGatewayResource {
                                     "message", "Field policy cannot be resolved: security context is not established for this request."))
                             .build());
         }
-        return ruleContext.getExcludedFieldPaths(pc.get(), rc.get());
+        java.util.Set<String> excluded = new java.util.HashSet<>();
+        java.util.Set<String> baseExcluded = ruleContext.getExcludedFieldPaths(pc.get(), rc.get());
+        if (baseExcluded != null) {
+            excluded.addAll(baseExcluded);
+        }
+        if (targetModel != null) {
+            try {
+                UnversionedBaseModel inst = targetModel.getDeclaredConstructor().newInstance();
+                ResourceContext targetRc = new ResourceContext.Builder()
+                        .withRealm(rc.get().getRealm())
+                        .withArea(inst.bmFunctionalArea())
+                        .withFunctionalDomain(inst.bmFunctionalDomain())
+                        .withAction("find")
+                        .build();
+                java.util.Set<String> targetExcluded = ruleContext.getExcludedFieldPaths(pc.get(), targetRc);
+                if (targetExcluded != null) {
+                    excluded.addAll(targetExcluded);
+                }
+            } catch (Exception ignored) {}
+        }
+        return excluded;
     }
 
     /**
@@ -1105,8 +1192,8 @@ public class QueryGatewayResource {
      * {@code MorphiaRepo#convertToProjection}. Excluded paths are stripped at the datastore so the
      * data never leaves Mongo.
      */
-    private FindOptions applyExcludedFieldProjection(FindOptions options) {
-        java.util.Set<String> excluded = excludedFieldPaths();
+    private FindOptions applyExcludedFieldProjection(FindOptions options, Class<? extends UnversionedBaseModel> root) {
+        java.util.Set<String> excluded = excludedFieldPaths(root);
         if (!excluded.isEmpty()) {
             options.projection().exclude(excluded.toArray(new String[0]));
         }

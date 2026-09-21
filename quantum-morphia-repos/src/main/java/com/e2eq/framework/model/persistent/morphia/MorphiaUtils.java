@@ -124,9 +124,21 @@ public class MorphiaUtils {
            java.util.List<com.e2eq.framework.model.persistent.morphia.planner.LogicalPlan.SortSpec.Field> sortFields,
            java.util.Map<String, String> variableMap
    ) {
+      return convertToPlannedQuery(queryString, modelClass, limit, skip, sortFields, variableMap, null);
+   }
+
+   public static <T extends UnversionedBaseModel> com.e2eq.framework.model.persistent.morphia.planner.PlannedQuery convertToPlannedQuery(
+           String queryString,
+           Class<T> modelClass,
+           Integer limit,
+           Integer skip,
+           java.util.List<com.e2eq.framework.model.persistent.morphia.planner.LogicalPlan.SortSpec.Field> sortFields,
+           java.util.Map<String, String> variableMap,
+           java.util.Map<String, com.e2eq.framework.model.persistent.morphia.compiler.mongo.MongoAggregationCompiler.StagePolicy> stagePolicies
+   ) {
       com.e2eq.framework.model.persistent.morphia.planner.QueryPlanner planner =
               new com.e2eq.framework.model.persistent.morphia.planner.QueryPlanner();
-      return planner.plan(queryString, modelClass, limit, skip, sortFields, variableMap);
+      return planner.plan(queryString, modelClass, limit, skip, sortFields, variableMap, stagePolicies);
    }
 
    public static Map<String, String> createStandardVariableMapFrom(PrincipalContext pcontext, ResourceContext rcontext) {
