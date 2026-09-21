@@ -580,3 +580,119 @@ Resolution APIs live in `RealmMembershipService` (quantum-system):
 `membershipsForOrg`, `membersOfRealm`, `ownerOfRealm`, `realmsForUser`,
 `rolesForUser`. Embedded deployments resolve locally; remote (tier-2)
 deployments get the same surface backed by the control-plane client (Phase C).
+
+[[user-definable-facet-segmentation]]
+=== User-Definable Facet Segmentation & Coordinate SPI in Multi-Tenant Environments
+
+Traditional multi-tenancy models stop at isolating database collections by a single tenant ID. However, enterprise SaaS platforms often require multidimensional logical segmentation within and across tenants &mdash; such as isolating data by geographic region, operating subsidiary, business unit, partner channel, or sensitivity facet.
+
+Quantum delivers this capability through the **Store-Free Coordinate SPI (`DataDomainResolver`)** and **User-Definable Facet Segmentation**, allowing a single server instance to support heterogeneous segmentation policies for different tenants.
+
+==== Physical Realm Isolation vs. Logical Facet Segmentation
+
+Quantum maintains a strict distinction between physical database placement and logical row-level segmentation:
+
+- **Physical Realm Isolation**: Dictates MongoDB cluster and database routing (`DEDICATED` vs `SHARED`/`POOLED`). It acts as an inviolate physical admission gate.
+- **Logical Facet Segmentation**: Dictates which rows, relationships, and fields within a realm are visible to a given principal based on multidimensional coordinates (e.g. `tenantId`, `orgRefName`, `department`, `region`, `classificationTier`).
+
+==== Single Server Instance with Per-Tenant Heterogeneous Policies
+
+A single Quantum server instance natively supports distinct, user-defined segmentation policies for different tenants without requiring separate runtime processes or re-deployments:
+
+- **Tenant Isolation**: In dedicated realms, policies reside in the tenant's own database; in pooled realms, policies are isolated by `tenantId`.
+- **Custom Dimension Modeling**: Tenant A can segment data by `department` and `complianceTier`, while Tenant B concurrently segments data by `region` and `partnerId`.
+- **Dynamic Variable Injection**: Policies automatically bind contextual coordinates into `RuleContext` (`${pTenantId}`, `${orgRefName}`, `${ownerId}`, `${policyFilter}`, and custom facet variables), which are evaluated transparently across both single-collection queries and multi-hop aggregation pipelines.
+
+==== Configuring User-Definable Facets
+
+Facet definitions and policy rules are declared via `DataDomainComponentBinding` and `DataDomainPolicyEntry`:
+
+.Configuring Facet Bindings (`DataDomainComponentBinding`)
+[source,json]
+----
+{
+  "tenantId": "tenant-acme",
+  "name": "OrderSegmentation",
+  "facets": {
+    "region": {
+      "type": "FIELD",
+      "targetPath": "shippingAddress.region"
+    },
+    "department": {
+      "type": "FIELD",
+      "targetPath": "departmentCode"
+    },
+    "classification": {
+      "type": "VARIABLE",
+      "targetPath": "principal.securityClearance"
+    }
+  }
+}
+----
+
+.Configuring Policy Constraints (`DataDomainPolicyEntry`)
+[source,json]
+----
+{
+  "tenantId": "tenant-acme",
+  "targetClass": "com.e2eq.sample.Order",
+  "action": "find",
+  "filter": "status:!\"ARCHIVED\" && region:${userRegion}",
+  "facetFilters": {
+    "department": "${userDepartment}",
+    "classification": "CONFIDENTIAL"
+  }
+}
+----
+
+==== Coordinate Resolution Precedence and Defaults
+
+When a request arrives at `QueryGatewayResource` or a governed `MorphiaRepo`, `DataDomainResolver` resolves coordinates using a strict three-tier precedence hierarchy:
+
+```mermaid
+flowchart TD
+    Req["Incoming Query / Traversal Request"] --> T1{"Tier 1: Tenant-Specific Policy?<br/>(systemDataDomainPolicies for Class + Action)"}
+    T1 -- Yes --> ApplyTenant["Apply Tenant Policy & Bind Custom Facets"]
+    T1 -- No --> T2{"Tier 2: Global / System Policy Provider?"}
+    T2 -- Yes --> ApplyGlobal["Apply Global Policy & Bind Standard Facets"]
+    T2 -- No --> T3{"Tier 3: Caller PrincipalContext Present?<br/>(tenantId, ownerId, orgRefName)"}
+    T3 -- Yes --> ApplyPrincipal["Apply Principal Default Coordinates"]
+    T3 -- No --> FailClosed["DataDomainResolution.Unresolvable<br/>(FAIL CLOSED - HTTP 500 / 403)"]
+
+    ApplyTenant --> Execute["Execute Query / Traversal Pipeline"]
+    ApplyGlobal --> Execute
+    ApplyPrincipal --> Execute
+```
+
+===== Resolution Defaults Table
+
+[cols="1,2,2"]
+|===
+| Resolution Stage | Resolution Source | Default / Fallback Behavior
+
+| **Tenant Policy Configured**
+| `systemDataDomainPolicies` collection for tenant.
+| Employs tenant's custom `filter` and `facetFilters`. Variables are injected into `RuleContext`.
+
+| **No Tenant Policy Configured**
+| System Global Policy Provider.
+| Employs platform-wide default data domain rules if registered; otherwise falls back to Tier 3.
+
+| **Fallback (Zero Policy Records)**
+| Caller's `PrincipalContext`.
+| Resolves default coordinates directly from user credentials: `pTenantId = principal.tenantId`, `ownerId = principal.userId`, `orgRefName = principal.orgRefName`.
+
+| **Missing Security Credentials**
+| None.
+| Yields `DataDomainResolution.Unresolvable`. Fails closed immediately with HTTP 500 (`SecurityContextMissing`) or HTTP 403.
+|===
+
+==== Multi-Hop Traversal Isolation
+
+During multi-hop traversals (e.g. `Customer -> Order -> Supplier` via `expand(...)`):
+
+1. `DataDomainResolver.resolveForHop(targetClass, viaPath, context)` is invoked at each relationship boundary.
+2. Target entity policies and row-level security constraints are applied to that hop's MongoDB `$lookup` pipeline.
+3. Access constraints **accumulate monotonically**: a caller cannot hop across a foreign reference to bypass tenant boundaries or see records they are not authorized to view in the target domain.
+4. References pointing to external tenants or unauthorized records are pruned silently, returning `null` or empty arrays to eliminate information leakage.
+

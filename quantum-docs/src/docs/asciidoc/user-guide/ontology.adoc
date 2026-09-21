@@ -473,12 +473,13 @@ TIP: Provenance is for explanation and maintenance. The runtime edges you query 
 
 Quantum provides several ways to leverage ontology relationships in your queries and business logic.
 
-==== BIAPI Query Language Functions: hasEdge and hasIncomingEdge
+==== BIAPI Query Language Functions: hasEdge, hasOutgoingEdge, and hasIncomingEdge
 
-The query language (BIAPIQuery) includes built-in functions to filter entities based on their ontology edges. These are the preferred way to perform ontology-aware queries from REST APIs or permission rules.
+The query language (BIAPIQuery) includes built-in functions to filter entities based on their ontology relationships. These functions support both standard relationship existence checks and qualified property filtering:
 
-- **`hasEdge(predicate, dst)`**: Filters for entities (sources) that have an edge pointing TO a specific destination.
-- **`hasIncomingEdge(predicate, src)`**: Filters for entities (targets) that have an edge coming FROM a specific source.
+- **`hasEdge(predicate, dst [, { edgeFilter }])`**: Filters for entities (sources) that have an edge pointing TO a specific destination, optionally satisfying edge-level property constraints.
+- **`hasOutgoingEdge(predicate, dst [, { edgeFilter }])`**: Synonym for `hasEdge`.
+- **`hasIncomingEdge(predicate, src [, { edgeFilter }])`**: Filters for entities (targets) that have an edge coming FROM a specific source, optionally satisfying edge-level property constraints.
 
 Example BIAPI queries:
 [source]
@@ -486,28 +487,138 @@ Example BIAPI queries:
 # Find orders placed in OrgA
 hasEdge(placedInOrg, "OrgA")
 
-# Find locations accessible by a specific associate
-hasIncomingEdge(canAccessLocation, "associate-123")
+# Find orders placed in OrgA with high priority and active status
+hasEdge("placedInOrg", "OrgA", { priority:"HIGH" && active:true })
 
-# Combine with other filters
-hasEdge(placedInOrg, "OrgA") && status:PENDING
+# Find locations accessible by a specific associate with tier 1 or 2 access
+hasIncomingEdge(canAccessLocation, "associate-123", { tier:^[#1, #2] })
+
+# Combine with root entity filters
+hasEdge(placedInOrg, "OrgA", { department:"FINANCE" }) && status:PENDING
 ----
 
-==== Programmatic Querying with EdgeDao
+==== Programmatic Querying with OntologyEdgeRepo
 
-For more complex scenarios in Java code, you can use the `EdgeDao` directly:
+For programmatic access in Java services, use `OntologyEdgeRepo` directly:
 
 [source,java]
 ----
 @Inject
-EdgeDao edgeDao;
+OntologyEdgeRepo edgeRepo;
 
-// Find all destination IDs for a given source and predicate
-Set<String> targetIds = edgeDao.dstIdsBySrc(tenantId, "Associate", associateId, "canAccessLocation");
+// 1. Basic destination lookup (unfiltered)
+Set<String> targetIds = edgeRepo.dstIdsBySrc(tenantId, "Associate", associateId, "canAccessLocation");
 
-// Find all source IDs for a given destination and predicate
-Set<String> sourceIds = edgeDao.srcIdsByDst(tenantId, "canAccessLocation", locationId);
+// 2. Qualified edge filtering with MongoDB property filters (pushed into compound index scan)
+Set<String> approvedSources = edgeRepo.srcIdsByDst(
+    tenantId,
+    "placedInOrg",
+    "OrgA",
+    Filters.eq("props.priority", "HIGH"),
+    Filters.eq("props.active", true)
+);
+
+// 3. Upserting edges with dynamic property maps
+Map<String, Object> props = Map.of(
+    "priority", "HIGH",
+    "active", true,
+    "effectiveDate", Instant.now().toString()
+);
+edgeRepo.upsert(tenantId, "Order", orderId, "placedInOrg", "Org", orgId, props);
 ----
+
+[[ontology-facet-segmentation]]
+=== Dynamic Edge Properties, Edge Qualification, and Facet Segmentation
+
+As multi-tenant domains evolve, access boundaries often depend on multidimensional runtime facets (such as organization units, geographic regions, partner tiers, and classification levels) rather than static relational foreign keys. Quantum decouples multi-tenant data segmentation semantics from MongoDB physical persistence mechanics using **Dynamic Edge Properties**, **Qualified Edge Traversal**, and the **Store-Free Coordinate SPI**.
+
+==== 1. Dynamic Edge Properties & Compound Indexes
+
+Every `OntologyEdge` and transport-neutral `EdgeRecord` includes a flexible `props: Map<String, Object>` payload:
+
+- **Entity Model (`OntologyEdge`)**: Holds arbitrary key-value metadata characterizing the relationship (e.g. `role`, `validFrom`, `validTo`, `serviceLevel`, `department`).
+- **Compound Index Scans**: The underlying MongoDB `edges` collection is backed by compound read-optimizing indexes:
+  * `idx_domain_p_dst_props`: `{"dataDomain": 1, "p": 1, "dst": 1, "props": 1}` &mdash; optimizes `hasEdge` / `srcIdsByDst` lookups.
+  * `idx_domain_src_p_props`: `{"dataDomain": 1, "src": 1, "p": 1, "props": 1}` &mdash; optimizes `hasIncomingEdge` / `dstIdsBySrc` lookups.
+- **Dynamic Property Scoping**: When querying edges via `{ edgeFilter }`, all non-root field references are automatically prefixed with `props.` so queries can naturally write `{ role:"ADMIN" }` instead of `{ props.role:"ADMIN" }`.
+
+==== 2. Store-Free Coordinate SPI (`DataDomainResolver`)
+
+In multi-tenant SaaS environments, different tenants may require different coordinate resolution schemes (e.g. resolving tenant, account, department, or geographic facet coordinates). Quantum defines a storage-agnostic SPI in `quantum-models`:
+
+[source,java]
+----
+package com.e2eq.framework.model.security;
+
+public interface DataDomainResolver {
+    // Resolve coordinates when inserting or updating entities
+    DataDomainResolution resolveForCreate(Class<?> modelClass, SourceAttributes source);
+
+    // Resolve query constraints for root list/find operations
+    DataDomainResolution resolveForQuery(Class<?> modelClass, String action, PrincipalContext context);
+
+    // Resolve query constraints when hopping across relationships in aggregation pipelines
+    DataDomainResolution resolveForHop(Class<?> targetClass, String viaPath, PrincipalContext context);
+}
+----
+
+- **`SourceAttributes`**: A store-free, read-only wrapper around model fields, decoupling coordinate calculation from Morphia, Hibernate, or MongoDB specifics.
+- **`DataDomainResolution`**: A sealed tagged union (`DataDomainResolution.Resolved` vs `DataDomainResolution.Unresolvable`). If coordinate resolution fails or rules deny access, `Unresolvable` causes the query or mutation to **fail closed**.
+
+==== 3. Multi-Tenant Policies and Dynamic Facets
+
+A single Quantum server instance supports heterogeneous policies across different tenants:
+
+- **Facet Bindings (`DataDomainComponentBinding`)**: Carries open, user-definable facet bindings (`Map<String, Binding> facets`) mapping facet names to model field paths, constant values, or contextual variables.
+- **Dynamic Policy Entries (`DataDomainPolicyEntry`)**: Encapsulates:
+  * `filter`: A BIAPI query expression restricting rows (e.g. `status:active && region:${region}`).
+  * `facetFilters`: Structured constraints keyed by facet name (e.g. `department -> "FINANCE"`).
+- **Tenant Independence**:
+  * In dedicated realms, each tenant maintains its own `systemDataDomainPolicies` collection.
+  * In shared/pooled realms, policies are isolated by `tenantId`.
+  * Different tenants can enforce completely different segmentation rules on the same entity classes.
+
+==== 4. Defaults, Precedence, and Security Invariants
+
+[cols="1,2,3"]
+|===
+| Component | Default Behavior | Security Invariant
+
+| **Edge Property Constraints**
+| Omitted `{ edgeFilter }` defaults to an unqualified edge existence check.
+| An edge without a `props` map matches unqualified queries, but fails closed on property queries.
+
+| **Coordinate Resolution Precedence**
+| 1. Explicit tenant policy for `(modelClass, action)`. +
+2. System-wide / Global policy provider. +
+3. Fallback to caller's `PrincipalContext` credentials (`tenantId`, `ownerId`, `orgRefName`).
+| If none of the above resolve valid coordinates, `DataDomainResolver` returns `Unresolvable`.
+
+| **Missing Security Context**
+| Execution fails closed with HTTP 500 (`SecurityContextMissing`).
+| No query or mutation runs without an authenticated principal or explicit administrative rule bypass.
+
+| **Rule Context Injection**
+| `DataDomainPolicy` entries automatically bind variables into `RuleContext` (`${pTenantId}`, `${orgRefName}`, `${ownerId}`, `${policyFilter}`, and typed facet variables).
+| Downstream repository and query gateway queries automatically inherit these variables for filter evaluation.
+|===
+
+==== 5. JavaScript Policy Runtime Support
+
+Policy scripts executed by `RuleScriptExecutor` can test qualified edges directly in JavaScript pre- and post-conditions:
+
+[source,javascript]
+----
+// 1. Match edge with exact property values
+var hasPrimaryRole = hasEdge("memberOf", principal.orgRefName, { role: "PRIMARY" });
+
+// 2. Match edge using a JavaScript predicate function
+var isHighTier = hasEdge("assignedToTeam", "SUPPORT", function(props) {
+    return props && props.tier >= 2 && props.active === true;
+});
+----
+
+The ontology TBox vocabulary validator (`RuleVocabularyValidator`) validates 3-argument `hasEdge` statements at deployment/registration time against the admitted properties defined in your ontology schema.
 
 [[ontology-integration-morphia-permissions-section]]
 == Integrating Ontology with Morphia, Permissions, and Multi-tenancy
