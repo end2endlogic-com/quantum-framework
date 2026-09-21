@@ -18,6 +18,7 @@ public class EdgeRecord {
     private String dstType;
     private boolean inferred; // legacy flag used by existing materializer
     private boolean derived;  // new flag for implied/derived edges
+    private Map<String, Object> props; // open edge properties map
     private Map<String, Object> prov;
     private List<Support> support; // provenance support: list of rules and path edge ids
     private Date ts;
@@ -30,6 +31,13 @@ public class EdgeRecord {
      * derived edges come from ComputedEdgeProvider.
      */
     public EdgeRecord(DataDomainInfo dataDomainInfo, String srcType, String src, String p, String dstType, String dst, boolean inferred, Map<String, Object> prov, Date ts) {
+        this(dataDomainInfo, srcType, src, p, dstType, dst, inferred, null, prov, ts);
+    }
+
+    /**
+     * Constructor for explicit or inferred edges with DataDomainInfo scoping and edge properties.
+     */
+    public EdgeRecord(DataDomainInfo dataDomainInfo, String srcType, String src, String p, String dstType, String dst, boolean inferred, Map<String, Object> props, Map<String, Object> prov, Date ts) {
         this.dataDomainInfo = dataDomainInfo;
         this.srcType = srcType;
         this.src = src;
@@ -37,7 +45,8 @@ public class EdgeRecord {
         this.dstType = dstType;
         this.dst = dst;
         this.inferred = inferred;
-        this.derived = false; // inferred edges are NOT derived; derived is for ComputedEdgeProvider
+        this.derived = false;
+        this.props = props;
         this.prov = prov;
         this.ts = ts;
     }
@@ -46,6 +55,13 @@ public class EdgeRecord {
      * Constructor for derived edges with support provenance and DataDomainInfo scoping.
      */
     public EdgeRecord(DataDomainInfo dataDomainInfo, String srcType, String src, String p, String dstType, String dst, boolean derived, Map<String, Object> prov, List<Support> support, Date ts) {
+        this(dataDomainInfo, srcType, src, p, dstType, dst, derived, null, prov, support, ts);
+    }
+
+    /**
+     * Constructor for derived edges with support provenance, properties, and DataDomainInfo scoping.
+     */
+    public EdgeRecord(DataDomainInfo dataDomainInfo, String srcType, String src, String p, String dstType, String dst, boolean derived, Map<String, Object> props, Map<String, Object> prov, List<Support> support, Date ts) {
         this.dataDomainInfo = dataDomainInfo;
         this.srcType = srcType;
         this.src = src;
@@ -54,6 +70,7 @@ public class EdgeRecord {
         this.dst = dst;
         this.derived = derived;
         this.inferred = derived; // map derived to inferred for legacy code paths
+        this.props = props;
         this.prov = prov;
         this.support = support;
         this.ts = ts;
@@ -84,6 +101,8 @@ public class EdgeRecord {
     public void setInferred(boolean inferred) { this.inferred = inferred; }
     public boolean isDerived() { return derived; }
     public void setDerived(boolean derived) { this.derived = derived; }
+    public Map<String, Object> getProps() { return props; }
+    public void setProps(Map<String, Object> props) { this.props = props; }
     public Map<String, Object> getProv() { return prov; }
     public void setProv(Map<String, Object> prov) { this.prov = prov; }
     public List<Support> getSupport() { return support; }

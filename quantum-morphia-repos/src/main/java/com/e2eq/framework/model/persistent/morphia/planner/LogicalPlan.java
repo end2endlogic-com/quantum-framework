@@ -48,12 +48,19 @@ public class LogicalPlan {
         public final PlannerProjection projection; // null means default
         public final boolean array; // convenience hint
         public final JoinSpec join; // may be null in early planning
-        public Expand(String path, int depth, PlannerProjection projection, boolean array, JoinSpec join) {
+        public final Filter filter; // optional target model row security or edge filter
+
+        public Expand(String path, int depth, PlannerProjection projection, boolean array, JoinSpec join, Filter filter) {
             this.path = path;
             this.depth = depth;
             this.projection = projection;
             this.array = array;
             this.join = join;
+            this.filter = filter;
+        }
+
+        public Expand(String path, int depth, PlannerProjection projection, boolean array, JoinSpec join) {
+            this(path, depth, projection, array, join, null);
         }
     }
 

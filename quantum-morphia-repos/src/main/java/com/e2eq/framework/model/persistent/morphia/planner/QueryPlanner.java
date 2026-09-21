@@ -149,6 +149,24 @@ public class QueryPlanner {
             List<LogicalPlan.SortSpec.Field> sortFields,
             Map<String, String> variableMap
     ) {
+        return plan(query, modelClass, limit, skip, sortFields, variableMap, null);
+    }
+
+    /**
+     * Plans the query with an optional variable map and per-stage policies for expand hops.
+     *
+     * @param variableMap optional map of variable names to values; may be null
+     * @param stagePolicies optional map of expand path or collection to StagePolicy; may be null
+     */
+    public <T extends UnversionedBaseModel> PlannedQuery plan(
+            String query,
+            Class<T> modelClass,
+            Integer limit,
+            Integer skip,
+            List<LogicalPlan.SortSpec.Field> sortFields,
+            Map<String, String> variableMap,
+            Map<String, MongoAggregationCompiler.StagePolicy> stagePolicies
+    ) {
         PlannerResult result = analyze(query);
         if (result.getMode() == PlannerResult.Mode.FILTER) {
             // FILTER mode: use existing conversion to Morphia Filter (with variableMap when provided)
@@ -205,7 +223,9 @@ public class QueryPlanner {
         }
         LogicalPlan plan = new LogicalPlan(modelClass, rootProj, expands, sort, page, rootFilter);
         MongoAggregationCompiler compiler = new MongoAggregationCompiler();
-        List<Bson> pipeline = compiler.compile(plan);
+        List<Bson> pipeline = (stagePolicies != null && !stagePolicies.isEmpty())
+                ? compiler.compile(plan, stagePolicies)
+                : compiler.compile(plan);
         return PlannedQuery.forAggregation(pipeline);
     }
 

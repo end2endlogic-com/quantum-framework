@@ -90,4 +90,146 @@ public class MongoAggregationCompilerTest {
         assertThrows(IllegalArgumentException.class,
                 () -> new MongoAggregationCompiler().compile(plan));
     }
+
+    @Test
+    void compile_withExpandFilter_injectsInnerMatchStage() {
+        JoinSpec js = new JoinSpec("customers", "_id", "customer.entityId", "dataDomain.tenantId", false);
+        dev.morphia.query.filters.Filter targetFilter = Filters.and(
+                Filters.eq("status", "ACTIVE"),
+                Filters.eq("tier", "PLATINUM")
+        );
+        LogicalPlan.Expand exp = new LogicalPlan.Expand("customer", 1, null, false, js, targetFilter);
+        LogicalPlan plan = new LogicalPlan(Dummy.class, null, List.of(exp), null, null);
+
+        MongoAggregationCompiler c = new MongoAggregationCompiler();
+        List<Bson> pipeline = c.compile(plan);
+
+        Document lookupStage = (Document) pipeline.stream()
+                .filter(b -> b instanceof Document && ((Document) b).containsKey("$lookup"))
+                .findFirst().orElseThrow();
+        Document lookup = lookupStage.get("$lookup", Document.class);
+        List<?> innerStages = lookup.getList("pipeline", Object.class);
+        assertEquals(2, innerStages.size(), "Inner pipeline should have join $match and policy $match");
+
+        Document firstMatch = (Document) innerStages.get(0);
+        assertTrue(firstMatch.containsKey("$match"));
+        assertTrue(((Document) firstMatch.get("$match")).containsKey("$expr"));
+
+        Document secondMatch = (Document) innerStages.get(1);
+        assertTrue(secondMatch.containsKey("$match"));
+        Document matchDoc = (Document) secondMatch.get("$match");
+        assertTrue(matchDoc.containsKey("$and"));
+        List<?> clauses = matchDoc.getList("$and", Object.class);
+        assertEquals(2, clauses.size());
+        assertEquals("ACTIVE", ((Document) clauses.get(0)).getString("status"));
+        assertEquals("PLATINUM", ((Document) clauses.get(1)).getString("tier"));
+    }
+
+    @Test
+    void compile_withExpandProjection_injectsInnerProjectStage() {
+        JoinSpec js = new JoinSpec("customers", "_id", "customer.entityId", "dataDomain.tenantId", false);
+        LogicalPlan.PlannerProjection proj = new LogicalPlan.PlannerProjection(
+                java.util.Set.of("name", "email"), java.util.Set.of("ssn"), true
+        );
+        LogicalPlan.Expand exp = new LogicalPlan.Expand("customer", 1, proj, false, js);
+        LogicalPlan plan = new LogicalPlan(Dummy.class, null, List.of(exp), null, null);
+
+        MongoAggregationCompiler c = new MongoAggregationCompiler();
+        List<Bson> pipeline = c.compile(plan);
+
+        Document lookupStage = (Document) pipeline.stream()
+                .filter(b -> b instanceof Document && ((Document) b).containsKey("$lookup"))
+                .findFirst().orElseThrow();
+        Document lookup = lookupStage.get("$lookup", Document.class);
+        List<?> innerStages = lookup.getList("pipeline", Object.class);
+        assertEquals(2, innerStages.size(), "Inner pipeline should have join $match and $project");
+
+        Document projectStage = (Document) innerStages.get(1);
+        assertTrue(projectStage.containsKey("$project"));
+        Document projDoc = (Document) projectStage.get("$project");
+        assertEquals(1, projDoc.get("name"));
+        assertEquals(1, projDoc.get("email"));
+        assertEquals(0, projDoc.get("ssn"));
+        assertEquals(1, projDoc.get("_id"));
+    }
+
+    @Test
+    void compile_withStagePolicies_injectsInnerMatchAndExclusionProject() {
+        JoinSpec js = new JoinSpec("suppliers", "_id", "supplier.entityId", "dataDomain.tenantId", false);
+        LogicalPlan.Expand exp = new LogicalPlan.Expand("supplier", 1, null, false, js);
+        LogicalPlan plan = new LogicalPlan(Dummy.class, null, List.of(exp), null, null);
+
+        MongoAggregationCompiler c = new MongoAggregationCompiler();
+        MongoAggregationCompiler.StagePolicy policy = new MongoAggregationCompiler.StagePolicy(
+                Filters.eq("active", true),
+                java.util.Set.of("taxId", "internalRating")
+        );
+        List<Bson> pipeline = c.compile(plan, java.util.Map.of("supplier", policy));
+
+        Document lookupStage = (Document) pipeline.stream()
+                .filter(b -> b instanceof Document && ((Document) b).containsKey("$lookup"))
+                .findFirst().orElseThrow();
+        Document lookup = lookupStage.get("$lookup", Document.class);
+        List<?> innerStages = lookup.getList("pipeline", Object.class);
+        assertEquals(3, innerStages.size(), "Inner pipeline should have join $match, policy $match, and policy $project");
+
+        Document policyMatch = (Document) innerStages.get(1);
+        assertTrue(policyMatch.containsKey("$match"));
+        assertEquals(true, ((Document) policyMatch.get("$match")).get("active"));
+
+        Document policyProject = (Document) innerStages.get(2);
+        assertTrue(policyProject.containsKey("$project"));
+        Document projDoc = (Document) policyProject.get("$project");
+        assertEquals(0, projDoc.get("taxId"));
+        assertEquals(0, projDoc.get("internalRating"));
+    }
+
+    @Test
+    void compile_multiHop_producesChainedLookupsAndProjects() {
+        JoinSpec orderJs = new JoinSpec("orders", "_id", "order.entityId", "dataDomain.tenantId", false);
+        LogicalPlan.Expand orderExp = new LogicalPlan.Expand("order", 1, null, false, orderJs);
+
+        JoinSpec supplierJs = new JoinSpec("suppliers", "_id", "order.supplier.entityId", "dataDomain.tenantId", false);
+        LogicalPlan.Expand supplierExp = new LogicalPlan.Expand("order.supplier", 2, null, false, supplierJs);
+
+        LogicalPlan plan = new LogicalPlan(Dummy.class, null, List.of(orderExp, supplierExp), null, null);
+
+        MongoAggregationCompiler c = new MongoAggregationCompiler();
+        MongoAggregationCompiler.StagePolicy supplierPolicy = new MongoAggregationCompiler.StagePolicy(
+                Filters.eq("active", true),
+                java.util.Set.of("taxId", "wholesaleCost")
+        );
+
+        List<Bson> pipeline = c.compile(plan, java.util.Map.of("order.supplier", supplierPolicy));
+
+        // Find both $lookup stages in order
+        List<Document> lookups = pipeline.stream()
+                .filter(b -> b instanceof Document && ((Document) b).containsKey("$lookup"))
+                .map(b -> ((Document) b).get("$lookup", Document.class))
+                .toList();
+
+        assertEquals(2, lookups.size(), "Should have two $lookup stages for 2-hop traversal");
+
+        // Hop 1: orders
+        assertEquals("orders", lookups.get(0).getString("from"));
+        assertEquals("__exp_order", lookups.get(0).getString("as"));
+
+        // Hop 2: suppliers
+        assertEquals("suppliers", lookups.get(1).getString("from"));
+        assertEquals("__exp_order_supplier", lookups.get(1).getString("as"));
+
+        // Verify inner pipeline for Hop 2 contains security match and redaction project
+        List<?> hop2Stages = lookups.get(1).getList("pipeline", Object.class);
+        assertEquals(3, hop2Stages.size(), "Hop 2 should have join $match, policy $match, and policy $project");
+
+        Document hop2PolicyMatch = (Document) hop2Stages.get(1);
+        assertTrue(hop2PolicyMatch.containsKey("$match"));
+        assertEquals(true, ((Document) hop2PolicyMatch.get("$match")).get("active"));
+
+        Document hop2Redaction = (Document) hop2Stages.get(2);
+        assertTrue(hop2Redaction.containsKey("$project"));
+        Document redactionDoc = (Document) hop2Redaction.get("$project");
+        assertEquals(0, redactionDoc.get("taxId"));
+        assertEquals(0, redactionDoc.get("wholesaleCost"));
+    }
 }
