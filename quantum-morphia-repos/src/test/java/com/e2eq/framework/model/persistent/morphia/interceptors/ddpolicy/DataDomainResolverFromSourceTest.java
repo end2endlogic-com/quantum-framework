@@ -4,6 +4,7 @@ import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.security.DataDomainComponentBinding;
 import com.e2eq.framework.model.security.DataDomainPolicy;
 import com.e2eq.framework.model.security.DataDomainPolicyEntry;
+import com.e2eq.framework.model.security.SourceAttributes;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.SecurityContext;
 import com.fasterxml.jackson.databind.ObjectMapper;

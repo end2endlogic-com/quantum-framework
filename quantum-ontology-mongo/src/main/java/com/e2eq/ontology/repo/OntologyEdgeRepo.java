@@ -2,9 +2,9 @@ package com.e2eq.ontology.repo;
 
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.morphia.MorphiaRepo;
-import com.e2eq.framework.model.persistent.morphia.interceptors.ddpolicy.DataDomainResolution;
-import com.e2eq.framework.model.persistent.morphia.interceptors.ddpolicy.DataDomainResolver;
-import com.e2eq.framework.model.persistent.morphia.interceptors.ddpolicy.SourceAttributes;
+import com.e2eq.framework.model.security.DataDomainResolution;
+import com.e2eq.framework.model.security.DataDomainResolver;
+import com.e2eq.framework.model.security.SourceAttributes;
 import com.e2eq.ontology.core.EdgeRecord;
 import com.e2eq.ontology.core.OntologyRegistry;
 import com.e2eq.ontology.exceptions.CardinalityViolationException;
