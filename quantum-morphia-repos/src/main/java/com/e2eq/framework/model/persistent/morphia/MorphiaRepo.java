@@ -855,10 +855,16 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
                 }
             }
             if (policy.rowMatch() != null && !policy.rowMatch().isEmpty()) {
-                lookupPipeline.add(new Document("$match", policy.rowMatch()));
+                Document matchStage = new Document("$match", policy.rowMatch());
+                if (!lookupPipeline.contains(matchStage)) {
+                    lookupPipeline.add(matchStage);
+                }
             }
             if (!policy.excludedFields().isEmpty()) {
-                lookupPipeline.add(exclusionProjection(policy.excludedFields()));
+                Document projStage = exclusionProjection(policy.excludedFields());
+                if (!lookupPipeline.contains(projStage)) {
+                    lookupPipeline.add(projStage);
+                }
             }
             lookup.put("pipeline", lookupPipeline);
         }

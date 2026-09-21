@@ -30,7 +30,29 @@ public class MongoAggregationCompiler {
         this.datastore = datastore;
     }
 
+    public static record StagePolicy(Filter rowFilter, Document rowMatch, java.util.Set<String> excludedFields) {
+        public StagePolicy(Filter rowFilter, java.util.Set<String> excludedFields) {
+            this(rowFilter, null, excludedFields);
+        }
+        public StagePolicy(Document rowMatch, java.util.Set<String> excludedFields) {
+            this(null, rowMatch, excludedFields);
+        }
+        public StagePolicy(Filter rowFilter) {
+            this(rowFilter, null, java.util.Set.of());
+        }
+        public StagePolicy(Document rowMatch) {
+            this(null, rowMatch, java.util.Set.of());
+        }
+        public StagePolicy(java.util.Set<String> excludedFields) {
+            this(null, null, excludedFields);
+        }
+    }
+
     public List<Bson> compile(LogicalPlan plan) {
+        return compile(plan, java.util.Collections.emptyMap());
+    }
+
+    public List<Bson> compile(LogicalPlan plan, java.util.Map<String, StagePolicy> stagePolicies) {
         List<Bson> pipeline = new ArrayList<>();
         // 1) Marker stage to make tests deterministic without changing behavior
         List<String> paths = plan.expansions.stream().map(e -> e.path).toList();
@@ -94,10 +116,73 @@ public class MongoAggregationCompiler {
             }
             Document matchExpr = new Document("$expr", (andList.size() == 1) ? andList.get(0) : new Document("$and", andList));
 
+            List<Document> innerPipeline = new ArrayList<>();
+            innerPipeline.add(new Document("$match", matchExpr));
+
+            // Target model row security / filter from expansion
+            if (e.filter != null) {
+                Document targetMatch = toMatch(e.filter);
+                if (targetMatch != null && !targetMatch.isEmpty()) {
+                    innerPipeline.add(new Document("$match", targetMatch));
+                }
+            }
+
+            // Target model policy from stagePolicies (by path or by from-collection)
+            StagePolicy policy = null;
+            if (stagePolicies != null && !stagePolicies.isEmpty()) {
+                policy = stagePolicies.get(path);
+                if (policy == null) {
+                    policy = stagePolicies.get(from);
+                }
+            }
+            if (policy != null) {
+                if (policy.rowFilter() != null) {
+                    Document policyMatch = toMatch(policy.rowFilter());
+                    if (policyMatch != null && !policyMatch.isEmpty()) {
+                        innerPipeline.add(new Document("$match", policyMatch));
+                    }
+                }
+                if (policy.rowMatch() != null && !policy.rowMatch().isEmpty()) {
+                    innerPipeline.add(new Document("$match", policy.rowMatch()));
+                }
+            }
+
+            // Target model field projection / exclusions from expansion
+            if (e.projection != null) {
+                Document projDoc = new Document();
+                if (e.projection.includeMode) {
+                    for (String inc : e.projection.include) {
+                        projDoc.append(inc, 1);
+                    }
+                    for (String exc : e.projection.exclude) {
+                        projDoc.append(exc, 0);
+                    }
+                    if (!projDoc.containsKey("_id")) {
+                        projDoc.append("_id", 1);
+                    }
+                } else {
+                    for (String exc : e.projection.exclude) {
+                        projDoc.append(exc, 0);
+                    }
+                }
+                if (!projDoc.isEmpty()) {
+                    innerPipeline.add(new Document("$project", projDoc));
+                }
+            }
+
+            // Target model field exclusions from stage policy
+            if (policy != null && policy.excludedFields() != null && !policy.excludedFields().isEmpty()) {
+                Document projDoc = new Document();
+                for (String exc : policy.excludedFields()) {
+                    projDoc.append(exc, 0);
+                }
+                innerPipeline.add(new Document("$project", projDoc));
+            }
+
             Document lookup = new Document("$lookup", new Document()
                     .append("from", from)
                     .append("let", letDoc)
-                    .append("pipeline", List.of(new Document("$match", matchExpr)))
+                    .append("pipeline", innerPipeline)
                     .append("as", temp));
             pipeline.add(lookup);
 
