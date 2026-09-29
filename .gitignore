@@ -1771,3 +1771,7 @@ replay_pid*
 
 # Claude Code settings
 .claude/
+
+# Local agent/tool configuration (never commit: may hold tokens, local paths, internal tooling)
+.mcp.json
+CLAUDE.local.md
