@@ -76,6 +76,44 @@ In remote mode (Phase C, in progress) each contract gains an HTTP client
 implementation against the control-plane service; consumers are unaffected
 because they inject the contract.
 
+=== Remote membership writes
+
+In remote mode `RealmMembershipService` writes through the generated
+control-plane client (`quantum-control-plane-client`, generated from
+`control-plane.openapi.yaml`), never the local repos:
+
+[cols="2,3"]
+|===
+|Method |Control-plane operation
+
+|`upsertMembership`
+|`PUT /control/realms/{refName}/members/{organizationRefName}`
+
+|`upsertUserRealmRole`
+|`PUT /control/users/{userId}/realms/{realmRefName}`
+|===
+
+The contract leaves out `dataDomain`. The control plane keeps the
+authoritative storage scope of an existing assignment. The request forwards
+the caller's bearer token, or `quantum.system-service.token` when no request
+is in scope, so the control plane authorizes the write under its own policy.
+
+Every remote failure raises a typed `ControlPlaneException`, and nothing falls
+back to local storage:
+
+[cols="1,3"]
+|===
+|Kind |Meaning
+
+|`NOT_CONFIGURED` |no control-plane base URL
+|`UNREACHABLE` |connect or read failure
+|`REJECTED` |non-2xx answer; `httpStatus()` holds the status
+|`CONTRACT_VIOLATION` |2xx answer with an empty body or a mismatched identity
+|===
+
+`membershipsForOrg` is the one call the contract does not expose yet. It
+still fails loud in remote mode.
+
 == quantum.mode: what actually changes
 
 `QuantumModeConfig` is the single source of the deployment mode;

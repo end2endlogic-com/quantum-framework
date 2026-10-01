@@ -15,7 +15,7 @@ import java.util.Optional;
 /**
  * Phase C (2/2): membership/role resolution over the control-plane API,
  * a pure mapper over the SDK-generated client {@link DefaultEndpoint}
- * (members/{realm}, users/{id}/realms). Same posture as
+ * (members/{realm}, users/{id}/realms, and their PUT write operations). Same posture as
  * RemoteSystemDirectory: optional service bearer (on the client), strict
  * fail-loud, no local fallback. Maps the generated DTOs to the framework
  * persistence types.
@@ -69,15 +69,52 @@ public class RemoteMembershipClient {
         return assignments;
     }
 
+    /** Create or update an org/account membership on the owning control plane. */
+    public RealmTenantMembership upsertRealmMembership(RealmTenantMembership membership) {
+        String what = "upsert membership " + membership.getOrganizationRefName()
+            + " in realm " + membership.getRealmRefName();
+        RealmMembershipEntry saved = call(() -> client.upsertRealmMembership(
+                membership.getRealmRefName(),
+                membership.getOrganizationRefName(),
+                ControlPlaneRealmMapper.toEntry(membership)),
+            what);
+        if (saved == null) {
+            throw ControlPlaneException.contractViolation(what, "empty response body");
+        }
+        return ControlPlaneRealmMapper.fromEntry(saved);
+    }
+
+    /** Create or update a user's role assignment on the owning control plane. */
+    public UserRealmRole upsertUserRealmRole(UserRealmRole assignment) {
+        String what = "upsert realm role for user " + assignment.getUserId()
+            + " in realm " + assignment.getRealmRefName();
+        UserRealmRoleEntry entry = ControlPlaneRealmMapper.toEntry(assignment);
+        if (entry.getRoles() == null) {
+            // roles is required by the contract; an assignment without roles is an empty grant.
+            entry.setRoles(List.of());
+        }
+        UserRealmRoleEntry saved = call(() -> client.upsertUserRealmRole(
+                assignment.getUserId(), assignment.getRealmRefName(), entry),
+            what);
+        if (saved == null) {
+            throw ControlPlaneException.contractViolation(what, "empty response body");
+        }
+        if (!assignment.getUserId().equals(saved.getUserId())
+                || !assignment.getRealmRefName().equals(saved.getRealmRefName())) {
+            throw ControlPlaneException.contractViolation(what,
+                "response identity " + saved.getUserId() + "/" + saved.getRealmRefName()
+                    + " does not match the request");
+        }
+        return ControlPlaneRealmMapper.fromEntry(saved);
+    }
+
     private <T> T call(java.util.function.Supplier<T> supplier, String what) {
         try {
             return supplier.get();
         } catch (WebApplicationException e) {
-            throw new IllegalStateException("Control plane returned HTTP "
-                + e.getResponse().getStatus() + " for " + what, e);
+            throw ControlPlaneException.rejected(what, e.getResponse().getStatus(), e);
         } catch (ProcessingException e) {
-            throw new IllegalStateException("Control plane unreachable for " + what
-                + " — failing loud, no local fallback.", e);
+            throw ControlPlaneException.unreachable(what, e);
         }
     }
 }

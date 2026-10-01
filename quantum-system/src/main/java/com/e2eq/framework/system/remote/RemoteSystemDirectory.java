@@ -115,8 +115,8 @@ public class RemoteSystemDirectory implements SystemDirectory {
             cache(saved, System.nanoTime());
             return saved;
         } catch (WebApplicationException e) {
-            throw new IllegalStateException("Control plane rejected realm registration for "
-                + realm.getRefName() + ": HTTP " + e.getResponse().getStatus(), e);
+            throw ControlPlaneException.rejected("registering realm " + realm.getRefName(),
+                e.getResponse().getStatus(), e);
         } catch (ProcessingException e) {
             throw unreachable("registering realm " + realm.getRefName(), e);
         }
@@ -161,8 +161,7 @@ public class RemoteSystemDirectory implements SystemDirectory {
             if (status >= 400 && status < 500) {
                 throw e;
             }
-            throw new IllegalStateException("Control plane returned HTTP "
-                + status + " for " + what, e);
+            throw ControlPlaneException.rejected(what, status, e);
         } catch (ProcessingException e) {
             throw unreachable(what, e);
         }
@@ -178,9 +177,8 @@ public class RemoteSystemDirectory implements SystemDirectory {
         return ControlPlaneClientFactory.build(baseUrl, bearerToken);
     }
 
-    private static IllegalStateException unreachable(String what, Throwable cause) {
-        return new IllegalStateException(
-            "Control plane unreachable for " + what + " — failing loud, no local fallback.", cause);
+    private static ControlPlaneException unreachable(String what, Throwable cause) {
+        return ControlPlaneException.unreachable(what, cause);
     }
 
     private static IllegalStateException credentialLookupsAreControlPlaneInternal() {
