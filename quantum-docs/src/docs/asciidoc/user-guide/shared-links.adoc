@@ -1,3 +1,7 @@
+ifndef::doc-root[]
+:doc-root: ..
+endif::[]
+
 [[shared-links]]
 === Shared Links
 
@@ -213,6 +217,6 @@ The verifier checks:
 
 ==== See Also
 
-* xref:permissions.adoc[Permissions and Authorization]
-* xref:auth.adoc[Authentication and Authorization]
-* xref:../appendix/configuration.adoc[Configuration Reference]
+* xref:{doc-root}/user-guide/permissions.adoc[Permissions and Authorization]
+* xref:{doc-root}/user-guide/auth.adoc[Authentication and Authorization]
+* xref:{doc-root}/appendix/configuration.adoc[Configuration Reference]

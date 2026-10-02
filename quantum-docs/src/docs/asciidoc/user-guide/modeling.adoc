@@ -1,3 +1,7 @@
+ifndef::doc-root[]
+:doc-root: ..
+endif::[]
+
 [[modeling]]
 == Modeling with Functional Areas, Domains, and Actions
 
@@ -12,6 +16,7 @@ These constructs allow:
 - Fine-grained sharing: Point specific functional areas to shared databases while others remain strictly segmented.
 - Policy composition: Apply RuleContext decisions at the level of area/domain/action.
 
+[[prefer-annotations-for-functional-mapping-recommended]]
 === Prefer Annotations for Functional Mapping (recommended)
 
 Starting with this version, you should use annotations to declare a model or resource's Functional Area/Domain and the Action being performed. The legacy bmFunctionalArea() and bmFunctionalDomain() methods are still supported for backward compatibility in this release, but they will be phased out soon.
@@ -79,7 +84,7 @@ Migration notes
 - Transitional: you can keep the legacy methods; they will be used only if the annotation is not present.
 - Future: bmFunctionalArea and bmFunctionalDomain will be removed in a future release; plan to migrate now.
 
-See also: xref:security-annotations.adoc#security-annotations[Security Annotations: FunctionalMapping and FunctionalAction]
+See also: xref:{doc-root}/user-guide/security-annotations.adoc#security-annotations[Security Annotations: FunctionalMapping and FunctionalAction]
 
 === DataDomain on Models
 

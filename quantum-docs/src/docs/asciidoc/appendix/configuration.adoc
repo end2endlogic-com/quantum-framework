@@ -1,3 +1,7 @@
+ifndef::doc-root[]
+:doc-root: ..
+endif::[]
+
 [[configuration]]
 === Configuration Reference
 
@@ -107,7 +111,7 @@ aws.cognito.region=us-east-1
 aws.cognito.jwks.url=https://cognito-idp.${aws.cognito.region}.amazonaws.com/${aws.cognito.user-pool-id}/.well-known/jwks.json
 ----
 
-See xref:../user-guide/multiple-auth-providers.adoc[Multiple Authentication Providers] for details on configuring external identity providers.
+See xref:{doc-root}/user-guide/multiple-auth-providers.adoc[Multiple Authentication Providers] for details on configuring external identity providers.
 
 ===== Application Registration (optional module)
 
@@ -138,7 +142,7 @@ quantum.application-registration.fail-on-error=true
 
 Registration is attempted once per fingerprint (application + version + environment + realms). On every later boot the registrar's cheap local check short-circuits it, so a restart costs one indexed read rather than a call to the control plane.
 
-See xref:../user-guide/application-registration.adoc[Application Registration] for the SPI and implementation rules.
+See xref:{doc-root}/user-guide/application-registration.adoc[Application Registration] for the SPI and implementation rules.
 
 ===== OAuth Server (optional module)
 
@@ -146,7 +150,7 @@ The `quantum-oauth-server` module uses the same JWT configuration properties lis
 
 OAuth clients are registered in the `oauth_clients` MongoDB collection. Authorization codes are stored in `oauth_authorization_codes` with a 5-minute TTL index for automatic cleanup.
 
-See xref:../user-guide/oauth-server.adoc[OAuth Server Module] for client registration and integration examples.
+See xref:{doc-root}/user-guide/oauth-server.adoc[OAuth Server Module] for client registration and integration examples.
 
 ===== Email Templates (Postmark)
 [source,properties]
@@ -160,7 +164,7 @@ postmark.default-from-email-address=noreply@yourdomain.com
 
 If either property is missing, the `PostmarkEmailSender` logs an info message and skips delivery, allowing development environments to run without Postmark credentials.
 
-Classpath templates are loaded from `templates/email/{templateKey}/` with files `subject.txt`, `body.html`, and `body.txt`. See xref:../user-guide/email-templates.adoc[Email Templates] for details.
+Classpath templates are loaded from `templates/email/{templateKey}/` with files `subject.txt`, `body.html`, and `body.txt`. See xref:{doc-root}/user-guide/email-templates.adoc[Email Templates] for details.
 
 ===== Shared Link Signing
 [source,properties]
@@ -169,7 +173,7 @@ Classpath templates are loaded from `templates/email/{templateKey}/` with files 
 share.link.signing.secret=${SHARE_LINK_SECRET}
 ----
 
-If the secret is not configured, `LinkSigner.isEnabled()` returns `false` and link signing/verification is disabled. See xref:../user-guide/shared-links.adoc[Shared Links] for details.
+If the secret is not configured, `LinkSigner.isEnabled()` returns `false` and link signing/verification is disabled. See xref:{doc-root}/user-guide/shared-links.adoc[Shared Links] for details.
 
 ==== Quantum Framework Configuration
 
@@ -236,7 +240,7 @@ Bootstrap packs are not the same thing as seed packs.
 - Use seed packs for deterministic baseline data.
 - Use bootstrap packs for idempotent operational setup steps.
 
-See xref:../user-guide/bootstrap-packs.adoc[Bootstrap Packs] for details.
+See xref:{doc-root}/user-guide/bootstrap-packs.adoc[Bootstrap Packs] for details.
 ====
 
 ===== Security rules diagnostics
@@ -275,7 +279,7 @@ quantum.anonymousUserId=anonymous
 ==== See Also
 
 - https://quarkus.io/guides/config-reference[Quarkus Configuration Guide]
-- xref:../user-guide/auth.adoc[Authentication Configuration]
+- xref:{doc-root}/user-guide/auth.adoc[Authentication Configuration]
 
 
 ==== Ontology Configuration (optional)
@@ -346,10 +350,10 @@ Materialization hooks
 
 See also
 
-- xref:../user-guide/ontology.adoc[Ontologies in Quantum]
-- xref:../user-guide/ontology.adoc#ontology-facet-segmentation[Dynamic Edge Properties & Facet Segmentation]
-- xref:../user-guide/planner-and-query-gateway.adoc[Planner and Query Gateway]
-- xref:../user-guide/tenant-models.adoc#user-definable-facet-segmentation[User-Definable Facet Segmentation & Coordinate SPI]
+- xref:{doc-root}/user-guide/ontology.adoc[Ontologies in Quantum]
+- xref:{doc-root}/user-guide/ontology.adoc#ontology-facet-segmentation[Dynamic Edge Properties & Facet Segmentation]
+- xref:{doc-root}/user-guide/planner-and-query-gateway.adoc[Planner and Query Gateway]
+- xref:{doc-root}/user-guide/tenant-models.adoc#user-definable-facet-segmentation[User-Definable Facet Segmentation & Coordinate SPI]
 
 
 ==== Control-plane split (deployment mode)

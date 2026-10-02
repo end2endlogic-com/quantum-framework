@@ -1,3 +1,7 @@
+ifndef::doc-root[]
+:doc-root: ..
+endif::[]
+
 = Calculated Relations — Design and Roadmap
 
 *Status:* Implemented on `feature/ontology-enhancements` against `1.4.0-SNAPSHOT`.
@@ -28,10 +32,10 @@ the current implementation, proposes targeted enhancements, and sequences them
 into a phased roadmap.
 
 For a usage-level introduction to ontology relationships, see
-xref:../user-guide/ontology.adoc[user-guide/ontology.adoc]
+xref:{doc-root}/user-guide/ontology.adoc[user-guide/ontology.adoc]
 (including the Territory → Location computed-edge example under
 _Custom Edge Providers_). A longer narrative guide also lives at
-link:../../implementing-territory-location-edges.md[`quantum-docs/src/docs/implementing-territory-location-edges.md`].
+https://github.com/end2endlogic-com/quantum-framework/blob/1.4.2-SNAPSHOT/quantum-docs/src/docs/implementing-territory-location-edges.md[`quantum-docs/src/docs/implementing-territory-location-edges.md`].
 
 == Background
 

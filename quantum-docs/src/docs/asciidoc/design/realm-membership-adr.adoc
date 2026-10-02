@@ -1,3 +1,7 @@
+ifndef::doc-root[]
+:doc-root: ..
+endif::[]
+
 = ADR: Realm Membership and Identity Model
 :toc:
 
@@ -42,7 +46,9 @@ plans) both need these answers to be explicit.
    realm whose persisted deployment type is `SHARED`.
 
 4. **Users have ONE global identity and N realm-role assignments.** The
-   credential (system realm) is the identity — the GitHub account.
+   credential (system realm) anchors the identity within one authority.
+   External provider subjects require explicit identity binding; an identity
+   in one environment does not grant access in another.
    `UserRealmRole` documents are the org-membership analog: (userId, realm,
    roles[], sponsoring org, status). ADMIN in realm A / VIEWER in realm B is
    two documents. `credential.roles[]` keeps meaning "roles in the default
@@ -90,6 +96,8 @@ plans) both need these answers to be explicit.
   control plane's denormalized registry (design review §2.2).
 * Phase C's control-plane API must expose membership resolution alongside the
   realm catalog (same seam, same fail-loud remote behavior).
-* GitHub-model mapping for product docs: account→credential, org→org,
-  org membership→UserRealmRole, repo→realm, repo role→roles[] per realm,
-  invitation→AccessInvite, personal default context→credential.defaultRealm.
+* Directory organization metadata, realm participation and user access are
+  separate records. External-provider membership synchronization is not
+  implemented by this ADR and must not be inferred from a product analogy.
+  See xref:{doc-root}/user-guide/identity-and-membership.adoc[Identity and membership]
+  for current fields, write semantics and integration constraints.

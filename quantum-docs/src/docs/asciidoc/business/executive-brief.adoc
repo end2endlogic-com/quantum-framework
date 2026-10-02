@@ -1,3 +1,7 @@
+ifndef::doc-root[]
+:doc-root: ..
+endif::[]
+
 [[executive-brief]]
 = Quantum Framework: Executive Brief for Business Leaders
 
@@ -37,7 +41,7 @@ Business value
 - Richer navigation and reporting—less brittle than hard‑coded joins and endpoints.
 - Safer automation—policies and workflows operate on concepts the business understands, not table names.
 
-See also: Modeling relationships and cascading (xref:../user-guide/ontology.adoc[Ontology Guide]).
+See also: Modeling relationships and cascading (xref:{doc-root}/user-guide/ontology.adoc[Ontology Guide]).
 
 === Data governance: policy‑driven access and placement
 
@@ -52,7 +56,7 @@ Business value
 - Clear audit: policies explain why a user saw or changed specific data.
 - Low cost of change: update a rule, not a dozen services.
 
-See also: xref:../user-guide/permissions.adoc[Permissions and Policy Guide].
+See also: xref:{doc-root}/user-guide/permissions.adoc[Permissions and Policy Guide].
 
 === Layered architecture: clarity and agility
 
@@ -105,7 +109,7 @@ Measurable business outcomes
 - Better decisioning: cross‑entity insights (“orders at risk by lane and supplier”) with less IT effort.
 - Product agility: add a returns workflow or a new KPI without re‑architecting.
 
-For a business‑friendly deep dive, see the Supply Chain Collaboration guide (xref:../tutorials/supply-chain.adoc[Supply Chain]).
+For a business‑friendly deep dive, see the Supply Chain Collaboration guide (xref:{doc-root}/tutorials/supply-chain.adoc[Supply Chain]).
 
 == Where Quantum fits in your landscape
 

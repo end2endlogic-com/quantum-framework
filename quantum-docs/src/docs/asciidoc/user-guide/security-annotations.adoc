@@ -1,3 +1,7 @@
+ifndef::doc-root[]
+:doc-root: ..
+endif::[]
+
 [[security-annotations]]
 === Security Annotations: FunctionalMapping and FunctionalAction
 
@@ -285,6 +289,6 @@ Annotations feed into permission rule matching:
 
 ==== See Also
 
-- xref:modeling.adoc#prefer-annotations-for-functional-mapping-recommended[Modeling: Functional Mapping]
-- xref:permissions.adoc[Permission Rules]
-- xref:domain-rule-context.adoc[DomainContext and RuleContext]
+- xref:{doc-root}/user-guide/modeling.adoc#prefer-annotations-for-functional-mapping-recommended[Modeling: Functional Mapping]
+- xref:{doc-root}/user-guide/permissions.adoc[Permission Rules]
+- xref:{doc-root}/user-guide/domain-rule-context.adoc[DomainContext and RuleContext]

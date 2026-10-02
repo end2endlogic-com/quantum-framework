@@ -1,3 +1,7 @@
+ifndef::doc-root[]
+:doc-root: ..
+endif::[]
+
 [[query-expansion]]
 == Relationship hydration with expand(path)
 
@@ -14,8 +18,8 @@ It preserves backward compatibility and introduces no SQL-like syntax.
 
 See also:
 
-- xref:planner-and-query-gateway.adoc[Planner and QueryGateway] for mode selection and Java APIs
-- xref:planner-and-query-gateway.adoc#query-gateway-rest[QueryGateway REST endpoints] to plan or execute queries over HTTP
+- xref:{doc-root}/user-guide/planner-and-query-gateway.adoc[Planner and QueryGateway] for mode selection and Java APIs
+- xref:{doc-root}/user-guide/planner-and-query-gateway.adoc#query-gateway-rest[QueryGateway REST endpoints] to plan or execute queries over HTTP
 
 === What is expand(path)?
 
@@ -80,14 +84,14 @@ q = "items[*].product{ active:true, sku:^[A123,B456] } && fields:[+_id,+total]"
 - Depth for nested paths is bounded; on mixed array/object hops, traversal stops at the first non-reference boundary.
 - Unknown projection paths are hard errors (the request fails with a clear message).
 
-See also: xref:planner-and-query-gateway.adoc[Planner and QueryGateway]
+See also: xref:{doc-root}/user-guide/planner-and-query-gateway.adoc[Planner and QueryGateway]
 
 [[aggregation-examples]]
 === Aggregation examples: what expand(...) compiles to
 
 This section shows typical MongoDB aggregation stages the planner emits when expand(path) is present. Exact collection names and field names depend on your model mapping. If the collection cannot be resolved at plan-time, the planner will emit a placeholder from: "__unknown__"; the REST gateway returns HTTP 422 on execution in that case.
 
-Tip: You can inspect the chosen mode and expand paths with POST /api/query/plan. See xref:planner-and-query-gateway.adoc#query-gateway-rest[QueryGateway REST endpoints].
+Tip: You can inspect the chosen mode and expand paths with POST /api/query/plan. See xref:{doc-root}/user-guide/planner-and-query-gateway.adoc#query-gateway-rest[QueryGateway REST endpoints].
 
 ==== Single reference: expand(customer)
 

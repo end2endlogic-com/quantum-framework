@@ -150,6 +150,42 @@ public class TenantOntologyTBoxRepo extends MorphiaRepo<TenantOntologyTBox> {
                         dev.morphia.query.updates.UpdateOperators.set("active", false));
     }
 
+    /** Atomically replace the active version, serializing even first activations per data domain. */
+    public void setActiveTBox(DataDomain dataDomain, String hash) {
+        validateDataDomain(dataDomain);
+        var datastore = ds();
+        String scope = new org.bson.Document("org", dataDomain.getOrgRefName())
+                .append("account", dataDomain.getAccountNum()).append("tenant", dataDomain.getTenantId())
+                .append("segment", dataDomain.getDataSegment()).toJson();
+        try (var session = datastore.startSession()) {
+            session.startTransaction();
+            try {
+                com.mongodb.client.ClientSession nativeSession = session instanceof dev.morphia.transactions.SessionDatastore wrapper
+                        ? wrapper.getSession() : session;
+                // A shared write forces concurrent activation transactions to conflict instead of write-skew.
+                datastore.getDatabase().getCollection("ontology_activation_guards").updateOne(nativeSession,
+                        com.mongodb.client.model.Filters.eq("_id", scope),
+                        com.mongodb.client.model.Updates.inc("revision", 1),
+                        new com.mongodb.client.model.UpdateOptions().upsert(true));
+                TenantOntologyTBox target = hash == null ? null : session.find(TenantOntologyTBox.class)
+                        .filter(dataDomainFilters(dataDomain)).filter(Filters.eq("tboxHash", hash)).first();
+                if (hash != null && target == null) throw new IllegalArgumentException("TBOX_ACTIVATION_TARGET_NOT_FOUND");
+                session.find(TenantOntologyTBox.class).filter(dataDomainFilters(dataDomain))
+                        .update(new dev.morphia.UpdateOptions().multi(true),
+                                dev.morphia.query.updates.UpdateOperators.set("active", false));
+                if (target != null) {
+                    target.setActive(true);
+                    target.setLastActivatedAt(new java.util.Date());
+                    save(session, target);
+                }
+                session.commitTransaction();
+            } catch (RuntimeException failure) {
+                session.abortTransaction();
+                throw failure;
+            }
+        }
+    }
+
     private void validateDataDomain(DataDomain dd) {
         if (dd == null || dd.getTenantId() == null || dd.getTenantId().isBlank()) {
             throw new IllegalArgumentException("Valid DataDomain with tenantId must be provided");

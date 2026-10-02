@@ -1,3 +1,7 @@
+ifndef::doc-root[]
+:doc-root: ..
+endif::[]
+
 // Tutorial-based guide for Quantum Framework
 :toclevels: 3
 :sectnums:
@@ -149,7 +153,7 @@ Notes:
 - Depth on mixed arrays/objects stops at the first non-reference boundary.
 - Unknown projection paths are hard errors.
 
-See: xref:../user-guide/query-expansion.adoc[Query Expansion] for more patterns and semantics.
+See: xref:{doc-root}/user-guide/query-expansion.adoc[Query Expansion] for more patterns and semantics.
 
 ==== Ontology: constrain by relationships with hasEdge(predicate, dst)
 
@@ -167,8 +171,8 @@ hasEdge("routedToRegion", 507f1f77bcf86cd799439011)
 ----
 
 Tenancy is always applied when resolving edges. See:
-- xref:../user-guide/permissions.adoc#rule-hasedge[Permissions: hasEdge rule]
-- xref:../user-guide/query-language.adoc#ontology-query-language[Ontology in queries]
+- xref:{doc-root}/user-guide/permissions.adoc#rule-hasedge[Permissions: hasEdge rule]
+- xref:{doc-root}/user-guide/query-language.adoc#ontology-query-language[Ontology in queries]
 
 ==== Inspect the planner with QueryGateway
 
@@ -186,7 +190,7 @@ PlannerResult pr = gateway.plan("expand(customer) && status:active", Order.class
 // pr.getExpandPaths() == ["customer"]
 ----
 
-For lower-level control, use MorphiaUtils.convertToPlannedQuery(...). See: xref:../user-guide/planner-and-query-gateway.adoc[Planner and QueryGateway].
+For lower-level control, use MorphiaUtils.convertToPlannedQuery(...). See: xref:{doc-root}/user-guide/planner-and-query-gateway.adoc[Planner and QueryGateway].
 
 [[sec-security]]
 == 8. Authentication, permissions, and annotations
@@ -204,7 +208,7 @@ include::../user-guide/permissions.adoc[leveloffset=+1]
 include::../user-guide/security-annotations.adoc[leveloffset=+1]
 
 // Additional deep dive: Permission Resource APIs and client usage
-See also: xref:../user-guide/permission-resource.adoc[Permission Resource: Check APIs and Client Usage].
+See also: xref:{doc-root}/user-guide/permission-resource.adoc[Permission Resource: Check APIs and Client Usage].
 
 [[sec-seed-packs]]
 == 9. Seed packs: Declarative tenant seeding

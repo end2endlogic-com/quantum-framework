@@ -1305,7 +1305,18 @@ public class CSVImportHelper {
                             .build();
 
                     // Apply field calculators
-                    importProfileService.applyFieldCalculators(profile, baseModel, rowData, context);
+                    try {
+                        importProfileService.applyFieldCalculators(profile, baseModel, rowData, context);
+                    } catch (com.e2eq.framework.imports.service.ImportProfileService.FieldCalculationException failure) {
+                        ImportRowResult<T> rr = new ImportRowResult<>();
+                        rr.setRowNumber(rowNum);
+                        rr.setIntent(Intent.SKIP);
+                        rr.setRawData(safeRaw(beanReader));
+                        rr.getErrors().add(new FieldError(null, failure.getMessage(), FieldErrorCode.VALIDATION));
+                        persistOrStoreRow(memMode, sessionId, rr, memRows, result);
+                        rowNum++;
+                        continue;
+                    }
 
                     // Apply row value resolvers (arbitrary code per-column with full row access)
                     com.e2eq.framework.imports.spi.RowValueResolver.ResolveResult resolverResult =

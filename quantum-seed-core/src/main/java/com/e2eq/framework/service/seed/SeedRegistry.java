@@ -7,6 +7,11 @@ import java.util.Optional;
  */
 public interface SeedRegistry {
 
+    /** Read-only availability probe; implementations must verify their backing store. */
+    default void checkReadiness(SeedContext context) {
+        throw new IllegalStateException("SEED_REGISTRY_READINESS_UNSUPPORTED");
+    }
+
     boolean shouldApply(SeedContext context,
                         SeedPackManifest manifest,
                         SeedPackManifest.Dataset dataset,
@@ -30,6 +35,7 @@ public interface SeedRegistry {
 
     static SeedRegistry noop() {
         return new SeedRegistry() {
+            @Override public void checkReadiness(SeedContext context) { /* Explicit no-op registry has no backing store. */ }
             @Override
             public boolean shouldApply(SeedContext context, SeedPackManifest manifest, SeedPackManifest.Dataset dataset, String checksum) {
                 return true;

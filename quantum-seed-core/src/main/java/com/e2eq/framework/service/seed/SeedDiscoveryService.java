@@ -52,6 +52,12 @@ public class SeedDiscoveryService {
 
     private final Map<String, CacheEntry> discoveryCache = new HashMap<>();
 
+    /** Read-only, uncached probe of every configured seed source. */
+    public void checkReadiness(SeedContext context) throws IOException {
+        if (seedSources == null || seedSources.isUnsatisfied()) throw new IOException("SEED_SOURCES_UNAVAILABLE");
+        for (SeedSource source : seedSources) source.loadSeedPacks(context);
+    }
+
     /**
      * Discovers all seed packs from all available seed sources for the given context.
      * Results are cached for the configured TTL to improve performance.

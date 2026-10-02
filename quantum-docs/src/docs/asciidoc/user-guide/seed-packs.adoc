@@ -1,3 +1,7 @@
+ifndef::doc-root[]
+:doc-root: ..
+endif::[]
+
 = Seed packs and declarative tenant seeding
 
 Quantum 1.2 introduces a seed-pack subsystem that lets applications publish versioned baseline
@@ -100,7 +104,7 @@ In practice, many products use both:
 - seed packs establish the durable tenant data model
 - BootstrapPacks orchestrate the operational work that sits around that data
 
-See xref:bootstrap-packs.adoc[Bootstrap Packs] for the runtime, SPI, startup, and admin API details.
+See xref:{doc-root}/user-guide/bootstrap-packs.adoc[Bootstrap Packs] for the runtime, SPI, startup, and admin API details.
 
 == Manifest quick reference
 

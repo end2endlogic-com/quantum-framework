@@ -1,3 +1,7 @@
+ifndef::doc-root[]
+:doc-root: ..
+endif::[]
+
 // Quantum Reference Guide (links-first, deep dives via tutorial anchors)
 :toclevels: 2
 
@@ -8,69 +12,69 @@ Use it to jump directly to a subject and then explore details in context.
 
 == Platform
 
-- Overview: xref:../tutorials/quantum-tutorial.adoc#sec-overview[Platform overview]
-- Project setup: xref:../tutorials/quantum-tutorial.adoc#sec-setup[Project setup]
+- Overview: xref:{doc-root}/tutorials/quantum-tutorial.adoc#sec-overview[Platform overview]
+- Project setup: xref:{doc-root}/tutorials/quantum-tutorial.adoc#sec-setup[Project setup]
 
 == Modeling and Tenancy
 
-- Ontologies in Quantum (deep dive): xref:./ontology.adoc[Modeling relationships with ontologies]
-- Concrete e-commerce example: xref:./ontology.adoc#ontology-ecommerce-example[Orders, Shipments, Fulfillment, Returns]
-- Integration with Morphia/permissions: xref:./ontology.adoc#ontology-integration-morphia-permissions-section[Integrating ontology with rules and repos]
+- Ontologies in Quantum (deep dive): xref:{doc-root}/user-guide/ontology.adoc[Modeling relationships with ontologies]
+- Concrete e-commerce example: xref:{doc-root}/user-guide/modeling.adoc#ontology-ecommerce-example[Orders, Shipments, Fulfillment, Returns]
+- Integration with Morphia/permissions: xref:{doc-root}/user-guide/ontology.adoc#ontology-integration-morphia-permissions-section[Integrating ontology with rules and repos]
 
-- Domain modeling: xref:../tutorials/quantum-tutorial.adoc#sec-modeling[Domain modeling fundamentals]
-- Dynamic edge properties and facet segmentation: xref:./ontology.adoc#ontology-facet-segmentation[Open edge properties, edge filtering, and facet segmentation]
-- Completion tasks and groups: xref:./modeling.adoc#completion-tasks[CompletionTasks, CompletionTaskGroups, payloads, and event stream]
-- Tenant models and realms: xref:../tutorials/quantum-tutorial.adoc#sec-tenant-models[Multi-tenant model and realm separation]
-- User-definable facet segmentation & coordinate SPI: xref:./tenant-models.adoc#user-definable-facet-segmentation[Multi-tenant coordinate SPI and facet resolution]
-- Tenant onboarding and access invites: xref:./tenant-models.adoc#tenant-onboarding-and-invites[Provision tenants, configure onboarding workflow, and invite users into a tenant]
-- Domain rule context: xref:../tutorials/quantum-tutorial.adoc#sec-domain-rule-context[Domain rule context]
+- Domain modeling: xref:{doc-root}/tutorials/quantum-tutorial.adoc#sec-modeling[Domain modeling fundamentals]
+- Dynamic edge properties and facet segmentation: xref:{doc-root}/user-guide/ontology.adoc#ontology-facet-segmentation[Open edge properties, edge filtering, and facet segmentation]
+- Completion tasks and groups: xref:{doc-root}/user-guide/modeling.adoc#completion-tasks[CompletionTasks, CompletionTaskGroups, payloads, and event stream]
+- Tenant models and realms: xref:{doc-root}/tutorials/quantum-tutorial.adoc#sec-tenant-models[Multi-tenant model and realm separation]
+- User-definable facet segmentation & coordinate SPI: xref:{doc-root}/user-guide/tenant-models.adoc#user-definable-facet-segmentation[Multi-tenant coordinate SPI and facet resolution]
+- Tenant onboarding and access invites: xref:{doc-root}/user-guide/tenant-models.adoc#tenant-onboarding-and-invites[Provision tenants, configure onboarding workflow, and invite users into a tenant]
+- Domain rule context: xref:{doc-root}/tutorials/quantum-tutorial.adoc#sec-domain-rule-context[Domain rule context]
 
 == APIs and Queries
 
-- REST CRUD: xref:../tutorials/quantum-tutorial.adoc#sec-rest-crud[Building RESTful CRUD APIs]
-- Query language: xref:../tutorials/quantum-tutorial.adoc#sec-query-language[Query language and filtering]
-- Planner and QueryGateway: xref:./planner-and-query-gateway.adoc[Governed aggregation pipelines, multi-hop traversal, and REST endpoints]
-- Relationship hydration: xref:./query-expansion.adoc[Relationship hydration with expand(path)]
-- Scoped action enablement: xref:./action-enablement.adoc#action-enablement[Why an action is unavailable: policy, feature flags, settings, and readiness blockers]
+- REST CRUD: xref:{doc-root}/tutorials/quantum-tutorial.adoc#sec-rest-crud[Building RESTful CRUD APIs]
+- Query language: xref:{doc-root}/tutorials/quantum-tutorial.adoc#sec-query-language[Query language and filtering]
+- Planner and QueryGateway: xref:{doc-root}/user-guide/planner-and-query-gateway.adoc[Governed aggregation pipelines, multi-hop traversal, and REST endpoints]
+- Relationship hydration: xref:{doc-root}/user-guide/query-expansion.adoc[Relationship hydration with expand(path)]
+- Scoped action enablement: xref:{doc-root}/user-guide/action-enablement.adoc#action-enablement[Why an action is unavailable: policy, feature flags, settings, and readiness blockers]
 
-- AI Agent integration: xref:./ai-agent-integration.adoc[AI Agent Integration] (tools discovery, schema, execute, session/trace)
-- MCP Server and Client: xref:./mcp-server-and-client.adoc[MCP Server and Client] (Claude/Cursor integration, ontology tools, end-to-end example)
+- AI Agent integration: xref:{doc-root}/user-guide/ai-agent-integration.adoc[AI Agent Integration] (tools discovery, schema, execute, session/trace)
+- MCP Server and Client: xref:{doc-root}/user-guide/mcp-server-and-client.adoc[MCP Server and Client] (Claude/Cursor integration, ontology tools, end-to-end example)
 
 == Security
 
-- Authentication: xref:../tutorials/quantum-tutorial.adoc#sec-security[Authentication, permissions, and annotations]
-- JWT tokens for API access: xref:./auth.adoc#jwt-tokens-for-api-access[Generating JWT Tokens] (login, service tokens, key pair generation)
-- Service tokens for integrations: xref:./auth.adoc#service-tokens[Service Tokens] (MCP servers, cron jobs, CI/CD, partner APIs)
-- Multiple auth providers: xref:./multiple-auth-providers.adoc[Multiple Authentication Providers] (issuer resolution, per-tenant key pairs, external identity providers)
-- Key pair management: xref:./multiple-auth-providers.adoc#per-tenant-key-pairs[Key Pair Management] (default keys module, configurable paths, production setup)
-- Shared links: xref:./shared-links.adoc[Shared Links] (time-bound link sharing, HMAC signing, access logging, revocation)
-- Comment chains and media: xref:./comment-chains-and-media.adoc[Comment Chains and Media References] (hierarchical discussion, governed object metadata, short-lived grants)
-- OAuth server: xref:./oauth-server.adoc[OAuth Server Module] (built-in OAuth 2.0/OIDC authorization server, ChatGPT/Gemini/Grok integration, no external IdP needed)
-- Permissions: xref:../tutorials/quantum-tutorial.adoc#sec-security[Permissions]
-- Security annotations: xref:../tutorials/quantum-tutorial.adoc#sec-security[Security annotations]
-- Permission Resource Check APIs: xref:./permission-resource.adoc[Permission Resource: Check APIs and Client Usage]
-- Label resolution and script helpers: xref:./permissions.adoc#label-resolution-spi[Labels (SPI) and hasLabel()]
-- Secrets and vault (global vs tenant-level): xref:./secrets-and-vault.adoc[Secrets and Vault Configuration]
+- Authentication: xref:{doc-root}/tutorials/quantum-tutorial.adoc#sec-security[Authentication, permissions, and annotations]
+- JWT tokens for API access: xref:{doc-root}/user-guide/auth.adoc#jwt-tokens-for-api-access[Generating JWT Tokens] (login, service tokens, key pair generation)
+- Service tokens for integrations: xref:{doc-root}/user-guide/auth.adoc#service-tokens[Service Tokens] (MCP servers, cron jobs, CI/CD, partner APIs)
+- Multiple auth providers: xref:{doc-root}/user-guide/multiple-auth-providers.adoc[Multiple Authentication Providers] (issuer resolution, per-tenant key pairs, external identity providers)
+- Key pair management: xref:{doc-root}/user-guide/multiple-auth-providers.adoc#per-tenant-key-pairs[Key Pair Management] (default keys module, configurable paths, production setup)
+- Shared links: xref:{doc-root}/user-guide/shared-links.adoc[Shared Links] (time-bound link sharing, HMAC signing, access logging, revocation)
+- Comment chains and media: xref:{doc-root}/user-guide/comment-chains-and-media.adoc[Comment Chains and Media References] (hierarchical discussion, governed object metadata, short-lived grants)
+- OAuth server: xref:{doc-root}/user-guide/oauth-server.adoc[OAuth Server Module] (built-in OAuth 2.0/OIDC authorization server, ChatGPT/Gemini/Grok integration, no external IdP needed)
+- Permissions: xref:{doc-root}/tutorials/quantum-tutorial.adoc#sec-security[Permissions]
+- Security annotations: xref:{doc-root}/tutorials/quantum-tutorial.adoc#sec-security[Security annotations]
+- Permission Resource Check APIs: xref:{doc-root}/user-guide/permission-resource.adoc[Permission Resource: Check APIs and Client Usage]
+- Label resolution and script helpers: xref:{doc-root}/user-guide/permissions.adoc#label-resolution-spi[Labels (SPI) and hasLabel()]
+- Secrets and vault (global vs tenant-level): xref:{doc-root}/user-guide/secrets-and-vault.adoc[Secrets and Vault Configuration]
 
 == Data Seeding
 
-- Seed packs (tutorial): xref:../tutorials/quantum-tutorial.adoc#sec-seed-packs[Seed packs: Declarative tenant seeding]
-- Seed packs (deep dive document): xref:./seed-packs.adoc[Seed packs and declarative tenant seeding]
-- Bootstrap packs: xref:./bootstrap-packs.adoc[Bootstrap Packs] (runtime orchestration, step handlers, startup application, admin APIs, and when to choose them over seed packs)
+- Seed packs (tutorial): xref:{doc-root}/tutorials/quantum-tutorial.adoc#sec-seed-packs[Seed packs: Declarative tenant seeding]
+- Seed packs (deep dive document): xref:{doc-root}/user-guide/seed-packs.adoc[Seed packs and declarative tenant seeding]
+- Bootstrap packs: xref:{doc-root}/user-guide/bootstrap-packs.adoc[Bootstrap Packs] (runtime orchestration, step handlers, startup application, admin APIs, and when to choose them over seed packs)
 
 == Email and Notifications
 
-- Email templates: xref:./email-templates.adoc[Email Templates] (Qute rendering, classpath defaults, realm overrides, preview APIs, onboarding template keys, Postmark delivery)
+- Email templates: xref:{doc-root}/user-guide/email-templates.adoc[Email Templates] (Qute rendering, classpath defaults, realm overrides, preview APIs, onboarding template keys, Postmark delivery)
 
 == Operations
 
-- Migrations: xref:../tutorials/quantum-tutorial.adoc#sec-migrations[Migrations]
-- Testing: xref:../tutorials/quantum-tutorial.adoc#sec-testing[Testing]
-- Usage metering and token allocation: xref:./usage-and-token-allocation.adoc[Usage Metering and Token Allocation] (API/LLM usage, token pools per tenant, scoped to APIs and Tools/LLM configs)
+- Migrations: xref:{doc-root}/tutorials/quantum-tutorial.adoc#sec-migrations[Migrations]
+- Testing: xref:{doc-root}/tutorials/quantum-tutorial.adoc#sec-testing[Testing]
+- Usage metering and token allocation: xref:{doc-root}/user-guide/usage-and-token-allocation.adoc[Usage Metering and Token Allocation] (API/LLM usage, token pools per tenant, scoped to APIs and Tools/LLM configs)
 
 == Samples
 
-- Supply Chain tutorial: xref:../tutorials/supply-chain.adoc[Supply Chain]
+- Supply Chain tutorial: xref:{doc-root}/tutorials/supply-chain.adoc[Supply Chain]
 
 == Appendix
 

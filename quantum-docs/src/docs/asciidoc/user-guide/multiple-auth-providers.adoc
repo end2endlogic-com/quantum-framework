@@ -1,3 +1,7 @@
+ifndef::doc-root[]
+:doc-root: ..
+endif::[]
+
 [[multiple-auth-providers]]
 = Multiple Authentication Providers
 
@@ -250,7 +254,7 @@ auth.provider=custom,my-oidc
 my.oidc.issuer=https://my-idp.example.com
 ----
 
-See xref:auth.adoc[Authentication and Authorization] for the full `AuthProvider` and `UserManagement` interface contracts and `BaseAuthProvider` capabilities.
+See xref:{doc-root}/user-guide/auth.adoc[Authentication and Authorization] for the full `AuthProvider` and `UserManagement` interface contracts and `BaseAuthProvider` capabilities.
 
 [[per-tenant-key-pairs]]
 == Key Pair Management
@@ -330,4 +334,4 @@ When you move to external keys, update both the `quantum.jwt.*` properties and `
 
 === Full Per-Tenant Design
 
-For the complete multi-phase design including per-tenant MongoDB key storage, key rotation, JWKS endpoints, and vault integration, see the xref:../design/per-tenant-key-pairs.adoc[Per-Tenant Key Pairs Design Document].
+For the complete multi-phase design including per-tenant MongoDB key storage, key rotation, JWKS endpoints, and vault integration, see the xref:{doc-root}/design/per-tenant-key-pairs.adoc[Per-Tenant Key Pairs Design Document].
