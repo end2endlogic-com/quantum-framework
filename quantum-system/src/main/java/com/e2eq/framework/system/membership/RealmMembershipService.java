@@ -3,6 +3,7 @@ package com.e2eq.framework.system.membership;
 import com.e2eq.framework.model.persistent.morphia.RealmTenantMembershipRepo;
 import com.e2eq.framework.system.config.QuantumModeConfig;
 import com.e2eq.framework.api.system.SystemDirectory;
+import com.e2eq.framework.system.remote.ControlPlaneException;
 import com.e2eq.framework.system.remote.RemoteMembershipClient;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import com.e2eq.framework.model.persistent.morphia.UserRealmRoleRepo;
@@ -28,7 +29,7 @@ import java.util.Optional;
  * at token issuance to mint per-realm role claims; the tenant plane consults
  * memberships to route a principal to a realm datastore. Embedded mode reads
  * the system realm directly; remote mode (Phase C) gets this same interface
- * backed by the control-plane HTTP client.
+ * backed by the generated control-plane client, reads and writes alike.
  */
 @ApplicationScoped
 public class RealmMembershipService {
@@ -57,10 +58,11 @@ public class RealmMembershipService {
      * client may execute filters on another thread where the request-scoped JWT
      * proxy is no longer available.
      */
-    private RemoteMembershipClient remote() {
+    RemoteMembershipClient remote() {
         return new RemoteMembershipClient(
             quantumModeConfig.systemServiceBaseUrl().orElseThrow(() ->
-                new IllegalStateException("quantum.system-service.base-url is required for remote membership resolution")),
+                ControlPlaneException.notConfigured("membership resolution",
+                    "quantum.system-service.base-url")),
             requestBearerToken());
     }
 
@@ -107,9 +109,9 @@ public class RealmMembershipService {
             throw new IllegalArgumentException("membership.realmRefName must not be blank");
         }
         if (quantumModeConfig.isRemote()) {
-            throw new IllegalStateException(
-                "Realm membership writes are not exposed by the generated control-plane contract; "
-                    + "provision through an embedded system-management plane.");
+            // The owning control plane reconciles identity and storage scope;
+            // a refusal or outage surfaces as ControlPlaneException.
+            return remote().upsertRealmMembership(membership);
         }
         String systemRealmId = systemDirectory.systemRealmId();
         Optional<RealmTenantMembership> existingMembership = membershipRepo.findByRealmRefNameWithIgnoreRules(
@@ -180,9 +182,9 @@ public class RealmMembershipService {
             throw new IllegalArgumentException("assignment.realmRefName must not be blank");
         }
         if (quantumModeConfig.isRemote()) {
-            throw new IllegalStateException(
-                "User realm-role writes are not exposed by the generated control-plane contract; "
-                    + "provision through an embedded system-management plane.");
+            // PUT /control/users/{userId}/realms/{realmRefName} round-trips persisted fields.
+            // The control plane retains authority over existing storage scope.
+            return remote().upsertUserRealmRole(assignment);
         }
         String systemRealmId = systemDirectory.systemRealmId();
         Optional<UserRealmRole> existingRole = userRealmRoleRepo.findAssignmentForRealmWithIgnoreRules(
@@ -190,8 +192,8 @@ public class RealmMembershipService {
         if (existingRole.isPresent()) {
             UserRealmRole existing = existingRole.get();
             if (assignment.getDataDomain() == null) {
-                // The public control-plane membership contract intentionally omits
-                // internal tenant storage scope. An update through that seam must
+                // Legacy control-plane clients may omit internal tenant storage
+                // scope. An update through that seam must
                 // preserve the authoritative assignment instead of being treated as
                 // an attempt to clear or move it.
                 assignment.setDataDomain(existing.getDataDomain());
