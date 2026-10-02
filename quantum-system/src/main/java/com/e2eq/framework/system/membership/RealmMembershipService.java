@@ -182,8 +182,8 @@ public class RealmMembershipService {
             throw new IllegalArgumentException("assignment.realmRefName must not be blank");
         }
         if (quantumModeConfig.isRemote()) {
-            // PUT /control/users/{userId}/realms/{realmRefName}. The contract omits
-            // dataDomain; the control plane preserves the authoritative one.
+            // PUT /control/users/{userId}/realms/{realmRefName} round-trips persisted fields.
+            // The control plane retains authority over existing storage scope.
             return remote().upsertUserRealmRole(assignment);
         }
         String systemRealmId = systemDirectory.systemRealmId();
@@ -192,8 +192,8 @@ public class RealmMembershipService {
         if (existingRole.isPresent()) {
             UserRealmRole existing = existingRole.get();
             if (assignment.getDataDomain() == null) {
-                // The public control-plane membership contract intentionally omits
-                // internal tenant storage scope. An update through that seam must
+                // Legacy control-plane clients may omit internal tenant storage
+                // scope. An update through that seam must
                 // preserve the authoritative assignment instead of being treated as
                 // an attempt to clear or move it.
                 assignment.setDataDomain(existing.getDataDomain());

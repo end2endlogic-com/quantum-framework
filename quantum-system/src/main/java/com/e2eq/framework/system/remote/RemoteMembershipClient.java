@@ -37,14 +37,9 @@ public class RemoteMembershipClient {
             "members of realm " + realmRefName);
         List<RealmTenantMembership> members = new ArrayList<>();
         for (RealmMembershipEntry entry : entries) {
-            RealmTenantMembership membership = new RealmTenantMembership();
-            membership.setRealmRefName(entry.getRealmRefName());
-            membership.setOrganizationRefName(entry.getOrganizationRefName());
-            membership.setAccountId(entry.getAccountId());
-            membership.setTenantId(entry.getTenantId());
+            RealmTenantMembership membership = ControlPlaneRealmMapper.fromEntry(entry);
             membership.setMembershipRole(Optional.ofNullable(entry.getMembershipRole())
                 .orElse(RealmTenantMembership.MEMBERSHIP_ROLE_OWNER));
-            membership.setParticipationStatus(entry.getParticipationStatus());
             members.add(membership);
         }
         return members;
@@ -55,15 +50,8 @@ public class RemoteMembershipClient {
             "realms for user " + userId);
         List<UserRealmRole> assignments = new ArrayList<>();
         for (UserRealmRoleEntry entry : entries) {
-            UserRealmRole assignment = new UserRealmRole();
-            assignment.setUserId(entry.getUserId());
-            assignment.setRealmRefName(entry.getRealmRefName());
-            assignment.setSponsoringOrgRefName(entry.getSponsoringOrgRefName());
-            assignment.setStatus(entry.getStatus());
+            UserRealmRole assignment = ControlPlaneRealmMapper.fromEntry(entry);
             assignment.setRoles(entry.getRoles() == null ? List.of() : new ArrayList<>(entry.getRoles()));
-            assignment.setAuthorizedApplications(entry.getAuthorizedApplications());
-            assignment.setDefaultApplication(entry.getDefaultApplication());
-            assignment.setAuthorizedTenantIds(entry.getAuthorizedTenantIds());
             assignments.add(assignment);
         }
         return assignments;

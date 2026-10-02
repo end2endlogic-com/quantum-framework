@@ -85,6 +85,8 @@ class RealmMembershipServiceRemoteWriteTest {
             .userId("8f0c")
             .subject("8f0c")
             .realmRefName("quantum-auth")
+            .displayName("Service identity")
+            .authorizedTenantRegEx("tenant-.*")
             .roles(List.of("registration-intake"))
             .authorizedApplications(List.of("helixor-licensing"))
             .authorizedTenantIds(List.of())
@@ -105,6 +107,10 @@ class RealmMembershipServiceRemoteWriteTest {
         assertEquals(UserRealmRole.STATUS_ACTIVE, endpoint.roleBody.get().getStatus());
         assertEquals("8f0c", saved.getUserId());
         assertEquals("8f0c", saved.getSubject());
+        assertEquals("service-realm-role:8f0c:quantum-auth", saved.getRefName());
+        assertEquals("Service identity", saved.getDisplayName());
+        assertEquals("tenant-.*", endpoint.roleBody.get().getAuthorizedTenantRegEx());
+        assertEquals("tenant-.*", saved.getAuthorizedTenantRegEx());
         assertEquals(List.of("registration-intake"), saved.getRoles());
     }
 
@@ -115,12 +121,20 @@ class RealmMembershipServiceRemoteWriteTest {
         membership.setRealmRefName("engineering");
         membership.setOrganizationRefName("helixor-ai");
         membership.setMembershipRole(RealmTenantMembership.MEMBERSHIP_ROLE_OWNER);
+        membership.setRealmDisplayName("Engineering");
+        membership.setDefaultAdminUserId("admin@example.test");
+        membership.setSetupStatus("ready");
+        membership.setSetupCompletionPercent(100);
 
         RealmTenantMembership saved = remoteService(endpoint).upsertMembership(membership);
 
         assertEquals("engineering", endpoint.membershipPath.get()[0]);
         assertEquals("helixor-ai", endpoint.membershipPath.get()[1]);
         assertEquals(RealmTenantMembership.MEMBERSHIP_ROLE_OWNER, saved.getMembershipRole());
+        assertEquals("Engineering", saved.getRealmDisplayName());
+        assertEquals("admin@example.test", saved.getDefaultAdminUserId());
+        assertEquals("ready", saved.getSetupStatus());
+        assertEquals(100, saved.getSetupCompletionPercent());
     }
 
     @Test

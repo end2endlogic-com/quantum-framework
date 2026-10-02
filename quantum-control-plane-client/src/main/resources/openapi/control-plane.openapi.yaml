@@ -154,6 +154,63 @@ components:
         tenantId: { type: string }
         membershipRole: { type: string, enum: [owner, participant] }
         participationStatus: { type: string }
+        id:
+          type: string
+          description: MongoDB ObjectId as String
+        refName:
+          type: string
+          minLength: 3
+        displayName:
+          type: string
+        dataDomain:
+          $ref: '#/components/schemas/ControlPlaneDataDomain'
+        activeStatus:
+          $ref: '#/components/schemas/ControlPlaneActiveStatus'
+        tags:
+          type: array
+          items:
+            type: string
+        advancedTags:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/ControlPlaneTag'
+        auditInfo:
+          $ref: '#/components/schemas/ControlPlaneAuditInfo'
+        references:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/ControlPlaneReferenceEntry'
+        persistentEvents:
+          type: array
+          items:
+            $ref: '#/components/schemas/ControlPlanePersistentEvent'
+        signatures:
+          $ref: '#/components/schemas/ControlPlaneSignatures'
+        unmappedProperties:
+          type: object
+          additionalProperties: {}
+          description: Additional properties that are not mapped to any field in the java
+            class but existed in Mongodb
+        version:
+          type: integer
+          format: int64
+        realmDisplayName:
+          type: string
+        realmEmailDomain:
+          type: string
+        defaultAdminUserId:
+          type: string
+        realmEditionRefName:
+          type: string
+        provisioningMode:
+          type: string
+        setupStatus:
+          type: string
+        setupCompletionPercent:
+          type: integer
+          format: int32
     UserRealmRoleEntry:
       type: object
       required: [userId, realmRefName, roles]
@@ -166,3 +223,168 @@ components:
         authorizedTenantIds: { type: array, items: { type: string } }
         sponsoringOrgRefName: { type: string }
         status: { type: string, enum: [active, invited, suspended] }
+        id:
+          type: string
+          description: MongoDB ObjectId as String
+        refName:
+          type: string
+          minLength: 3
+        displayName:
+          type: string
+        dataDomain:
+          $ref: '#/components/schemas/ControlPlaneDataDomain'
+        activeStatus:
+          $ref: '#/components/schemas/ControlPlaneActiveStatus'
+        tags:
+          type: array
+          items:
+            type: string
+        advancedTags:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/ControlPlaneTag'
+        auditInfo:
+          $ref: '#/components/schemas/ControlPlaneAuditInfo'
+        references:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/ControlPlaneReferenceEntry'
+        persistentEvents:
+          type: array
+          items:
+            $ref: '#/components/schemas/ControlPlanePersistentEvent'
+        signatures:
+          $ref: '#/components/schemas/ControlPlaneSignatures'
+        unmappedProperties:
+          type: object
+          additionalProperties: {}
+          description: Additional properties that are not mapped to any field in the java
+            class but existed in Mongodb
+        version:
+          type: integer
+          format: int64
+        subject:
+          type: string
+        authorizedTenantRegEx:
+          type: string
+    ControlPlaneSignatures:
+      type: object
+      properties:
+        referencesSignature:
+          type: string
+        auditInfoSignature:
+          type: string
+        entityHash:
+          type: string
+    ControlPlanePersistentEvent:
+      type: object
+      properties:
+        eventType:
+          type: string
+        eventMessage:
+          type: string
+        eventDate:
+          $ref: '#/components/schemas/ControlPlaneDate'
+        userId:
+          type: string
+        version:
+          type: integer
+          format: int64
+        eventData:
+          type: object
+          additionalProperties: {}
+    ControlPlaneDate:
+      type: integer
+      format: int64
+      description: UTC timestamp in milliseconds since the Unix epoch; preserves audit and event precision.
+    ControlPlaneReferenceEntry:
+      type: object
+      required:
+      - referencedId
+      - type
+      properties:
+        referencedId:
+          type: string
+          description: MongoDB ObjectId as String
+        type:
+          type: string
+        refName:
+          type: string
+    ControlPlaneAuditInfo:
+      type: object
+      properties:
+        creationTs:
+          $ref: '#/components/schemas/ControlPlaneDate'
+        creationIdentity:
+          type: string
+        lastUpdateTs:
+          $ref: '#/components/schemas/ControlPlaneDate'
+        lastUpdateIdentity:
+          type: string
+        impersonatorSubject:
+          type: string
+        impersonatorUserId:
+          type: string
+        actingOnBehalfOfSubject:
+          type: string
+        actingOnBehalfOfUserId:
+          type: string
+    ControlPlaneTag:
+      type: object
+      properties:
+        category:
+          type: string
+        tagDisplayName:
+          type: string
+        additionalData:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+        attributes:
+          type: array
+          items:
+            $ref: '#/components/schemas/ControlPlaneStringNameValue'
+        visible:
+          type: boolean
+    ControlPlaneStringNameValue:
+      type: object
+      properties:
+        name:
+          type: string
+        value:
+          type: string
+    ControlPlaneActiveStatus:
+      type: string
+      enum:
+      - ACTIVE
+      - INACTIVE
+      - DELETED
+    ControlPlaneDataDomain:
+      type: object
+      required:
+      - orgRefName
+      - accountNum
+      - tenantId
+      - dataSegment
+      - ownerId
+      properties:
+        orgRefName:
+          type: string
+        accountNum:
+          type: string
+        tenantId:
+          type: string
+          minLength: 1
+        dataSegment:
+          type: integer
+          format: int32
+        ownerId:
+          type: string
+          minLength: 1
+        businessTransactionId:
+          type: string
+        locationId:
+          type: string

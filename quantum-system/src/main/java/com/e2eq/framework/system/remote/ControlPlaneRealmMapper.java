@@ -9,9 +9,37 @@ import com.e2eq.framework.model.security.RealmDeploymentType;
 import com.e2eq.framework.model.security.RealmTenancyMode;
 import com.e2eq.framework.model.security.RealmTenantMembership;
 import com.e2eq.framework.model.security.UserRealmRole;
+import com.e2eq.framework.rest.models.ObjectIdJsonSerializer;
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.databind.DeserializationContext;
+import com.fasterxml.jackson.databind.JsonDeserializer;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.module.SimpleModule;
+import org.bson.types.ObjectId;
+
+import java.io.IOException;
 
 /** Shared typed mapping at the generated control-plane contract boundary. */
 public final class ControlPlaneRealmMapper {
+    // Use the generated schema for every persisted field, including nested metadata.
+    // ObjectIds cross the JSON seam as their exact hexadecimal string; dates use epoch millis.
+    private static final ObjectMapper MEMBERSHIP_MAPPER = membershipMapper();
+
+    private static ObjectMapper membershipMapper() {
+        var module = new SimpleModule();
+        module.addSerializer(ObjectId.class,
+            new ObjectIdJsonSerializer());
+        module.addDeserializer(ObjectId.class,
+            new JsonDeserializer<ObjectId>() {
+                @Override
+                public ObjectId deserialize(JsonParser parser,
+                        DeserializationContext context) throws IOException {
+                    return new ObjectId(parser.getValueAsString());
+                }
+            });
+        return new ObjectMapper().registerModule(module);
+    }
+
     private ControlPlaneRealmMapper() {
     }
 
@@ -54,54 +82,31 @@ public final class ControlPlaneRealmMapper {
     }
 
     public static RealmTenantMembership fromEntry(RealmMembershipEntry entry) {
-        RealmTenantMembership membership = new RealmTenantMembership();
-        membership.setRefName(entry.getOrganizationRefName() + "-" + entry.getRealmRefName());
-        membership.setRealmRefName(entry.getRealmRefName());
-        membership.setOrganizationRefName(entry.getOrganizationRefName());
-        membership.setAccountId(entry.getAccountId());
-        membership.setTenantId(entry.getTenantId());
-        membership.setMembershipRole(entry.getMembershipRole());
-        membership.setParticipationStatus(entry.getParticipationStatus());
+        RealmTenantMembership membership = MEMBERSHIP_MAPPER.convertValue(entry, RealmTenantMembership.class);
+        // Legacy/create callers omit refName; existing records carry their authoritative identity.
+        if (membership.getRefName() == null) {
+            membership.setRefName(entry.getOrganizationRefName() + "-" + entry.getRealmRefName());
+        }
         return membership;
     }
 
     public static RealmMembershipEntry toEntry(RealmTenantMembership membership) {
-        RealmMembershipEntry entry = new RealmMembershipEntry();
-        entry.setRealmRefName(membership.getRealmRefName());
-        entry.setOrganizationRefName(membership.getOrganizationRefName());
-        entry.setAccountId(membership.getAccountId());
-        entry.setTenantId(membership.getTenantId());
-        entry.setMembershipRole(membership.getMembershipRole());
-        entry.setParticipationStatus(membership.getParticipationStatus());
-        return entry;
+        return MEMBERSHIP_MAPPER.convertValue(membership, RealmMembershipEntry.class);
     }
 
     public static UserRealmRole fromEntry(UserRealmRoleEntry entry) {
-        UserRealmRole role = new UserRealmRole();
-        role.setRefName(entry.getUserId() + "-" + entry.getRealmRefName());
-        role.setUserId(entry.getUserId());
-        role.setSubject(entry.getUserId());
-        role.setRealmRefName(entry.getRealmRefName());
-        role.setRoles(entry.getRoles());
-        role.setAuthorizedApplications(entry.getAuthorizedApplications());
-        role.setDefaultApplication(entry.getDefaultApplication());
-        role.setAuthorizedTenantIds(entry.getAuthorizedTenantIds());
-        role.setSponsoringOrgRefName(entry.getSponsoringOrgRefName());
-        role.setStatus(entry.getStatus());
+        UserRealmRole role = MEMBERSHIP_MAPPER.convertValue(entry, UserRealmRole.class);
+        if (role.getRefName() == null) {
+            role.setRefName(entry.getUserId() + "-" + entry.getRealmRefName());
+        }
+        if (role.getSubject() == null) {
+            role.setSubject(entry.getUserId());
+        }
         return role;
     }
 
     public static UserRealmRoleEntry toEntry(UserRealmRole role) {
-        UserRealmRoleEntry entry = new UserRealmRoleEntry();
-        entry.setUserId(role.getUserId());
-        entry.setRealmRefName(role.getRealmRefName());
-        entry.setRoles(role.getRoles());
-        entry.setAuthorizedApplications(role.getAuthorizedApplications());
-        entry.setDefaultApplication(role.getDefaultApplication());
-        entry.setAuthorizedTenantIds(role.getAuthorizedTenantIds());
-        entry.setSponsoringOrgRefName(role.getSponsoringOrgRefName());
-        entry.setStatus(role.getStatus());
-        return entry;
+        return MEMBERSHIP_MAPPER.convertValue(role, UserRealmRoleEntry.class);
     }
 
     private static boolean hasText(String value) {
