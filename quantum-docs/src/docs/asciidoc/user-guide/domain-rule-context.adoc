@@ -1,3 +1,7 @@
+ifndef::doc-root[]
+:doc-root: ..
+endif::[]
+
 [[domain-rule-context]]
 = DomainContext, RuleContext, and DataDomain
 
@@ -84,7 +88,7 @@ orgRefName:${orgRefName} && dataDomain.tenantId:${pTenantId}
 customerId:^${accessibleCustomerIds} && tier:^${facet.allowedTiers}
 ----
 
-For the complete query language reference, see xref:query-language.adoc#query-language[Query Language].
+For the complete query language reference, see xref:{doc-root}/user-guide/query-language.adoc#query-language[Query Language].
 
 == Concrete example: building and using a resolver
 
@@ -308,7 +312,7 @@ id:^${idsByPlacedInOrg}
 Notes
 
 - Always scope by tenantId from RuleContext/PrincipalContext.
-- This is optional and only active if you wire ontology components. For a deeper integration path, see xref:modeling.adoc#ontology-integration-morphia-permissions[Integrating Ontology].
+- This is optional and only active if you wire ontology components. For a deeper integration path, see xref:{doc-root}/user-guide/modeling.adoc#ontology-integration-morphia-permissions[Integrating Ontology].
 
 === Admitted vocabulary for rule predicates
 
@@ -323,7 +327,7 @@ offending predicate.
 Enforcement is fail-closed: if the realm's admitted set cannot be read it is treated as
 `UNAVAILABLE` and the guard refuses to downgrade a governed realm to "all admitted." A
 legacy realm (`admittedPredicates == null`) admits all declared predicates for
-back-compatibility. See xref:ontology.adoc#provisional-admitted-vocabulary-tier[Ontology
+back-compatibility. See xref:{doc-root}/user-guide/ontology.adoc#provisional-admitted-vocabulary-tier[Ontology
 Modeling: provisional vs. admitted vocabulary tier] for the tier model, and the Quantum
 Enterprise *Ontology governance control plane* chapter for the admin promote/demote
 endpoints.

@@ -1,3 +1,7 @@
+ifndef::doc-root[]
+:doc-root: ..
+endif::[]
+
 [[planner-and-query-gateway]]
 == Planner and QueryGateway
 
@@ -71,7 +75,7 @@ q = "realm:acme && status:active && fields:[+_id,+total]"
 q = "expand(customer, fields:[+name,+tier]) && status:active && fields:[+_id,+customer.name]"
 ----
 
-See also: xref:query-expansion.adoc[Relationship hydration with expand(path)]. For concrete pipelines, see xref:query-expansion.adoc#aggregation-examples[Aggregation examples: what expand(...) compiles to].
+See also: xref:{doc-root}/user-guide/query-expansion.adoc[Relationship hydration with expand(path)]. For concrete pipelines, see xref:{doc-root}/user-guide/query-expansion.adoc#aggregation-examples[Aggregation examples: what expand(...) compiles to].
 
 [[query-gateway-rest]]
 === REST endpoints (v1)
@@ -250,5 +254,5 @@ curl -sS -X POST \
   }'
 ----
 
-See also: xref:query-expansion.adoc[Relationship hydration with expand(path)] and xref:query-language.adoc[Query Language Reference].
+See also: xref:{doc-root}/user-guide/query-expansion.adoc[Relationship hydration with expand(path)] and xref:{doc-root}/user-guide/query-language.adoc[Query Language Reference].
 

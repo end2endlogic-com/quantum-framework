@@ -1,3 +1,7 @@
+ifndef::doc-root[]
+:doc-root: ..
+endif::[]
+
 [[bootstrap-packs]]
 === Bootstrap Packs
 
@@ -327,6 +331,6 @@ Move to BootstrapPacks when:
 
 ==== See also
 
-- xref:seed-packs.adoc[Seed packs and declarative tenant seeding]
-- xref:email-templates.adoc[Email Templates]
-- xref:tenant-models.adoc#tenant-onboarding-and-invites[Tenant onboarding and access invites]
+- xref:{doc-root}/user-guide/seed-packs.adoc[Seed packs and declarative tenant seeding]
+- xref:{doc-root}/user-guide/email-templates.adoc[Email Templates]
+- xref:{doc-root}/user-guide/tenant-models.adoc#tenant-onboarding-and-invites[Tenant onboarding and access invites]

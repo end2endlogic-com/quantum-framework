@@ -1,3 +1,7 @@
+ifndef::doc-root[]
+:doc-root: ..
+endif::[]
+
 [[application-registration]]
 = Application Registration
 
@@ -168,5 +172,5 @@ Deciding what a given severity gates is the consuming control plane's call, not 
 
 == See Also
 
-* xref:multiple-auth-providers.adoc[Multiple Authentication Providers] -- the same SPI-plus-configuration pattern for identity
-* xref:control-plane-architecture.adoc[Control Plane Architecture]
+* xref:{doc-root}/user-guide/multiple-auth-providers.adoc[Multiple Authentication Providers] -- the same SPI-plus-configuration pattern for identity
+* xref:{doc-root}/user-guide/control-plane-architecture.adoc[Control Plane Architecture]

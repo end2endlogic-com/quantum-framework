@@ -1,3 +1,7 @@
+ifndef::doc-root[]
+:doc-root: ..
+endif::[]
+
 [[rest-crud]]
 == REST: Find, Get, List, Save, Update, Delete
 
@@ -76,7 +80,7 @@ For detailed rule-base matching (URL, headers, body predicates, priorities), see
 
 - Use query parameters or a request body (depending on your API convention) to express filters.
 - RuleContext contributes tenant-aware filters and projections automatically.
-- See xref:query-language.adoc#query-language[Query Language] for the full BIAPIQuery syntax, including array filtering with elemMatch and IN‑clause enhancements that accept resolver‑provided lists.
+- See xref:{doc-root}/user-guide/query-language.adoc#query-language[Query Language] for the full BIAPIQuery syntax, including array filtering with elemMatch and IN‑clause enhancements that accept resolver‑provided lists.
 
 === Responses and Schemas
 
@@ -443,7 +447,7 @@ When `intentColumn` is configured, each row can specify its own intent:
 
 NOTE: `MERGE` and `DELETE` are intentionally not supported for safety reasons.
 
-For complete ImportProfile documentation, see xref:../design/csv-import-enhancements.adoc[CSV Import Enhancements].
+For complete ImportProfile documentation, see xref:{doc-root}/design/csv-import-enhancements.adoc[CSV Import Enhancements].
 
 === RowValueResolver: Custom Per-Row Logic
 
@@ -525,7 +529,7 @@ public class GeocodeResolver implements RowValueResolver {
 |Mark the row as an error
 |===
 
-For complete RowValueResolver documentation, see xref:../design/csv-import-enhancements.adoc[CSV Import Enhancements].
+For complete RowValueResolver documentation, see xref:{doc-root}/design/csv-import-enhancements.adoc[CSV Import Enhancements].
 
 === Dynamic Attribute Import
 
@@ -596,7 +600,7 @@ name,sku,dynamicAttributes
 |Keep existing attributes, only add new (no updates)
 |===
 
-For complete dynamic attribute import documentation, see xref:../design/csv-dynamic-attributes-design.adoc[CSV Dynamic Attributes Design].
+For complete dynamic attribute import documentation, see xref:{doc-root}/design/csv-dynamic-attributes-design.adoc[CSV Dynamic Attributes Design].
 
 [[rest-crud-auth]]
 = Authentication and Authorization
@@ -870,7 +874,7 @@ Notes
 
 - Always scope by tenantId from DomainContext/RuleContext.
 - Index edges on (tenantId, p, dst) and (tenantId, src, p) to keep queries fast.
-- See xref:ontology.adoc#ontology-integration-morphia-permissions-section[Integrating Ontology] for more integration options.
+- See xref:{doc-root}/user-guide/ontology.adoc#ontology-integration-morphia-permissions-section[Integrating Ontology] for more integration options.
 
 [[ontology-aware-resource]]
 ==== OntologyAwareResource

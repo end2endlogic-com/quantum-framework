@@ -1,3 +1,7 @@
+ifndef::doc-root[]
+:doc-root: ..
+endif::[]
+
 = Query Gateway Ontology Support — Design
 
 *Implementation status:* Section 1 (pass realm/tenant into planning) is implemented: QueryPlanner and MorphiaUtils accept an optional variableMap; QueryGatewayResource builds variableMap from SecurityContext or from the request realm and passes it to convertToPlannedQuery in find() and deleteMany(). Integration test: `QueryGatewayResourceIT.find_with_hasEdge_receives_tenant_context_and_returns_200`.
@@ -24,7 +28,7 @@ because a leading secured `$match` stage and an `excludedFields` `$project` have
 been wired into the aggregation pipeline. `count` and `deleteMany` reject `expand(...)`
 with HTTP 400 (`InvalidQuery`). Re-enabling governed aggregation execution is the
 tracked follow-up below; see also
-xref:../user-guide/planner-and-query-gateway.adoc#query-gateway-governance[Planner and QueryGateway: row- and field-level governance].
+xref:{doc-root}/user-guide/planner-and-query-gateway.adoc#query-gateway-governance[Planner and QueryGateway: row- and field-level governance].
 
 This document describes how to add ontology support to the Query Gateway API (`POST /api/query/find`, `POST /api/query/plan`, and related endpoints) so that callers can use ontology edge predicates (`hasEdge`, `hasOutgoingEdge`, `hasIncomingEdge`, and optionally `hasEdgeAny`, `notHasEdge`) in the query string and get correct, tenant-scoped results.
 

@@ -1,4 +1,10 @@
-= Pre-release correctness and security fixes
+ifndef::doc-root[]
+:doc-root: .
+endif::[]
+
+== Pre-release correctness and security fixes
+
+These notes describe Framework PR 97 against `1.4.2-SNAPSHOT`, reviewed on 2026-10-02; they do not establish merge or deployment status. See xref:{doc-root}/user-guide/identity-and-membership.adoc[Identity and membership] for the current authorization contract.
 
 OAuth issuance rejects inactive/deleted credentials and emits refresh tokens with their user and realm claims. Managed secret resolution decrypts using the stored IV and key version; plaintext values stored in the encrypted field are not treated as valid secrets.
 

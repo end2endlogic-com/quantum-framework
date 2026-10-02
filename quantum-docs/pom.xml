@@ -89,6 +89,7 @@
                     <sourceDirectory>${project.basedir}/src/docs/asciidoc</sourceDirectory>
                     <outputDirectory>${docs.output.dir}</outputDirectory>
                     <relativeBaseDir>true</relativeBaseDir>
+                    <preserveDirectories>true</preserveDirectories>
                     <requires>
                         <require>asciidoctor-diagram</require>
                     </requires>

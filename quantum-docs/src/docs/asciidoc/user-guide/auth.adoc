@@ -1,3 +1,7 @@
+ifndef::doc-root[]
+:doc-root: ..
+endif::[]
+
 [[auth]]
 = Authentication and Authorization
 
@@ -664,7 +668,7 @@ mp.jwt.verify.publickey.location=/etc/quantum/keys/publicKey.pem
 ----
 
 This approach allows key rotation without rebuilding or redeploying the application.
-See xref:multiple-auth-providers.adoc#per-tenant-key-pairs[Key Pair Management] for the full configuration reference.
+See xref:{doc-root}/user-guide/multiple-auth-providers.adoc#per-tenant-key-pairs[Key Pair Management] for the full configuration reference.
 
 === Configuration Reference
 
@@ -674,7 +678,7 @@ See xref:multiple-auth-providers.adoc#per-tenant-key-pairs[Key Pair Management] 
 
 | `auth.provider`
 | (required)
-| Comma-separated list of provider names (e.g., `custom`, `custom,oidc`). See xref:multiple-auth-providers.adoc[Multiple Auth Providers].
+| Comma-separated list of provider names (e.g., `custom`, `custom,oidc`). See xref:{doc-root}/user-guide/multiple-auth-providers.adoc[Multiple Auth Providers].
 
 | `mp.jwt.verify.publickey.location`
 | (required)
@@ -706,7 +710,7 @@ See xref:multiple-auth-providers.adoc#per-tenant-key-pairs[Key Pair Management] 
 
 | `quantum.jwt.private-key-location`
 | _(unset — defaults to classpath `privateKey.pem`)_
-| Path to the RSA private key for token signing. Supports `file:`, `classpath:`, or bare classpath resource names. See xref:multiple-auth-providers.adoc#per-tenant-key-pairs[Key Pair Management].
+| Path to the RSA private key for token signing. Supports `file:`, `classpath:`, or bare classpath resource names. See xref:{doc-root}/user-guide/multiple-auth-providers.adoc#per-tenant-key-pairs[Key Pair Management].
 
 | `quantum.jwt.public-key-location`
 | _(unset — defaults to classpath `publicKey.pem`)_

@@ -1,3 +1,7 @@
+ifndef::doc-root[]
+:doc-root: ..
+endif::[]
+
 [[overview]]
 === Overview: Building SaaS with Quantum
 
@@ -54,6 +58,6 @@ Quantum accelerates building multi-tenant SaaS platforms by providing secure-by-
 
 ==== Next Steps
 
-- **New to Quantum?** Start with xref:getting-started.adoc[Getting Started]
-- **Learning concepts?** Read xref:tenant-models.adoc[Multi-Tenancy Models]
-- **See it in action?** Try the xref:../tutorials/supply-chain.adoc[Supply Chain Tutorial]
+- **New to Quantum?** Start with xref:{doc-root}/user-guide/getting-started.adoc[Getting Started]
+- **Learning concepts?** Read xref:{doc-root}/user-guide/tenant-models.adoc[Multi-Tenancy Models]
+- **See it in action?** Try the xref:{doc-root}/tutorials/supply-chain.adoc[Supply Chain Tutorial]

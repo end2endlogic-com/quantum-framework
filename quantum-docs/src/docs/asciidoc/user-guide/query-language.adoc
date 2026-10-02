@@ -1,3 +1,7 @@
+ifndef::doc-root[]
+:doc-root: ..
+endif::[]
+
 [[query-language]]
 == Query Language Reference
 
@@ -497,9 +501,9 @@ text("foo bar")
 
 ==== See Also
 
-- xref:rest-crud.adoc#querying[REST CRUD Querying]
-- xref:permissions.adoc[Permission Rules]
-- xref:domain-rule-context.adoc[Access Resolvers]
+- xref:{doc-root}/user-guide/rest-crud.adoc#querying[REST CRUD Querying]
+- xref:{doc-root}/user-guide/permissions.adoc[Permission Rules]
+- xref:{doc-root}/user-guide/domain-rule-context.adoc[Access Resolvers]
 
 
 ==== Execution engines and listeners
@@ -953,4 +957,4 @@ fields:[+_id,+total,-internalNotes]
 expand(customer) && fields:[+_id,+customer,+total]
 ----
 
-For per-expansion projections and advanced traversal filters, see xref:query-expansion.adoc[Query Expansion].
+For per-expansion projections and advanced traversal filters, see xref:{doc-root}/user-guide/query-expansion.adoc[Query Expansion].

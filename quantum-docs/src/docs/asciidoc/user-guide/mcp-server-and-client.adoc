@@ -1,3 +1,7 @@
+ifndef::doc-root[]
+:doc-root: ..
+endif::[]
+
 [[mcp-server-and-client]]
 == MCP Server and Client
 
@@ -49,7 +53,7 @@ The MCP server and the agent REST API require an authorized user. All endpoints 
 * **REST API (`/api/agent/*`):** Requires a valid Bearer JWT token in the `Authorization` header.
 * **MCP Endpoint (`/mcp`):** The MCP protocol transport (Streamable HTTP or SSE) must include the same authentication mechanism (typically a `Authorization: Bearer <token>` header) as other REST APIs.
 
-You can generate a long-lived service token for use with the MCP server using the xref:auth.adoc#using-the-quantum-cli[Quantum CLI].
+You can generate a long-lived service token for use with the MCP server using the xref:{doc-root}/user-guide/auth.adoc#using-the-quantum-cli[Quantum CLI].
 
 ==== Tools
 
@@ -69,7 +73,7 @@ outside the caller's DataDomain rather than revealing that the row exists.
 `expand(...)` (aggregation) execution is currently disabled: a `query_find` with
 `expand(...)` returns HTTP 501 because the aggregation path is not yet governed by
 row- and field-level security. See
-xref:planner-and-query-gateway.adoc#query-gateway-governance[Planner and QueryGateway: row- and field-level governance].
+xref:{doc-root}/user-guide/planner-and-query-gateway.adoc#query-gateway-governance[Planner and QueryGateway: row- and field-level governance].
 ====
 
 [cols="1,3", options="header"]
@@ -958,7 +962,7 @@ The agent never bypasses `@FunctionalAction` checks or data scoping.
 
 ==== Adding Ontology Context for Richer Queries
 
-When your application has an ontology TBox defined (see xref:ontology.adoc[Ontologies in Quantum]), Claude can use the `query_predicates` tool to discover relationship types and then use `query_relationships` to traverse the graph.
+When your application has an ontology TBox defined (see xref:{doc-root}/user-guide/ontology.adoc[Ontologies in Quantum]), Claude can use the `query_predicates` tool to discover relationship types and then use `query_relationships` to traverse the graph.
 
 For example:
 
@@ -1003,4 +1007,4 @@ Optional properties:
 | Maximum entities that `query_deleteMany` will delete in a single call
 |===
 
-See xref:ai-agent-integration.adoc[AI Agent Integration] for the full agent API design and additional scenarios.
+See xref:{doc-root}/user-guide/ai-agent-integration.adoc[AI Agent Integration] for the full agent API design and additional scenarios.

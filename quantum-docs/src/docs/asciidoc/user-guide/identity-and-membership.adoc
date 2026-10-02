@@ -1,0 +1,50 @@
+ifndef::doc-root[]
+:doc-root: ..
+endif::[]
+
+[[identity-and-membership]]
+== Identity, Organizations and Realm Access
+
+This reference describes the `1.4.2-SNAPSHOT` source reviewed on 2026-10-02. Deployment state must be checked separately. A directory organization, participation in a realm, and a user's authorization are distinct concepts.
+
+[cols="2,4",options="header"]
+|===
+|Record |Responsibility
+|`Organization` |Organization directory metadata and explicit parent/child relationships. It is not a user membership or a realm authorization grant.
+|`CredentialUserIdPassword` |Identity subject and userId within the owning system authority; default DomainContext and the outer authorizedRealms/realmRegEx boundary.
+|`UserProfile` |Profile and references to primary/additional credentials. A profile link is not proof of external identity ownership.
+|`RealmTenantMembership` |Organization/account/tenant participation in a realm, including OWNER versus PARTICIPANT lifecycle responsibility.
+|`UserRealmRole` |A user's realm-specific roles, sponsoring organization, status, authorizedApplications/defaultApplication and authorizedTenantIds/authorizedTenantRegEx.
+|===
+
+=== Authorization boundaries
+
+A realm selects placement and lifecycle; DataDomain and policy control visibility within it. A user-role assignment cannot authorize a realm excluded by the credential's realm contract. Credential roles retain their default-realm meaning. Realm roles are realm-wide: different privileges for tenants sharing one realm require tenant-scoped policy, not merely adding a role.
+
+Application and tenant grants have different empty-value semantics. Missing tenant grants do not authorize explicit multi-tenant selection. Missing application lists can invoke legacy compatibility resolution elsewhere in the authentication pipeline; refresh rejects unresolved application authority. Clearing applications is therefore not a reliable deny operation. Evaluate the complete credential, realm, application and tenant policy and verify the resulting session.
+
+Provision identities and memberships through the owning system-management plane. Keep each environment's authority, sessions and grants isolated. Do not rewrite a credential's default DomainContext to represent every external membership.
+
+=== Membership writes and external integrations
+
+`RealmMembershipService.upsertUserRealmRole` loads the existing assignment and preserves its stored DataDomain, but replaces supplied role, application and tenant grant lists. It is not an additive merge or a per-provider grant store. Its remote-mode write path currently fails explicitly because that operation is not exposed by the generated control-plane contract.
+
+An external membership integration must introduce source ownership and effective-grant reconciliation before using this operation for automatic synchronization. It must preserve unrelated manual grants, handle concurrent edits, audit the policy and evidence behind each change, and define explicit removal semantics. Such source-aware synchronization is proposed work, not a capability supplied by the current membership service.
+
+Authenticate external subjects before linking identities; names and email addresses alone are not account-link authorization. Require explicit approved target organization/realm/tenant bindings. Directory parent/child relationships must come from their own authoritative relationship, not be inferred from an external group hierarchy.
+
+=== Revocation and verification
+
+Test grant removal through login, realm/application selection and refresh, not just a membership listing. Changing a stored grant does not itself revoke an already-issued stateless JWT; document and test the supported token-expiry or revocation bound. An incomplete external snapshot or provider outage is not authoritative evidence that all members left.
+
+Acceptance should cover inactive credentials, unauthorized realm/tenant/application selection, preservation of manual grants and complete stored payloads, concurrent updates, source removal, and environment isolation. Use replica-set Mongo for transactional behavior.
+
+=== Source anchors
+
+* `quantum-models`: `Organization`, `CredentialUserIdPassword`, `UserProfile`, `RealmTenantMembership`, `UserRealmRole`.
+* `quantum-system`: `RealmMembershipService`.
+* `quantum-system-rest`: `UserRealmRoleResource`.
+* `quantum-system-management`: `AuthLoginService`, `TenantProvisioningService`.
+* `quantum-jwt-provider`: `CustomTokenAuthProvider.refreshTokens`.
+
+See xref:{doc-root}/design/realm-membership-adr.adoc[Realm membership ADR] for the architecture decision and xref:{doc-root}/prerelease-defect-remediation.adoc[Pre-release migration notes] for the recent repairs.

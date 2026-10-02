@@ -1,3 +1,7 @@
+ifndef::doc-root[]
+:doc-root: ..
+endif::[]
+
 [[permissions]]
 = Permissions: Rule Bases, SecurityURIHeader, and SecurityURIBody
 
@@ -508,7 +512,7 @@ Recommendation:: Use a grant‑based permission posture (default DENY) and let f
 [[scoped-action-enablement]]
 == Scoped Action Enablement and Dependency Tracking
 
-For the dedicated guide covering the runtime API, manifest model, SPI contracts, and built-in resolver types, see xref:./action-enablement.adoc[Scoped Action Enablement].
+For the dedicated guide covering the runtime API, manifest model, SPI contracts, and built-in resolver types, see xref:{doc-root}/user-guide/action-enablement.adoc[Scoped Action Enablement].
 
 Permission checks answer one important question: "may this identity perform `area / functionalDomain / action`?" In practice, teams also need to answer a second question: "why is this action still unavailable?"
 
@@ -2314,8 +2318,8 @@ Example (resolver + IN filter)
 
 See also
 
-- Ontology overview and examples: xref:ontology.adoc[Ontologies in Quantum]
-- Integration with Morphia and multi-tenancy: xref:ontology.adoc#ontology-integration-morphia-permissions-section[Integrating Ontology]
+- Ontology overview and examples: xref:{doc-root}/user-guide/ontology.adoc[Ontologies in Quantum]
+- Integration with Morphia and multi-tenancy: xref:{doc-root}/user-guide/ontology.adoc#ontology-integration-morphia-permissions-section[Integrating Ontology]
 
 Operational notes
 
@@ -2718,6 +2722,6 @@ Best practices:
 - Combine helpers with SecurityURIBody scoping and repository filters for defense in depth.
 
 Cross‑references:
-- Ontology usage and hasEdge: see xref:permissions.adoc#ontology-permissions[Ontology in Permission Rules].
-- Label SPI and hasLabel: see xref:permissions.adoc#label-resolution-spi[Label resolution SPI].
+- Ontology usage and hasEdge: see xref:{doc-root}/user-guide/permissions.adoc#ontology-permissions[Ontology in Permission Rules].
+- Label SPI and hasLabel: see xref:{doc-root}/user-guide/permissions.adoc#label-resolution-spi[Label resolution SPI].
 - AccessListResolver for list variables in filters: see "AccessListResolvers (SPI) for list-based access" above.

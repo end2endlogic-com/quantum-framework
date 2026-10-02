@@ -1,3 +1,7 @@
+ifndef::doc-root[]
+:doc-root: ..
+endif::[]
+
 [[getting-started]]
 == Getting Started: Your First Quantum Application
 
@@ -8,7 +12,7 @@ This section walks through creating a simple multi-tenant Product catalog to dem
 - Java 17+
 - Maven 3.8+
 - MongoDB (local or cloud)
-- Basic Quarkus knowledge (see xref:../appendix/quarkus-foundation.adoc[Quarkus Foundation])
+- Basic Quarkus knowledge (see xref:{doc-root}/appendix/quarkus-foundation.adoc[Quarkus Foundation])
 
 === Project Setup
 
@@ -224,10 +228,10 @@ With this minimal setup, Quantum provides:
 
 === Next Steps
 
-- Add authentication: xref:auth.adoc[Authentication Guide]
-- Create sharing rules: xref:permissions.adoc[Permissions Guide]
-- Learn the query language: xref:query-language.adoc[Query Language]
-- See real-world example: xref:../tutorials/supply-chain.adoc[Supply Chain Tutorial]
+- Add authentication: xref:{doc-root}/user-guide/auth.adoc[Authentication Guide]
+- Create sharing rules: xref:{doc-root}/user-guide/permissions.adoc[Permissions Guide]
+- Learn the query language: xref:{doc-root}/user-guide/query-language.adoc[Query Language]
+- See real-world example: xref:{doc-root}/tutorials/supply-chain.adoc[Supply Chain Tutorial]
 
 
 === Optional: Enable Ontology Modules
@@ -248,7 +252,7 @@ e2eq.ontology.enabled=true
 ----
 
 3) Provide an ontology registry (TBox)
-- Start with an in-memory registry (recommended initially). See xref:ontology.adoc[Ontologies in Quantum].
+- Start with an in-memory registry (recommended initially). See xref:{doc-root}/user-guide/ontology.adoc[Ontologies in Quantum].
 
 4) Wire data and indexes
 - Inject EdgeDao as a CDI bean (@Inject); indexes are ensured automatically at startup.
@@ -258,7 +262,7 @@ e2eq.ontology.enabled=true
 - Use OntologyMaterializer when sources or intermediates change (e.g., Order/Customer/Org/Address/Shipment in the e‑commerce example).
 
 6) Use edges in queries/policies
-- Wrap BSON via ListQueryRewriter or constrain by _id sets. See xref:ontology.adoc#ontology-integration-morphia-permissions-section[Integrating Ontology].
+- Wrap BSON via ListQueryRewriter or constrain by _id sets. See xref:{doc-root}/user-guide/ontology.adoc#ontology-integration-morphia-permissions-section[Integrating Ontology].
 
 Notes
 
