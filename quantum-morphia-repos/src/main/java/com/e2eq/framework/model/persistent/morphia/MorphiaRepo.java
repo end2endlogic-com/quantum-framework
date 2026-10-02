@@ -1339,85 +1339,26 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     public long delete (@NotNull String realmId, @NotNull ObjectId id) throws ReferentialIntegrityViolationException {
         Objects.requireNonNull(id, "Null argument passed to delete, api requires a non-null object");
 
-        // find the object to delete
-        Optional<T> oobj = this.findById(id, realmId);
-
-        if (oobj.isPresent()) {
-            // assuming the record exists
-            T obj = oobj.get();
-            DeleteResult result = null;
-            // if there are no references to this object, then we can just delete it
-            if (obj.getReferences() == null || obj.getReferences().isEmpty()) {
-                // delete the object and remove any references that it may have had to parents
-                try (MorphiaSession s = morphiaDataStoreWrapper.getDataStore(realmId).startSession()) {
-                    s.startTransaction();
-                    // ontology pre-delete hooks (may throw to block)
-                    try { callPreDeleteHooks(realmId, obj); } catch (RuntimeException ex) { s.abortTransaction(); throw ex; }
-                    removeReferenceConstraint(obj, s);
-                    result = s.delete(obj);
-                    // ontology post-delete hooks
-                    try { callPostDeleteHooks(realmId, obj.getClass(), String.valueOf(obj.getRefName()!=null?obj.getRefName():obj.getId())); } catch (Throwable ignored) {}
-                    s.commitTransaction();
+        Optional<T> found = this.findById(id, realmId);
+        if (found.isEmpty()) return 0;
+        try (MorphiaSession session = morphiaDataStoreWrapper.getDataStore(realmId).startSession()) {
+            session.startTransaction();
+            try {
+                // The session overload validates the complete reference set before deleting.
+                T object = found.get();
+                callPreDeleteHooks(realmId, object);
+                long deleted = delete(session, object);
+                if (deleted > 0) {
+                    callPostDeleteHooks(realmId, object.getClass(),
+                            String.valueOf(object.getRefName() != null ? object.getRefName() : object.getId()));
                 }
-                // we are done so now we can return the number of deleted records which should be just one
-
-            } else {
-                // there are references to this object, we need to find out which ones and if they are all stale or not
-                Set<ReferenceEntry> entriesToRemove = new HashSet<>();
-
-                // Iterate through references in this class and ensure that there are
-                // actually references and that the list of references is not stale
-
-                // for each reference, check if the referenced object still exists
-                for (ReferenceEntry reference : obj.getReferences()) {
-                    try (MorphiaSession s = morphiaDataStoreWrapper.getDataStore(realmId).startSession()) {
-                        s.startTransaction();
-                        // find the referenced object
-                        try {
-                            ClassLoader classLoader = this.getClass().getClassLoader();
-                            Class<?> clazz = classLoader.loadClass(reference.getType());
-                            Query<?> q = s.find(clazz).filter(Filters.eq("_id", reference.getReferencedId()));
-                            if (q.count() != 0) {
-                                entriesToRemove.add(reference);
-                            }
-                        } catch (ClassNotFoundException e) {
-                            Log.warn("Failed to load class: " + reference.getType() + "removing reference");
-                            entriesToRemove.add(reference);
-                        }
-                        // ok we now know all the reference which we found which will be in the entriesToRemove set.
-                        if (entriesToRemove.isEmpty()) {
-                            // entities are empty so there are no valid references to this object.
-                            // no remove all the reference there may from this class to other classes.
-                            removeReferenceConstraint(obj, s);
-                            // ontology pre-delete hooks (may throw to block)
-                            try { callPreDeleteHooks(realmId, obj); } catch (RuntimeException ex) { s.abortTransaction(); throw ex; }
-                            // now actually delete the object
-                            result = s.delete(obj);
-
-                            // just for completeness we can remove all the entries now
-                            obj.getReferences().removeAll(entriesToRemove);
-
-                            // ontology post-delete hooks
-                            try { callPostDeleteHooks(realmId, obj.getClass(), String.valueOf(obj.getRefName()!=null?obj.getRefName():obj.getId())); } catch (Throwable ignored) {}
-                            // commit the transaction and we are done.
-                            s.commitTransaction();
-                        } else {
-                            // there are references to this object so we can not delete this object until those are removed.
-                            // build a useful error message and throw an exception
-                            HashSet<String> referencingClasses = new HashSet<>();
-                            for (ReferenceEntry rreference : obj.getReferences()) {
-                                referencingClasses.add(rreference.getType());
-                            }
-                            String buffereferencingClassesString = referencingClasses.stream().collect(Collectors.joining(", "));
-                            throw new ReferentialIntegrityViolationException("Can not delete object because it has references from other objects to this one that would corrupt the relationship. Referencing classes: " + buffereferencingClassesString);
-                        }
-                    }
-                }
+                session.commitTransaction();
+                return deleted;
+            } catch (RuntimeException | ReferentialIntegrityViolationException failure) {
+                session.abortTransaction();
+                throw failure;
             }
-            return result.getDeletedCount();
         }
-        Log.warn("Object not found for deletion: " + id);
-        return 0;
     }
 
     @Override
@@ -1463,8 +1404,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
                         entriesToRemove.add(reference);
                     }
                 } catch (ClassNotFoundException e) {
-                    Log.warn("Failed to load class: " + reference.getType() + "removing reference");
-                    entriesToRemove.add(reference);
+                    throw new ReferentialIntegrityViolationException("Cannot verify referenced type: " + reference.getType());
                 }
             }
             obj.getReferences().removeAll(entriesToRemove);

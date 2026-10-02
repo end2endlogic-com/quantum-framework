@@ -27,6 +27,12 @@ public class ImportProfileService {
 
     private static final Logger LOG = Logger.getLogger(ImportProfileService.class);
 
+    public static class FieldCalculationException extends RuntimeException {
+        public FieldCalculationException(String calculator, Throwable cause) {
+            super("IMPORT_FIELD_CALCULATION_FAILED: " + calculator, cause);
+        }
+    }
+
     @Inject
     LookupService lookupService;
 
@@ -140,7 +146,7 @@ public class ImportProfileService {
             try {
                 calculator.calculate(bean, rowData, context);
             } catch (Exception e) {
-                LOG.warnf(e, "Field calculator %s failed", calculator.getName());
+                throw new FieldCalculationException(calculator.getName(), e);
             }
         }
     }
@@ -258,7 +264,7 @@ public class ImportProfileService {
                     setFieldValue(bean, calc.getFieldName(), value);
                 }
             } catch (Exception e) {
-                LOG.warnf(e, "Inline calculator for field %s failed", calc.getFieldName());
+                throw new FieldCalculationException(calc.getFieldName(), e);
             }
         }
     }

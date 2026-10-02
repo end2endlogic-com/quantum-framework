@@ -27,6 +27,11 @@ public final class MongoSeedRegistry implements SeedRegistry {
     }
 
     @Override
+    public void checkReadiness(SeedContext context) {
+        mongoClient.getDatabase(context.getRealm()).runCommand(new Document("ping", 1));
+    }
+
+    @Override
     public boolean shouldApply(SeedContext context,
                                SeedPackManifest manifest,
                                SeedPackManifest.Dataset dataset,

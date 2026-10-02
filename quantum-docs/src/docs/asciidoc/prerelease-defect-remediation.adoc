@@ -1,0 +1,9 @@
+= Pre-release correctness and security fixes
+
+OAuth issuance rejects inactive/deleted credentials and emits refresh tokens with their user and realm claims. Managed secret resolution decrypts using the stored IV and key version; plaintext values stored in the encrypted field are not treated as valid secrets.
+
+Reference deletion now checks the complete inbound reference set in one transaction before committing. Ontology deletion does not delete targets without a declared cascade. TBox activation and rollback use a transaction and a data-domain-scoped guard write to prevent concurrent first-activation write skew. A replica-set Mongo deployment is required; storage failures propagate instead of leaving partially switched active flags.
+
+The token CLI uses the current `/security/login` and `/security/service-token` contract. Missing tokens and failed requests return a nonzero command exit code. Its generated Java seam is derived from `quantum-cli/src/main/resources/openapi/cli-auth.openapi.yaml` using the adjacent SDK configuration; edit the producer contract and regenerate, not the generated interface or models.
+
+Configured CSV calculator failures become typed row errors and prevent that row from being committed. The seed readiness check probes configured seed sources and the registry backing store in the configured system realm. Custom registry implementations must implement `checkReadiness`; unsupported probes fail closed. Health requests perform read-only availability checks and do not apply seed data.

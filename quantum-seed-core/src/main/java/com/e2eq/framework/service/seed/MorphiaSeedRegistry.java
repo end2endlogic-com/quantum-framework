@@ -23,6 +23,12 @@ public class MorphiaSeedRegistry implements SeedRegistry {
     SeedRegistryRepository registryRepo;
 
     @Override
+    public void checkReadiness(SeedContext context) {
+        registryRepo.getMorphiaDataStoreWrapper().getDataStore(context.getRealm()).getDatabase()
+                .runCommand(new org.bson.Document("ping", 1));
+    }
+
+    @Override
     public boolean shouldApply(SeedContext context,
                                SeedPackManifest manifest,
                                SeedPackManifest.Dataset dataset,

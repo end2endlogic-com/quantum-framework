@@ -193,6 +193,14 @@ public class OAuthTokenResource {
     }
 
     private Response issueTokens(CredentialUserIdPassword cred) {
+        if (cred.getActiveStatus() == com.e2eq.framework.model.persistent.base.ActiveStatus.INACTIVE
+                || cred.getActiveStatus() == com.e2eq.framework.model.persistent.base.ActiveStatus.DELETED) {
+            return errorResponse("invalid_grant", "Credential is no longer authorized");
+        }
+        if (cred.getDomainContext() == null || cred.getDomainContext().getDefaultRealm() == null
+                || cred.getDomainContext().getDefaultRealm().isBlank()) {
+            return errorResponse("invalid_grant", "Credential realm is required");
+        }
         try {
             Set<String> roles = cred.getRoles() != null
                     ? new LinkedHashSet<>(Arrays.asList(cred.getRoles()))
@@ -211,7 +219,7 @@ public class OAuthTokenResource {
                     dc != null ? dc.getAccountId() : null,
                     expiresAt, issuer);
             String refresh = TokenUtils.generateRefreshToken(
-                    cred.getSubject(), tokenDuration * 2, issuer);
+                    cred.getSubject(), cred.getUserId(), dc.getDefaultRealm(), null, tokenDuration * 2, issuer);
             return tokenResponse(accessToken, refresh, tokenDuration, "Bearer");
         } catch (Exception e) {
             Log.error("Failed to issue tokens", e);

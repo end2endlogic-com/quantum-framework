@@ -27,38 +27,19 @@ public class SeedFrameworkHealthCheck implements HealthCheck {
     @Inject
     SeedMetrics seedMetrics;
 
+    @Inject
+    com.e2eq.framework.util.EnvConfigUtils environment;
+
     @Override
     public HealthCheckResponse call() {
         HealthCheckResponseBuilder builder = HealthCheckResponse.named("Seed Framework")
                 .up();
 
         try {
-            // Check if discovery service is functional
-            // Try to discover seed packs for a test realm (non-blocking check)
-            boolean discoveryHealthy = true;
-            try {
-                SeedContext testContext = SeedContext.builder("health-check").build();
-                // This is a lightweight check - we just verify the service responds
-                // We don't actually discover to avoid performance impact
-                discoveryHealthy = seedDiscoveryService != null;
-            } catch (Exception e) {
-                discoveryHealthy = false;
-                builder.down().withData("discoveryError", e.getMessage());
-            }
-
-            if (!discoveryHealthy) {
-                builder.down().withData("discovery", "unavailable");
-            } else {
-                builder.withData("discovery", "available");
-            }
-
-            // Check registry
-            boolean registryHealthy = seedRegistry != null;
-            if (!registryHealthy) {
-                builder.down().withData("registry", "unavailable");
-            } else {
-                builder.withData("registry", "available");
-            }
+            SeedContext context = SeedContext.builder(environment.getSystemRealm()).build();
+            seedDiscoveryService.checkReadiness(context);
+            seedRegistry.checkReadiness(context);
+            builder.withData("discovery", "available").withData("registry", "available");
 
             // Add metrics summary
             Map<String, Object> metrics = seedMetrics.getSummary();
@@ -74,17 +55,12 @@ public class SeedFrameworkHealthCheck implements HealthCheck {
                    .withData("totalFailure", failVal)
                    .withData("totalRecordsApplied", recsVal);
 
-            // Overall health: up if both discovery and registry are available
-            if (discoveryHealthy && registryHealthy) {
-                return builder.build();
-            } else {
-                return builder.down().build();
-            }
+            return builder.build();
 
         } catch (Exception e) {
             Log.errorf(e, "SeedFrameworkHealthCheck: error during health check");
             return builder.down()
-                    .withData("error", e.getMessage())
+                    .withData("error", "SEED_READINESS_CHECK_FAILED")
                     .build();
         }
     }
