@@ -1,8 +1,7 @@
 package com.e2eq.framework.oauth.resource;
 
 import com.e2eq.framework.model.auth.AuthProvider;
-import com.e2eq.framework.model.auth.AuthProviderFactory;
-import com.e2eq.framework.model.auth.provider.jwtToken.TokenUtils;
+import com.e2eq.framework.model.auth.provider.jwtToken.CustomTokenAuthProvider;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.oauth.model.AuthorizationCode;
@@ -42,13 +41,10 @@ public class OAuthTokenResource {
     CredentialRepo credentialRepo;
 
     @Inject
-    AuthProviderFactory authProviderFactory;
+    CustomTokenAuthProvider tokenProvider;
 
     @Inject
     EnvConfigUtils envConfigUtils;
-
-    @ConfigProperty(name = "mp.jwt.verify.issuer")
-    String issuer;
 
     @ConfigProperty(name = "com.b2bi.jwt.duration")
     long tokenDuration;
@@ -83,6 +79,7 @@ public class OAuthTokenResource {
         }
 
         OAuthClient client = clientOpt.get();
+        if (!client.isActive()) return errorResponse("invalid_client", "Client is inactive");
 
         // Validate client secret for confidential clients
         if (!client.isPublicClient()) {
@@ -157,7 +154,7 @@ public class OAuthTokenResource {
             return errorResponse("server_error", "User credential not found");
         }
 
-        return issueTokens(credOpt.get());
+        return issueTokens(client, credOpt.get());
     }
 
     private Response handleClientCredentials(OAuthClient client) {
@@ -170,7 +167,7 @@ public class OAuthTokenResource {
             return errorResponse("invalid_client",
                     "No credential linked to this client. Create a credential with userId matching the client_id.");
         }
-        return issueTokens(credOpt.get());
+        return issueTokens(client, credOpt.get());
     }
 
     private Response handleRefreshToken(OAuthClient client, String refreshToken) {
@@ -178,8 +175,7 @@ public class OAuthTokenResource {
             return errorResponse("invalid_request", "refresh_token is required");
         }
         try {
-            AuthProvider provider = authProviderFactory.getAuthProvider();
-            AuthProvider.LoginResponse loginResponse = provider.refreshTokens(refreshToken);
+            AuthProvider.LoginResponse loginResponse = tokenProvider.refreshTokens(refreshToken, client.getClientId(), applicationFor(client), client.getRealm());
             if (loginResponse.authenticated() && loginResponse.positiveResponse() != null) {
                 var pos = loginResponse.positiveResponse();
                 return tokenResponse(pos.accessToken(), pos.refreshToken(),
@@ -192,38 +188,23 @@ public class OAuthTokenResource {
         }
     }
 
-    private Response issueTokens(CredentialUserIdPassword cred) {
-        if (cred.getActiveStatus() == com.e2eq.framework.model.persistent.base.ActiveStatus.INACTIVE
-                || cred.getActiveStatus() == com.e2eq.framework.model.persistent.base.ActiveStatus.DELETED) {
-            return errorResponse("invalid_grant", "Credential is no longer authorized");
-        }
-        if (cred.getDomainContext() == null || cred.getDomainContext().getDefaultRealm() == null
-                || cred.getDomainContext().getDefaultRealm().isBlank()) {
-            return errorResponse("invalid_grant", "Credential realm is required");
-        }
+    private String applicationFor(OAuthClient client) {
+        return client.getApplicationId() == null || client.getApplicationId().isBlank()
+                ? client.getClientId() : client.getApplicationId();
+    }
+
+    private Response issueTokens(OAuthClient client, CredentialUserIdPassword cred) {
+        String application = applicationFor(client);
         try {
-            Set<String> roles = cred.getRoles() != null
-                    ? new LinkedHashSet<>(Arrays.asList(cred.getRoles()))
-                    : Set.of();
-            long expiresAt = TokenUtils.expiresAt(tokenDuration);
-            // Project the credential's tenant context (realm/tenant/org/account)
-            // into the token so it is not tenant-blind. See DomainContext.
-            com.e2eq.framework.model.security.DomainContext dc = cred.getDomainContext();
-            String accessToken = TokenUtils.generateUserToken(
-                    cred.getSubject(),
-                    cred.getUserId(),
-                    roles,
-                    dc != null ? dc.getDefaultRealm() : null,
-                    dc != null ? dc.getTenantId() : null,
-                    dc != null ? dc.getOrgRefName() : null,
-                    dc != null ? dc.getAccountId() : null,
-                    expiresAt, issuer);
-            String refresh = TokenUtils.generateRefreshToken(
-                    cred.getSubject(), cred.getUserId(), dc.getDefaultRealm(), null, tokenDuration * 2, issuer);
-            return tokenResponse(accessToken, refresh, tokenDuration, "Bearer");
-        } catch (Exception e) {
-            Log.error("Failed to issue tokens", e);
-            return errorResponse("server_error", "Token generation failed");
+            var result = tokenProvider.loginWithVerifiedSubject(
+                    cred.getSubject(), application, client.getRealm(), client.getClientId());
+            if (!result.authenticated() || result.positiveResponse() == null) {
+                return errorResponse("invalid_grant", "Credential is not authorized for the requested realm/application");
+            }
+            var session = result.positiveResponse();
+            return tokenResponse(session.accessToken(), session.refreshToken(), tokenDuration, "Bearer");
+        } catch (SecurityException e) {
+            return errorResponse("invalid_grant", "Credential is not authorized");
         }
     }
 

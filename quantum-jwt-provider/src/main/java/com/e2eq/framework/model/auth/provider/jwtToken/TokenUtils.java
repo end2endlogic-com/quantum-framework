@@ -377,6 +377,14 @@ public class TokenUtils {
 											 long durationInSeconds,
 											 String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
 
+        return generateRefreshToken(subject, userId, realm, activeApplication, durationInSeconds, issuer, null);
+    }
+
+    /** OAuth client binding is distinct from the authorized application (azp). */
+    public static String generateRefreshToken(String subject, String userId, String realm,
+            String activeApplication, long durationInSeconds, String issuer, String oauthClientId)
+            throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+
 		Objects.requireNonNull(subject, "subject cannot be null");
 		Objects.requireNonNull(issuer, "Issuer cannot be null");
 		if (durationInSeconds <= 0) {
@@ -391,6 +399,7 @@ public class TokenUtils {
 		claimsBuilder.audience("b2bi-api-client-refresh");
 		claimsBuilder.expiresAt(currentTimeInSecs + durationInSeconds + REFRESH_ADDITIONAL_DURATION_SECONDS);
 		claimsBuilder.claim("scope", REFRESH_SCOPE);
+        if (oauthClientId != null && !oauthClientId.isBlank()) claimsBuilder.claim("oauth_client_id", oauthClientId);
 		if (userId != null && !userId.isBlank()) claimsBuilder.claim("userId", userId);
 		if (realm != null && !realm.isBlank()) claimsBuilder.claim("realm", realm);
 		if (activeApplication != null && !activeApplication.isBlank()) claimsBuilder.claim("azp", activeApplication);

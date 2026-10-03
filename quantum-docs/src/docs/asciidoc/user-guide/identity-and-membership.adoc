@@ -27,7 +27,7 @@ Provision identities and memberships through the owning system-management plane.
 
 === Membership writes and external integrations
 
-`RealmMembershipService.upsertUserRealmRole` loads the existing assignment and preserves its stored DataDomain, but replaces supplied role, application and tenant grant lists. It is not an additive merge or a per-provider grant store. Its remote-mode write path currently fails explicitly because that operation is not exposed by the generated control-plane contract.
+`RealmMembershipService.upsertUserRealmRole` loads the existing assignment and preserves its stored DataDomain, but replaces supplied role, application and tenant grant lists. It is not an additive merge or a per-provider grant store. Its remote-mode write path uses the generated control-plane PUT operation and preserves the authoritative record returned by the service. Remote `membershipsForOrg` remains unsupported and fails explicitly.
 
 An external membership integration must introduce source ownership and effective-grant reconciliation before using this operation for automatic synchronization. It must preserve unrelated manual grants, handle concurrent edits, audit the policy and evidence behind each change, and define explicit removal semantics. Such source-aware synchronization is proposed work, not a capability supplied by the current membership service.
 
