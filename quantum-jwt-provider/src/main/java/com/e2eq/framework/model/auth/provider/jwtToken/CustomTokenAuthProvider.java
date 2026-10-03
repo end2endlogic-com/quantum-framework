@@ -606,17 +606,38 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
       return loginInternal(proof.email(), null, proof.applicationId(), realmId, true);
    }
 
+   /**
+    * Internal issuer boundary: invoke only after server-side verification of an
+    * authorization code or external provider identity. Never expose this method
+    * as an endpoint accepting a caller-asserted subject. All authorization and
+    * credential lifecycle checks remain the same as password login.
+    */
+   public LoginResponse loginWithVerifiedSubject(String subject, String applicationId,
+                                                  String realm, String oauthClientId) {
+      if (subject == null || subject.isBlank()) throw new SecurityException("VERIFIED_SUBJECT_REQUIRED");
+      return loginInternal(null, null, applicationId, realm, false, subject, oauthClientId);
+   }
+
    private LoginResponse loginInternal(String userId, String password, String applicationId,
                                        String requestedRealm, boolean verifiedEmail) {
+      return loginInternal(userId, password, applicationId, requestedRealm, verifiedEmail, null, null);
+   }
+
+   private LoginResponse loginInternal(String userId, String password, String applicationId,
+                                       String requestedRealm, boolean verifiedEmail,
+                                       String verifiedSubject, String oauthClientId) {
       try {
          String configuredRealm = envConfigUtils.getSystemRealm();
          Log.infof("CustomProvider: Checking for auth against %s realm", configuredRealm);
          // Use ignoreRules=true so credential lookup succeeds for unauthenticated callers (login form)
-         Optional<CredentialUserIdPassword> ocredential = credentialRepo.findByUserId(userId, configuredRealm, true);
+         Optional<CredentialUserIdPassword> ocredential = verifiedSubject == null
+            ? credentialRepo.findByUserId(userId, configuredRealm, true)
+            : credentialRepo.findBySubject(verifiedSubject, configuredRealm, true);
 
 
          if (ocredential.isPresent()) {
             CredentialUserIdPassword credential = ocredential.get();
+            userId = credential.getUserId();
             // Disabled credentials must not authenticate. null activeStatus is
             // legacy-allowed (rows that predate the flag); INACTIVE/DELETED are
             // authoritative. The negative envelope stays generic so account
@@ -676,12 +697,12 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
             // legacy password credentials cannot acquire a weaker authentication path.
             boolean emailCredential = credential.getCredentialType()
                   == com.e2eq.framework.model.security.CredentialType.EMAIL;
-            if (verifiedEmail != emailCredential) {
+            if (verifiedSubject == null && verifiedEmail != emailCredential) {
                throw new SecurityException("AUTHENTICATION_METHOD_NOT_ADMITTED");
             }
             String alg = credential.getHashingAlgorithm();
-            if (verifiedEmail || (alg != null && (alg.equalsIgnoreCase("BCrypt.default") || alg.toLowerCase().startsWith("bcrypt") || alg.toLowerCase().equals(EncryptionUtils.hashAlgorithm().toLowerCase())))) {
-               boolean isCredentialValid = verifiedEmail || EncryptionUtils.checkPassword(password, credential.getPasswordHash());
+            if (verifiedSubject != null || verifiedEmail || (alg != null && (alg.equalsIgnoreCase("BCrypt.default") || alg.toLowerCase().startsWith("bcrypt") || alg.toLowerCase().equals(EncryptionUtils.hashAlgorithm().toLowerCase())))) {
+               boolean isCredentialValid = verifiedSubject != null || verifiedEmail || EncryptionUtils.checkPassword(password, credential.getPasswordHash());
                if (isCredentialValid) {
                   // String authToken = generateAuthToken(userId);
                   String credentialRealm = (credential.getDomainContext() != null)
@@ -847,7 +868,7 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                      tokenRealm,
                      appAuth.resolved() ? appAuth.activeApplication() : null,
                      authToken,
-                     durationInSeconds);
+                     durationInSeconds, oauthClientId);
                   SecurityIdentity identity = validateAccessToken(authToken);
                   // Compute role provenance locally for login response: IDP + CREDENTIAL + USERGROUP
                   // Auth plugins do NOT need to do this; it's optional for login response only.
@@ -937,8 +958,22 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
 
    @Override
    public LoginResponse refreshTokens (String refreshToken) {
+      return refreshTokens(refreshToken, null);
+   }
+
+   /** A bound OAuth session can only be refreshed by its authenticated client. */
+   public LoginResponse refreshTokens(String refreshToken, String expectedOAuthClientId) {
+      return refreshTokens(refreshToken, expectedOAuthClientId, null, null);
+   }
+
+   public LoginResponse refreshTokens(String refreshToken, String expectedOAuthClientId,
+                                      String expectedApplication, String expectedRealm) {
       try {
          var refreshJwt = jwtParser.parse(refreshToken);
+         String oauthClientId = claimString(refreshJwt, "oauth_client_id");
+         if (!Objects.equals(oauthClientId, expectedOAuthClientId)) {
+            throw new SecurityException("Refresh token OAuth client binding mismatch");
+         }
          if (!TokenUtils.REFRESH_SCOPE.equals(claimString(refreshJwt, "scope"))) {
             throw new SecurityException("Token is not a refresh token");
          }
@@ -946,6 +981,12 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
          String tokenRealm = claimString(refreshJwt, "realm");
          String tokenUserId = claimString(refreshJwt, "userId");
          String activeApplication = claimString(refreshJwt, "azp");
+         if (expectedApplication != null && !Objects.equals(expectedApplication, activeApplication)) {
+            throw new SecurityException("OAuth client application mapping changed");
+         }
+         if (expectedRealm != null && !expectedRealm.isBlank() && !Objects.equals(expectedRealm, tokenRealm)) {
+            throw new SecurityException("OAuth client realm mapping changed");
+         }
          if (refreshSubject == null || refreshSubject.isBlank() || tokenRealm == null) {
             throw new SecurityException("Refresh token is missing subject or realm authority");
          }
@@ -1038,7 +1079,7 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
          String newRefreshToken = generateRefreshToken(
             refreshSubject, userId, tokenRealm,
             appAuth.resolved() ? appAuth.activeApplication() : null,
-            newAuthToken, durationInSeconds);
+            newAuthToken, durationInSeconds, oauthClientId);
          SecurityIdentity identity = validateAccessToken(newAuthToken);
 
          java.util.List<RoleAssignment> roleAssignments = allRoles.stream()
@@ -1161,7 +1202,7 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                                         String realm,
                                         String activeApplication,
                                         String accessToken,
-                                        long durationInSeconds) throws IOException
+                                        long durationInSeconds, String oauthClientId) throws IOException
                                                                                                              ,
                                                                                                              NoSuchAlgorithmException, InvalidKeySpecException {
 
@@ -1171,7 +1212,7 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
          realm,
          activeApplication,
          durationInSeconds,
-         issuer);
+         issuer, oauthClientId);
 
       CredentialRefreshToken refreshToken1 = CredentialRefreshToken.builder()
                                                 .userId(userId)
