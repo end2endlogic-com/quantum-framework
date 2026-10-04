@@ -26,7 +26,7 @@ import static org.junit.jupiter.api.Assertions.*;
 @io.quarkus.test.junit.TestProfile(SeedNoHttpTestProfile.class)
 public class SeedTransformsIntegrationTest {
 
-    private static final Path SEED_ROOT = Path.of("src", "test", "resources", "seed-packs");
+    private static final Path SEED_ROOT = Path.of("src", "test", "resources", "seed-fixtures");
     private static final String REALM = "test-seed-transforms-it";
 
     @Inject

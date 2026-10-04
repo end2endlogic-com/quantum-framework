@@ -48,7 +48,7 @@ public class QueryHintsProvider {
             "andOrNot", "&& (AND), || (OR), !! (NOT), () for grouping"
         ));
         summary.put("expand", "Use expand(path) to hydrate related entities in one result set. Paths are dotted; use [*] for array elements. Example: expand(customer) && status:ACTIVE. When expand(...) is present, the gateway uses AGGREGATION mode (requires feature.queryGateway.execution.enabled for execution).");
-        summary.put("ontologyEdges", "Ontology-aware list endpoints and permission rules can use hasEdge/hasEdgeAny/notHasEdge (via ListQueryRewriter) to filter by ontology relationships. For gateway find, use attribute filters; for ontology-constrained lists, use the ontology list endpoint for the entity type when available.");
+        summary.put("ontologyEdges", "Ontology-aware list endpoints and permission rules can use hasEdge/hasEdgeAny/notHasEdge (via ListQueryRewriter) to filter by ontology relationships. Gateway find also supports these predicates when the ontology Mongo provider is installed; attribute filters do not require that provider.");
         return summary;
     }
 
@@ -121,7 +121,7 @@ public class QueryHintsProvider {
         ));
         hints.add(map(
             "title", "Ontology relationships can filter list results",
-            "body", "When the application uses ontology edges (hasEdge, hasEdgeAny, notHasEdge), ontology-aware list endpoints can filter entities by relationship (e.g. 'orders placed in org X'). For the generic query gateway find, use attribute filters; for ontology-constrained lists, use the resource's ontology list endpoint when available.",
+            "body", "When the application uses ontology edges (hasEdge, hasEdgeAny, notHasEdge), ontology-aware list endpoints can filter entities by relationship (e.g. 'orders placed in org X'). The generic query gateway find also supports these predicates when the ontology Mongo provider is installed.",
             "exampleQuery", null,
             "rootTypeExample", null
         ));

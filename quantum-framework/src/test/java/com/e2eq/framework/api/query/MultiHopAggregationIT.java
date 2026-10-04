@@ -55,6 +55,7 @@ public class MultiHopAggregationIT extends BaseRepoTest {
             if (credop.isEmpty()) {
                 CredentialUserIdPassword cred = new CredentialUserIdPassword();
                 cred.setUserId(testUtils.getTestUserId());
+            cred.setRefName(testUtils.getTestUserId());
                 cred.setSubject(testUtils.getTestUserId());
                 cred.setRoles(new String[]{"admin", "user"});
                 DataDomain dd = testUtils.getTestDataDomain();

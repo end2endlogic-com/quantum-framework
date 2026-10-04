@@ -44,7 +44,7 @@ import static org.junit.jupiter.api.Assertions.*;
 @QuarkusTestResource(MongoDbInitResource.class)
 class MorphiaSeedRepositoryIntegrationTest {
 
-    private static final Path SEED_ROOT = Path.of("src", "test", "resources", "seed-packs");
+    private static final Path SEED_ROOT = Path.of("src", "test", "resources", "seed-fixtures");
     private static final String REALM = "test-morphia-seed-it";
 
     @Inject

@@ -39,6 +39,7 @@ public class MongoPolicyParityIT {
         DataDomain dd = new DataDomain("end2endlogic.com", "0000000001", "end2endlogic.com", 0, "principal@end2endlogic.com");
         admin = new PrincipalContext.Builder()
                 .withDefaultRealm(REALM)
+                .withScope("USER")
                 .withDataDomain(dd)
                 .withUserId("admin@end2endlogic.com")
                 .withRoles(new String[]{"admin"})
@@ -46,6 +47,7 @@ public class MongoPolicyParityIT {
 
         user = new PrincipalContext.Builder()
                 .withDefaultRealm(REALM)
+                .withScope("USER")
                 .withDataDomain(dd)
                 .withUserId("user@end2endlogic.com")
                 .withRoles(new String[]{"user"})
@@ -96,7 +98,9 @@ public class MongoPolicyParityIT {
         adminPolicy.getRules().add(allowUserProfileList);
 
         // Persist to Mongo under the test realm
-        policyRepo.save(REALM, adminPolicy);
+        try (var scope = com.e2eq.framework.model.securityrules.SecurityCallScope.openIgnoringRules()) {
+            policyRepo.save(REALM, adminPolicy);
+        }
 
         // Hydrate RuleContext from the repository and evaluate
         ruleContext.reloadFromRepo(REALM);

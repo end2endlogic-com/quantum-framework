@@ -54,7 +54,7 @@ The agent APIs and MCP bridge are abstract until you see how they are used in pr
 **Flow:**
 
 1. The AI client (or your app) connects to an MCP server that is configured to call your Quantum backend (`QUANTUM_BASE_URL`, `QUANTUM_AUTH_TOKEN`).
-2. The MCP server exposes six tools. The LLM chooses `query_find` and calls it with something like: `rootType: "Order"`, `query: "orderNumber:ORD-8842"`, `realm: "acme-corp"`.
+2. The default agent discovery surface exposes twelve gateway tools, including count, export, and the import lifecycle. The LLM chooses `query_find` and calls it with something like: `rootType: "Order"`, `query: "orderNumber:ORD-8842"`, `realm: "acme-corp"`.
 3. The bridge sends `POST /api/agent/execute` with `tool: "query_find"` and those `arguments`. The backend runs the query in the correct realm with your existing security and data scoping.
 4. The LLM gets back a list of matching orders (or none) and answers: “Order ORD-8842 is Shipped, delivered last Tuesday.”
 
@@ -138,7 +138,7 @@ Developers and agents need to know *what query string* to use for questions like
 
 * Answer: "What is the query string to retrieve locations in Atlanta?" → use `exampleQueries` (e.g. `city:Atlanta` or `address.city:Atlanta` for `rootType: Location`).
 * Suggest: "Did you know you could use the query gateway with expand on entity Order with relationship customer to get a combined result set?" → use `didYouKnow` (e.g. expand(customer) && status:ACTIVE).
-* Use ontology: When the app uses ontology edges (hasEdge, hasEdgeAny, notHasEdge), `queryGrammarSummary.ontologyEdges` and a did-you-know hint explain that ontology-aware list endpoints filter by relationship; for gateway find, use attribute filters.
+* Use ontology: When the app uses ontology edges (hasEdge, hasEdgeAny, notHasEdge), `queryGrammarSummary.ontologyEdges` and a did-you-know hint explain that ontology-aware list endpoints filter by relationship; gateway find also supports these predicates when the ontology Mongo provider is installed.
 
 **Response shape:**
 
@@ -161,7 +161,7 @@ Developers and agents need to know *what query string* to use for questions like
 === Expand and ontology in the same flow
 
 * **expand(path)** — Use in the *query string* passed to `query_find` or `query_plan`. The gateway parses expand(...) and selects AGGREGATION mode; execution (when enabled) returns a combined result set. See xref:{doc-root}/user-guide/query-expansion.adoc[Relationship hydration with expand(path)] and xref:{doc-root}/user-guide/planner-and-query-gateway.adoc[Planner and QueryGateway].
-* **Ontology edges (hasEdge, hasEdgeAny, notHasEdge)** — Used by ontology-aware list endpoints and permission rules (ListQueryRewriter). For the *generic* query gateway find, use normal attribute filters. For entities that have ontology list endpoints (e.g. GET /locations/ontology), those endpoints accept ontology constraints; the agent can point the user to the right endpoint or use query_find with attribute filters only.
+* **Ontology edges (hasEdge, hasEdgeAny, notHasEdge)** — Used by ontology-aware list endpoints and permission rules (ListQueryRewriter). The generic query gateway also accepts these predicates when the ontology Mongo provider is installed; normal attribute filters remain available without that provider.
 
 In short: expose `GET /api/agent/query-hints` so developers and agents can ask "what query gets X?" and get "did you know you could use expand(...) to get a combined result set that looks like this...".
 
@@ -254,13 +254,13 @@ Agent integration is **multi-tenant**: each tenant (realm) has its own configura
 
 See the implementation design (`docs/design/AI_AGENT_INTEGRATION_DESIGN.md`) for the data model (e.g. AgentTenantConfig), storage options, and runAs resolution.
 
-== APIs to Add (Gateway-Centric)
+== Gateway-Centric Agent APIs
 
 === 1. Agent Tools / Capabilities (Discovery)
 
 **Purpose:** One endpoint that returns a machine-readable list of "tools" the agent can call—scoped to **Query Gateway operations** so the agent has a single, consistent CRUDL surface.
 
-**Suggested endpoint:** `GET /api/agent/tools` (or `GET /api/agent/capabilities`).
+**Endpoint:** `GET /api/agent/tools`. The default catalog contains the twelve tools below; realm-specific configuration can restrict the returned set.
 
 **Response shape (conceptual):**
 
@@ -281,8 +281,8 @@ See the implementation design (`docs/design/AI_AGENT_INTEGRATION_DESIGN.md`) for
 
 **Implementation notes:**
 
-* Implement by enumerating the six gateway operations (and their request DTOs) from `QueryGatewayResource`; no need to scan the rest of the REST API space.
-* Only include tools the current principal is allowed to use (e.g. permission for integration/query and the corresponding action).
+* `AgentToolsProvider` defines the discovery catalog and `AgentExecuteHandler` dispatches these gateway operations using their request DTOs.
+* Discovery is not an authorization grant. Each execution still requires the principal to pass the gateway action and realm checks.
 * Response format can align with OpenAI function calling or MCP tool definitions so agents and MCP bridges consume it directly.
 
 **Why:** Agents discover a single CRUDL surface (the gateway) instead of many domain endpoints; aligns with "Tools" in Palantir AIP while keeping integration simple.

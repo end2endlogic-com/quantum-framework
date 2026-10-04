@@ -39,7 +39,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * 7. Verify APIs return correct edges and provenance
  */
 @QuarkusTest
-public class ChainInferenceAndReindexIT {
+public class ChainInferenceAndReindexIT extends com.e2eq.ontology.mongo.PrivilegedOntologyFixture {
 
     private static final String REALM = "test-chain-inference";
 

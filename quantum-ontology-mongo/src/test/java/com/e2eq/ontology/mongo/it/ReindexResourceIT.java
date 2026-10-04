@@ -18,7 +18,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
 
 @QuarkusTest
-public class ReindexResourceIT {
+public class ReindexResourceIT extends com.e2eq.ontology.mongo.PrivilegedOntologyFixture {
 
     private static final String TENANT = "test-system-com"; // default test realm used by tests
 
@@ -90,11 +90,11 @@ public class ReindexResourceIT {
         io.quarkus.logging.Log.infof("[DEBUG_LOG] Edges before: order=%d, cust=%d", orderEdgesBefore, custEdgesBefore);
 
         // Trigger reindex with force on service directly (avoids HTTP filters)
-        reindexer.runAsync("ontology-it", true);
+        reindexer.runAsync(datastore.getDatabase().getName(), true);
         waitUntilCompleted(15000);
 
         // Version should be set in meta
-        var meta = metaRepo.getSingleton("ontology-it").orElse(null);
+        var meta = metaRepo.getSingleton(datastore.getDatabase().getName()).orElse(null);
         assertThat(meta, notNullValue());
         assertThat(meta.getYamlHash(), notNullValue());
         assertThat(meta.getAppliedAt(), notNullValue());
@@ -113,7 +113,7 @@ public class ReindexResourceIT {
         int custEdgesAfter1 = edgeRepo.findBySrc(testDataDomain, cust.getId().toString()).size();
 
         // Trigger again
-        reindexer.runAsync("ontology-it", true);
+        reindexer.runAsync(datastore.getDatabase().getName(), true);
         waitUntilCompleted(15000);
 
         int orderEdgesAfter2 = edgeRepo.findBySrc(testDataDomain, order.getId().toString()).size();

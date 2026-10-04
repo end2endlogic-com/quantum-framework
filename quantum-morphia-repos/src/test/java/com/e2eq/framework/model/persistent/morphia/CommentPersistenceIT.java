@@ -32,7 +32,8 @@ class CommentPersistenceIT {
         String databaseName = "test-quantum-comments-"
                 + UUID.randomUUID().toString().replace("-", "");
         try (MongoClient client = MongoClients.create(
-                "mongodb://127.0.0.1:27017/?replicaSet=rs0")) {
+                System.getProperty("quantum.test.mongo-uri",
+                        System.getenv().getOrDefault("MONGODB_CONNECTION_STRING", "mongodb://127.0.0.1:27017/?replicaSet=rs0")))) {
             MorphiaDatastore datastore = (MorphiaDatastore) Morphia.createDatastore(
                     client,
                     ManualMorphiaConfig.configure().database(databaseName));
@@ -129,7 +130,8 @@ class CommentPersistenceIT {
             assertTrue(indexNames(client, databaseName, "comment_chains")
                     .contains("uidx_comment_chain_external_subject"));
         } finally {
-            try (MongoClient cleanup = MongoClients.create("mongodb://127.0.0.1:27017")) {
+            try (MongoClient cleanup = MongoClients.create(System.getProperty("quantum.test.mongo-uri",
+                        System.getenv().getOrDefault("MONGODB_CONNECTION_STRING", "mongodb://127.0.0.1:27017")))) {
                 cleanup.getDatabase(databaseName).drop();
             }
         }

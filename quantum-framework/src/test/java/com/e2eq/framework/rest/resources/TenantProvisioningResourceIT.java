@@ -16,7 +16,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
 
 @QuarkusTest
-@TestSecurity(user = "sysAdmin@system-com", roles = {"admin"})
+@TestSecurity(user = "system@system.com", roles = {"admin"})
 public class TenantProvisioningResourceIT {
 
     @Inject UserRealmRoleRepo userRealmRoleRepo;
@@ -24,13 +24,16 @@ public class TenantProvisioningResourceIT {
 
     @Test
     void provision_with_archetype_applies_seed_packs() {
+        String domain = "archetype-" + java.util.UUID.randomUUID().toString().substring(0, 8) + ".example";
+        String adminUser = "admin@" + domain;
         // Prepare request to provision a new tenant with DemoArchetype
         Map<String, Object> body = Map.of(
-                "tenantEmailDomain", "demo-archetype.example",
-                "orgRefName", "demo-archetype.example",
+                "tenantEmailDomain", domain,
+                "applicationId", "quantum-framework-test",
+                "orgRefName", domain,
                 "accountId", "9999999999",
-                "adminUserId", "admin@demo-archetype.example",
-                "adminUsername", "admin@demo-archetype.example",
+                "adminUserId", adminUser,
+                "adminUsername", adminUser,
                 "adminPassword", "secret",
                 "archetypes", List.of("DemoArchetype")
         );
@@ -44,7 +47,7 @@ public class TenantProvisioningResourceIT {
             .then()
                 .statusCode(anyOf(is(200), is(201)))
                 .contentType(ContentType.JSON)
-                .body("realmId", equalTo("demo-archetype-example"))
+                .body("realmId", equalTo("quantum-framework-test-D-" + domain.replace('.', '-')))
                 .body("executionRef", notNullValue())
                 .body("status", equalTo("COMPLETED"))
                 .extract()
@@ -55,14 +58,14 @@ public class TenantProvisioningResourceIT {
 
         assertThat(
             userRealmRoleRepo.findActiveRolesForRealmWithIgnoreRules(
-                "admin@demo-archetype.example",
+                adminUser,
                 realm,
                 envConfigUtils.getSystemRealm()
             ),
             containsInAnyOrder("admin", "user")
         );
 
-        given()
+        given().header("X-Realm", realm)
             .when()
                 .get("/admin/tenants/runs/{executionRef}", executionRef)
             .then()
@@ -73,7 +76,7 @@ public class TenantProvisioningResourceIT {
                 .body("status", equalTo("COMPLETED"));
 
         // 2) Verify that history for the new realm includes demo-seed entries (archetype includes demo-seed)
-        given()
+        given().header("X-Realm", realm)
             .when()
                 .get("/admin/seeds/history/{realm}", realm)
             .then()
@@ -82,7 +85,7 @@ public class TenantProvisioningResourceIT {
                 .body("any { it.seedPack == 'demo-seed' }", is(true));
 
         // 3) Pending should not include demo-seed immediately after apply
-        given()
+        given().header("X-Realm", realm)
             .when()
                 .get("/admin/seeds/pending/{realm}", realm)
             .then()

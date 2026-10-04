@@ -152,7 +152,9 @@ public class FulfillmentCollaborationIT {
         order.setUnitPrice(unitPrice);
         order.setMargin(margin);
         datastore.save(order);
-        edgeRepo.upsert(realmDomain, "SalesOrder", ref, "placedBy", "Organization", customerOrg, false, null);
+        try (var fixture = com.e2eq.framework.model.securityrules.SecurityCallScope.openIgnoringRules()) {
+            edgeRepo.upsert(realmDomain, "SalesOrder", ref, "placedBy", "Organization", customerOrg, false, null);
+        }
     }
 
     private void plan(String ref, String route, String orderRef, String carrierOrg, String supplierOrg) {
@@ -161,9 +163,17 @@ public class FulfillmentCollaborationIT {
         plan.setRoute(route);
         plan.setStatus("IN_TRANSIT");
         datastore.save(plan);
-        edgeRepo.upsert(realmDomain, "FulfillmentPlan", ref, "fulfills", "SalesOrder", orderRef, false, null);
-        edgeRepo.upsert(realmDomain, "SalesOrder", orderRef, "fulfilledBy", "FulfillmentPlan", ref, false, null);
-        edgeRepo.upsert(realmDomain, "FulfillmentPlan", ref, "assignedTo", "Organization", carrierOrg, false, null);
-        edgeRepo.upsert(realmDomain, "FulfillmentPlan", ref, "suppliedBy", "Organization", supplierOrg, false, null);
+        try (var fixture = com.e2eq.framework.model.securityrules.SecurityCallScope.openIgnoringRules()) {
+            edgeRepo.upsert(realmDomain, "FulfillmentPlan", ref, "fulfills", "SalesOrder", orderRef, false, null);
+        }
+        try (var fixture = com.e2eq.framework.model.securityrules.SecurityCallScope.openIgnoringRules()) {
+            edgeRepo.upsert(realmDomain, "SalesOrder", orderRef, "fulfilledBy", "FulfillmentPlan", ref, false, null);
+        }
+        try (var fixture = com.e2eq.framework.model.securityrules.SecurityCallScope.openIgnoringRules()) {
+            edgeRepo.upsert(realmDomain, "FulfillmentPlan", ref, "assignedTo", "Organization", carrierOrg, false, null);
+        }
+        try (var fixture = com.e2eq.framework.model.securityrules.SecurityCallScope.openIgnoringRules()) {
+            edgeRepo.upsert(realmDomain, "FulfillmentPlan", ref, "suppliedBy", "Organization", supplierOrg, false, null);
+        }
     }
 }

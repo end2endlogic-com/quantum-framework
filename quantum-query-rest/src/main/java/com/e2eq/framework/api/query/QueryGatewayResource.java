@@ -257,7 +257,13 @@ public class QueryGatewayResource {
             }
         }
 
-        PlannedQuery planned = MorphiaUtils.convertToPlannedQuery(req.query, root, limit, skip, sortFields, variableMap, stagePolicies);
+        PlannedQuery planned;
+        try {
+            planned = MorphiaUtils.convertToPlannedQuery(req.query, root, limit, skip, sortFields, variableMap, stagePolicies);
+        } catch (IllegalArgumentException invalidQuery) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(Map.of("error", "InvalidQuery", "message", invalidQuery.getMessage())).build();
+        }
         if (planned.getMode() == PlannerResult.Mode.AGGREGATION) {
             if (!aggregationExecutionEnabled) {
                 Map<String, Object> body = new HashMap<>();
@@ -674,6 +680,12 @@ public class QueryGatewayResource {
             // Apply query filter if provided
             if (req.query != null && !req.query.isBlank()) {
                 Map<String, String> variableMap = variableMapForQuery(req.realm, root);
+                if (new com.e2eq.framework.model.persistent.morphia.planner.QueryPlanner()
+                        .analyze(req.query).getMode() == PlannerResult.Mode.AGGREGATION) {
+                    return Response.status(Response.Status.BAD_REQUEST)
+                            .entity(Map.of("error", "InvalidQuery", "message",
+                                    "Delete queries cannot use expand() - only simple filter queries are supported")).build();
+                }
                 PlannedQuery planned = MorphiaUtils.convertToPlannedQuery(req.query, root, null, null, null, variableMap);
                 if (planned.getMode() == PlannerResult.Mode.AGGREGATION) {
                     Map<String, Object> error = new HashMap<>();

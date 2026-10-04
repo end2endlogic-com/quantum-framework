@@ -18,6 +18,7 @@ import static org.hamcrest.Matchers.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 @QuarkusTest
+@io.quarkus.test.security.TestSecurity(user = "system@system.com", roles = {"admin"})
 public class QueryGatewayResourceIT {
 
     @Inject
@@ -38,7 +39,7 @@ public class QueryGatewayResourceIT {
         Map<String,Object> body = new HashMap<>();
         body.put("rootType", CodeList.class.getName());
         body.put("query", "category:default");
-        given()
+        given().header("X-Realm", realm)
             .contentType(ContentType.JSON)
             .body(body)
         .when()
@@ -49,7 +50,7 @@ public class QueryGatewayResourceIT {
             .body("expandPaths", hasSize(0));
 
         body.put("query", "expand(customer) && category:default");
-        given()
+        given().header("X-Realm", realm)
             .contentType(ContentType.JSON)
             .body(body)
         .when()
@@ -62,7 +63,7 @@ public class QueryGatewayResourceIT {
     }
 
     @Test
-    public void find_endpoint_executes_filter_mode_and_501_for_aggregation() {
+    public void find_endpoint_executes_filter_mode_and_rejects_unknown_expand_path() {
         Map<String,Object> body = new HashMap<>();
         body.put("rootType", CodeList.class.getName());
         body.put("query", "category:*test*");
@@ -72,7 +73,7 @@ public class QueryGatewayResourceIT {
         body.put("page", page);
         body.put("realm", realm);
 
-        given()
+        given().header("X-Realm", realm)
             .contentType(ContentType.JSON)
             .body(body)
         .when()
@@ -84,17 +85,16 @@ public class QueryGatewayResourceIT {
             .body("limit", is(10))
             .body("filter", is("category:*test*"));
 
-        // Aggregation/expand execution is gated off (501) because the secured $match for the
-        // aggregation path is not yet implemented; shipping it would bypass row/field governance.
+        // CodeList has no customer relationship; invalid expand paths are client errors.
         body.put("query", "expand(customer) && category:default");
-        given()
+        given().header("X-Realm", realm)
             .contentType(ContentType.JSON)
             .body(body)
         .when()
             .post("/api/query/find")
         .then()
-            .statusCode(501)
-            .body("error", is("NotImplemented"));
+            .statusCode(400)
+            .body("error", is("InvalidQuery"));
     }
 
     // ========================================================================
@@ -103,7 +103,7 @@ public class QueryGatewayResourceIT {
 
     @Test
     public void rootTypes_endpoint_returns_list_of_mapped_entities() {
-        given()
+        given().header("X-Realm", realm)
             .contentType(ContentType.JSON)
         .when()
             .get("/api/query/rootTypes")
@@ -116,7 +116,7 @@ public class QueryGatewayResourceIT {
 
     @Test
     public void rootTypes_endpoint_returns_expected_fields() {
-        Response response = given()
+        Response response = given().header("X-Realm", realm)
             .contentType(ContentType.JSON)
         .when()
             .get("/api/query/rootTypes")
@@ -146,7 +146,7 @@ public class QueryGatewayResourceIT {
     @Test
     public void rootTypes_endpoint_includes_codelist() {
         // CodeList should be a mapped entity
-        given()
+        given().header("X-Realm", realm)
             .contentType(ContentType.JSON)
         .when()
             .get("/api/query/rootTypes")
@@ -158,7 +158,7 @@ public class QueryGatewayResourceIT {
 
     @Test
     public void rootTypes_endpoint_results_are_sorted_by_simple_name() {
-        Response response = given()
+        Response response = given().header("X-Realm", realm)
             .contentType(ContentType.JSON)
         .when()
             .get("/api/query/rootTypes")
@@ -186,7 +186,7 @@ public class QueryGatewayResourceIT {
         body.put("rootType", "CodeList"); // Simple name instead of fully qualified
         body.put("query", "category:default");
 
-        given()
+        given().header("X-Realm", realm)
             .contentType(ContentType.JSON)
             .body(body)
         .when()
@@ -207,7 +207,7 @@ public class QueryGatewayResourceIT {
         page.put("skip", 0);
         body.put("page", page);
 
-        given()
+        given().header("X-Realm", realm)
             .contentType(ContentType.JSON)
             .body(body)
         .when()
@@ -224,7 +224,7 @@ public class QueryGatewayResourceIT {
         body.put("rootType", "NonExistentEntity");
         body.put("query", "category:default");
 
-        given()
+        given().header("X-Realm", realm)
             .contentType(ContentType.JSON)
             .body(body)
         .when()
@@ -241,7 +241,7 @@ public class QueryGatewayResourceIT {
         body.put("query", "category:default");
         // rootType is not set
 
-        given()
+        given().header("X-Realm", realm)
             .contentType(ContentType.JSON)
             .body(body)
         .when()
@@ -257,7 +257,7 @@ public class QueryGatewayResourceIT {
         body.put("rootType", "   ");
         body.put("query", "category:default");
 
-        given()
+        given().header("X-Realm", realm)
             .contentType(ContentType.JSON)
             .body(body)
         .when()
@@ -273,7 +273,7 @@ public class QueryGatewayResourceIT {
         body.put("rootType", CodeList.class.getName()); // Fully qualified
         body.put("query", "category:default");
 
-        given()
+        given().header("X-Realm", realm)
             .contentType(ContentType.JSON)
             .body(body)
         .when()
@@ -289,7 +289,7 @@ public class QueryGatewayResourceIT {
         body.put("rootType", "com.example.NonExistentClass");
         body.put("query", "category:default");
 
-        given()
+        given().header("X-Realm", realm)
             .contentType(ContentType.JSON)
             .body(body)
         .when()
@@ -310,7 +310,7 @@ public class QueryGatewayResourceIT {
         page.put("skip", 5);
         body.put("page", page);
 
-        given()
+        given().header("X-Realm", realm)
             .contentType(ContentType.JSON)
             .body(body)
         .when()
@@ -338,7 +338,7 @@ public class QueryGatewayResourceIT {
         page.put("skip", 0);
         body.put("page", page);
 
-        given()
+        given().header("X-Realm", realm)
             .contentType(ContentType.JSON)
             .body(body)
         .when()
@@ -370,7 +370,7 @@ public class QueryGatewayResourceIT {
         body.put("realm", realm);
         body.put("entity", entity);
 
-        Response response = given()
+        Response response = given().header("X-Realm", realm)
             .contentType(ContentType.JSON)
             .body(body)
         .when()
@@ -391,7 +391,7 @@ public class QueryGatewayResourceIT {
             deleteBody.put("realm", realm);
             deleteBody.put("id", id);
 
-            given()
+            given().header("X-Realm", realm)
                 .contentType(ContentType.JSON)
                 .body(deleteBody)
             .when()
@@ -418,7 +418,7 @@ public class QueryGatewayResourceIT {
         body.put("realm", realm);
         body.put("entity", entity);
 
-        Response response = given()
+        Response response = given().header("X-Realm", realm)
             .contentType(ContentType.JSON)
             .body(body)
         .when()
@@ -436,7 +436,7 @@ public class QueryGatewayResourceIT {
             deleteBody.put("realm", realm);
             deleteBody.put("id", id);
 
-            given()
+            given().header("X-Realm", realm)
                 .contentType(ContentType.JSON)
                 .body(deleteBody)
             .when()
@@ -451,7 +451,7 @@ public class QueryGatewayResourceIT {
         body.put("realm", realm);
         // entity is not set
 
-        given()
+        given().header("X-Realm", realm)
             .contentType(ContentType.JSON)
             .body(body)
         .when()
@@ -471,7 +471,7 @@ public class QueryGatewayResourceIT {
         body.put("realm", realm);
         body.put("entity", entity);
 
-        given()
+        given().header("X-Realm", realm)
             .contentType(ContentType.JSON)
             .body(body)
         .when()
@@ -503,7 +503,7 @@ public class QueryGatewayResourceIT {
         saveBody.put("realm", realm);
         saveBody.put("entity", entity);
 
-        String id = given()
+        String id = given().header("X-Realm", realm)
             .contentType(ContentType.JSON)
             .body(saveBody)
         .when()
@@ -520,7 +520,7 @@ public class QueryGatewayResourceIT {
         deleteBody.put("realm", realm);
         deleteBody.put("id", id);
 
-        given()
+        given().header("X-Realm", realm)
             .contentType(ContentType.JSON)
             .body(deleteBody)
         .when()
@@ -539,7 +539,7 @@ public class QueryGatewayResourceIT {
         body.put("realm", realm);
         body.put("id", "000000000000000000000000"); // Valid ObjectId format but doesn't exist
 
-        given()
+        given().header("X-Realm", realm)
             .contentType(ContentType.JSON)
             .body(body)
         .when()
@@ -557,7 +557,7 @@ public class QueryGatewayResourceIT {
         body.put("realm", realm);
         body.put("id", "not-a-valid-objectid");
 
-        given()
+        given().header("X-Realm", realm)
             .contentType(ContentType.JSON)
             .body(body)
         .when()
@@ -574,7 +574,7 @@ public class QueryGatewayResourceIT {
         body.put("realm", realm);
         // id is not set
 
-        given()
+        given().header("X-Realm", realm)
             .contentType(ContentType.JSON)
             .body(body)
         .when()
@@ -606,7 +606,7 @@ public class QueryGatewayResourceIT {
             saveBody.put("realm", realm);
             saveBody.put("entity", entity);
 
-            given()
+            given().header("X-Realm", realm)
                 .contentType(ContentType.JSON)
                 .body(saveBody)
             .when()
@@ -621,7 +621,7 @@ public class QueryGatewayResourceIT {
         deleteBody.put("realm", realm);
         deleteBody.put("query", "category:" + marker);
 
-        given()
+        given().header("X-Realm", realm)
             .contentType(ContentType.JSON)
             .body(deleteBody)
         .when()
@@ -639,7 +639,7 @@ public class QueryGatewayResourceIT {
         body.put("realm", realm);
         body.put("query", "key:this-definitely-does-not-exist-" + System.currentTimeMillis());
 
-        given()
+        given().header("X-Realm", realm)
             .contentType(ContentType.JSON)
             .body(body)
         .when()
@@ -657,7 +657,7 @@ public class QueryGatewayResourceIT {
         body.put("realm", realm);
         body.put("query", "expand(customer) && category:default");
 
-        given()
+        given().header("X-Realm", realm)
             .contentType(ContentType.JSON)
             .body(body)
         .when()
@@ -678,7 +678,7 @@ public class QueryGatewayResourceIT {
         body.put("realm", realm);
         body.put("query", "refName:non-existent-for-safety-" + System.currentTimeMillis());
 
-        given()
+        given().header("X-Realm", realm)
             .contentType(ContentType.JSON)
             .body(body)
         .when()

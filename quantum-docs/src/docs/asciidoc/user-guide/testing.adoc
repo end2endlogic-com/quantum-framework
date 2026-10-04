@@ -1,6 +1,53 @@
 [[testing]]
 == Testing in Quantum: Security Contexts, Repos, and REST APIs
 
+=== Running the repository suites
+
+Use a disposable single-node Mongo replica set. The framework test resource may drop databases whose names begin with `test-`; do not reuse a shared Mongo instance. In one terminal:
+
+[source,bash]
+----
+mkdir -p /tmp/quantum-test-mongo
+mongod --dbpath /tmp/quantum-test-mongo --port 27965 \
+  --bind_ip 127.0.0.1 --replSet quantumTests
+----
+
+In a second terminal, initialize the new replica set once and run from the repository root:
+
+[source,bash]
+----
+mongosh 'mongodb://127.0.0.1:27965/?directConnection=true' --eval \
+  'rs.initiate({_id:"quantumTests",members:[{_id:0,host:"127.0.0.1:27965"}]})'
+export MONGODB_CONNECTION_STRING='mongodb://127.0.0.1:27965/?replicaSet=quantumTests'
+mvn -B clean package -Dquarkus.mongodb.devservices.enabled=false \
+  -Dquarkus.http.test-port=0 -Dquarkus.http.test-ssl-port=0
+----
+
+`test-port=0` lets Quarkus select a free port; RestAssured receives that port automatically. This avoids collisions with locally running applications. The configured framework test realms are `test-system-quantum-com`, `test-quantum-com`, and `test-mycompanyxyz-com`.
+
+Surefire normally discovers `Test*`, `*Test`, `*Tests`, and `*TestCase`; a successful `package` alone does not prove that `*IT` classes ran. Include the repository's JVM integration classes explicitly when validating persistence and HTTP behavior. Native-image tests and externally credentialed provider tests have separate prerequisites. Always inspect nonzero test counts and skipped-test reasons in each module's `target/surefire-reports` and, where configured, `target/failsafe-reports`.
+
+To select both default tests and JVM `*IT` classes explicitly:
+
+[source,bash]
+----
+mvn -B clean package '-Dtest=Test*,*Test,*Tests,*TestCase,*IT' \
+  -Dsurefire.failIfNoSpecifiedTests=false \
+  -Dquarkus.http.test-port=0 -Dquarkus.http.test-ssl-port=0 \
+  -Dquarkus.mongodb.connection-string="$MONGODB_CONNECTION_STRING" \
+  -Dquantum.test.mongo-uri="$MONGODB_CONNECTION_STRING" \
+  -Dquantum.review.mongo-uri="$MONGODB_CONNECTION_STRING" \
+  -Dquarkus.mongodb.devservices.enabled=false
+----
+
+The `failIfNoSpecifiedTests` setting permits modules with no matching tests; it does not suppress assertion failures. Check the per-module reports to establish coverage.
+
+Direct Mongo integration tests accept `-Dquantum.test.mongo-uri=...`, then `MONGODB_CONNECTION_STRING`, then their documented localhost default. Use the same URI for setup and teardown. The focused release regression tests also accept `-Dquantum.review.mongo-uri=...`.
+
+A full release check additionally renders HTML/PDF, checks local documentation links, and verifies live issuer/provider and published SDK compatibility in the selected environment. Local tests do not establish those deployment gates.
+
+Test packs under `quantum-framework/src/test/resources/seed-packs` are valid auto-discovered bootstrap fixtures. Negative cases, custom transform examples, and reference-resolution fixtures live under `seed-fixtures` and are loaded explicitly by their tests. This keeps tenant-provisioning tests from accidentally applying deliberately invalid datasets.
+
 === Testing Framework
 This guide explains how to write effective tests in the Quantum framework, with a focus on setting the security context and choosing the right Quarkus testing patterns for repository logic vs. REST APIs.
 
@@ -22,7 +69,7 @@ In addition, it outlines how to test REST endpoints vs. repository logic and hig
 
 
 === Pattern 1 — Extend BaseRepoTest
-For repository tests (no HTTP), the simplest approach is to extend BaseRepoTest.
+Within this repository, repository tests can extend the test-only `BaseRepoTest` in `quantum-framework/src/test/java`. It is not shipped as a production library API; application tests should establish their own fixtures and use `SecurityCallScope` or `SecuritySession`.
 
 What BaseRepoTest does for you:
 - Initializes RuleContext with default rules.
@@ -44,7 +91,7 @@ class MyRepoTest extends com.e2eq.framework.persistent.BaseRepoTest {
     // Activate the security context for this block
     try (final com.e2eq.framework.securityrules.SecuritySession ignored =
              new com.e2eq.framework.securityrules.SecuritySession(pContext, rContext)) {
-      var list = userProfileRepo.list(testUtils.getTestRealm());
+      var list = userProfileRepo.getList(testUtils.getTestRealm(), 0, 10, null, null);
       org.junit.jupiter.api.Assertions.assertNotNull(list);
     }
   }
@@ -84,50 +131,24 @@ Tips:
 - You can construct custom PrincipalContext/ResourceContext for specific scenarios (e.g., different roles or realms) and pass them to SecuritySession.
 
 
-=== Pattern 3 — Scoped-call wrapper (ScopedCallScope)
-If you prefer not to repeat try-with-resources blocks, wrap your work in a helper that creates a SecuritySession, runs your logic, and ensures cleanup. This is sometimes called a “scoped call” pattern, often referred to as a ScopedCallScope.
+=== Pattern 3 — Use the shared SecurityCallScope
 
-Example helper (placed in test sources):
+`com.e2eq.framework.model.securityrules.SecurityCallScope` supplies nestable context scopes. It restores the previous contexts when the scope closes, including when repository work throws. Reuse it rather than adding an application-local wrapper.
+
 [source,java]
 ----
-public final class SecurityScopes {
-  private SecurityScopes() {}
-
-  public static <T> T call(
-      com.e2eq.framework.model.securityrules.PrincipalContext p,
-      com.e2eq.framework.model.securityrules.ResourceContext r,
-      java.util.concurrent.Callable<T> work) {
-    try (final com.e2eq.framework.securityrules.SecuritySession s =
-             new com.e2eq.framework.securityrules.SecuritySession(p, r)) {
-      try { return work.call(); }
-      catch (Exception e) { throw new RuntimeException(e); }
-    }
-  }
-
-  public static void run(
-      com.e2eq.framework.model.securityrules.PrincipalContext p,
-      com.e2eq.framework.model.securityrules.ResourceContext r,
-      Runnable work) {
-    try (final com.e2eq.framework.securityrules.SecuritySession s =
-             new com.e2eq.framework.securityrules.SecuritySession(p, r)) {
-      work.run();
-    }
-  }
+try (var scope = com.e2eq.framework.model.securityrules.SecurityCallScope.open(pContext, rContext)) {
+  var rows = repo.getList(testUtils.getTestRealm(), 0, 10, null, null);
+  org.junit.jupiter.api.Assertions.assertNotNull(rows);
 }
 ----
 
-Usage:
-[source]
-----
-var result = SecurityScopes.call(pContext, rContext, () -> repo.getByUserId(realm, userId));
-SecurityScopes.run(pContext, rContext, () -> repo.save(realm, entity));
-----
-
-This achieves the same effect as try-with-resources but centralizes the pattern.
-
+Scopes apply to the current thread. Establish an explicit context in worker threads; a scope does not propagate automatically across asynchronous boundaries.
 
 === Pattern 4 — @TestSecurity annotation (Quarkus)
 For tests that run through HTTP (and in some repo tests), you can use Quarkus’ @io.quarkus.test.security.TestSecurity to set the SecurityIdentity without creating a SecuritySession.
+
+The test identity must map to an active Quantum credential with the required realm and application grants. `@TestSecurity` supplies a Quarkus identity; it does not create that credential or bypass Quantum authorization. Login-based tests must specify `applicationId` when multiple applications are authorized. A request body realm must match the authenticated operating realm selected with `X-Realm`.
 
 Quantum integrates with this in two places:
 - SecurityFilter: when a request has a SecurityIdentity but no JWT, it builds a PrincipalContext from the identity (user and roles). You can also pass X-Realm to control the realm.
@@ -174,7 +195,7 @@ class RepoFallbackTest {
 ----
 
 Notes:
-- @TestSecurity is perfect for authorizing requests in HTTP tests without generating JWTs.
+- Use @TestSecurity for mapped test identities without generating JWTs; seed their credentials and grants explicitly.
 - For repo tests that require precise ResourceContext (area/domain/action), prefer SecuritySession; MorphiaRepo sets a generic default ResourceContext when needed.
 
 
@@ -210,7 +231,7 @@ How to test repository logic:
 - @QuarkusTest: boots the app for integration tests with CDI, config, and persistence.
 - RestAssured: fluent HTTP client baked into Quarkus tests; supports JSON assertions and extraction.
 - @TestSecurity: set SecurityIdentity (user, roles) for tests.
-- @InjectMock/@InjectSpy (quarkus-junit5-mockito): replace beans with mocks/spies for isolation.
+- @InjectMock/@InjectSpy (quarkus-junit-mockito): replace beans with mocks/spies for isolation.
 - @QuarkusTestResource: manage external resources (e.g., starting/stopping containers) for a test class or suite.
 - @TestHTTPEndpoint and @TestHTTPResource: convenient endpoint URI injection.
 
@@ -229,6 +250,6 @@ How to test repository logic:
 
 === Summary
 - Use BaseRepoTest for repository tests and migrations, and wrap work in SecuritySession.
-- For less ceremony, create a simple scoped-call helper to run code under a SecuritySession.
+- For less ceremony, use the shared SecurityCallScope to activate and restore context.
 - For REST/API tests and quick identity setup, use @TestSecurity, realm headers, and RestAssured.
 - For full e2e security, obtain a JWT via the login API and include it in requests.

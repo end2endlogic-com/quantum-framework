@@ -15,16 +15,17 @@ import static org.hamcrest.Matchers.*;
  * Tests run in order: create → get → list → delete → verify deletion.
  */
 @QuarkusTest
+@io.quarkus.test.security.TestSecurity(user = "system@system.com", roles = {"admin"})
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
-public class AgentConfigResourceIT {
+public class AgentConfigResourceIT extends com.e2eq.framework.persistent.BaseRepoTest {
 
-    private static final String REALM = "test-agent-config-realm";
+    private static final String REALM = "test-quantum-com";
     private static final String REF_NAME = "test-supply-chain-agent";
 
     @Test
     @Order(1)
     public void save_agent_returns_200_with_id() {
-        given()
+        given().header("X-Realm", REALM)
             .contentType(ContentType.JSON)
             .queryParam("realm", REALM)
             .body("{" +
@@ -51,7 +52,7 @@ public class AgentConfigResourceIT {
     @Test
     @Order(2)
     public void get_by_refName_returns_saved_agent() {
-        given()
+        given().header("X-Realm", REALM)
             .accept(ContentType.JSON)
             .queryParam("realm", REALM)
         .when()
@@ -68,7 +69,7 @@ public class AgentConfigResourceIT {
     @Test
     @Order(3)
     public void list_returns_agents_including_saved() {
-        given()
+        given().header("X-Realm", REALM)
             .accept(ContentType.JSON)
             .queryParam("realm", REALM)
         .when()
@@ -82,7 +83,7 @@ public class AgentConfigResourceIT {
     @Test
     @Order(4)
     public void delete_by_refName_returns_200() {
-        given()
+        given().header("X-Realm", REALM)
             .queryParam("realm", REALM)
         .when()
             .delete("/api/agent/config/" + REF_NAME)
@@ -94,7 +95,7 @@ public class AgentConfigResourceIT {
     @Test
     @Order(5)
     public void get_after_delete_returns_404() {
-        given()
+        given().header("X-Realm", REALM)
             .accept(ContentType.JSON)
             .queryParam("realm", REALM)
         .when()
@@ -105,7 +106,7 @@ public class AgentConfigResourceIT {
 
     @Test
     public void missing_realm_returns_400() {
-        given()
+        given().header("X-Realm", REALM)
             .accept(ContentType.JSON)
         .when()
             .get("/api/agent/config/list")

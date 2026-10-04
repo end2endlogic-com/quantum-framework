@@ -32,7 +32,7 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 @QuarkusTest
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
-public class OntologyEndToEndIT {
+public class OntologyEndToEndIT extends com.e2eq.ontology.mongo.PrivilegedOntologyFixture {
 
     @Inject
     MorphiaDatastore datastore;

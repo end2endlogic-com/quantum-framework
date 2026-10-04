@@ -12,7 +12,7 @@ In v1 the planner recognizes expand(path) and selects AGGREGATION mode when pres
 === Planner decisions
 
 - FILTER mode: No expand(...) in the query. The system generates a Morphia Filter and queries a single collection.
-- AGGREGATION mode: One or more expand(...) directives are present. The system will build an aggregation pipeline (with $lookup, etc.). In v1, a placeholder pipeline is returned to establish the contract.
+- AGGREGATION mode: One or more expand(...) directives are present. The system will build an aggregation pipeline (with $lookup, etc.). The aggregation compiler builds the executable pipeline; execution is controlled by `feature.queryGateway.execution.enabled`.
 
 === Public facade: QueryGateway
 
@@ -159,6 +159,8 @@ flowchart TD
 
 [NOTE]
 ====
+`find` rejects unknown relationship paths with HTTP 400 (`InvalidQuery`).
+
 `count` and `deleteMany` explicitly reject `expand(...)` queries with HTTP 400 (`InvalidQuery`) because relational hydration is invalid for scalar counting and bulk document deletion.
 ====
 

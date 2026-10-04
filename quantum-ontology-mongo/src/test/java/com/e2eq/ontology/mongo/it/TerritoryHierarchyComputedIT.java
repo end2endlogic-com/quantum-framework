@@ -48,7 +48,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * </ul>
  */
 @QuarkusTest
-public class TerritoryHierarchyComputedIT {
+public class TerritoryHierarchyComputedIT extends com.e2eq.ontology.mongo.PrivilegedOntologyFixture {
 
     private static final String REALM = "test-territory-hierarchy";
 

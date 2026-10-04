@@ -132,6 +132,10 @@ public class XRealmUserProvisioningIT extends BaseRepoTest {
         CredentialUserIdPassword cred;
         if (credop.isPresent()) {
             cred = credop.get();
+            cred.setPassword(testUtils.getDefaultTestPassword());
+            cred.setApplicationRegEx("*");
+            cred.setRealmRegEx("*");
+            credRepo.save(testUtils.getSystemRealm(), cred);
             // Ensure admin role and realm override is enabled
             boolean needsUpdate = false;
 
@@ -179,7 +183,8 @@ public class XRealmUserProvisioningIT extends BaseRepoTest {
             cred.setDomainContext(new DomainContext(dataDomain, testUtils.getTestRealm()));
             cred.setLastUpdate(new Date());
             cred.setDataDomain(dataDomain);
-            cred.setRealmRegEx("*");  // Allow all realm overrides
+            cred.setRealmRegEx("*");
+            cred.setApplicationRegEx("*");  // Explicit fixture application grant
             cred.setImpersonateFilterScript("return true");
             cred = credRepo.save(testUtils.getSystemRealm(), cred);
         }
@@ -219,6 +224,8 @@ public class XRealmUserProvisioningIT extends BaseRepoTest {
 
         targetRealm = Realm.builder()
                 .refName(TARGET_REALM_REF_NAME)
+                .applicationRef(com.e2eq.framework.model.persistent.base.EntityReference.builder()
+                        .entityRefName("quantum-framework-test").entityDisplayName("Quantum Framework Test").build())
                 .displayName("X-Realm Provisioning Target")
                 .emailDomain(TARGET_EMAIL_DOMAIN)
                 .databaseName(TARGET_REALM_REF_NAME)
@@ -347,6 +354,7 @@ public class XRealmUserProvisioningIT extends BaseRepoTest {
      */
     private String loginAndGetToken() throws Exception {
         AuthRequest request = new AuthRequest();
+        request.setApplicationId("quantum-framework-test");
         request.setUserId(testUtils.getTestUserId());
         request.setPassword(testUtils.getDefaultTestPassword());
 
@@ -594,6 +602,7 @@ public class XRealmUserProvisioningIT extends BaseRepoTest {
         try {
             // Login as the test user (now without realm override permission)
             AuthRequest request = new AuthRequest();
+        request.setApplicationId("quantum-framework-test");
             request.setUserId(testUtils.getTestUserId());
             request.setPassword(testUtils.getDefaultTestPassword());
 
