@@ -65,6 +65,20 @@
    </dependencyManagement>
 
   <dependencies>
+    <!-- Agent HTTP integration tests run in this configured application harness. -->
+    <dependency>
+      <groupId>com.end2endlogic</groupId>
+      <artifactId>quantum-mcp-server</artifactId>
+      <version>${project.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.end2endlogic</groupId>
+      <artifactId>quantum-ontology-mongo</artifactId>
+      <version>${project.version}</version>
+      <scope>test</scope>
+    </dependency>
+
     <dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-arc</artifactId>

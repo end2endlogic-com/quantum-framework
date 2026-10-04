@@ -29,16 +29,17 @@ import static org.hamcrest.Matchers.*;
  * </ol>
  */
 @QuarkusTest
+@io.quarkus.test.security.TestSecurity(user = "system@system.com", roles = {"admin"})
 @DisplayName("MCP Bridge flow integration test")
-public class AgentMcpBridgeFlowIT {
+public class AgentMcpBridgeFlowIT extends com.e2eq.framework.persistent.BaseRepoTest {
 
     @Test
     @DisplayName("Full MCP bridge flow: discover tools, schema, then execute query_rootTypes, query_plan, query_find")
     public void mcp_bridge_flow_discovers_tools_schema_and_executes_gateway_operations() {
         // ---- 1. MCP tools/list: discover tools ----
-        given()
+        given().header("X-Realm", "test-quantum-com")
             .accept(ContentType.JSON)
-            .queryParam("realm", "defaultRealm")
+            .queryParam("realm", "test-quantum-com")
         .when()
             .get("/api/agent/tools")
         .then()
@@ -49,7 +50,7 @@ public class AgentMcpBridgeFlowIT {
                 "query_rootTypes", "query_plan", "query_find", "query_save", "query_delete", "query_deleteMany"));
 
         // ---- 2. MCP resources/list: list entity types (schema) ----
-        given()
+        given().header("X-Realm", "test-quantum-com")
             .accept(ContentType.JSON)
         .when()
             .get("/api/agent/schema")
@@ -60,7 +61,7 @@ public class AgentMcpBridgeFlowIT {
             .body("rootTypes.className", hasItem(CodeList.class.getName()));
 
         // ---- 3. MCP resources/read: read schema for one root type ----
-        given()
+        given().header("X-Realm", "test-quantum-com")
             .accept(ContentType.JSON)
         .when()
             .get("/api/agent/schema/CodeList")
@@ -71,7 +72,7 @@ public class AgentMcpBridgeFlowIT {
             .body("properties", notNullValue());
 
         // ---- 4. MCP tools/call: execute query_rootTypes ----
-        given()
+        given().header("X-Realm", "test-quantum-com")
             .contentType(ContentType.JSON)
             .body("""
                 {
@@ -89,7 +90,7 @@ public class AgentMcpBridgeFlowIT {
             .body("count", greaterThan(0));
 
         // ---- 5. MCP tools/call: execute query_plan ----
-        given()
+        given().header("X-Realm", "test-quantum-com")
             .contentType(ContentType.JSON)
             .body("""
                 {
@@ -108,7 +109,7 @@ public class AgentMcpBridgeFlowIT {
             .body("expandPaths", notNullValue());
 
         // ---- 6. MCP tools/call: execute query_find (with realm and page) ----
-        given()
+        given().header("X-Realm", "test-quantum-com")
             .contentType(ContentType.JSON)
             .body("""
                 {
@@ -116,7 +117,7 @@ public class AgentMcpBridgeFlowIT {
                   "arguments": {
                     "rootType": "CodeList",
                     "query": "refName:ACTIVE",
-                    "realm": "defaultRealm",
+                    "realm": "test-quantum-com",
                     "page": { "limit": 5, "skip": 0 }
                   }
                 }

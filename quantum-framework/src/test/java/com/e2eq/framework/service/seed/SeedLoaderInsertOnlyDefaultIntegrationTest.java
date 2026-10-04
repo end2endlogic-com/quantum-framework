@@ -22,7 +22,7 @@ import org.junit.jupiter.api.Test;
 @io.quarkus.test.junit.TestProfile(SeedNoHttpTestProfile.class)
 class SeedLoaderInsertOnlyDefaultIntegrationTest {
 
-    private static final Path SEED_ROOT = Path.of("src", "test", "resources", "seed-packs");
+    private static final Path SEED_ROOT = Path.of("src", "test", "resources", "seed-fixtures");
     private static final String REALM = "test-seed-loader-insert-only-it";
 
     @Inject

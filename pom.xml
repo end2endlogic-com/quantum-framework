@@ -230,6 +230,9 @@
                             >org.jboss.logmanager.LogManager</java.util.logging.manager>
                             <maven.home>${maven.home}</maven.home>
                             <maven.repo>${settings.localRepository}</maven.repo>
+                            <!-- Tests must not collide with running local services. -->
+                            <quarkus.http.test-port>0</quarkus.http.test-port>
+                            <quarkus.http.test-ssl-port>0</quarkus.http.test-ssl-port>
                         </systemPropertyVariables>
                     </configuration>
                 </plugin>
@@ -242,6 +245,9 @@
                             >org.jboss.logmanager.LogManager</java.util.logging.manager>
                             <maven.home>${maven.home}</maven.home>
                             <maven.repo>${settings.localRepository}</maven.repo>
+                            <!-- Tests must not collide with running local services. -->
+                            <quarkus.http.test-port>0</quarkus.http.test-port>
+                            <quarkus.http.test-ssl-port>0</quarkus.http.test-ssl-port>
                         </systemPropertyVariables>
                     </configuration>
                 </plugin>

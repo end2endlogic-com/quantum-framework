@@ -15,7 +15,7 @@ import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
 
 @QuarkusTest
-@TestSecurity(user = "sysAdmin@system-com", roles = {"admin"})
+@TestSecurity(user = "system@system.com", roles = {"admin"})
 public class BootstrapPackAdminResourceIT {
 
     private static final String REALM = "test-quantum-com";

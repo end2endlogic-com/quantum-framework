@@ -19,7 +19,8 @@ class ConvergeApplicationRegistryDataDomainIT {
     @Test
     void convergesLegacyRegistryRowsAndIsIdempotent() {
         String databaseName = "test-application-domain-" + UUID.randomUUID().toString().replace("-", "");
-        try (MongoClient mongoClient = MongoClients.create("mongodb://localhost:27017")) {
+        try (MongoClient mongoClient = MongoClients.create(System.getProperty("quantum.test.mongo-uri",
+                        System.getenv().getOrDefault("MONGODB_CONNECTION_STRING", "mongodb://localhost:27017")))) {
             MongoDatabase database = mongoClient.getDatabase(databaseName);
             database.getCollection("application").insertMany(List.of(
                 application("quantum-system", "quantum-auth"),
@@ -43,7 +44,8 @@ class ConvergeApplicationRegistryDataDomainIT {
             assertEquals("1.0.7", changeSet.getDbFromVersion());
             assertEquals("1.0.8", changeSet.getDbToVersion());
         } finally {
-            try (MongoClient cleanup = MongoClients.create("mongodb://localhost:27017")) {
+            try (MongoClient cleanup = MongoClients.create(System.getProperty("quantum.test.mongo-uri",
+                        System.getenv().getOrDefault("MONGODB_CONNECTION_STRING", "mongodb://localhost:27017")))) {
                 cleanup.getDatabase(databaseName).drop();
             }
         }

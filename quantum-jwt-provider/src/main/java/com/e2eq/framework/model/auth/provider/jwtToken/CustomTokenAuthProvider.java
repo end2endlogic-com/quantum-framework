@@ -702,7 +702,10 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
             }
             String alg = credential.getHashingAlgorithm();
             if (verifiedSubject != null || verifiedEmail || (alg != null && (alg.equalsIgnoreCase("BCrypt.default") || alg.toLowerCase().startsWith("bcrypt") || alg.toLowerCase().equals(EncryptionUtils.hashAlgorithm().toLowerCase())))) {
-               boolean isCredentialValid = verifiedSubject != null || verifiedEmail || EncryptionUtils.checkPassword(password, credential.getPasswordHash());
+               boolean isCredentialValid = verifiedSubject != null || verifiedEmail
+                     || (password != null && credential.getPasswordHash() != null
+                         && !credential.getPasswordHash().isBlank()
+                         && EncryptionUtils.checkPassword(password, credential.getPasswordHash()));
                if (isCredentialValid) {
                   // String authToken = generateAuthToken(userId);
                   String credentialRealm = (credential.getDomainContext() != null)

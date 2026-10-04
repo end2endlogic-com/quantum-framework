@@ -73,8 +73,15 @@ public class TerritoryLocationPermissionIT {
     // Map of territory refName -> Territory for hierarchy loader
     private Map<String, Territory> territoryMap = new HashMap<>();
 
+    @io.quarkus.test.InjectMock
+    com.e2eq.framework.model.auth.AuthProviderFactory authProviderFactory;
+
     @BeforeEach
     void setup() {
+        // Identity is supplied by each explicit PrincipalContext; use the real
+        // local rule evaluator, without requiring a JWT issuer in this module.
+        org.mockito.Mockito.when(authProviderFactory.getAuthProvider()).thenReturn(
+                org.mockito.Mockito.mock(com.e2eq.framework.model.auth.AuthProvider.class));
         datastore = dataStoreWrapper.getDataStore(REALM);
 
         testDataDomain = new DataDomain();
@@ -152,28 +159,24 @@ public class TerritoryLocationPermissionIT {
         Territory california = createTerritory("TERR-CA", "California", null);
         california.addLocation(sanFrancisco);
         california.addLocation(losAngeles);
-        datastore.save(california);
-        writeHook.afterPersist(REALM, california);
+        saveFixture(california);
         territoryMap.put(california.getRefName(), california);
 
         Territory washington = createTerritory("TERR-WA", "Washington", null);
         washington.addLocation(seattle);
-        datastore.save(washington);
-        writeHook.afterPersist(REALM, washington);
+        saveFixture(washington);
         territoryMap.put(washington.getRefName(), washington);
 
         // === Create Associates ===
         TerritoryAssociate johnCalifornia = new TerritoryAssociate("ASSOC-JOHN", "John", "Doe", "john@example.com");
         johnCalifornia.setDataDomain(testDataDomain);
         johnCalifornia.addTerritory(california);
-        datastore.save(johnCalifornia);
-        writeHook.afterPersist(REALM, johnCalifornia);
+        saveFixture(johnCalifornia);
 
         TerritoryAssociate janeWashington = new TerritoryAssociate("ASSOC-JANE", "Jane", "Smith", "jane@example.com");
         janeWashington.setDataDomain(testDataDomain);
         janeWashington.addTerritory(washington);
-        datastore.save(janeWashington);
-        writeHook.afterPersist(REALM, janeWashington);
+        saveFixture(janeWashington);
 
         Log.infof("Created John (California) and Jane (Washington) associates");
 
@@ -228,20 +231,17 @@ public class TerritoryLocationPermissionIT {
         // === Create Territories ===
         Territory california = createTerritory("TERR-CA", "California", null);
         california.addLocation(sanFrancisco);
-        datastore.save(california);
-        writeHook.afterPersist(REALM, california);
+        saveFixture(california);
         territoryMap.put(california.getRefName(), california);
 
         Territory washington = createTerritory("TERR-WA", "Washington", null);
         washington.addLocation(seattle);
-        datastore.save(washington);
-        writeHook.afterPersist(REALM, washington);
+        saveFixture(washington);
         territoryMap.put(washington.getRefName(), washington);
 
         Territory colorado = createTerritory("TERR-CO", "Colorado", null);
         colorado.addLocation(denver);
-        datastore.save(colorado);
-        writeHook.afterPersist(REALM, colorado);
+        saveFixture(colorado);
         territoryMap.put(colorado.getRefName(), colorado);
 
         // === Create Regional Manager with multiple territories ===
@@ -250,8 +250,7 @@ public class TerritoryLocationPermissionIT {
         manager.addTerritory(california);
         manager.addTerritory(washington);
         // Note: NOT assigned to Colorado
-        datastore.save(manager);
-        writeHook.afterPersist(REALM, manager);
+        saveFixture(manager);
 
         Log.infof("Created Regional Manager assigned to California and Washington");
 
@@ -287,15 +286,13 @@ public class TerritoryLocationPermissionIT {
         // === Create Territory ===
         Territory california = createTerritory("TERR-CA", "California", null);
         california.addLocation(sanFrancisco);
-        datastore.save(california);
-        writeHook.afterPersist(REALM, california);
+        saveFixture(california);
         territoryMap.put(california.getRefName(), california);
 
         // === Create Associate with NO territory assignment ===
         TerritoryAssociate unassigned = new TerritoryAssociate("ASSOC-UNASSIGNED", "Unassigned", "User", "unassigned@example.com");
         unassigned.setDataDomain(testDataDomain);
-        datastore.save(unassigned);
-        writeHook.afterPersist(REALM, unassigned);
+        saveFixture(unassigned);
 
         // Register permission rule
         Rule locationPermissionRule = createLocationPermissionRule();
@@ -327,16 +324,14 @@ public class TerritoryLocationPermissionIT {
         california.addLocation(sfOffice);
         california.addLocation(laWarehouse);
         california.addLocation(sdOffice);
-        datastore.save(california);
-        writeHook.afterPersist(REALM, california);
+        saveFixture(california);
         territoryMap.put(california.getRefName(), california);
 
         // === Create Associate ===
         TerritoryAssociate john = new TerritoryAssociate("ASSOC-JOHN", "John", "Doe", "john@example.com");
         john.setDataDomain(testDataDomain);
         john.addTerritory(california);
-        datastore.save(john);
-        writeHook.afterPersist(REALM, john);
+        saveFixture(john);
 
         // Register permission rule
         Rule locationPermissionRule = createLocationPermissionRule();
@@ -437,11 +432,19 @@ public class TerritoryLocationPermissionIT {
         });
     }
 
+    // Fixture writes are privileged; queryLocationsAsUser runs after this scope
+    // closes, so the permission assertions still exercise real policy filtering.
+    private void saveFixture(Object entity) {
+        try (var scope = SecurityCallScope.openIgnoringRules()) {
+            datastore.save(entity);
+            writeHook.afterPersist(REALM, entity);
+        }
+    }
+
     private TerritoryLocation createLocation(String refName, String name, String city, String state) {
         TerritoryLocation loc = new TerritoryLocation(refName, name, city, state);
         loc.setDataDomain(testDataDomain);
-        datastore.save(loc);
-        writeHook.afterPersist(REALM, loc);
+        saveFixture(loc);
         Log.infof("Created location: %s (%s)", refName, loc.getId());
         return loc;
     }
@@ -450,8 +453,7 @@ public class TerritoryLocationPermissionIT {
         Territory territory = new Territory(refName, name);
         territory.setDataDomain(testDataDomain);
         territory.setParentTerritory(parent);
-        datastore.save(territory);
-        writeHook.afterPersist(REALM, territory);
+        saveFixture(territory);
         territoryMap.put(refName, territory);
         Log.infof("Created territory: %s (%s), parent=%s", refName, territory.getId(),
                 parent != null ? parent.getRefName() : "none");

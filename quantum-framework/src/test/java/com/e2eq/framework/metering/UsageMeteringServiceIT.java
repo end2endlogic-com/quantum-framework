@@ -23,10 +23,18 @@ import static org.junit.jupiter.api.Assertions.*;
  * Integration tests for {@link com.e2eq.framework.metering.UsageMeteringService},
  * token allocation repos, replenishment, and quota blocking.
  */
+@io.quarkus.test.junit.QuarkusTest
+@io.quarkus.test.junit.TestProfile(UsageMeteringServiceIT.MeteringProfile.class)
 @DisplayName("Usage metering integration tests")
-class UsageMeteringServiceIT extends BaseRepoTest {
+public class UsageMeteringServiceIT extends BaseRepoTest {
 
-    private static final String REALM = "test-quantum-com";
+    public static class MeteringProfile implements io.quarkus.test.junit.QuarkusTestProfile {
+        @Override public java.util.Map<String, String> getConfigOverrides() {
+            return java.util.Map.of("quantum.metering.enabled", "true", "quantum.metering.enforce-quota", "true");
+        }
+    }
+
+    private final String REALM = "test-usage-" + java.util.UUID.randomUUID();
 
     @Inject
     UsageMeteringService usageMeteringService;
@@ -39,6 +47,18 @@ class UsageMeteringServiceIT extends BaseRepoTest {
 
     @Inject
     LlmUsageRecordRepo llmUsageRecordRepo;
+
+    private com.e2eq.framework.model.securityrules.SecurityCallScope.Scope fixtureScope;
+
+    @org.junit.jupiter.api.BeforeEach
+    void openFixtureScope() {
+        fixtureScope = com.e2eq.framework.model.securityrules.SecurityCallScope.openIgnoringRules();
+    }
+
+    @org.junit.jupiter.api.AfterEach
+    void closeFixtureScope() {
+        if (fixtureScope != null) fixtureScope.close();
+    }
 
     @Test
     @DisplayName("recordApiCall when realm null returns null")

@@ -21,7 +21,8 @@ class MongoTenantDataExpirationProviderIT {
     void stampsOnlyRequestedTenantAndCreatesAbsoluteTimeTtlIndex() {
         String databaseName = "test-tenant-expiration-it-"
             + UUID.randomUUID().toString().replace("-", "");
-        try (MongoClient client = MongoClients.create("mongodb://localhost:27017")) {
+        try (MongoClient client = MongoClients.create(System.getProperty("quantum.test.mongo-uri",
+                        System.getenv().getOrDefault("MONGODB_CONNECTION_STRING", "mongodb://localhost:27017")))) {
             var collection = client.getDatabase(databaseName).getCollection("orders");
             collection.insertMany(List.of(
                 tenantDocument("a", "100", "tenant-a", 0),
@@ -70,7 +71,8 @@ class MongoTenantDataExpirationProviderIT {
                 0L,
                 ((Number) ttlIndex.get("expireAfterSeconds")).longValue());
         } finally {
-            try (MongoClient cleanup = MongoClients.create("mongodb://localhost:27017")) {
+            try (MongoClient cleanup = MongoClients.create(System.getProperty("quantum.test.mongo-uri",
+                        System.getenv().getOrDefault("MONGODB_CONNECTION_STRING", "mongodb://localhost:27017")))) {
                 cleanup.getDatabase(databaseName).drop();
             }
         }

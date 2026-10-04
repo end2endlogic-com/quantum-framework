@@ -53,8 +53,8 @@ public class AgentResource {
     PermissionHintsProvider permissionHintsProvider;
 
     /**
-     * Returns the list of gateway tools (query_rootTypes, query_plan, query_find, query_save,
-     * query_delete, query_deleteMany) for discovery. Optionally scoped by realm for tenant config.
+     * Returns the gateway tool catalog, including CRUD, count, export, and import operations.
+     * Optionally scoped by realm for tenant configuration.
      *
      * @param realm optional realm; when tenant config is present, only enabled tools for that realm are returned
      * @return tools list and count

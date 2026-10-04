@@ -19,7 +19,7 @@ import java.util.stream.Collectors;
 import static org.junit.jupiter.api.Assertions.*;
 
 @QuarkusTest
-public class CascadeOrphanRemoveIT {
+public class CascadeOrphanRemoveIT extends com.e2eq.ontology.mongo.PrivilegedOntologyFixture {
 
     private static final String TENANT = "test-system-com"; // default test realm from framework tests
 
@@ -63,7 +63,7 @@ public class CascadeOrphanRemoveIT {
         writeHook.afterPersist(TENANT, p);
 
         // edges exist
-        assertHasEdges("P-1", Set.of("CH-1", "CH-2"));
+        assertHasEdges(p.getId().toString(), Set.of(c1.getId().toString(), c2.getId().toString()));
 
         // when removing c2 from parent children
         p.setChildren(new ArrayList<>(List.of(c1)));
@@ -71,7 +71,7 @@ public class CascadeOrphanRemoveIT {
         writeHook.afterPersist(TENANT, p);
 
         // then edge to CH-2 is gone; deletion of child is optional depending on cascade configuration
-        assertHasEdges("P-1", Set.of("CH-1"));
+        assertHasEdges(p.getId().toString(), Set.of(c1.getId().toString()));
     }
 
     @Test
@@ -82,8 +82,8 @@ public class CascadeOrphanRemoveIT {
         ItParent p2 = new ItParent(); p2.setRefName("P-2"); p2.setDataDomain(testDataDomain); p2.getChildren().add(c); datastore.save(p2); writeHook.afterPersist(TENANT, p2);
 
         // sanity: edges from both parents
-        assertHasEdges("P-1", Set.of("CH-X"));
-        assertHasEdges("P-2", Set.of("CH-X"));
+        assertHasEdges(p1.getId().toString(), Set.of(c.getId().toString()));
+        assertHasEdges(p2.getId().toString(), Set.of(c.getId().toString()));
 
         // when removing from first parent only
         p1.setChildren(new ArrayList<>());
@@ -95,9 +95,9 @@ public class CascadeOrphanRemoveIT {
                 .countDocuments(new Document("refName", "CH-X"));
         assertEquals(1, remaining, "shared child should not be deleted");
         // and p1 has no edge now
-        assertHasEdges("P-1", Set.of());
+        assertHasEdges(p1.getId().toString(), Set.of());
         // p2 still has edge
-        assertHasEdges("P-2", Set.of("CH-X"));
+        assertHasEdges(p2.getId().toString(), Set.of(c.getId().toString()));
     }
 
     private void assertHasEdges(String src, Set<String> expectedDsts) {

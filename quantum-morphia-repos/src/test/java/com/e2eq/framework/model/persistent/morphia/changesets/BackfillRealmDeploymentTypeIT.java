@@ -21,8 +21,9 @@ class BackfillRealmDeploymentTypeIT {
     @Test
     void backfillsOnlyMissingAndNullValuesAndPreservesShared() {
         String databaseName =
-            "test-quantum-realm-type-migration-" + UUID.randomUUID().toString().replace("-", "");
-        try (MongoClient mongoClient = MongoClients.create("mongodb://localhost:27017")) {
+            "test-realm-type-" + UUID.randomUUID().toString().replace("-", "");
+        try (MongoClient mongoClient = MongoClients.create(System.getProperty("quantum.test.mongo-uri",
+                        System.getenv().getOrDefault("MONGODB_CONNECTION_STRING", "mongodb://localhost:27017")))) {
             MongoDatabase database = mongoClient.getDatabase(databaseName);
             database.getCollection("realm").insertMany(List.of(
                 new Document("refName", "legacy-missing"),
@@ -50,7 +51,8 @@ class BackfillRealmDeploymentTypeIT {
             assertEquals("1.0.6", changeSet.getDbToVersion());
             assertTrue(changeSet.getApplicableDatabases().contains(databaseName));
         } finally {
-            try (MongoClient cleanup = MongoClients.create("mongodb://localhost:27017")) {
+            try (MongoClient cleanup = MongoClients.create(System.getProperty("quantum.test.mongo-uri",
+                        System.getenv().getOrDefault("MONGODB_CONNECTION_STRING", "mongodb://localhost:27017")))) {
                 cleanup.getDatabase(databaseName).drop();
             }
         }

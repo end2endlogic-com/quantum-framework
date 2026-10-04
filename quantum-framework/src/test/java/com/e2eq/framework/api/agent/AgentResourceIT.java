@@ -12,26 +12,29 @@ import static org.hamcrest.Matchers.*;
  * Integration tests for agent discovery and schema endpoints.
  */
 @QuarkusTest
-public class AgentResourceIT {
+@io.quarkus.test.security.TestSecurity(user = "system@system.com", roles = {"admin"})
+public class AgentResourceIT extends com.e2eq.framework.persistent.BaseRepoTest {
 
     @Test
-    public void tools_endpoint_returns_six_gateway_tools() {
-        given()
+    public void tools_endpoint_returns_default_gateway_tools() {
+        given().header("X-Realm", "test-quantum-com")
             .accept(ContentType.JSON)
         .when()
             .get("/api/agent/tools")
         .then()
             .statusCode(200)
             .body("tools", notNullValue())
-            .body("tools.size()", is(6))
-            .body("count", is(6))
+            .body("tools.size()", is(12))
+            .body("count", is(12))
             .body("tools.name", hasItems(
-                "query_rootTypes", "query_plan", "query_find", "query_save", "query_delete", "query_deleteMany"));
+                "query_rootTypes", "query_plan", "query_find", "query_count",
+                "query_save", "query_delete", "query_deleteMany", "query_export",
+                "query_import_analyze", "query_import_rows", "query_import_commit", "query_import_cancel"));
     }
 
     @Test
     public void tools_endpoint_returns_expected_tool_fields() {
-        given()
+        given().header("X-Realm", "test-quantum-com")
             .accept(ContentType.JSON)
         .when()
             .get("/api/agent/tools")
@@ -46,7 +49,7 @@ public class AgentResourceIT {
 
     @Test
     public void schema_endpoint_returns_root_types() {
-        given()
+        given().header("X-Realm", "test-quantum-com")
             .accept(ContentType.JSON)
         .when()
             .get("/api/agent/schema")
@@ -59,7 +62,7 @@ public class AgentResourceIT {
 
     @Test
     public void schema_endpoint_includes_codelist() {
-        given()
+        given().header("X-Realm", "test-quantum-com")
             .accept(ContentType.JSON)
         .when()
             .get("/api/agent/schema")
@@ -71,7 +74,7 @@ public class AgentResourceIT {
 
     @Test
     public void schema_for_root_type_returns_json_schema_like() {
-        given()
+        given().header("X-Realm", "test-quantum-com")
             .accept(ContentType.JSON)
         .when()
             .get("/api/agent/schema/CodeList")
@@ -84,7 +87,7 @@ public class AgentResourceIT {
 
     @Test
     public void schema_for_root_type_by_fqcn_returns_json_schema_like() {
-        given()
+        given().header("X-Realm", "test-quantum-com")
             .accept(ContentType.JSON)
         .when()
             .get("/api/agent/schema/" + CodeList.class.getName())
@@ -97,7 +100,7 @@ public class AgentResourceIT {
 
     @Test
     public void schema_for_unknown_root_type_returns_400() {
-        given()
+        given().header("X-Realm", "test-quantum-com")
             .accept(ContentType.JSON)
         .when()
             .get("/api/agent/schema/NonExistentType")
@@ -107,7 +110,7 @@ public class AgentResourceIT {
 
     @Test
     public void execute_query_rootTypes_returns_root_types() {
-        given()
+        given().header("X-Realm", "test-quantum-com")
             .contentType(ContentType.JSON)
             .body("{\"tool\":\"query_rootTypes\",\"arguments\":{}}")
         .when()
@@ -120,7 +123,7 @@ public class AgentResourceIT {
 
     @Test
     public void execute_query_rootTypes_rejects_non_string_realm() {
-        given()
+        given().header("X-Realm", "test-quantum-com")
             .contentType(ContentType.JSON)
             .body("{\"tool\":\"query_rootTypes\",\"arguments\":{\"realm\":42}}")
         .when()
@@ -132,7 +135,7 @@ public class AgentResourceIT {
 
     @Test
     public void execute_query_plan_returns_plan() {
-        given()
+        given().header("X-Realm", "test-quantum-com")
             .contentType(ContentType.JSON)
             .body("{\"tool\":\"query_plan\",\"arguments\":{\"rootType\":\"CodeList\",\"query\":\"refName:ACTIVE\"}}")
         .when()
@@ -145,7 +148,7 @@ public class AgentResourceIT {
 
     @Test
     public void permission_hints_returns_check_evaluate_and_did_you_know() {
-        given()
+        given().header("X-Realm", "test-quantum-com")
             .accept(ContentType.JSON)
         .when()
             .get("/api/agent/permission-hints")
@@ -166,7 +169,7 @@ public class AgentResourceIT {
 
     @Test
     public void query_hints_returns_grammar_examples_and_did_you_know() {
-        given()
+        given().header("X-Realm", "test-quantum-com")
             .accept(ContentType.JSON)
         .when()
             .get("/api/agent/query-hints")
@@ -185,7 +188,7 @@ public class AgentResourceIT {
 
     @Test
     public void execute_unknown_tool_returns_400() {
-        given()
+        given().header("X-Realm", "test-quantum-com")
             .contentType(ContentType.JSON)
             .body("{\"tool\":\"unknown_tool\",\"arguments\":{}}")
         .when()

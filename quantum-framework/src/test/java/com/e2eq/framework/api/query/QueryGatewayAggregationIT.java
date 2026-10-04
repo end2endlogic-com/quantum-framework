@@ -47,7 +47,9 @@ public class QueryGatewayAggregationIT extends BaseRepoTest {
     @BeforeEach
     public void setUp() {
         realm = testUtils.getTestRealm();
-        morphiaDataStoreWrapper.getDataStore(realm);
+        var fixtureDb = morphiaDataStoreWrapper.getDataStore(realm).getDatabase();
+        fixtureDb.getCollection("credentialUserIdPassword").deleteMany(new org.bson.Document("refName", "agg-user@test"));
+        fixtureDb.getCollection("userProfile").deleteMany(new org.bson.Document("refName", "agg-user@test"));
 
         try (SecurityCallScope.Scope ignored = SecurityCallScope.openIgnoringRules()) {
             java.util.Optional<CredentialUserIdPassword> credop = credRepo.findByUserId(
@@ -55,6 +57,7 @@ public class QueryGatewayAggregationIT extends BaseRepoTest {
             if (credop.isEmpty()) {
                 CredentialUserIdPassword cred = new CredentialUserIdPassword();
                 cred.setUserId(testUtils.getTestUserId());
+                cred.setRefName(testUtils.getTestUserId());
                 cred.setSubject(testUtils.getTestUserId());
                 cred.setRoles(new String[]{"admin", "user"});
                 DataDomain dd = testUtils.getTestDataDomain();
@@ -71,6 +74,7 @@ public class QueryGatewayAggregationIT extends BaseRepoTest {
             // Create a credential
             CredentialUserIdPassword cred = new CredentialUserIdPassword();
             cred.setUserId("agg-user@test");
+            cred.setRefName("agg-user@test");
             cred.setSubject("agg-user@test");
             cred.setLastUpdate(new java.util.Date());
             DataDomain dd = testUtils.getTestDataDomain();
@@ -81,6 +85,7 @@ public class QueryGatewayAggregationIT extends BaseRepoTest {
             // Create a user profile referencing credential
             UserProfile up = new UserProfile();
             up.setEmail("agg-user@test");
+            up.setUserId("agg-user@test");
             up.setRefName("agg-user@test");
             up.setDisplayName("Agg User");
             up.setDataDomain(dd);
@@ -134,6 +139,7 @@ public class QueryGatewayAggregationIT extends BaseRepoTest {
             DataDomain ddAllowed = testUtils.getTestDataDomain();
             CredentialUserIdPassword credAllowed = new CredentialUserIdPassword();
             credAllowed.setUserId("iso-allowed@test");
+            credAllowed.setRefName("iso-allowed@test");
             credAllowed.setSubject("iso-allowed@test");
             credAllowed.setDataDomain(ddAllowed);
             credAllowed.setDomainContext(new DomainContext(ddAllowed, testUtils.getTestRealm()));
@@ -141,6 +147,7 @@ public class QueryGatewayAggregationIT extends BaseRepoTest {
 
             UserProfile upAllowed = new UserProfile();
             upAllowed.setEmail("iso-allowed@test");
+            upAllowed.setUserId("iso-allowed@test");
             upAllowed.setRefName("iso-allowed@test");
             upAllowed.setDisplayName("Allowed Tenant User");
             upAllowed.setDataDomain(ddAllowed);
@@ -157,6 +164,7 @@ public class QueryGatewayAggregationIT extends BaseRepoTest {
             DataDomain ddForbidden = new DataDomain("otherOrg", "9999999999", "foreign-tenant-xyz", 0, "foreignOwner");
             CredentialUserIdPassword credForbidden = new CredentialUserIdPassword();
             credForbidden.setUserId("iso-forbidden@test");
+            credForbidden.setRefName("iso-forbidden@test");
             credForbidden.setSubject("iso-forbidden@test");
             credForbidden.setDataDomain(ddForbidden);
             credForbidden.setDomainContext(new DomainContext(ddForbidden, "foreign-tenant-xyz"));
@@ -164,6 +172,7 @@ public class QueryGatewayAggregationIT extends BaseRepoTest {
 
             UserProfile upForbidden = new UserProfile();
             upForbidden.setEmail("iso-forbidden@test");
+            upForbidden.setUserId("iso-forbidden@test");
             upForbidden.setRefName("iso-forbidden@test");
             upForbidden.setDisplayName("Forbidden Tenant User");
             upForbidden.setDataDomain(ddForbidden);

@@ -3,13 +3,9 @@
 Java backend for core services backed by Mongodb
 
 == Getting Started Installation:
-I recommend that you use brew to install maven, and that you download the GaalVM from https://www.graalvm.org/downloads/ and install it on MacOS in your /Libraries/Java/JavaVirtualMachines directory.  Then you must set your JAVA_HOME environment variable to point to the directory/Contents/Home location.
+Install Maven and a JDK compatible with the Quarkus and GraalVM dependencies declared in the POMs. The parent compiles Java source with `maven.compiler.release=17`; that is the source/bytecode target, not a guarantee that every runtime dependency works on JDK 17. The October 2026 JVM verification uses GraalVM Community JDK 23 and Maven 3.9.16. JavaScript support is supplied by the Maven `org.graalvm.polyglot:js-community` dependency; no `gu` or Node.js language installation is needed for the JVM tests.
 
-You can also use SDK Man, and other means to install the JDK. The build process will ensure you are running GraalVM community at a 17 language level, and will complain if that is not the case. Since we use the polygot capabilities of the JVM you will need to install language support for nodejs.  To do this you can follow these instructions to install javascript support in the JVM: https://www.graalvm.org/jdk17/reference-manual/js/
-
-You will also need docker installed on your machine and available as the build system in certain configurations uses docker to automatically start various dependencies such as mongodb, and or other components
-
-For local builds, you will also need mongodb installed.  To install Mongodb I recommend that you use brew to install it, as that is the easiest way to install it and keep it up to date.  You can follow these instructions: https://www.mongodb.com/docs/manual/tutorial/install-mongodb-on-os-x/
+Repository and HTTP integration tests require a disposable MongoDB single-node replica set. Test Dev Services are disabled; start Mongo explicitly and set `MONGODB_CONNECTION_STRING`. Never point the test suite at a shared development or production database: test resources create, migrate, and delete test databases.
 
 === Setting up Mongodb
 The system utilizes transactional access in cases where it needs to update more than one collection, or more than one document at a time.  Mongodb requires a replication cluster to support transactions.  As a result there is some more set up needed to run mongo locally in a way to support transactions.
@@ -45,9 +41,7 @@ Install the quarkus command line tool using:
 
 ==== Requirements
 
-Java JDK Version: GraalVM Community ( https://www.graalvm.org/downloads/ ) version Java 17.
-
-IMPORTANT: For various reasons Java 21 is not currently supported, this is something that will happen shortly but currently the system has been tested and developed against 17.
+Java: see the build/runtime distinction above and the dependency versions in the POMs. Native-image builds require separate platform-specific verification; a JVM build does not validate native images.
 
 Maven Version: At a minimum version 3.9.8+
 
@@ -80,7 +74,9 @@ You can build the application using the following command(s):
 
 For a local build:
 
-`mvn clean package` - will compile the code, run unit tests, and create artifacts located under the target directory.
+`mvn clean package` compiles the code, runs Surefire tests, renders documentation, and creates artifacts under each module's `target` directory. It does not automatically run every class ending in `IT`.
+
+For the isolated Mongo setup, dynamic HTTP ports, and complete test selection, see link:quantum-docs/src/docs/asciidoc/user-guide/testing.adoc[the testing guide].
 
 ==== Running the application locally
 You will need to have mongodb running locally and a .env file will need to be created in the root directory of project.  There is a env_example file in the root of the project you can use.  Copy this file to .env and modify accordingly

@@ -1036,7 +1036,7 @@ Practical guidance:
 - Expect HTTP delete to fail with a meaningful error if there are live references; remove or update those references first, or design cascading behavior explicitly in your domain logic.
 
 
-[[ontologies-in-quantum]]
+[[modeling-ontologies-in-quantum]]
 === Ontologies in Quantum: Modeling Relationships That Are Resilient and Fast
 
 NOTE: Looking for the short implementation plan? See PROPOSAL.md at the repository root for a concise module-by-module checklist.

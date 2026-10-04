@@ -29,7 +29,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * </ul>
  */
 @QuarkusTest
-public class ComputedEdgeProviderIT {
+public class ComputedEdgeProviderIT extends com.e2eq.ontology.mongo.PrivilegedOntologyFixture {
 
     private static final String TENANT = "computed-edge-test";
 
@@ -83,7 +83,7 @@ public class ComputedEdgeProviderIT {
 
         for (Reasoner.Edge edge : edges) {
             assertEquals("COMP-SRC-1", edge.srcId());
-            assertEquals("ItProvSource", edge.srcType());
+            assertEquals("ProvSource", edge.srcType()); // @OntologyClass id, not Java class name
             assertEquals("computedCanAccess", edge.p());
             assertEquals("ComputedTarget", edge.dstType());
             assertFalse(edge.inferred()); // computed edges are explicit

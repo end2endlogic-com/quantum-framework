@@ -96,6 +96,11 @@ class OAuthTokenResourceTest {
         credential.setPassword("local-review-password");
         assertFalse(provider.login("user","wrong-password","app","realm").authenticated());
         assertTrue(provider.login("user","local-review-password","app","realm").authenticated());
+        assertFalse(provider.login("user",null,"app","realm").authenticated());
+        credential.setPasswordHash(null);
+        assertFalse(provider.login("user","local-review-password","app","realm").authenticated());
+        credential.setPasswordHash("");
+        assertFalse(provider.login("user","local-review-password","app","realm").authenticated());
     }
     @Test void unboundSessionCannotEnterOAuthExchange() {
         var login=provider.loginWithVerifiedSubject("subject","app","realm",null);
