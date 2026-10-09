@@ -21,6 +21,8 @@ This reference describes the `1.4.2-SNAPSHOT` source reviewed on 2026-10-02. Dep
 
 A realm selects placement and lifecycle; DataDomain and policy control visibility within it. A user-role assignment cannot authorize a realm excluded by the credential's realm contract. Credential roles retain their default-realm meaning. Realm roles are realm-wide: different privileges for tenants sharing one realm require tenant-scoped policy, not merely adding a role.
 
+The applications a login may select are the union of the credential's `applicationRegEx` and the realm assignment's `authorizedApplications`. A realm list adds applications for that realm; it never narrows the credential pattern, so a credential with `applicationRegEx` `*` is admitted to every application in every realm it may enter, whatever its realm lists contain. To restrict a user to specific applications, narrow the credential pattern itself.
+
 Application and tenant grants have different empty-value semantics. Missing tenant grants do not authorize explicit multi-tenant selection. Missing application lists can invoke legacy compatibility resolution elsewhere in the authentication pipeline; refresh rejects unresolved application authority. Clearing applications is therefore not a reliable deny operation. Evaluate the complete credential, realm, application and tenant policy and verify the resulting session.
 
 Provision identities and memberships through the owning system-management plane. Keep each environment's authority, sessions and grants isolated. Do not rewrite a credential's default DomainContext to represent every external membership.
