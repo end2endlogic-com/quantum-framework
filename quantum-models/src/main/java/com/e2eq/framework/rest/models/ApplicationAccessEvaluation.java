@@ -8,7 +8,7 @@ import java.util.Set;
 /**
  * Server-truth result of evaluating a user's application access for a realm —
  * the SAME {@code ApplicationAuthorizationResolver} decision a login would
- * make (list-or-* contract), computed from the stored credential pattern and
+ * make (list-union-pattern contract), computed from the stored credential pattern and
  * the (user, realm) membership grant without authenticating.
  */
 @RegisterForReflection
