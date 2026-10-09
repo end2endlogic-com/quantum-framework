@@ -53,11 +53,41 @@ class ApplicationAuthorizationResolverTest {
     }
 
     @Test
-    void perRealmGrantTakesPrecedenceOverCredentialPattern() {
+    void perRealmGrantDoesNotRevokeCredentialWildcard() {
+        // Granting one app on a realm must not lock a "*" credential out of the others.
         var r = ApplicationAuthorizationResolver.resolve(
                 List.of("tenant-console"), "*", null, "system-admin");
 
-        assertEquals(ApplicationAuthorizationResolver.Outcome.DENIED, r.outcome());
+        assertEquals(ApplicationAuthorizationResolver.Outcome.RESOLVED, r.outcome());
+        assertEquals(Set.of("*"), r.audiences());
+        assertEquals("system-admin", r.activeApplication());
+        assertTrue(r.wildcard());
+    }
+
+    @Test
+    void perRealmGrantStillResolvesItsOwnApplicationUnderCredentialWildcard() {
+        var r = ApplicationAuthorizationResolver.resolve(
+                List.of("tenant-console"), "*", null, "tenant-console");
+
+        assertEquals(ApplicationAuthorizationResolver.Outcome.RESOLVED, r.outcome());
+        assertEquals("tenant-console", r.activeApplication());
+    }
+
+    @Test
+    void perRealmGrantUnionsWithConcreteCredentialPattern() {
+        var viaPattern = ApplicationAuthorizationResolver.resolve(
+                List.of("tenant-console"), "helixor-.*", null, "helixor-licensing");
+        var viaGrant = ApplicationAuthorizationResolver.resolve(
+                List.of("tenant-console"), "helixor-.*", null, "tenant-console");
+        var neither = ApplicationAuthorizationResolver.resolve(
+                List.of("tenant-console"), "helixor-.*", null, "quantum-system");
+
+        assertEquals(ApplicationAuthorizationResolver.Outcome.RESOLVED, viaPattern.outcome());
+        assertEquals(Set.of("tenant-console", "helixor-licensing"), viaPattern.audiences());
+        assertEquals("helixor-licensing", viaPattern.activeApplication());
+        assertFalse(viaPattern.wildcard());
+        assertEquals(ApplicationAuthorizationResolver.Outcome.RESOLVED, viaGrant.outcome());
+        assertEquals(ApplicationAuthorizationResolver.Outcome.DENIED, neither.outcome());
     }
 
     @Test

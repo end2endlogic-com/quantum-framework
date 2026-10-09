@@ -96,9 +96,12 @@ public final class ApplicationAuthorizationResolver {
     }
 
     /**
-     * Resolves a per-realm application list, falling back to the credential-wide
-     * application pattern only when the list is absent. Patterns are matched against
-     * the complete application id; {@code "*"} is the unrestricted wildcard.
+     * Resolves the union of a per-realm application list and the credential-wide
+     * application pattern. Both are grants: a per-realm list adds applications for
+     * that realm and never revokes what the credential pattern already admits, so a
+     * credential pattern of {@code "*"} admits every application in every realm.
+     * Patterns are matched against the complete application id; {@code "*"} is the
+     * unrestricted wildcard.
      */
     public static Result resolve(List<String> authorizedApplications,
                                  String applicationRegEx,
@@ -111,7 +114,8 @@ public final class ApplicationAuthorizationResolver {
 
         String requested = trimToNull(requestedApplicationId);
         String defaultApp = trimToNull(defaultApplication);
-        boolean wildcard = granted.contains(WILDCARD);
+        String pattern = trimToNull(applicationRegEx);
+        boolean wildcard = granted.contains(WILDCARD) || WILDCARD.equals(pattern);
 
         // Concrete apps that are actually addressable as audiences (wildcard is not an audience).
         LinkedHashSet<String> concrete = new LinkedHashSet<>(granted);
@@ -130,6 +134,11 @@ public final class ApplicationAuthorizationResolver {
         if (requested != null) {
             if (concrete.contains(requested)) {
                 return Result.resolved(new LinkedHashSet<>(concrete), requested, false);
+            }
+            if (pattern != null && matches(pattern, requested)) {
+                LinkedHashSet<String> audiences = new LinkedHashSet<>(concrete);
+                audiences.add(requested);
+                return Result.resolved(audiences, requested, false);
             }
             return Result.denied(requested);
         }

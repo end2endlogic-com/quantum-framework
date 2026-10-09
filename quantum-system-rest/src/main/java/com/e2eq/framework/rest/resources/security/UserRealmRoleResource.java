@@ -143,7 +143,7 @@ public class UserRealmRoleResource extends BaseResource<UserRealmRole, UserRealm
 
    /**
     * Server-truth application-access evaluation: runs the SAME resolver a login
-    * runs (list-or-* contract) against the user's stored credential pattern and
+    * runs (list-union-pattern contract) against the user's stored credential pattern and
     * (user, realm) grant — without authenticating. Answers: what token scoping
     * would a login to this realm (optionally naming an application) produce?
     * AMBIGUOUS results with a pattern grant are enriched with candidates from
