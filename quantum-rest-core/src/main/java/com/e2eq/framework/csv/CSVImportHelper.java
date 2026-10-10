@@ -1,4 +1,5 @@
 package com.e2eq.framework.csv;
+import com.e2eq.framework.model.persistent.morphia.RefNameContract;
 
 
 import com.e2eq.framework.imports.dynamic.DynamicAttributeImportService;
@@ -665,8 +666,10 @@ public class CSVImportHelper {
         }
 
         try {
-            // Attempt save
-            repo.save(batch);
+            // Attempt save; refNames in imported rows are client-supplied
+            try (var clientNames = RefNameContract.clientSuppliedRefNames()) {
+                repo.save(batch);
+            }
 
             // On success, reflect counts
             result.incrementImportedCount(batch.size());

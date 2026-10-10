@@ -1,5 +1,6 @@
 package com.e2eq.framework.model.security;
 
+import com.e2eq.framework.annotations.CanonicalRefName;
 import com.e2eq.framework.model.persistent.base.BaseModel;
 import com.e2eq.framework.model.persistent.base.EntityReference;
 import com.e2eq.ontology.annotations.OntologyClass;
@@ -20,6 +21,7 @@ import java.util.List;
 @EqualsAndHashCode(callSuper = true)
 @ToString( callSuper = true )
 @OntologyClass(id = "UserGroup")
+@CanonicalRefName(legacy = {"tenant-admin-users"})
 public class UserGroup extends BaseModel {
 
    /** Application in which the group's roles are effective; {@code *} means every application. */

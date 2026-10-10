@@ -4,6 +4,7 @@ import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
 import com.e2eq.framework.model.persistent.InvalidStateTransitionException;
 import com.e2eq.framework.model.persistent.base.*;
 import com.e2eq.framework.model.persistent.morphia.BaseMorphiaRepo;
+import com.e2eq.framework.model.persistent.morphia.RefNameContract;
 import com.e2eq.framework.security.runtime.RuleContext;
 import com.e2eq.framework.rest.models.*;
 import com.e2eq.framework.rest.models.Collection;
@@ -923,7 +924,8 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
 
    @APIResponses(value = {
            @APIResponse(responseCode = "200", description = "Success", content = @Content(mediaType = "application/json", schema = @Schema(implementation = SuccessResponse.class))),
-           @APIResponse(responseCode = "400", description = "Validation Error", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
+           @APIResponse(responseCode = "400", description = "Validation Error", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class))),
+           @APIResponse(responseCode = "409", description = "refName cannot change after creation", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
    })
    @POST
    @Produces(MediaType.APPLICATION_JSON)
@@ -934,10 +936,12 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
            throw new WebApplicationException( "Attempt to save null, check body of request, or the serialization of the body failed", Response.Status.BAD_REQUEST);
        }
        String realmId = headers.getHeaderString("X-Realm");
-       if (realmId == null) {
-          model = repo.save(model);
-       } else {
-          model = repo.save(realmId, model);
+       try (var clientNames = RefNameContract.clientSuppliedRefNames()) {
+          if (realmId == null) {
+             model = repo.save(model);
+          } else {
+             model = repo.save(realmId, model);
+          }
        }
       return model;
    }

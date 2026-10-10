@@ -58,6 +58,7 @@ public class MongoPolicyParityIT {
     void policies_persisted_in_mongo_produce_same_outcomes_as_yaml_roles_scenario() {
         // Build a Policy for principal role "admin" mirroring rules_roles_and_no_match.yaml
         Policy adminPolicy = new Policy();
+        adminPolicy.setRefName("MONGO_PARITY_ADMIN");
         adminPolicy.setPrincipalType(Policy.PrincipalType.ROLE);
         adminPolicy.setPrincipalId("admin");
         adminPolicy.setDescription("Mongo parity: admin role rules");

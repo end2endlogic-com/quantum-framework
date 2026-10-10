@@ -55,7 +55,7 @@ public class AccessListResolverRuleIndexTest extends BaseRepoTest {
 
         // Create a policy for identity "user" that attaches an IN filter using the resolver variable
         Policy p = new Policy();
-        p.setRefName("resolver-policy-in-var");
+        p.setRefName("RESOLVER_POLICY_IN_VAR");
         p.setDisplayName("Resolver Policy");
         p.setPrincipalId("user");
         p.setDataDomain(securityUtils.getSystemDataDomain());

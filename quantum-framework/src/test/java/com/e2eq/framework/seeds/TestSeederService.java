@@ -1,5 +1,6 @@
 package com.e2eq.framework.seeds;
 
+import com.e2eq.framework.exceptions.RefNameViolationException;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.model.persistent.morphia.FunctionalDomainRepo;
@@ -47,7 +48,7 @@ public class TestSeederService {
         try (SecurityCallScope.Scope privilegedSeedScope = SecurityCallScope.openIgnoringRules()) {
 
         // Ensure the system credential exists so repository security context resolution can succeed
-        try { writes += ensureSystemCredential(); } catch (Throwable t) { Log.debug("ensureSystemCredential failed", t); }
+        try { writes += ensureSystemCredential(); } catch (Throwable t) { throw new IllegalStateException("ensureSystemCredential failed", t); }
 
         // Establish a temporary principal context for repository operations
         String seedUser = "system@end2endlogic.com"; // align with tests using @TestSecurity(user="system@end2endlogic.com")
@@ -131,7 +132,7 @@ public class TestSeederService {
         }
 
         // Finally, refresh rule context so tests can use the new policies
-        try { ruleContext.reloadFromRepo(realm); } catch (Throwable t) { Log.debug("reloadFromRepo failed", t); }
+        try { ruleContext.reloadFromRepo(realm); } catch (Throwable t) { throw new IllegalStateException("reloadFromRepo failed", t); }
 
             return writes;
         } finally {
@@ -158,8 +159,8 @@ public class TestSeederService {
             credentialRepo.save(realm, cred);
             return 1;
         } catch (Throwable t) {
-            Log.debugf(t, "[SEED] ensureCredentialInRealm failed for %s in %s", userId, realm);
-            return 0;
+            // Fail the seed: a half-loaded fixture makes tests fail far from the cause.
+            throw new IllegalStateException(String.format("[SEED] ensureCredentialInRealm failed for %s in %s", userId, realm), t);
         }
     }
 
@@ -184,8 +185,9 @@ public class TestSeederService {
                 credentialRepo.save(sysRealm, cred);
                 writes++;
             } catch (Throwable t) {
-                Log.warnf(t, "[SEED] Failed to ensure system credential for %s", sysUser);
-            }
+            // Fail the seed: a half-loaded fixture makes tests fail far from the cause.
+            throw new IllegalStateException(String.format("[SEED] Failed to ensure system credential for %s", sysUser), t);
+        }
         }
         return writes;
     }
@@ -213,8 +215,8 @@ public class TestSeederService {
             functionalDomainRepo.save(realm, fd);
             return 1;
         } catch (Throwable t) {
-            Log.warnf(t, "[SEED] functionalDomain upsert failed for %s/%s", area, domain);
-            return 0;
+            // Fail the seed: a half-loaded fixture makes tests fail far from the cause.
+            throw new IllegalStateException(String.format("[SEED] functionalDomain upsert failed for %s/%s", area, domain), t);
         }
     }
 
@@ -256,8 +258,8 @@ public class TestSeederService {
                 writes++;
             }
         } catch (Throwable t) {
-            Log.warnf(t, "[SEED] credential upsert failed for userId=%s", userId);
-            return 0;
+            // Fail the seed: a half-loaded fixture makes tests fail far from the cause.
+            throw new IllegalStateException(String.format("[SEED] credential upsert failed for userId=%s", userId), t);
         }
         return writes;
     }
@@ -316,8 +318,8 @@ public class TestSeederService {
             userProfileRepo.save(realm, up);
             return 1;
         } catch (Throwable t) {
-            Log.warnf(t, "[SEED] user shell upsert failed for %s", userId);
-            return 0;
+            // Fail the seed: a half-loaded fixture makes tests fail far from the cause.
+            throw new IllegalStateException(String.format("[SEED] user shell upsert failed for %s", userId), t);
         }
     }
 
@@ -346,8 +348,8 @@ public class TestSeederService {
             userProfileRepo.save(realm, up);
             return 1;
         } catch (Throwable t) {
-            Log.warnf(t, "[SEED] userProfile upsert failed for %s", userId);
-            return 0;
+            // Fail the seed: a half-loaded fixture makes tests fail far from the cause.
+            throw new IllegalStateException(String.format("[SEED] userProfile upsert failed for %s", userId), t);
         }
     }
 
@@ -366,8 +368,8 @@ public class TestSeederService {
             credentialRepo.save(envConfigUtils.getSystemRealm(), cred);
             return 1;
         } catch (Throwable t) {
-            Log.warnf(t, "[SEED] roleAssignment failed for %s:%s", userId, role);
-            return 0;
+            // Fail the seed: a half-loaded fixture makes tests fail far from the cause.
+            throw new IllegalStateException(String.format("[SEED] roleAssignment failed for %s:%s", userId, role), t);
         }
     }
 
@@ -396,9 +398,12 @@ public class TestSeederService {
             }
             policyRepo.save(realm, p);
             return 1;
+        } catch (RefNameViolationException e) {
+            // A rejected refName is a broken fixture; fail the seed instead of testing a half-loaded archetype.
+            throw e;
         } catch (Throwable t) {
-            Log.warnf(t, "[SEED] policy upsert failed for %s", refName);
-            return 0;
+            // Fail the seed: a half-loaded fixture makes tests fail far from the cause.
+            throw new IllegalStateException(String.format("[SEED] policy upsert failed for %s", refName), t);
         }
     }
 

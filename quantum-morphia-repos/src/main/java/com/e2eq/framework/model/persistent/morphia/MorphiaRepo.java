@@ -1088,7 +1088,9 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
             model.setId(new ObjectId());
         }
 
-        if (model.getRefName() == null || model.getRefName().trim().isEmpty()) {
+        // Canonical refNames are never generated; RefNameContract has already required one on create.
+        if ((model.getRefName() == null || model.getRefName().trim().isEmpty())
+                && !RefNameContract.applies(model.getClass())) {
             model.setRefName (model.getId().toString());
         }
 
@@ -1175,7 +1177,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
    }
 
     public T save(@NotNull MorphiaSession session, @Valid T value) {
-        value = restorePolicyExcludedFields(session, value);
+        value = prepareWrite(session, value, RefNameContract.WriteMode.REPLACE);
         if (value.getClass().getAnnotation(Stateful.class)!= null) {
            try {
               validateStateTransitions(session, value);
@@ -1203,9 +1205,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     @Override
     public List<T> save(@NotNull Datastore datastore, List<T> entities) {
-       entities = entities.stream()
-               .map(entity -> restorePolicyExcludedFields(datastore, entity))
-               .collect(Collectors.toCollection(ArrayList::new));
+       entities = prepareWrites(datastore, entities, RefNameContract.WriteMode.REPLACE);
        entities.forEach(entity -> {
           if (entity.getClass().getAnnotation(Stateful.class)!= null) {
              try {
@@ -1226,9 +1226,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     @Override
     public List<T> save(@NotNull MorphiaSession session, List<T> entities) {
-       entities = entities.stream()
-               .map(entity -> restorePolicyExcludedFields(session, entity))
-               .collect(Collectors.toCollection(ArrayList::new));
+       entities = prepareWrites(session, entities, RefNameContract.WriteMode.REPLACE);
        entities.forEach(entity -> {
           if (entity.getClass().getAnnotation(Stateful.class)!= null) {
              try {
@@ -1250,7 +1248,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     @Override
     public T save(@NotNull Datastore datastore, @Valid T value) {
-       value = restorePolicyExcludedFields(datastore, value);
+       value = prepareWrite(datastore, value, RefNameContract.WriteMode.REPLACE);
        if (value.getClass().getAnnotation(Stateful.class)!= null) {
           try {
              validateStateTransitions(datastore, value);
@@ -1896,6 +1894,28 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
      * stored collection is preserved as a unit because element identity is not
      * available at this generic boundary.
      */
+     /**
+      * Every save/merge entry point funnels through here (single entity) or {@link #prepareWrites} (batch) so
+      * field-policy restoration and the refName contract cannot drift apart across overloads.
+      */
+     private T prepareWrite(Datastore datastore, T entity, RefNameContract.WriteMode mode) {
+         T restored = (datastore instanceof MorphiaSession session)
+                 ? restorePolicyExcludedFields(session, entity)
+                 : restorePolicyExcludedFields(datastore, entity);
+         RefNameContract.enforceOnWrite(datastore, restored, mode);
+         return restored;
+     }
+
+     private List<T> prepareWrites(Datastore datastore, List<T> entities, RefNameContract.WriteMode mode) {
+         List<T> restored = entities.stream()
+                 .map(entity -> (datastore instanceof MorphiaSession session)
+                         ? restorePolicyExcludedFields(session, entity)
+                         : restorePolicyExcludedFields(datastore, entity))
+                 .collect(Collectors.toCollection(ArrayList::new));
+         RefNameContract.enforceOnWrites(datastore, restored, mode);
+         return restored;
+     }
+
      protected T restorePolicyExcludedFields(Datastore datastore, T entity) {
          java.util.Set<String> excluded = securityFilterBuilder().buildExcludedFieldPaths();
          if (excluded.isEmpty()) {
@@ -1959,6 +1979,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
      }
 
      private void assertFieldUpdateAllowed(String requestedPath) {
+         RefNameContract.enforceOnFieldUpdate(getPersistentClass(), requestedPath);
          java.util.Set<String> excluded = securityFilterBuilder().buildExcludedFieldPaths();
          for (String excludedPath : excluded) {
              if (pathsOverlap(requestedPath, excludedPath)) {
@@ -1975,7 +1996,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     @Override
     public T merge(Datastore datastore, @NotNull T entity) {
-       entity = restorePolicyExcludedFields(datastore, entity);
+       entity = prepareWrite(datastore, entity, RefNameContract.WriteMode.MERGE);
        if (entity.getClass().getAnnotation(Stateful.class) != null) {
           try {
              validateStateTransitions(datastore, entity);
@@ -1988,7 +2009,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     @Override
     public T merge(MorphiaSession session, @NotNull T entity) {
-       entity = restorePolicyExcludedFields(session, entity);
+       entity = prepareWrite(session, entity, RefNameContract.WriteMode.MERGE);
        if (entity.getClass().getAnnotation(Stateful.class) != null) {
           try {
              validateStateTransitions(session, entity);
@@ -2006,17 +2027,13 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     @Override
     public List<T> merge(Datastore datastore, List<T> entities) {
-         entities = entities.stream()
-                 .map(entity -> restorePolicyExcludedFields(datastore, entity))
-                 .collect(Collectors.toCollection(ArrayList::new));
+         entities = prepareWrites(datastore, entities, RefNameContract.WriteMode.MERGE);
          return datastore.merge(entities);
     }
 
     @Override
     public List<T> merge(MorphiaSession session, List<T> entities) {
-        entities = entities.stream()
-                .map(entity -> restorePolicyExcludedFields(session, entity))
-                .collect(Collectors.toCollection(ArrayList::new));
+       entities = prepareWrites(session, entities, RefNameContract.WriteMode.MERGE);
        entities.forEach(entity -> {
           if (entity.getClass().getAnnotation(Stateful.class) != null) {
              try {

@@ -1,5 +1,6 @@
 package com.e2eq.framework.model.security;
 
+import com.e2eq.framework.annotations.CanonicalRefName;
 import dev.morphia.annotations.Entity;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import com.e2eq.framework.model.persistent.base.FullBaseModel;
@@ -20,6 +21,7 @@ import java.util.List;
 @NoArgsConstructor
 @EqualsAndHashCode(callSuper = true)
 @ToString(callSuper = true)
+@CanonicalRefName(legacy = {"defaultAnonymousPolicy"})
 public class Policy extends FullBaseModel {
    public enum PrincipalType {
       ROLE,

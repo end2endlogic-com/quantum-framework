@@ -40,7 +40,7 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("DefaultRealm Permission Filter Integration Tests")
 public class DefaultRealmPermissionFilterIT extends BaseRepoTest {
 
-    private static final String TEST_POLICY_REF = "test-realm-filter-policy";
+    private static final String TEST_POLICY_REF = "TEST_REALM_FILTER_POLICY";
     
     @Inject
     CodeListRepo codeListRepo;

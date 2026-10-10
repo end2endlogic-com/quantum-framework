@@ -49,7 +49,7 @@ public class CheckEvalModeTest extends BaseRepoTest {
 
     private void installSimpleFilterAllowPolicy(String realm) {
         Policy p = new Policy();
-        p.setRefName("scoped-policy");
+        p.setRefName("SCOPED_POLICY");
         p.setDisplayName("Scoped Policy");
         p.setPrincipalId("user");
         p.setDataDomain(securityUtils.getSystemDataDomain());

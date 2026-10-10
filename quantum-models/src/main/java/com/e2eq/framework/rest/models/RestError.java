@@ -9,6 +9,7 @@ import lombok.NoArgsConstructor;
 import lombok.ToString;
 import lombok.experimental.SuperBuilder;
 
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -34,4 +35,8 @@ public class RestError {
    protected String reasonMessage;
    protected String debugMessage;
    protected Set<String> constraintViolations;
+   /** Stable machine-readable failure code, e.g. {@code REFNAME_IMMUTABLE}. */
+   protected String errorCode;
+   /** Structured details for {@link #errorCode}. */
+   protected Map<String, String> diagnostics;
 }

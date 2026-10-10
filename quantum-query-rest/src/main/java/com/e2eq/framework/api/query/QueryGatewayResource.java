@@ -1,5 +1,7 @@
 package com.e2eq.framework.api.query;
 
+import com.e2eq.framework.exceptions.RefNameViolationException;
+import com.e2eq.framework.model.persistent.morphia.RefNameContract;
 import com.e2eq.framework.annotations.FunctionalAction;
 import com.e2eq.framework.annotations.FunctionalMapping;
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
@@ -462,9 +464,12 @@ public class QueryGatewayResource {
             // Morphia save is insert-only; updates must use merge. Reuse the registered
             // repository in both cases so validation, policy-preservation, and
             // state-transition checks remain centralized.
-            UnversionedBaseModel saved = entity.getId() == null
-                    ? repo.save(realm, entity)
-                    : repo.merge(ds, entity);
+            UnversionedBaseModel saved;
+            try (var clientNames = RefNameContract.clientSuppliedRefNames()) {
+                saved = entity.getId() == null
+                        ? repo.save(realm, entity)
+                        : repo.merge(ds, entity);
+            }
 
             // The generic response is a DTO map, so the REST model interceptor cannot
             // mask it. Apply the same policy before materializing the response payload.
@@ -477,6 +482,9 @@ public class QueryGatewayResource {
 
             return Response.ok(response).build();
         } catch (WebApplicationException e) {
+            throw e;
+        } catch (RefNameViolationException | jakarta.validation.ConstraintViolationException e) {
+            // Typed validation failures; their exception mappers render 400/409 with diagnostics instead of a 500.
             throw e;
         } catch (SecurityException e) {
             // Repository policy denials are authorization failures.  Do not disguise them

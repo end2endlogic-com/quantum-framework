@@ -1,5 +1,6 @@
 package com.e2eq.framework.imports.calculators;
 
+import com.e2eq.framework.annotations.CanonicalRefName;
 import com.e2eq.framework.imports.spi.FieldCalculator;
 import com.e2eq.framework.imports.spi.ImportContext;
 import com.e2eq.framework.model.persistent.base.BaseModel;
@@ -10,7 +11,8 @@ import java.util.UUID;
 
 /**
  * Built-in field calculator that generates refName if not present.
- * Uses displayName to generate refName, or falls back to UUID.
+ * Uses displayName to generate refName, or falls back to UUID. Types annotated with
+ * {@link CanonicalRefName} are left untouched so the repository can reject a missing refName.
  */
 @ApplicationScoped
 @Named("refNameCalculator")
@@ -27,6 +29,11 @@ public class RefNameFieldCalculator implements FieldCalculator {
         Map<String, Object> rowData,
         ImportContext context
     ) {
+        if (bean.getClass().isAnnotationPresent(CanonicalRefName.class)) {
+            // Canonical refNames are chosen by people, never generated; the repository rejects a
+            // missing or invalid one with a typed REFNAME_* error for this row.
+            return;
+        }
         if (bean.getRefName() == null || bean.getRefName().isEmpty()) {
             String refName = generateRefName(bean, rowData);
             bean.setRefName(refName);

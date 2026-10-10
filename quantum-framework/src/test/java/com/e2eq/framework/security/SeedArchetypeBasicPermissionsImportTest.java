@@ -25,9 +25,9 @@ import static org.junit.jupiter.api.Assertions.*;
 public class SeedArchetypeBasicPermissionsImportTest extends BaseRepoTest {
 
     private static final java.util.Set<String> LEGACY_ACCIDENTAL_DATABASES = java.util.Set.of(
-            "auth", "userProfile", "home", "item", "user-login-allow",
-            "user-userprofile-self", "browse-public", "user-delete-deny",
-            "power-user-standard", "tenant-admin-full");
+            "auth", "userProfile", "home", "item", "USER_LOGIN_ALLOW",
+            "USER_USERPROFILE_SELF", "BROWSE_PUBLIC", "USER_DELETE_DENY",
+            "POWER_USER_STANDARD", "TENANT_ADMIN_FULL");
 
     @Inject UserProfileRepo userProfileRepo;
     @Inject CredentialRepo credentialRepo;
