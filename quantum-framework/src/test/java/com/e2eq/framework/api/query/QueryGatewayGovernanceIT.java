@@ -1,5 +1,7 @@
 package com.e2eq.framework.api.query;
 
+import com.e2eq.framework.rest.exceptions.DataDomainGovernanceException;
+
 import com.e2eq.framework.model.persistent.base.CodeList;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.base.ProjectionField;
@@ -251,7 +253,32 @@ public class QueryGatewayGovernanceIT {
     // ------------------------------------------------------------------
 
     @Test
-    public void save_create_stamps_callers_dataDomain_instead_of_request_body_domain() {
+    public void save_create_rejects_request_body_domain_of_another_tenant() {
+        String refName = marker + "-save:forged";
+        QueryGatewayResource.SaveRequest req = new QueryGatewayResource.SaveRequest();
+        req.rootType = CodeList.class.getName();
+        req.realm = realm;
+        req.entity = new HashMap<>();
+        req.entity.put("category", marker + "-save");
+        req.entity.put("key", "forged");
+        req.entity.put("refName", refName);
+        req.entity.put("valueType", "STRING");
+        req.entity.put("dataDomain", ddB);
+
+        ResourceContext saveContext = testUtils.getResourceContext("integration", "query", "save");
+        try (SecuritySession ignored = new SecuritySession(pcA, saveContext)) {
+            DataDomainGovernanceException denied =
+                    assertThrows(DataDomainGovernanceException.class, () -> resource.save(req));
+            assertEquals(DataDomainGovernanceException.Code.DATA_DOMAIN_NOT_PERMITTED, denied.getCode());
+        }
+
+        CodeList persisted = morphiaDataStoreWrapper.getDataStore(realm).find(CodeList.class)
+                .filter(Filters.eq("refName", refName)).first();
+        assertNull(persisted, "a create naming another tenant's DataDomain must not be persisted");
+    }
+
+    @Test
+    public void save_create_without_domain_stamps_callers_dataDomain() {
         QueryGatewayResource.SaveRequest req = new QueryGatewayResource.SaveRequest();
         req.rootType = CodeList.class.getName();
         req.realm = realm;
@@ -260,7 +287,6 @@ public class QueryGatewayGovernanceIT {
         req.entity.put("key", "created");
         req.entity.put("refName", marker + "-save:created");
         req.entity.put("valueType", "STRING");
-        req.entity.put("dataDomain", ddB);
 
         String id;
         ResourceContext saveContext = testUtils.getResourceContext("integration", "query", "save");
@@ -279,6 +305,37 @@ public class QueryGatewayGovernanceIT {
         assertEquals(ddA.getTenantId(), stored.getDataDomain().getTenantId(),
                 "generic save must stamp the authenticated caller's DataDomain");
         ds.find(CodeList.class).filter(Filters.eq("_id", stored.getId())).delete();
+    }
+
+    @Test
+    public void save_update_rejects_moving_an_in_scope_row_to_another_domain() {
+        CodeList aRow = seedRow(ddA, marker + "-save-move", "aMove");
+
+        QueryGatewayResource.SaveRequest req = new QueryGatewayResource.SaveRequest();
+        req.rootType = CodeList.class.getName();
+        req.realm = realm;
+        req.entity = new HashMap<>();
+        req.entity.put("id", aRow.getId());
+        req.entity.put("category", aRow.getCategory());
+        req.entity.put("key", aRow.getKey());
+        req.entity.put("refName", aRow.getRefName());
+        req.entity.put("version", aRow.getVersion());
+        req.entity.put("description", "moved");
+        req.entity.put("valueType", "STRING");
+        req.entity.put("dataDomain", ddB);
+
+        ResourceContext saveContext = testUtils.getResourceContext("integration", "query", "save");
+        try (SecuritySession ignored = new SecuritySession(pcA, saveContext)) {
+            DataDomainGovernanceException denied =
+                    assertThrows(DataDomainGovernanceException.class, () -> resource.save(req));
+            assertEquals(DataDomainGovernanceException.Code.DATA_DOMAIN_NOT_PERMITTED, denied.getCode());
+        }
+
+        CodeList persisted = morphiaDataStoreWrapper.getDataStore(realm).find(CodeList.class)
+                .filter(Filters.eq("_id", aRow.getId())).first();
+        assertNotNull(persisted);
+        assertEquals(ddA, persisted.getDataDomain(), "the row must stay in its stored domain");
+        assertEquals("secret-aMove", persisted.getDescription());
     }
 
     @Test
