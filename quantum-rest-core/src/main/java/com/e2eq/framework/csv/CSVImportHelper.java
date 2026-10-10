@@ -92,6 +92,30 @@ public class CSVImportHelper {
         }
     }
 
+    /**
+     * CSV columns are bound through bean setters, not Jackson, so server-only control properties
+     * must be refused here explicitly. A column such as {@code skipValidation} would otherwise let
+     * the uploader bypass data-domain resolution and validation for every imported row.
+     */
+    static void rejectServerOnlyColumns(String[] fieldMapping) {
+        if (fieldMapping == null) {
+            return;
+        }
+        for (String column : fieldMapping) {
+            if (column == null) {
+                continue;
+            }
+            for (String segment : column.split("\\.")) {
+                String property = segment.replaceAll("\\[\\d*]$", "").trim();
+                if (UnversionedBaseModel.SKIP_VALIDATION_PROPERTY.equalsIgnoreCase(property)) {
+                    throw new ValidationException(format(
+                            "Column '%s' maps to the server-only property '%s' and cannot be imported",
+                            column, UnversionedBaseModel.SKIP_VALIDATION_PROPERTY));
+                }
+            }
+        }
+    }
+
     private QuoteMode getQuoteMode(String quotingStrategy) {
         if ("QUOTE_ALL_COLUMNS".equalsIgnoreCase(quotingStrategy)) {
             return new AlwaysQuoteMode();
@@ -304,6 +328,7 @@ public class CSVImportHelper {
             // convert requestedColumns to an array of strings
             String[] fieldMapping = requestedColumns.toArray(new String[requestedColumns.size()]);
 
+            rejectServerOnlyColumns(fieldMapping);
             beanReader.configureBeanMapping(repo.getPersistentClass(), fieldMapping);
 
             ListCellProcessor listProcessor = new ListCellProcessor();
@@ -441,6 +466,7 @@ public class CSVImportHelper {
             }
 
             final String[] fieldMapping = requestedColumns.toArray(new String[0]);
+            rejectServerOnlyColumns(fieldMapping);
             beanReader.configureBeanMapping(repo.getPersistentClass(), fieldMapping);
 
             ListCellProcessor listProcessor = new ListCellProcessor();
@@ -792,6 +818,7 @@ public class CSVImportHelper {
             }
 
             final String[] fieldMapping = requestedColumns.toArray(new String[0]);
+            rejectServerOnlyColumns(fieldMapping);
             beanReader.configureBeanMapping(repo.getPersistentClass(), fieldMapping);
 
             ListCellProcessor listProcessor = new ListCellProcessor();
@@ -1238,6 +1265,7 @@ public class CSVImportHelper {
             }
 
             final String[] fieldMapping = effectiveColumns.toArray(new String[0]);
+            rejectServerOnlyColumns(fieldMapping);
             beanReader.configureBeanMapping(repo.getPersistentClass(), fieldMapping);
 
             // Build processors with profile transformations
