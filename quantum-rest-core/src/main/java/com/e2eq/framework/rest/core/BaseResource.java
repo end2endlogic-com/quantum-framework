@@ -5,6 +5,10 @@ import com.e2eq.framework.model.persistent.InvalidStateTransitionException;
 import com.e2eq.framework.model.persistent.base.*;
 import com.e2eq.framework.model.persistent.morphia.BaseMorphiaRepo;
 import com.e2eq.framework.model.persistent.morphia.RefNameContract;
+import com.e2eq.framework.model.persistent.morphia.interceptors.ddpolicy.DataDomainResolver;
+import com.e2eq.framework.model.securityrules.PrincipalContext;
+import com.e2eq.framework.model.securityrules.SecurityContext;
+import com.e2eq.framework.rest.exceptions.DataDomainGovernanceException;
 import com.e2eq.framework.security.runtime.RuleContext;
 import com.e2eq.framework.rest.models.*;
 import com.e2eq.framework.rest.models.Collection;
@@ -73,6 +77,9 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
 
    @Inject
    protected CSVImportHelper csvImportHelper;
+
+   @Inject
+   protected DataDomainResolver dataDomainResolver;
 
    protected BaseResource(R repo) {
       this.repo = repo;
@@ -936,6 +943,7 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
            throw new WebApplicationException( "Attempt to save null, check body of request, or the serialization of the body failed", Response.Status.BAD_REQUEST);
        }
        String realmId = headers.getHeaderString("X-Realm");
+       governDataDomainForSave(realmId, model);
        try (var clientNames = RefNameContract.clientSuppliedRefNames()) {
           if (realmId == null) {
              model = repo.save(model);
@@ -944,6 +952,89 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
           }
        }
       return model;
+   }
+
+   /**
+    * A REST body never chooses where a row lives. On create the DataDomain is the one the
+    * authenticated principal resolves to for this model's functional area/domain (X-Realm has
+    * already switched the principal to the target realm's domain); on an id-carrying save it is
+    * the stored row's domain. A body that names any other domain is rejected rather than silently
+    * rewritten, and an id outside the caller's governed scope is never upserted, so a caller cannot
+    * overwrite or manufacture a row in another tenant by choosing its identifier.
+    *
+    * <p>Programmatic writers that legitimately place rows in a specific domain (seeders, tenant
+    * provisioning, migrations) call the repository directly and are unaffected.</p>
+    */
+   protected void governDataDomainForSave(String realmId, T model) {
+      if (SecurityContext.isIgnoringRules()) {
+         return;
+      }
+      PrincipalContext principal = SecurityContext.getPrincipalContext()
+              .orElseThrow(() -> new DataDomainGovernanceException(
+                      DataDomainGovernanceException.Code.SECURITY_CONTEXT_MISSING,
+                      "Save cannot be governed: no principal context is established for this request"));
+      SecurityContext.getResourceContext()
+              .orElseThrow(() -> new DataDomainGovernanceException(
+                      DataDomainGovernanceException.Code.SECURITY_CONTEXT_MISSING,
+                      "Save cannot be governed: no resource context is established for this request"));
+
+      if (model.getId() != null) {
+         Optional<T> stored = realmId != null
+                 ? repo.findById(model.getId(), realmId)
+                 : repo.findById(model.getId());
+         if (stored.isPresent()) {
+            DataDomain storedDomain = stored.get().getDataDomain();
+            if (model.getDataDomain() != null && !model.getDataDomain().equals(storedDomain)) {
+               throw new DataDomainGovernanceException(
+                       DataDomainGovernanceException.Code.DATA_DOMAIN_NOT_PERMITTED,
+                       "The dataDomain of an existing " + modelName() + " cannot be changed through this API");
+            }
+            model.setDataDomain(storedDomain);
+            return;
+         }
+         boolean existsOutsideScope = realmId != null
+                 ? repo.findById(model.getId(), realmId, true).isPresent()
+                 : repo.findById(model.getId().toHexString(), true).isPresent();
+         if (existsOutsideScope) {
+            throw new DataDomainGovernanceException(
+                    DataDomainGovernanceException.Code.ENTITY_NOT_IN_SCOPE,
+                    modelName() + " id " + model.getId().toHexString() + " was not found in the caller's governed data scope");
+         }
+         // An unused client-chosen id is a create.
+      }
+
+      if (principal.getDataDomain() == null) {
+         throw new DataDomainGovernanceException(
+                 DataDomainGovernanceException.Code.SECURITY_CONTEXT_MISSING,
+                 "Save cannot be governed: the principal carries no DataDomain");
+      }
+      DataDomain expected = dataDomainResolver.resolveForCreate(model.bmFunctionalArea(), model.bmFunctionalDomain());
+      if (model.getDataDomain() != null && !model.getDataDomain().equals(expected)) {
+         throw new DataDomainGovernanceException(
+                 DataDomainGovernanceException.Code.DATA_DOMAIN_NOT_PERMITTED,
+                 "The request body names a dataDomain the caller is not governed by; omit dataDomain on create");
+      }
+      model.setDataDomain(expected);
+   }
+
+   /** Field-path updates must not move rows between domains. */
+   @SafeVarargs
+   protected final void rejectDataDomainPairs(Pair<String, Object>... pairs) {
+      if (pairs == null) {
+         return;
+      }
+      for (Pair<String, Object> pair : pairs) {
+         String key = pair == null ? null : pair.getKey();
+         if (key != null && (key.equals("dataDomain") || key.startsWith("dataDomain."))) {
+            throw new DataDomainGovernanceException(
+                    DataDomainGovernanceException.Code.DATA_DOMAIN_NOT_UPDATABLE,
+                    "Field '" + key + "' cannot be updated through this API");
+         }
+      }
+   }
+
+   private String modelName() {
+      return modelClass != null ? modelClass.getSimpleName() : "entity";
    }
 
    @APIResponses(value = {
@@ -956,6 +1047,7 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
    @Consumes(MediaType.APPLICATION_JSON)
    @SecurityRequirement(name = "bearerAuth")
    public Response update(@Context HttpHeaders headers, @QueryParam("id") String id, @QueryParam("pairs") Pair<String,Object>... pairs) throws InvalidStateTransitionException {
+      rejectDataDomainPairs(pairs);
 
       String realmId = headers.getHeaderString("X-Realm");
       long updated = 0;
@@ -993,6 +1085,7 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
                                      @QueryParam("filter") String filter,
                                      @QueryParam("ignoreRules") @DefaultValue("false") boolean ignoreRules,
                                      @QueryParam("pairs") Pair<String,Object>... pairs) {
+       rejectDataDomainPairs(pairs);
        try {
            String realmId = headers.getHeaderString("X-Realm");
            long modified;
@@ -1042,6 +1135,7 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
    public Response updateManyByIds(@Context HttpHeaders headers,
                                    @RequestBody(description = "List of ids to update") List<String> ids,
                                    @QueryParam("pairs") Pair<String,Object>... pairs) {
+       rejectDataDomainPairs(pairs);
        try {
            if (ids == null || ids.isEmpty()) {
                CounterResponse response = new CounterResponse(0);
@@ -1080,6 +1174,7 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
    public Response updateManyByRefAndDomain(@Context HttpHeaders headers,
                                             @RequestBody(description = "List of (refName, dataDomain) pairs") List<EntityRefDomainSelector> selectors,
                                             @QueryParam("pairs") Pair<String,Object>... pairs) {
+       rejectDataDomainPairs(pairs);
        try {
            if (selectors == null || selectors.isEmpty()) {
                CounterResponse response = new CounterResponse(0);
