@@ -93,10 +93,16 @@ public class CSVImportHelper {
     }
 
     /**
-     * CSV columns are bound through bean setters, not Jackson, so server-only control properties
-     * must be refused here explicitly. A column such as {@code skipValidation} would otherwise let
-     * the uploader bypass data-domain resolution and validation for every imported row.
+     * Properties an uploader may never bind, matched on any path segment. CSV columns are bound
+     * through bean setters (Dozer follows nested paths), not Jackson, so they must be refused here:
+     * {@code skipValidation} would bypass data-domain resolution and validation for every row, and
+     * {@code dataDomain} (or any {@code dataDomain.*} component) would let the uploader choose the
+     * tenant an imported row is placed in. Rows always take the importing principal's domain.
      */
+    private static final java.util.Set<String> SERVER_ONLY_ROOT_PROPERTIES =
+            java.util.Set.of(UnversionedBaseModel.SKIP_VALIDATION_PROPERTY.toLowerCase(java.util.Locale.ROOT),
+                    "datadomain");
+
     static void rejectServerOnlyColumns(String[] fieldMapping) {
         if (fieldMapping == null) {
             return;
@@ -107,10 +113,10 @@ public class CSVImportHelper {
             }
             for (String segment : column.split("\\.")) {
                 String property = segment.replaceAll("\\[\\d*]$", "").trim();
-                if (UnversionedBaseModel.SKIP_VALIDATION_PROPERTY.equalsIgnoreCase(property)) {
+                if (SERVER_ONLY_ROOT_PROPERTIES.contains(property.toLowerCase(java.util.Locale.ROOT))) {
                     throw new ValidationException(format(
                             "Column '%s' maps to the server-only property '%s' and cannot be imported",
-                            column, UnversionedBaseModel.SKIP_VALIDATION_PROPERTY));
+                            column, property));
                 }
             }
         }
