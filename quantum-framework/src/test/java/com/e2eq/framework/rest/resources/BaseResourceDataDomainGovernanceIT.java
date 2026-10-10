@@ -106,20 +106,30 @@ public class BaseResourceDataDomainGovernanceIT extends BaseRepoTest {
         }
     }
 
+    /**
+     * The documented save pattern (AGENTS.md "Save And Update Pattern"): read the full record, modify
+     * it, write all of it back, including the dataDomain the read API returned. That round-trip must
+     * keep working under governance.
+     */
     @Test
-    public void update_without_dataDomain_keeps_the_stored_domain() {
+    public void full_record_round_trip_update_is_accepted_and_keeps_the_stored_domain() {
         String category = "ddgov-upd-ok-" + System.nanoTime();
         try {
             Response created = post(codeList(category, "k"));
             assertEquals(200, created.statusCode(), created.asString());
             CodeList stored = findStored(category, "k");
 
-            Map<String, Object> update = codeList(category, "k");
-            update.put("id", stored.getId().toHexString());
-            update.put("version", stored.getVersion());
-            update.put("description", "updated");
+            Response read = given().header("X-Realm", realm)
+                .when()
+                    .get(PATH + "/id/" + stored.getId().toHexString())
+                .then()
+                    .extract().response();
+            assertEquals(200, read.statusCode(), read.asString());
+            Map<String, Object> record = read.jsonPath().getMap("$");
+            assertNotNull(record.get("dataDomain"), "the read API must return the dataDomain to round-trip");
+            record.put("description", "updated");
 
-            Response response = post(update);
+            Response response = post(record);
 
             assertEquals(200, response.statusCode(), response.asString());
             CodeList after = findStored(category, "k");
