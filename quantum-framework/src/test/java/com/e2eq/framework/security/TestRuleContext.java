@@ -372,7 +372,7 @@ public class TestRuleContext extends BaseRepoTest {
         // Relying on that made this assertion order-dependent and flaky on a clean database. Seed the
         // policy here so the test is self-contained and deterministic regardless of run order / DB state.
         Policy userOwnResourcesPolicy = new Policy();
-        userOwnResourcesPolicy.setRefName("default-ctx-user-view-own");
+        userOwnResourcesPolicy.setRefName("DEFAULT_CTX_USER_VIEW_OWN");
         userOwnResourcesPolicy.setDisplayName("User view-own (test seed)");
         userOwnResourcesPolicy.setPrincipalId("user");
         userOwnResourcesPolicy.setDataDomain(securityUtils.getSystemDataDomain());
@@ -465,7 +465,7 @@ public class TestRuleContext extends BaseRepoTest {
 
         // Build a policy for role "user": allow view of own userProfile; deny delete in security area
         Policy userPolicy = new Policy();
-        userPolicy.setRefName("it-user-policy");
+        userPolicy.setRefName("IT_USER_POLICY");
         userPolicy.setDisplayName("IT User Policy");
         userPolicy.setPrincipalId("user");
         userPolicy.setDataDomain(securityUtils.getSystemDataDomain());
@@ -545,7 +545,7 @@ public class TestRuleContext extends BaseRepoTest {
 
         // Build a broad ALLOW for admin
         Policy adminPolicy = new Policy();
-        adminPolicy.setRefName("it-admin-policy");
+        adminPolicy.setRefName("IT_ADMIN_POLICY");
         adminPolicy.setDisplayName("IT Admin Policy");
         adminPolicy.setPrincipalId("admin");
         adminPolicy.setDataDomain(securityUtils.getSystemDataDomain());

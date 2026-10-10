@@ -1,4 +1,6 @@
 package com.e2eq.framework.rest.resources.security;
+import com.e2eq.framework.exceptions.RefNameViolationException;
+import com.e2eq.framework.model.persistent.morphia.RefNameContract;
 
 import com.e2eq.framework.model.persistent.morphia.PolicyRepo;
 import com.e2eq.framework.model.security.Policy;
@@ -302,7 +304,7 @@ public class PolicyResource extends BaseResource<Policy, PolicyRepo> {
          }
 
          String refName = item.refName;
-         try {
+         try (var clientNames = RefNameContract.clientSuppliedRefNames()) {
             PolicyImportResult result = upsertPolicy(effectiveRealm, item);
             Map<String, Object> entry = successEntry(result.policy(), row, result.created());
             if (result.created()) {
@@ -310,6 +312,11 @@ public class PolicyResource extends BaseResource<Policy, PolicyRepo> {
             } else {
                updated.add(entry);
             }
+         } catch (RefNameViolationException ex) {
+            Map<String, Object> entry = errorEntry(row, refName, ex.getMessage());
+            entry.put("errorCode", ex.getCode().name());
+            entry.put("diagnostics", ex.diagnostics());
+            errors.add(entry);
          } catch (IllegalArgumentException ex) {
             errors.add(errorEntry(row, refName, ex.getMessage()));
          } catch (Exception ex) {
@@ -342,7 +349,10 @@ public class PolicyResource extends BaseResource<Policy, PolicyRepo> {
          throw new IllegalArgumentException("principalId is required");
       }
 
-      Optional<Policy> existing = repo.findByRefName(realm, item.refName);
+      // Imported policies are stamped with the system data domain, which the caller's row filters may hide, so
+      // look the refName up without them; otherwise every re-import takes the create path and duplicates the policy.
+      Optional<Policy> existing = repo.findByRefName(
+              repo.getMorphiaDataStoreWrapper().getDataStore(realm), item.refName, true);
       Policy policy = existing.orElseGet(Policy::new);
       boolean created = existing.isEmpty();
 

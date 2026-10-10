@@ -329,6 +329,50 @@ When does validation occur?
 - On every save/update path that hits persistence, prePersist triggers validation (and permission/audit/reference processing) before the document is written to MongoDB, guaranteeing constraints and policies are enforced consistently across all repositories.
 
 
+== Canonical refNames
+
+`refName` is the stable identifier other collections join on. Unlike `id`, it survives a delete and re-create,
+so it must be meaningful and spelled exactly one way. Entities annotated with `@CanonicalRefName`
+(currently `UserGroup` and `Policy`) are held to a canonical rule by `MorphiaRepo` on every write path,
+including REST resources, `/api/query/save`, CSV import, and seed packs:
+
+* On create, `refName` must match `^[A-Z][A-Z0-9_]*$`, be 3-64 characters, and not look like a generated id
+  (`^[0-9a-f]{16,}$`, case-insensitive). Values are judged as given; the server never trims or re-cases them.
+  A missing `refName` is rejected instead of defaulting to the ObjectId.
+* After create, `refName` is immutable. Saving, merging, or field-updating a different value fails. A merge that
+  omits `refName` leaves it untouched; a full save that omits it is treated as a change.
+* A record stored before the rule without any `refName` may stay unnamed or be named once under the rule.
+* Existing records are never re-validated or rewritten.
+* `skipValidation` does not bypass the rule.
+
+Violations raise `RefNameViolationException`, rendered as a `RestError` with `errorCode` and `diagnostics`:
+
+[cols="1,1,3"]
+|===
+| errorCode | HTTP | Meaning
+
+| `REFNAME_REQUIRED` | 400 | No refName supplied on create
+| `REFNAME_INVALID_FORMAT` | 400 | Pattern or length violation
+| `REFNAME_GENERATED_ID` | 400 | Looks like an ObjectId, dashless UUID, or hash
+| `REFNAME_RESERVED` | 400 | A client tried to create a declared legacy name reserved for framework code
+| `REFNAME_IMMUTABLE` | 409 | Attempt to change the refName of an existing record
+|===
+
+Names that predate the rule but are still created for new realms are admitted only when declared exactly:
+on the annotation (`@CanonicalRefName(legacy = {"defaultAnonymousPolicy"})`) or per application in configuration:
+
+[source,properties]
+----
+quantum.refname.legacy-allowed.UserGroup=admin,user,anonymous
+quantum.refname.legacy-allowed.Policy=platform-system-admin-full
+----
+
+Legacy names are admitted only for framework writes (changesets, startup and provisioning services, seed runners).
+Client-driven writes (REST save, `/api/query/save`, CSV import, policy import) run inside
+`RefNameContract.clientSuppliedRefNames()` and get `REFNAME_RESERVED`, so a client cannot claim a name that framework
+code later looks up. Each admitted legacy create logs `REFNAME_LEGACY_ADMITTED`. Treat the list as a migration backlog,
+not a convenience.
+
 == Functional Area/Domain in RuleContext Permission Language
 
 [plantuml]
