@@ -82,10 +82,10 @@ public class SkipValidationJsonBypassIT extends BaseRepoTest {
     /** QueryGateway stamps the domain itself; keep it covered so the guarantee holds on both paths. */
     @Test
     public void queryGateway_save_with_skipValidation_true_still_resolves_dataDomain_from_principal() {
-        assertSkipValidationCannotForgeDataDomain("skipval-qg-", this::save);
+        assertSkipValidationStillResolvesDataDomain("skipval-qg-", this::save);
     }
 
-    private void assertSkipValidationCannotForgeDataDomain(String prefix,
+    private void assertSkipValidationStillResolvesDataDomain(String prefix,
                                                           java.util.function.Function<Map<String, Object>, Response> saver) {
         String suffix = Long.toString(System.nanoTime());
 
@@ -101,23 +101,18 @@ public class SkipValidationJsonBypassIT extends BaseRepoTest {
             DataDomain expected = control.getDataDomain();
             assertNotNull(expected, "control save must have a resolved dataDomain");
 
-            // Attack: skipValidation=true plus a forged data domain.
-            Map<String, Object> forgedDomain = new HashMap<>();
-            forgedDomain.put("orgRefName", "forged-org");
-            forgedDomain.put("accountNum", "forged-account");
-            forgedDomain.put("tenantId", "forged-tenant");
-            forgedDomain.put("ownerId", "forged-owner");
-            forgedDomain.put("dataSegment", 0);
-
+            // Attack: skipValidation=true must not skip domain resolution. A body-supplied
+            // dataDomain is governed separately (rejected by the REST save paths), so it is not
+            // combined here; this test isolates the skipValidation binding.
             Map<String, Object> attack = codeList(category, key);
             attack.put("skipValidation", true);
-            attack.put("dataDomain", forgedDomain);
 
             Response attackResponse = saver.apply(attack);
             assertEquals(200, attackResponse.statusCode(), attackResponse.asString());
 
             CodeList stored = findStored(category, key);
             assertNotNull(stored, "attack entity should have been persisted under the resolved domain");
+            assertNotNull(stored.getDataDomain(), "dataDomain must be resolved even when the body asks to skip validation");
             DataDomain actual = stored.getDataDomain();
             assertEquals(expected.getOrgRefName(), actual.getOrgRefName(), "orgRefName must come from the principal");
             assertEquals(expected.getAccountNum(), actual.getAccountNum(), "accountNum must come from the principal");
@@ -126,7 +121,7 @@ public class SkipValidationJsonBypassIT extends BaseRepoTest {
             assertFalse(attackResponse.asString().contains("\"skipValidation\":true"),
                     "skipValidation must not be bound from the request body: " + attackResponse.asString());
         } finally {
-            // Remove directly: a forged-domain record is invisible to the principal's governed delete.
+            // Remove directly so cleanup does not depend on the governed delete path.
             deleteStored(controlCategory);
             deleteStored(category);
         }
