@@ -36,6 +36,8 @@ public class MongoDbInitResource implements QuarkusTestResourceLifecycleManager 
     static final String TEST_DATABASE_PREFIX = "test-";
 
     private MongoClient mongoClient;
+    private final Set<String> preexistingTestDatabases = new HashSet<>();
+    private final Set<String> configuredTestDatabases = new HashSet<>();
 
     @Override
     public Map<String, String> start() {
@@ -52,6 +54,15 @@ public class MongoDbInitResource implements QuarkusTestResourceLifecycleManager 
 
             String conn = ConfigProvider.getConfig().getValue("quarkus.mongodb.connection-string", String.class);
             this.mongoClient = MongoClients.create(conn);
+
+            // The local Mongo is shared with other suites and applications running at the
+            // same time; remember what was already there so teardown leaves it alone.
+            mongoClient.listDatabaseNames().into(preexistingTestDatabases);
+            configuredTestDatabases.addAll(java.util.List.of(systemRealm, testRealm, defaultRealm));
+            ConfigProvider.getConfig().getOptionalValue("quarkus.mongodb.database", String.class)
+                    .ifPresent(configuredTestDatabases::add);
+            ConfigProvider.getConfig().getOptionalValue("quarkus.morphia.database", String.class)
+                    .ifPresent(configuredTestDatabases::add);
 
             String requiredVersionStr = ConfigProvider.getConfig().getValue("quantum.database.version", String.class);
             Semver required = Semver.parse(requiredVersionStr);
@@ -75,17 +86,16 @@ public class MongoDbInitResource implements QuarkusTestResourceLifecycleManager 
     public void stop() {
         if (mongoClient != null) {
             try {
-                // Test databases are disposable by contract. Cleaning them at the
-                // resource boundary prevents a successful suite from polluting the
-                // developer's local catalog or consuming Atlas collection quotas.
+                // Test databases are disposable by contract, but only this suite's own:
+                // other suites on the same Mongo (another module, another worktree, an
+                // application's tests) may be mid-run in their test-* databases.
                 java.util.List<String> databaseNames = mongoClient.listDatabaseNames()
                         .into(new java.util.ArrayList<>());
-                for (String databaseName : databaseNames) {
-                    if (databaseName.startsWith(TEST_DATABASE_PREFIX)) {
-                        requireTestDatabaseName(databaseName, "database selected for test teardown");
-                        mongoClient.getDatabase(databaseName).drop();
-                        Log.infof("Dropped test database during suite teardown: %s", databaseName);
-                    }
+                for (String databaseName : ownedTestDatabases(
+                        databaseNames, preexistingTestDatabases, configuredTestDatabases)) {
+                    requireTestDatabaseName(databaseName, "database selected for test teardown");
+                    mongoClient.getDatabase(databaseName).drop();
+                    Log.infof("Dropped test database during suite teardown: %s", databaseName);
                 }
             } finally {
                 try { mongoClient.close(); } catch (Exception ignored) {}
@@ -362,6 +372,19 @@ public class MongoDbInitResource implements QuarkusTestResourceLifecycleManager 
     private void requireConfiguredTestDatabaseName(String configName) {
         ConfigProvider.getConfig().getOptionalValue(configName, String.class)
                 .ifPresent(databaseName -> requireTestDatabaseName(databaseName, configName));
+    }
+
+    /**
+     * The test databases this suite may drop at teardown: its configured realms, plus
+     * test-prefixed databases that did not exist when the suite started.
+     */
+    static java.util.List<String> ownedTestDatabases(java.util.Collection<String> current,
+                                                     Set<String> preexisting,
+                                                     Set<String> configured) {
+        return current.stream()
+                .filter(name -> name.startsWith(TEST_DATABASE_PREFIX))
+                .filter(name -> configured.contains(name) || !preexisting.contains(name))
+                .toList();
     }
 
     static String requireTestDatabaseName(String databaseName, String source) {
