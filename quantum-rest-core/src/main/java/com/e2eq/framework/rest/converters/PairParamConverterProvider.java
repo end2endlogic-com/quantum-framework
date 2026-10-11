@@ -103,25 +103,55 @@ public class PairParamConverterProvider implements ParamConverterProvider {
             return result;
         }
 
-        /** True when body opens with '[' whose matching ']' (outside quotes) is the last character. */
+        /**
+         * True when body opens with '[' whose matching ']' is the last character. Brackets inside a
+         * quoted value do not count. As in {@link #parse}, a quote opens a quoted value only when
+         * it directly follows the ':' after an entry's key; an apostrophe anywhere else is part of
+         * an unquoted value (e.g. {@code description:O'Reilly}) and must not hide the closing ']'.
+         */
         private static boolean enclosedByBrackets(String body) {
-            if (body.length() < 2 || body.charAt(0) != '[' || body.charAt(body.length() - 1) != ']') {
+            int len = body.length();
+            if (len < 2 || body.charAt(0) != '[' || body.charAt(len - 1) != ']') {
                 return false;
             }
             int depth = 0;
-            boolean quoted = false;
-            for (int i = 0; i < body.length(); i++) {
+            boolean atEntryStart = true;
+            int i = 0;
+            while (i < len) {
                 char c = body.charAt(i);
-                if (c == '\'') {
-                    quoted = !quoted;
-                } else if (!quoted && c == '[') {
-                    depth++;
-                } else if (!quoted && c == ']') {
-                    depth--;
-                    if (depth == 0) {
-                        return i == body.length() - 1;
+                if (atEntryStart) {
+                    if (Character.isWhitespace(c)) {
+                        i++;
+                        continue;
+                    }
+                    if (c != '[') {
+                        atEntryStart = false;
+                        int keyEnd = i;
+                        while (keyEnd < len && isKeyChar(body.charAt(keyEnd))) {
+                            keyEnd++;
+                        }
+                        if (keyEnd > i && keyEnd + 1 < len
+                                && body.charAt(keyEnd) == ':' && body.charAt(keyEnd + 1) == '\'') {
+                            int close = body.indexOf('\'', keyEnd + 2);
+                            if (close < 0) {
+                                return false;
+                            }
+                            i = close + 1;
+                            continue;
+                        }
                     }
                 }
+                if (c == '[') {
+                    depth++;
+                } else if (c == ']') {
+                    depth--;
+                    if (depth == 0) {
+                        return i == len - 1;
+                    }
+                } else if (c == ',') {
+                    atEntryStart = true;
+                }
+                i++;
             }
             return false;
         }

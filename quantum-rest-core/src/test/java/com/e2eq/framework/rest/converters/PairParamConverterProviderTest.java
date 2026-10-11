@@ -48,6 +48,19 @@ class PairParamConverterProviderTest {
     }
 
     @Test
+    void apostrophe_inside_an_unquoted_value_is_not_a_quote() {
+        // Only a quote directly after key: opens a quoted value; elsewhere it is literal text.
+        assertEquals(Pair.of("description", "O'Reilly"), parse("description:O'Reilly")[0]);
+        assertEquals(Pair.of("description", "O'Reilly"), parse("[description:O'Reilly]")[0],
+                "the runtime's list wrapper must still be peeled");
+        assertEquals(Pair.of("description", "O'Reilly"), parse("[[description:O'Reilly]]")[0]);
+        Pair<String, Object>[] mixed = parse("[[a:it's, b:'x, y', c:[z]]]");
+        assertEquals(Pair.of("a", "it's"), mixed[0]);
+        assertEquals(Pair.of("b", "x, y"), mixed[1]);
+        assertEquals(Pair.of("c", "[z]"), mixed[2]);
+    }
+
+    @Test
     void rejects_separately_bracketed_repeated_parameters_instead_of_corrupting_values() {
         // The previous parser stored a:"1]" and b:"2]" here.
         assertThrows(BadRequestException.class, () -> parse("[[a:1], [b:2]]"));

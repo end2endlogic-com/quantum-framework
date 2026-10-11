@@ -55,6 +55,21 @@ public class PairParamParsingIT extends BaseRepoTest {
     }
 
     @Test
+    public void unquoted_value_with_apostrophe_is_accepted() {
+        String category = "pairs-apos-" + System.nanoTime();
+        try {
+            CodeList stored = create(category);
+
+            Response response = set(stored, "description:O'Reilly");
+
+            assertEquals(200, response.statusCode(), response.asString());
+            assertEquals("O'Reilly", findStored(category).getDescription());
+        } finally {
+            deleteStored(category);
+        }
+    }
+
+    @Test
     public void nested_path_key_is_rejected_and_no_other_field_is_updated() {
         String category = "pairs-nested-" + System.nanoTime();
         try {
