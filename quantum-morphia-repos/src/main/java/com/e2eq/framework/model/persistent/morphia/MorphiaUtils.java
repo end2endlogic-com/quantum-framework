@@ -28,9 +28,19 @@ public class MorphiaUtils {
    public static class VariableBundle {
       public final Map<String, String> strings;
       public final Map<String, Object> objects;
+      /**
+       * Variable keys whose resolver threw while building this bundle. Such keys are
+       * deliberately absent from {@link #strings} and {@link #objects}; rule filters that
+       * reference them must fail closed (match nothing / deny), never be dropped.
+       */
+      public final java.util.Set<String> failedKeys;
       public VariableBundle(Map<String, String> strings, Map<String, Object> objects) {
+         this(strings, objects, java.util.Set.of());
+      }
+      public VariableBundle(Map<String, String> strings, Map<String, Object> objects, java.util.Set<String> failedKeys) {
          this.strings = strings;
          this.objects = objects;
+         this.failedKeys = (failedKeys == null) ? java.util.Set.of() : java.util.Set.copyOf(failedKeys);
       }
    }
 
