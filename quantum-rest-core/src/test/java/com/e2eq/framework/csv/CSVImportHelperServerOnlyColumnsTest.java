@@ -27,9 +27,20 @@ class CSVImportHelperServerOnlyColumnsTest {
     }
 
     @Test
+    void rejects_dataDomain_and_every_dataDomain_component() {
+        for (String column : new String[]{"dataDomain", "dataDomain.tenantId", "dataDomain.orgRefName",
+                "dataDomain.accountNum", "dataDomain.ownerId", "dataDomain.dataSegment", "DATADOMAIN.tenantId",
+                "child.dataDomain.tenantId"}) {
+            ValidationException ex = assertThrows(ValidationException.class,
+                    () -> CSVImportHelper.rejectServerOnlyColumns(new String[]{"refName", column}), column);
+            assertTrue(ex.getMessage().contains(column), ex.getMessage());
+        }
+    }
+
+    @Test
     void accepts_ordinary_columns() {
         assertDoesNotThrow(() -> CSVImportHelper.rejectServerOnlyColumns(
-                new String[]{"refName", "dataDomain.ownerId", "tags[0]", null}));
+                new String[]{"refName", "description", "tags[0]", "dataDomainLabel", null}));
         assertDoesNotThrow(() -> CSVImportHelper.rejectServerOnlyColumns(null));
     }
 }
