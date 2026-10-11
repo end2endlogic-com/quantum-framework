@@ -1,5 +1,6 @@
 package com.e2eq.framework.rest.converters;
 
+import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.ext.ParamConverter;
 import jakarta.ws.rs.ext.ParamConverterProvider;
 import jakarta.ws.rs.ext.Provider;
@@ -9,8 +10,6 @@ import java.lang.annotation.Annotation;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 @Provider
 public class PairParamConverterProvider implements ParamConverterProvider {
@@ -23,35 +22,155 @@ public class PairParamConverterProvider implements ParamConverterProvider {
         return null;
     }
 
+    /**
+     * Parses {@code [key:value,key:'quoted, value']} (brackets optional) into update pairs.
+     *
+     * <p>Keys are letters, digits and underscores and name a top-level field; values run to the next
+     * comma unless single-quoted. The whole parameter must parse: an entry that does not fit the
+     * grammar (for example a nested path such as {@code a.b:1}) is rejected with a 400 naming the
+     * entry, never skipped or truncated to the part that happens to match, because a partial parse
+     * would apply the update to a different field than the caller named.</p>
+     */
     public static class PairArrayParamConverter<T> implements ParamConverter<T> {
         @Override
+        @SuppressWarnings("unchecked")
         public T fromString(String value) {
-            // Remove the first and last characters if they are brackets
-            if (value.startsWith("[") && value.endsWith("]")) {
-                value = value.substring(1, value.length() - 1);
+            return (T) parse(value);
+        }
+
+        static Pair<String, Object>[] parse(String value) {
+            String body = value == null ? "" : value.trim();
+            // The runtime hands array parameters over as a list string, so a single
+            // pairs=[a:1] arrives as [[a:1]]; peel brackets only while they enclose everything.
+            while (enclosedByBrackets(body)) {
+                body = body.substring(1, body.length() - 1).trim();
             }
 
-            // Regular expression to match key-value pairs, considering quoted values and values with colons
-            String regex = "(\\w+):(?:'([^']*)'|([^,]+))";
-            Pattern pattern = Pattern.compile(regex);
-            Matcher matcher = pattern.matcher(value);
+            List<Pair<String, Object>> pairs = new ArrayList<>();
+            int pos = 0;
+            int len = body.length();
+            while (pos < len) {
+                pos = skipWhitespace(body, pos);
+                if (pos >= len) {
+                    break;
+                }
+                int entryStart = pos;
 
-            List<Pair> pairList = new ArrayList<>();
-            while (matcher.find()) {
-                String key = matcher.group(1);
-                String quotedValue = matcher.group(2);
-                String unquotedValue = matcher.group(3);
+                int keyEnd = pos;
+                while (keyEnd < len && isKeyChar(body.charAt(keyEnd))) {
+                    keyEnd++;
+                }
+                if (keyEnd == pos || keyEnd >= len || body.charAt(keyEnd) != ':') {
+                    throw malformed(body, entryStart,
+                            "expected key:value where the key is letters, digits or underscores; nested paths are not supported");
+                }
+                String key = body.substring(pos, keyEnd);
+                pos = keyEnd + 1;
 
-                if (quotedValue != null) {
-                    // Handle quoted value
-                    pairList.add(Pair.of(key, quotedValue));
-                } else if (unquotedValue != null) {
-                    // Handle unquoted value, which may contain colons
-                    pairList.add(Pair.of(key, unquotedValue));
+                String entryValue;
+                if (pos < len && body.charAt(pos) == '\'') {
+                    int close = body.indexOf('\'', pos + 1);
+                    if (close < 0) {
+                        throw malformed(body, entryStart, "unterminated quoted value");
+                    }
+                    entryValue = body.substring(pos + 1, close);
+                    pos = skipWhitespace(body, close + 1);
+                    if (pos < len && body.charAt(pos) != ',') {
+                        throw malformed(body, entryStart, "unexpected text after quoted value");
+                    }
+                } else {
+                    int comma = body.indexOf(',', pos);
+                    int valueEnd = comma < 0 ? len : comma;
+                    if (valueEnd == pos) {
+                        throw malformed(body, entryStart, "missing value");
+                    }
+                    entryValue = body.substring(pos, valueEnd);
+                    pos = valueEnd;
+                }
+                pairs.add(Pair.of(key, entryValue));
+
+                if (pos < len) {
+                    // At a separating comma; a trailing comma leaves nothing to parse.
+                    pos++;
+                    if (skipWhitespace(body, pos) >= len) {
+                        throw malformed(body, pos - 1, "trailing comma");
+                    }
                 }
             }
 
-            return (T) pairList.toArray(new Pair[0]);
+            @SuppressWarnings("unchecked")
+            Pair<String, Object>[] result = pairs.toArray(new Pair[0]);
+            return result;
+        }
+
+        /**
+         * True when body opens with '[' whose matching ']' is the last character. Brackets inside a
+         * quoted value do not count. As in {@link #parse}, a quote opens a quoted value only when
+         * it directly follows the ':' after an entry's key; an apostrophe anywhere else is part of
+         * an unquoted value (e.g. {@code description:O'Reilly}) and must not hide the closing ']'.
+         */
+        private static boolean enclosedByBrackets(String body) {
+            int len = body.length();
+            if (len < 2 || body.charAt(0) != '[' || body.charAt(len - 1) != ']') {
+                return false;
+            }
+            int depth = 0;
+            boolean atEntryStart = true;
+            int i = 0;
+            while (i < len) {
+                char c = body.charAt(i);
+                if (atEntryStart) {
+                    if (Character.isWhitespace(c)) {
+                        i++;
+                        continue;
+                    }
+                    if (c != '[') {
+                        atEntryStart = false;
+                        int keyEnd = i;
+                        while (keyEnd < len && isKeyChar(body.charAt(keyEnd))) {
+                            keyEnd++;
+                        }
+                        if (keyEnd > i && keyEnd + 1 < len
+                                && body.charAt(keyEnd) == ':' && body.charAt(keyEnd + 1) == '\'') {
+                            int close = body.indexOf('\'', keyEnd + 2);
+                            if (close < 0) {
+                                return false;
+                            }
+                            i = close + 1;
+                            continue;
+                        }
+                    }
+                }
+                if (c == '[') {
+                    depth++;
+                } else if (c == ']') {
+                    depth--;
+                    if (depth == 0) {
+                        return i == len - 1;
+                    }
+                } else if (c == ',') {
+                    atEntryStart = true;
+                }
+                i++;
+            }
+            return false;
+        }
+
+        private static boolean isKeyChar(char c) {
+            return Character.isLetterOrDigit(c) || c == '_';
+        }
+
+        private static int skipWhitespace(String s, int pos) {
+            while (pos < s.length() && Character.isWhitespace(s.charAt(pos))) {
+                pos++;
+            }
+            return pos;
+        }
+
+        private static BadRequestException malformed(String body, int at, String reason) {
+            int comma = body.indexOf(',', at);
+            String entry = body.substring(at, comma < 0 ? body.length() : comma).trim();
+            return new BadRequestException("Malformed pairs entry '" + entry + "': " + reason);
         }
 
         @Override
