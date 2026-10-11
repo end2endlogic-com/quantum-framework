@@ -34,8 +34,11 @@ import java.util.Set;
 public class MongoDbInitResource implements QuarkusTestResourceLifecycleManager {
 
     static final String TEST_DATABASE_PREFIX = "test-";
+    static final String OWNED_PREFIXES_CONFIG = "quantum.test.cleanup.owned-database-prefixes";
 
     private MongoClient mongoClient;
+    private final Set<String> configuredTestDatabases = new HashSet<>();
+    private final java.util.List<String> ownedDatabasePrefixes = new java.util.ArrayList<>();
 
     @Override
     public Map<String, String> start() {
@@ -52,6 +55,15 @@ public class MongoDbInitResource implements QuarkusTestResourceLifecycleManager 
 
             String conn = ConfigProvider.getConfig().getValue("quarkus.mongodb.connection-string", String.class);
             this.mongoClient = MongoClients.create(conn);
+
+            // The local Mongo is shared with other suites and applications running at the
+            // same time, so teardown drops only databases this suite names as its own.
+            configuredTestDatabases.addAll(java.util.List.of(systemRealm, testRealm, defaultRealm));
+            ConfigProvider.getConfig().getOptionalValue("quarkus.mongodb.database", String.class)
+                    .ifPresent(configuredTestDatabases::add);
+            ConfigProvider.getConfig().getOptionalValue("quarkus.morphia.database", String.class)
+                    .ifPresent(configuredTestDatabases::add);
+            ownedDatabasePrefixes.addAll(ownedPrefixesFromConfig());
 
             String requiredVersionStr = ConfigProvider.getConfig().getValue("quantum.database.version", String.class);
             Semver required = Semver.parse(requiredVersionStr);
@@ -75,17 +87,16 @@ public class MongoDbInitResource implements QuarkusTestResourceLifecycleManager 
     public void stop() {
         if (mongoClient != null) {
             try {
-                // Test databases are disposable by contract. Cleaning them at the
-                // resource boundary prevents a successful suite from polluting the
-                // developer's local catalog or consuming Atlas collection quotas.
+                // Test databases are disposable by contract, but only this suite's own:
+                // other suites on the same Mongo (another module, another worktree, an
+                // application's tests) may be mid-run in their test-* databases.
                 java.util.List<String> databaseNames = mongoClient.listDatabaseNames()
                         .into(new java.util.ArrayList<>());
-                for (String databaseName : databaseNames) {
-                    if (databaseName.startsWith(TEST_DATABASE_PREFIX)) {
-                        requireTestDatabaseName(databaseName, "database selected for test teardown");
-                        mongoClient.getDatabase(databaseName).drop();
-                        Log.infof("Dropped test database during suite teardown: %s", databaseName);
-                    }
+                for (String databaseName : ownedTestDatabases(
+                        databaseNames, configuredTestDatabases, ownedDatabasePrefixes)) {
+                    requireTestDatabaseName(databaseName, "database selected for test teardown");
+                    mongoClient.getDatabase(databaseName).drop();
+                    Log.infof("Dropped test database during suite teardown: %s", databaseName);
                 }
             } finally {
                 try { mongoClient.close(); } catch (Exception ignored) {}
@@ -362,6 +373,37 @@ public class MongoDbInitResource implements QuarkusTestResourceLifecycleManager 
     private void requireConfiguredTestDatabaseName(String configName) {
         ConfigProvider.getConfig().getOptionalValue(configName, String.class)
                 .ifPresent(databaseName -> requireTestDatabaseName(databaseName, configName));
+    }
+
+    /**
+     * The test databases this suite may drop at teardown: its configured realms, plus
+     * databases matching a prefix it declares in {@value #OWNED_PREFIXES_CONFIG}. Any other
+     * test database belongs to another suite or application and may be in use right now,
+     * whenever it was created; an undeclared database of this suite's own is left behind.
+     */
+    static java.util.List<String> ownedTestDatabases(java.util.Collection<String> current,
+                                                     Set<String> configured,
+                                                     java.util.List<String> ownedPrefixes) {
+        return current.stream()
+                .filter(name -> name.startsWith(TEST_DATABASE_PREFIX))
+                .filter(name -> configured.contains(name)
+                        || ownedPrefixes.stream().anyMatch(name::startsWith))
+                .toList();
+    }
+
+    static java.util.List<String> ownedPrefixesFromConfig() {
+        java.util.List<String> prefixes = ConfigProvider.getConfig()
+                .getOptionalValues(OWNED_PREFIXES_CONFIG, String.class)
+                .orElse(java.util.List.of());
+        // A bare "test-" would claim every suite's databases again.
+        prefixes.forEach(prefix -> {
+            requireTestDatabaseName(prefix, OWNED_PREFIXES_CONFIG);
+            if (prefix.equals(TEST_DATABASE_PREFIX)) {
+                throw new IllegalArgumentException(OWNED_PREFIXES_CONFIG
+                        + " must name this suite's databases, not every test database: " + prefix);
+            }
+        });
+        return prefixes;
     }
 
     static String requireTestDatabaseName(String databaseName, String source) {
