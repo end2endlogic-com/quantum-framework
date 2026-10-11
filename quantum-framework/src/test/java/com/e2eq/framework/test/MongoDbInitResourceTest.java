@@ -28,12 +28,14 @@ class MongoDbInitResourceTest {
     }
 
     @Test
-    void teardownLeavesOtherSuitesTestDatabasesAlone() {
+    void teardownDropsOnlyConfiguredRealmsAndDeclaredPrefixes() {
+        // test-b2bi-com may have been created after this suite started; it is still not ours.
         List<String> owned = MongoDbInitResource.ownedTestDatabases(
-                List.of("test-quantum-com", "test-b2bi-com", "test-seed-version-it", "b2bi-com", "admin"),
-                Set.of("test-quantum-com", "test-b2bi-com", "b2bi-com", "admin"),
-                Set.of("test-quantum-com", "test-system-quantum-com"));
+                List.of("test-quantum-com", "test-b2bi-com", "test-seed-version-it",
+                        "test-usage-9bea3779", "b2bi-com", "admin"),
+                Set.of("test-quantum-com", "test-system-quantum-com"),
+                List.of("test-seed-", "test-usage-"));
 
-        assertEquals(List.of("test-quantum-com", "test-seed-version-it"), owned);
+        assertEquals(List.of("test-quantum-com", "test-seed-version-it", "test-usage-9bea3779"), owned);
     }
 }
