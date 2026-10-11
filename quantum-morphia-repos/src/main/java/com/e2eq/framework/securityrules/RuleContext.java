@@ -2111,10 +2111,9 @@ public class RuleContext {
      * {@code QueryToSqlListener}). It mirrors {@code getFilters}' rule matching and AND/OR
      * composition, with variables ({@code ${pTenantId}} …) substituted to concrete values.</p>
      *
-     * <p><b>Deliberate governance difference — this FAILS CLOSED.</b> {@code getFilters} SKIPS a
-     * matched allow-filter rule whose variables cannot be resolved (correct for typed queries,
-     * where the rule genuinely doesn't apply to that model class). A federated query has no model
-     * class, so silently dropping a security filter would leak rows. Here, an unresolved variable
+     * <p><b>This FAILS CLOSED.</b> {@code getFilters} turns a matched allow-filter rule whose
+     * variables cannot be resolved into a match-nothing filter; it never drops it. A federated
+     * query has no model class, so here an unresolved variable
      * in a matched filter rule — or a non-ALLOW effect, or a composed string that fails to parse —
      * throws instead. Only scalar variables from the standard/custom bundle are substitutable;
      * collection-typed resolver variables (which {@code QueryToFilterListener} expands internally)
@@ -2259,6 +2258,49 @@ public class RuleContext {
     }
 
     /**
+     * The matched ALLOW rule filters plus surfaced filter constraints: the rule filter set that
+     * {@link #getFilters} composes for reads and {@link #enforceWriteFilters} checks for writes.
+     */
+    private List<SecurityCheckResponse.RuleFilterInfo> collectEffectiveAllowFilterInfos(SecurityCheckResponse response) {
+        List<SecurityCheckResponse.RuleFilterInfo> filterInfos = collectMatchedAllowFilterRules(response);
+        if (response.getFilterConstraints() != null) {
+            for (SecurityCheckResponse.RuleFilterInfo info : response.getFilterConstraints()) {
+                if (info == null) {
+                    continue;
+                }
+                boolean alreadyPresent = filterInfos.stream().anyMatch(existing ->
+                        Objects.equals(existing.getRuleName(), info.getRuleName())
+                                && Objects.equals(existing.getAndFilterString(), info.getAndFilterString())
+                                && Objects.equals(existing.getOrFilterString(), info.getOrFilterString())
+                                && Objects.equals(existing.getJoinOp(), info.getJoinOp()));
+                if (!alreadyPresent) {
+                    filterInfos.add(info);
+                }
+            }
+        }
+        return filterInfos;
+    }
+
+    /**
+     * Write-side enforcement of rule filters: after a write action has been ALLOWed by
+     * {@link #checkRules}, the entity being created or updated (including its resolved or
+     * client-supplied {@code dataDomain}) must satisfy every matched ALLOW rule filter for that
+     * action, evaluated in memory with the same variable bundle reads use. Fails closed on
+     * unresolved variables or when a filter cannot be evaluated.
+     *
+     * @param response the ALLOW response returned by {@code checkRules} for this write
+     * @throws SecurityCheckException when the entity does not satisfy the rule filters
+     */
+    public void enforceWriteFilters(
+            @Valid @NotNull(message = "Principal Context can not be null") PrincipalContext pcontext,
+            @Valid @NotNull(message = "Resource Context can not be null") ResourceContext rcontext,
+            @NotNull SecurityCheckResponse response,
+            @NotNull UnversionedBaseModel entity) {
+        new RuleWriteFilterGuard(new RuleVariableBundleResolver(resolvers, dataDomainResolvers))
+                .enforce(pcontext, rcontext, response, collectEffectiveAllowFilterInfos(response), entity);
+    }
+
+    /**
      * Get the list of filters that are applicable for the given principal and resource context.
      * @param ifilters
      * @param pcontext
@@ -2285,73 +2327,67 @@ public class RuleContext {
 
         MorphiaUtils.VariableBundle vars = resolveVariableBundle(pcontext, rcontext, modelClass);
 
-        List<SecurityCheckResponse.RuleFilterInfo> filterInfos = collectMatchedAllowFilterRules(response);
-        if (response.getFilterConstraints() != null) {
-            for (SecurityCheckResponse.RuleFilterInfo info : response.getFilterConstraints()) {
-                if (info == null) {
-                    continue;
-                }
-                boolean alreadyPresent = filterInfos.stream().anyMatch(existing ->
-                        Objects.equals(existing.getRuleName(), info.getRuleName())
-                                && Objects.equals(existing.getAndFilterString(), info.getAndFilterString())
-                                && Objects.equals(existing.getOrFilterString(), info.getOrFilterString())
-                                && Objects.equals(existing.getJoinOp(), info.getJoinOp()));
-                if (!alreadyPresent) {
-                    filterInfos.add(info);
-                }
-            }
-        }
+        List<SecurityCheckResponse.RuleFilterInfo> filterInfos = collectEffectiveAllowFilterInfos(response);
 
         for (SecurityCheckResponse.RuleFilterInfo info : filterInfos) {
 
-            // Try to convert filter strings, but skip this rule if variables can't be resolved
-            // This handles the case where a rule matches by area/domain/action but its filter
-            // string references variables that are only available for specific model classes.
-            // For example, a Location rule with ${accessibleLocationIds} should not apply
-            // to UserProfile queries even if they share the same area/domain/action.
-            boolean ruleFilterSkipped = false;
+            // FAIL CLOSED: a matched ALLOW rule's filter is a security constraint. If a variable it
+            // references cannot be resolved (missing, null, or its resolver threw), the rule
+            // contributes a filter that matches NOTHING. It is never dropped: dropping it would run
+            // the read with that rule's constraint removed.
+            java.util.Set<String> unresolvedVars = RuleFilterVariables.unresolved(
+                    vars, info.getAndFilterString(), info.getOrFilterString());
+            if (!unresolvedVars.isEmpty()) {
+                Log.warnf("Rule '%s' filter references unresolved variable(s) %s (resolver failed: %s) for model %s; "
+                                + "failing closed with a match-nothing filter (area=%s, domain=%s, action=%s)",
+                        info.getRuleName(), unresolvedVars, RuleFilterVariables.failed(vars, unresolvedVars),
+                        modelClass != null ? modelClass.getName() : "null",
+                        rcontext.getArea(), rcontext.getFunctionalDomain(), rcontext.getAction());
+                filters.add(RuleFilterVariables.matchNothing());
+                continue;
+            }
+
+            // Backstop: the converters also detect unresolved variables. Anything they flag the
+            // pre-check missed still fails closed for this rule only.
+            int andMark = andFilters.size();
+            int orMark = orFilters.size();
+            boolean ruleFailedClosed = false;
 
             if (info.getAndFilterString() != null && !info.getAndFilterString().isEmpty()) {
                 try {
                     andFilters.add(MorphiaUtils.convertToFilter(info.getAndFilterString(), vars, modelClass));
                 } catch (IllegalStateException e) {
-                    // Filter string contains unresolved variables - this rule doesn't apply to this model class
                     if (e.getMessage() != null && e.getMessage().contains("Unresolved resolver variable")) {
-                        if (Log.isDebugEnabled()) {
-                            Log.debugf("Skipping rule '%s' filter for model class %s: %s",
-                                    info.getRuleName(), modelClass != null ? modelClass.getName() : "null", e.getMessage());
-                        }
-                        ruleFilterSkipped = true;
+                        ruleFailedClosed = true;
                     } else {
-                        // Re-throw if it's a different IllegalStateException
                         throw e;
                     }
                 }
             }
 
-            if (!ruleFilterSkipped && info.getOrFilterString() != null && !info.getOrFilterString().isEmpty()) {
+            if (!ruleFailedClosed && info.getOrFilterString() != null && !info.getOrFilterString().isEmpty()) {
                 try {
                     orFilters.add(MorphiaUtils.convertToFilter(info.getOrFilterString(), vars, modelClass));
                 } catch (IllegalStateException e) {
-                    // Filter string contains unresolved variables - this rule doesn't apply to this model class
                     if (e.getMessage() != null && e.getMessage().contains("Unresolved resolver variable")) {
-                        if (Log.isDebugEnabled()) {
-                            Log.debugf("Skipping rule '%s' filter for model class %s: %s",
-                                    info.getRuleName(), modelClass != null ? modelClass.getName() : "null", e.getMessage());
-                        }
-                        ruleFilterSkipped = true;
+                        ruleFailedClosed = true;
                     } else {
-                        // Re-throw if it's a different IllegalStateException
                         throw e;
                     }
                 }
             }
 
-            // Skip processing this rule's filters if they couldn't be resolved
-            // Clear any filters we may have added for this rule to avoid mixing with next rule's filters
-            if (ruleFilterSkipped) {
-                andFilters.clear();
-                orFilters.clear();
+            if (ruleFailedClosed) {
+                // Remove only this rule's partial filters, then contribute match-nothing.
+                while (andFilters.size() > andMark) {
+                    andFilters.remove(andFilters.size() - 1);
+                }
+                while (orFilters.size() > orMark) {
+                    orFilters.remove(orFilters.size() - 1);
+                }
+                Log.warnf("Rule '%s' filter has unresolved variable(s) for model %s; failing closed with a match-nothing filter",
+                        info.getRuleName(), modelClass != null ? modelClass.getName() : "null");
+                filters.add(RuleFilterVariables.matchNothing());
                 continue;
             }
 

@@ -1,5 +1,6 @@
 package com.e2eq.framework.model.persistent.morphia.interceptors;
 
+import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.securityrules.*;
 import com.e2eq.framework.security.runtime.RuleContext;
 import dev.morphia.Datastore;
@@ -54,14 +55,24 @@ public class PermissionRuleInterceptor implements EntityListener {
                   || action.equals("*"))) {
              throw new SecurityException("Persistence callback requires an explicit write action; received: " + action);
           }
-          doCheck();
+          SecurityCheckResponse response = doCheck();
+          if (entity instanceof UnversionedBaseModel model) {
+             // The entity's data domain is resolved/assigned by ValidationInterceptor (registered
+             // before this interceptor). The caller must be allowed to write into THAT domain:
+             // the record has to satisfy the matched ALLOW rule filters for this write action.
+             ruleContext.enforceWriteFilters(
+                     SecurityContext.getPrincipalContext().get(),
+                     SecurityContext.getResourceContext().get(),
+                     response,
+                     model);
+          }
        } else {
           throw new SecurityException("Persistence callback has no ResourceContext for entity "
                   + entity.getClass().getName() + "; use SecurityCallScope for privileged internal writes");
        }
    }
 
-   void doCheck() {
+   SecurityCheckResponse doCheck() {
       Optional<PrincipalContext> opPrincipalContext = SecurityContext.getPrincipalContext();
       Optional<ResourceContext> opResourceContext = SecurityContext.getResourceContext();
        if (opPrincipalContext.isEmpty() || opResourceContext.isEmpty()) {
@@ -74,6 +85,7 @@ public class PermissionRuleInterceptor implements EntityListener {
           Log.error(response.toString());
           throw new SecurityCheckException(response);
        }
+       return response;
    }
 
   /* @Override

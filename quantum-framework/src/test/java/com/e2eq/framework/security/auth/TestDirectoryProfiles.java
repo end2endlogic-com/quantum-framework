@@ -5,6 +5,7 @@ import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.UserProfile;
+import com.e2eq.framework.model.securityrules.SecurityCallScope;
 
 /**
  * Login rejects USER-typed credentials that have no directory profile in the
@@ -47,7 +48,12 @@ final class TestDirectoryProfiles {
                 systemDataDomain.getTenantId(),
                 systemDataDomain.getDataSegment(),
                 userId));
-        profiles.save(systemRealm, profile);
+        // Fixture setup: the directory profile lives in the SYSTEM data domain while the tests
+        // authenticate in the test tenant, so it is written through an explicit privileged scope
+        // (writes are checked against the caller's rule filters for the record's data domain).
+        try (SecurityCallScope.Scope ignored = SecurityCallScope.openIgnoringRules()) {
+            profiles.save(systemRealm, profile);
+        }
     }
 
     static void remove(UserProfileRepo profiles, String systemRealm, String userId)

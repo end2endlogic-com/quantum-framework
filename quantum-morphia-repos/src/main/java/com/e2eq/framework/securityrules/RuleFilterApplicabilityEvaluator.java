@@ -7,6 +7,7 @@ import com.e2eq.framework.model.securityrules.FilterJoinOp;
 import com.e2eq.framework.model.securityrules.MatchEvent;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
+import com.e2eq.framework.model.securityrules.RuleEffect;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkus.logging.Log;
@@ -77,15 +78,18 @@ final class RuleFilterApplicabilityEvaluator {
         try {
             vars = variableBundleResolver.resolveVariableBundle(pcontext, rcontext, modelClass);
         } catch (Throwable t) {
-            if (Log.isDebugEnabled()) {
-                Log.debugf(t, "[Evaluator] Failed to resolve variable bundle for rule '%s'", rule != null ? rule.getName() : "<null>");
-            }
-            if (matchEvent != null) {
-                matchEvent.setFilterEvaluated(false);
-                matchEvent.setFilterResult(null);
-                matchEvent.setFilterReason("Variable resolution failed");
-            }
-            return Optional.empty();
+            Log.warnf(t, "[Evaluator] Variable bundle resolution failed for rule '%s'; failing closed", rule.getName());
+            return failClosed(rule, matchEvent, "Variable resolution failed; fail closed");
+        }
+
+        // Fail closed on unresolved filter variables (missing, null, or resolver threw). An ALLOW
+        // rule must then not apply; a DENY rule must still apply. Never treat it as "not evaluated".
+        java.util.Set<String> unresolved = RuleFilterVariables.unresolved(
+                vars, rule.getAndFilterString(), rule.getOrFilterString());
+        if (!unresolved.isEmpty()) {
+            Log.warnf("[Evaluator] Rule '%s' filter references unresolved variable(s) %s (resolver failed: %s); failing closed",
+                    rule.getName(), unresolved, RuleFilterVariables.failed(vars, unresolved));
+            return failClosed(rule, matchEvent, "Unresolved filter variable(s) " + unresolved + "; fail closed");
         }
 
         Predicate<JsonNode> andPredicate = null;
@@ -154,6 +158,16 @@ final class RuleFilterApplicabilityEvaluator {
             matchEvent.setFilterReason(null);
         }
         return Optional.of(result);
+    }
+
+    private Optional<Boolean> failClosed(Rule rule, MatchEvent matchEvent, String reason) {
+        boolean applies = rule.getEffect() != RuleEffect.ALLOW;
+        if (matchEvent != null) {
+            matchEvent.setFilterEvaluated(true);
+            matchEvent.setFilterResult(applies);
+            matchEvent.setFilterReason(reason);
+        }
+        return Optional.of(applies);
     }
 
     private Map<String, Object> buildFacts(PrincipalContext pcontext, ResourceContext rcontext, Object resourceInstance) {
