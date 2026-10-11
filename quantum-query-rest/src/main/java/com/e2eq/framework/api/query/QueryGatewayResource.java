@@ -4,6 +4,7 @@ import com.e2eq.framework.exceptions.RefNameViolationException;
 import com.e2eq.framework.model.persistent.morphia.RefNameContract;
 import com.e2eq.framework.annotations.FunctionalAction;
 import com.e2eq.framework.annotations.FunctionalMapping;
+import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
 import com.e2eq.framework.model.persistent.morphia.BaseMorphiaRepo;
@@ -23,6 +24,7 @@ import com.e2eq.framework.model.persistent.morphia.metadata.MetadataRegistry;
 import org.bson.Document;
 import com.e2eq.framework.model.persistent.imports.ImportSessionRow;
 import com.e2eq.framework.model.security.DataDomainResolver;
+import com.e2eq.framework.rest.exceptions.DataDomainGovernanceException;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.model.securityrules.SecurityContext;
@@ -151,6 +153,10 @@ public class QueryGatewayResource {
 
     @Inject
     Instance<DataDomainResolver> dataDomainResolvers;
+
+    /** Resolves the DataDomain a create is placed in (principal + DataDomain policy), same as typed resources. */
+    @Inject
+    com.e2eq.framework.model.persistent.morphia.interceptors.ddpolicy.DataDomainResolver createDataDomainResolver;
 
     @ConfigProperty(name = "quantum.realm.testRealm", defaultValue = "defaultRealm")
     String defaultRealm;
@@ -481,7 +487,7 @@ public class QueryGatewayResource {
             response.rootType = root.getName();
 
             return Response.ok(response).build();
-        } catch (WebApplicationException e) {
+        } catch (WebApplicationException | DataDomainGovernanceException e) {
             throw e;
         } catch (RefNameViolationException | jakarta.validation.ConstraintViolationException e) {
             // Typed validation failures; their exception mappers render 400/409 with diagnostics instead of a 500.
@@ -510,11 +516,12 @@ public class QueryGatewayResource {
      * Applies the same row/field governance expected by a typed Morphia resource before the
      * generic save delegates to its registered repository.
      *
-     * <p>Creates are stamped into the caller's effective DataDomain; a request body cannot choose
-     * another tenant placement. Updates must resolve the existing row through the secured filter,
-     * preserve its DataDomain, and restore fields excluded by policy before repository validation
-     * and persistence. An unknown id is treated as not-found rather than an upsert so a caller
-     * cannot manufacture a cross-domain record with a chosen identifier.</p>
+     * <p>Creates are placed in the DataDomain the caller resolves to (principal plus DataDomain
+     * policy, as for typed resources). Updates must resolve the existing row through the secured
+     * filter, keep its DataDomain, and restore fields excluded by policy before repository
+     * validation and persistence. A request body naming any other DataDomain is rejected rather
+     * than silently rewritten. An unknown id is treated as not-found rather than an upsert so a
+     * caller cannot manufacture a cross-domain record with a chosen identifier.</p>
      */
     private void governEntityForSave(
             Datastore datastore,
@@ -533,7 +540,14 @@ public class QueryGatewayResource {
             if (principal.getDataDomain() == null) {
                 throw ungovernedMutation("principal DataDomain");
             }
-            entity.setDataDomain(principal.getDataDomain());
+            DataDomain expected = createDataDomainResolver.resolveForCreate(
+                    entity.bmFunctionalArea(), entity.bmFunctionalDomain());
+            if (entity.getDataDomain() != null && !entity.getDataDomain().equals(expected)) {
+                throw new DataDomainGovernanceException(
+                        DataDomainGovernanceException.Code.DATA_DOMAIN_NOT_PERMITTED,
+                        "The request entity names a dataDomain the caller is not governed by; omit dataDomain on create");
+            }
+            entity.setDataDomain(expected);
             return;
         }
 
@@ -546,6 +560,11 @@ public class QueryGatewayResource {
             throw new NotFoundException("Entity was not found in the caller's governed data scope");
         }
 
+        if (entity.getDataDomain() != null && !entity.getDataDomain().equals(stored.getDataDomain())) {
+            throw new DataDomainGovernanceException(
+                    DataDomainGovernanceException.Code.DATA_DOMAIN_NOT_PERMITTED,
+                    "The dataDomain of an existing " + root.getSimpleName() + " cannot be changed through this API");
+        }
         entity.setDataDomain(stored.getDataDomain());
         for (String path : excludedFieldPaths()) {
             try {
