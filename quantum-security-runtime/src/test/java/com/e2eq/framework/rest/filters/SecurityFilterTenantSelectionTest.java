@@ -26,6 +26,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SecurityFilterTenantSelectionTest {
 
@@ -82,13 +83,83 @@ class SecurityFilterTenantSelectionTest {
     }
 
     @Test
-    void multiTenantRealmRequiresTenantHeader() {
+    void multiTenantRealmResolvesTenantFromTokenWithoutHeader() {
+        Realm realm = realm("pooled", RealmTenancyMode.MULTI_TENANT, "realm-default");
+        SecurityFilter filter = filter(realm, assignment("pooled", "tenant-a"),
+            membership("pooled", "tenant-a", "org-a", "account-a"));
+
+        PrincipalContext selected = filter.applyTenantSelection(
+            context("pooled", "tenant-a"), null, "tenant-a");
+
+        assertEquals("pooled", selected.getDefaultRealm());
+        assertEquals("tenant-a", selected.getDataDomain().getTenantId());
+        assertEquals("org-a", selected.getDataDomain().getOrgRefName());
+        assertEquals("account-a", selected.getDataDomain().getAccountNum());
+        assertEquals("user@example.test", selected.getDataDomain().getOwnerId());
+        assertEquals("tenant-a", selected.getDomainContext().getTenantId());
+    }
+
+    @Test
+    void multiTenantRealmRejectsTokenTenantOutsideUserAssignment() {
+        Realm realm = realm("pooled", RealmTenancyMode.MULTI_TENANT, "realm-default");
+        SecurityFilter filter = filter(realm, assignment("pooled", "tenant-a"),
+            membership("pooled", "tenant-b", "org-b", "account-b"));
+
+        assertThrows(ForbiddenException.class,
+            () -> filter.applyTenantSelection(context("pooled", "tenant-b"), null, "tenant-b"));
+    }
+
+    @Test
+    void multiTenantRealmWithoutHeaderOrTokenTenantFailsClosed() {
         Realm realm = realm("pooled", RealmTenancyMode.MULTI_TENANT, "tenant-a");
         SecurityFilter filter = filter(realm, assignment("pooled", "tenant-a"),
             membership("pooled", "tenant-a", "org-a", "account-a"));
 
+        BadRequestException noTokenTenant = assertThrows(BadRequestException.class,
+            () -> filter.applyTenantSelection(context("pooled", "tenant-a"), null, null));
+        assertTrue(noTokenTenant.getMessage().contains("token carries no tenant"));
+        assertThrows(BadRequestException.class,
+            () -> filter.applyTenantSelection(context("pooled", "tenant-a"), " ", " "));
         assertThrows(BadRequestException.class,
             () -> filter.applyTenantSelection(context("pooled", "tenant-a"), null));
+    }
+
+    @Test
+    void explicitTenantHeaderSwitchesFromTokenTenantAndIsChecked() {
+        Realm realm = realm("pooled", RealmTenancyMode.MULTI_TENANT, "realm-default");
+        SecurityFilter allowed = filter(realm, assignment("pooled", "tenant-a", "tenant-b"),
+            membership("pooled", "tenant-b", "org-b", "account-b"));
+
+        PrincipalContext switched = allowed.applyTenantSelection(
+            context("pooled", "tenant-a"), "tenant-b", "tenant-a");
+        assertEquals("tenant-b", switched.getDataDomain().getTenantId());
+        assertEquals("org-b", switched.getDataDomain().getOrgRefName());
+        assertEquals("account-b", switched.getDataDomain().getAccountNum());
+
+        SecurityFilter refused = filter(realm, assignment("pooled", "tenant-a"),
+            membership("pooled", "tenant-b", "org-b", "account-b"));
+        assertThrows(ForbiddenException.class,
+            () -> refused.applyTenantSelection(context("pooled", "tenant-a"), "tenant-b", "tenant-a"));
+    }
+
+    @Test
+    void anonymousAndPlatformExemptPathsIgnoreTokenTenant() {
+        Realm realm = realm("helixor-code-D1", RealmTenancyMode.MULTI_TENANT, "tenant-a");
+        SecurityFilter filter = filter(realm, assignment("helixor-code-D1", "tenant-a"),
+            membership("helixor-code-D1", "tenant-a", "org-a", "account-a"));
+        filter.resourceInfo = resourceInfo(ControlPlaneDirectoryStub.class, null);
+        PrincipalContext context = context("helixor-code-D1", "tenant-a");
+
+        assertSame(context, filter.applyTenantSelection(context, null, "tenant-a"));
+    }
+
+    @Test
+    void singleTenantRealmIgnoresTokenTenant() {
+        Realm realm = realm("dedicated", RealmTenancyMode.SINGLE_TENANT, "tenant-a");
+        SecurityFilter filter = filter(realm, null, null);
+        PrincipalContext context = context("dedicated", "tenant-a");
+
+        assertSame(context, filter.applyTenantSelection(context, null, "tenant-a"));
     }
 
     @Test
