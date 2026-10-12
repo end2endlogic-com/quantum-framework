@@ -79,7 +79,7 @@ public class RealmOntologyKeyResolver {
      * a realm that published before keeps its active model. A system migration of the realm's own
      * ontology records: done directly on the collection and logged. A failure is rethrown so
      * {@link RealmOntologyKeys} keeps the move pending and runs it again on the realm's next lookup;
-     * it never fails that lookup.
+     * the failed lookup exposes a typed error instead of an empty ontology.
      */
     void moveLegacyTBoxes(String realm, DataDomain key) {
         DataDomain legacy = RealmOntologyKeys.legacy(realm);

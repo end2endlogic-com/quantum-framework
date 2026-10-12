@@ -160,6 +160,26 @@ public class SeedStartupRunnerIT {
     }
 
     @Test
+    void remoteCatalogRoundTripSeedsAsTheCustomAdminInTheRegisteredSegment() throws Exception {
+        Realm original = Realm.builder().refName("remote-seed").databaseName("remote-seed").emailDomain("customer.example")
+                .defaultAdminUserId("owner@identity.example")
+                .domainContext(DomainContext.builder().tenantId("customer-tenant")
+                        .orgRefName("customer-org").accountId("account-7")
+                        .defaultRealm("remote-seed").dataSegment(7).build()).build();
+        var wire = new com.fasterxml.jackson.databind.ObjectMapper();
+        var entry = wire.readValue(wire.writeValueAsBytes(
+                com.e2eq.framework.system.remote.ControlPlaneRealmMapper.toEntry(original)),
+                com.e2eq.framework.controlplane.model.RealmCatalogEntry.class);
+        Realm remote = com.e2eq.framework.system.remote.ControlPlaneRealmMapper.fromEntry(entry);
+        SeedContext context = seedStartupRunner.buildSeedContext("remote-seed", remote, null);
+        assertEquals("owner@identity.example", context.getOwnerId().orElseThrow());
+        assertEquals("customer-tenant", context.getTenantId().orElseThrow());
+        assertEquals("customer-org", context.getOrgRefName().orElseThrow());
+        assertEquals("account-7", context.getAccountId().orElseThrow());
+        assertEquals(7, SeedStartupRunner.realmSeedDomain(remote, context.getOwnerId().orElseThrow()).getDataSegment());
+    }
+
+    @Test
     void anIncompleteRegistrationDoesNotCountAsTheRealmsDomain() {
         Realm realm = Realm.builder()
                 .refName("test-seeddomain-com")

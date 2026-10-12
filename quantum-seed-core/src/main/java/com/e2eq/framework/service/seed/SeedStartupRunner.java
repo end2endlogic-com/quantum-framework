@@ -234,9 +234,9 @@ public class SeedStartupRunner {
             CredentialUserIdPassword adminCred = null;
             if (!systemRealmOwnership.ownedLocally()) {
                 // Remote mode: identity is control-plane-internal (B4/ADR) —
-                // no credential read crosses the seam. Seeding proceeds with
-                // the existing realm-only context degradation below.
-                Log.infof("SeedStartupRunner: quantum.mode=remote — seeding %s with realm-only context (identity stays in the control plane)", realm);
+                // no credential read crosses the seam. The catalog supplies the
+                // registered administrator and domain used below.
+                Log.infof("SeedStartupRunner: quantum.mode=remote — seeding %s from its registered realm metadata (identity stays in the control plane)", realm);
             } else
             try {
                Optional<CredentialUserIdPassword> oAdminCred = credRepo.findByUserId(adminUserId, envConfigUtils.getSystemRealm(), true);

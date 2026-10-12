@@ -59,7 +59,9 @@ class RealmOntologyKeysTest {
                 throw new IllegalStateException("mongo blip");
             moved.add(realm + "->" + key.getTenantId());
         });
-        assertEquals("acme.com", RealmOntologyKeys.forRealm("acme").getTenantId(), "the key does not wait on the move");
+        var failure = assertThrows(RealmOntologyKeys.ResolutionException.class,
+            () -> RealmOntologyKeys.forRealm("acme"));
+        assertEquals(RealmOntologyKeys.FailureCode.MIGRATION_FAILED, failure.getCode());
         assertTrue(moved.isEmpty());
         RealmOntologyKeys.forRealm("acme");
         RealmOntologyKeys.forRealm("acme");
@@ -68,9 +70,11 @@ class RealmOntologyKeysTest {
     }
 
     @Test
-    void anIncompleteRegistrationKeepsTheLegacyKey() {
-        RealmOntologyKeys.install(realm -> Optional.of(new DataDomain("acme.com", null, "acme.com", 0, null)), (r, k) -> fail("no move"));
-        assertEquals("acme", RealmOntologyKeys.forRealm("acme").getTenantId());
+    void anIncompleteRegistrationFailsClosed() {
+        RealmOntologyKeys.install(realm -> Optional.of(new DataDomain("acme.com", "", "acme.com", 0, "admin")), (r, k) -> fail("no move"));
+        var failure = assertThrows(RealmOntologyKeys.ResolutionException.class,
+            () -> RealmOntologyKeys.forRealm("acme"));
+        assertEquals(RealmOntologyKeys.FailureCode.INCOMPLETE_DOMAIN, failure.getCode());
     }
 
     @Test
@@ -93,8 +97,38 @@ class RealmOntologyKeysTest {
                 throw new IllegalStateException("no token yet");
             return Optional.of(TENANT);
         }, (r, k) -> { });
-        assertEquals("acme", RealmOntologyKeys.forRealm("acme").getTenantId(), "legacy while the registry cannot answer");
+        var failure = assertThrows(RealmOntologyKeys.ResolutionException.class,
+            () -> RealmOntologyKeys.forRealm("acme"));
+        assertEquals(RealmOntologyKeys.FailureCode.REGISTRY_UNAVAILABLE, failure.getCode());
         assertEquals("acme.com", RealmOntologyKeys.forRealm("acme").getTenantId(), "asked again, not pinned to legacy");
+    }
+
+    @Test
+    void remoteRegistrationIsVisibleOnTheNextRequestWithoutALocalEvent() {
+        var provisioned = new java.util.concurrent.atomic.AtomicBoolean();
+        RealmOntologyKeys.install(realm -> provisioned.get() ? Optional.of(TENANT) : Optional.empty(), (r, k) -> { });
+        assertEquals("acme", RealmOntologyKeys.forRealm("acme").getTenantId());
+        provisioned.set(true);
+        assertEquals("acme.com", RealmOntologyKeys.forRealm("acme").getTenantId());
+    }
+
+    @Test
+    void concurrentFirstLookupsMigrateOnlyOnce() throws Exception {
+        var attempts = new AtomicInteger();
+        RealmOntologyKeys.install(realm -> Optional.of(TENANT), (r, k) -> attempts.incrementAndGet());
+        var executor = java.util.concurrent.Executors.newFixedThreadPool(4);
+        try {
+            var tasks = new ArrayList<java.util.concurrent.Callable<String>>();
+            for (int i = 0; i < 20; i++) {
+                tasks.add(() -> RealmOntologyKeys.forRealm("acme").getTenantId());
+            }
+            for (var result : executor.invokeAll(tasks)) {
+                assertEquals("acme.com", result.get());
+            }
+            assertEquals(1, attempts.get());
+        } finally {
+            executor.shutdownNow();
+        }
     }
 
     @Test

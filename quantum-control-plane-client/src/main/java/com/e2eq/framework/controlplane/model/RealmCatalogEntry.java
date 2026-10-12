@@ -13,6 +13,8 @@ public class RealmCatalogEntry {
     private String deploymentType;
     private String tenancyMode;
     private String emailDomain;
+    private String defaultAdminUserId;
+    private Integer dataSegment;
     private String tenantId;
     private String orgRefName;
     private String accountNumber;
@@ -38,14 +40,10 @@ public class RealmCatalogEntry {
     public void setDatabaseName(String databaseName) { this.databaseName = databaseName; }
 
     @JsonProperty("deploymentType")
-    public String getDeploymentType() {
-        return deploymentType == null ? "DEDICATED" : deploymentType;
-    }
+    public String getDeploymentType() { return deploymentType; }
 
     @JsonProperty("deploymentType")
-    public void setDeploymentType(String deploymentType) {
-        this.deploymentType = deploymentType == null ? "DEDICATED" : deploymentType;
-    }
+    public void setDeploymentType(String deploymentType) { this.deploymentType = deploymentType; }
 
     @JsonProperty("tenancyMode")
     public String getTenancyMode() { return tenancyMode; }
@@ -58,6 +56,18 @@ public class RealmCatalogEntry {
 
     @JsonProperty("emailDomain")
     public void setEmailDomain(String emailDomain) { this.emailDomain = emailDomain; }
+
+    @JsonProperty("defaultAdminUserId")
+    public String getDefaultAdminUserId() { return defaultAdminUserId; }
+
+    @JsonProperty("defaultAdminUserId")
+    public void setDefaultAdminUserId(String defaultAdminUserId) { this.defaultAdminUserId = defaultAdminUserId; }
+
+    @JsonProperty("dataSegment")
+    public Integer getDataSegment() { return dataSegment; }
+
+    @JsonProperty("dataSegment")
+    public void setDataSegment(Integer dataSegment) { this.dataSegment = dataSegment; }
 
     @JsonProperty("tenantId")
     public String getTenantId() { return tenantId; }

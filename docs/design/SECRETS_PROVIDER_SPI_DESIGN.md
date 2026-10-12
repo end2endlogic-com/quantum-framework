@@ -266,6 +266,33 @@ Cloud modules are optional, and an application includes only the one for its clo
    `(realm, ref, version)` with a TTL may be enabled per store; it is invalidated on `put`/`delete`
    through this service and never refreshed in the background.
 
+### 6.7 Review decisions required by pooled realms and external stores
+
+This document remains a design draft; the following constraints apply before implementation:
+
+- A realm may contain several tenants. Realm namespacing alone does not authorize secret access.
+  Resolve the caller's tenant through the existing membership/security context and apply the
+  catalog row's governed data-domain filter before any provider read, write or delete. Preserve
+  realm-wide platform secrets as an explicitly authorized scope. If tenant-local duplicate
+  references are supported, add tenant scope to catalog uniqueness, provider names, key scope
+  and cache keys together; the `(realm, refName)` API above does not yet specify that extension.
+- `resolve` and `describe` return empty only for an authorized lookup with no catalog entry.
+  A referenced provider value that is missing is `NOT_FOUND`; provider outages, denied access
+  and unavailable keys are typed failures. `resolveAll` rejects any unresolved reference.
+- Provider selection for new writes is independent of provider availability for existing rows.
+  Keep installed providers addressable by their recorded id; do not conditionally remove old
+  providers from CDI when configuration changes. Startup verifies configured write providers,
+  and reads fail with a typed error if a recorded provider is not installed.
+- Provider writes and Mongo catalog updates are not one transaction. Use an operation id,
+  immutable provider versions and optimistic catalog version checks. Publish the new catalog
+  pointer only after successful provider write/read-back. Retain the previous version until
+  the pointer commits; track orphan cleanup durably for explicit retry. Migration must be
+  resumable across failure at each boundary and must not overwrite concurrent secret updates.
+- Optional cloud adapters remain generic and must not introduce a commercial dependency into
+  the core. Their final repository placement remains an explicit packaging decision (§9).
+- Read caching is off by default. Any future opt-in cache must include authorization scope and
+  must not turn a failed provider read into a successful stale read implicitly.
+
 ## 7. Delivery plan
 
 | Phase | Scope | Behaviour change |
