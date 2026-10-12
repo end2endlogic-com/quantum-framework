@@ -125,6 +125,21 @@ class SecurityFilterTenantSelectionTest {
     }
 
     @Test
+    void unregisteredRealmRejectsTokenTenant() {
+        Realm registered = realm("pooled", RealmTenancyMode.MULTI_TENANT, "tenant-a");
+        SecurityFilter filter = filter(registered, assignment("deleted-pool", "tenant-a"),
+            membership("deleted-pool", "tenant-a", "org-a", "account-a"));
+        PrincipalContext context = context("deleted-pool", "tenant-a");
+
+        ForbiddenException refused = assertThrows(ForbiddenException.class,
+            () -> filter.applyTenantSelection(context, null, "tenant-a"));
+        assertTrue(refused.getMessage().contains("is not registered"));
+        assertThrows(ForbiddenException.class,
+            () -> filter.applyTenantSelection(context, "tenant-a", null));
+        assertSame(context, filter.applyTenantSelection(context, null, null));
+    }
+
+    @Test
     void explicitTenantHeaderSwitchesFromTokenTenantAndIsChecked() {
         Realm realm = realm("pooled", RealmTenancyMode.MULTI_TENANT, "realm-default");
         SecurityFilter allowed = filter(realm, assignment("pooled", "tenant-a", "tenant-b"),

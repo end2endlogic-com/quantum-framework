@@ -1449,6 +1449,13 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                 throw new jakarta.ws.rs.ForbiddenException(
                     "X-Tenant-Id cannot be resolved because realm '" + effectiveRealm + "' is not registered");
             }
+            // A token tenant is checked like an explicit header: a stale token
+            // must not keep its projected tenant in a realm that is gone.
+            if (tokenTenantId != null && !tokenTenantId.isBlank()) {
+                throw new jakarta.ws.rs.ForbiddenException(
+                    "Token tenant '" + tokenTenantId.trim() + "' cannot be resolved because realm '"
+                        + effectiveRealm + "' is not registered");
+            }
             return context;
         }
 
