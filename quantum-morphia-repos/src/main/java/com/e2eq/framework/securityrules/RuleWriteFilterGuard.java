@@ -17,7 +17,6 @@ import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import io.quarkus.logging.Log;
 import org.bson.types.ObjectId;
 
-import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -34,8 +33,6 @@ import java.util.function.Predicate;
  * or an entity that cannot be converted for evaluation all deny the write.</p>
  */
 final class RuleWriteFilterGuard {
-
-    private static final String QUERY_PREDICATES = "com.e2eq.framework.query.runtime.QueryPredicates";
 
     private static final ObjectMapper MAPPER = buildMapper();
 
@@ -121,18 +118,8 @@ final class RuleWriteFilterGuard {
         }
     }
 
-    @SuppressWarnings("unchecked")
     private Predicate<JsonNode> compile(String query, MorphiaUtils.VariableBundle vars) {
-        try {
-            Class<?> queryPredicates = Class.forName(QUERY_PREDICATES);
-            Method compilePredicate = queryPredicates.getMethod("compilePredicate", String.class, Map.class, Map.class);
-            return (Predicate<JsonNode>) compilePredicate.invoke(null, query, vars.strings, vars.objects);
-        } catch (ClassNotFoundException e) {
-            throw new IllegalStateException("in-memory rule filter evaluation (" + QUERY_PREDICATES + ") is not available", e);
-        } catch (ReflectiveOperationException e) {
-            Throwable cause = e.getCause() != null ? e.getCause() : e;
-            throw new IllegalStateException("rule filter could not be compiled: " + cause.getMessage(), cause);
-        }
+        return com.e2eq.framework.query.runtime.QueryPredicates.compilePredicate(query, vars.strings, vars.objects);
     }
 
     private static SecurityCheckException deny(SecurityCheckResponse response,
