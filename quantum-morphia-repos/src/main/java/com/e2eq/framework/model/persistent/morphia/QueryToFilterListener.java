@@ -1377,7 +1377,7 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
             }
         } catch (Throwable ignored) { /* if ontology not wired, continue with best-effort behavior */ }
 
-        DataDomain dataDomain = resolveOntologyDataDomain(tenantId);
+        DataDomain dataDomain = com.e2eq.framework.model.persistent.base.RuleEdgeScope.forRuleLookup(resolveOntologyDataDomain(tenantId));
         Set<String> ids = ontologySrcIdsByDst(dataDomain, predicate, dst, edgeFilter);
         pushIdFilter(ids);
     }
@@ -1433,7 +1433,7 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
             }
         } catch (Throwable ignored) { /* if ontology not wired, continue with best-effort behavior */ }
 
-        DataDomain dataDomain = resolveOntologyDataDomain(tenantId);
+        DataDomain dataDomain = com.e2eq.framework.model.persistent.base.RuleEdgeScope.forRuleLookup(resolveOntologyDataDomain(tenantId));
         Set<String> ids = ontologyDstIdsBySrc(dataDomain, predicate, src, edgeFilter);
         pushIdFilter(ids);
     }

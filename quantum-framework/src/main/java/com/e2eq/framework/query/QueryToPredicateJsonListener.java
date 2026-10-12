@@ -528,7 +528,7 @@ public class QueryToPredicateJsonListener extends BIAPIQueryBaseListener {
             return;
         }
 
-        DataDomain dataDomain = resolveOntologyDataDomain(tenantId);
+        DataDomain dataDomain = com.e2eq.framework.model.persistent.base.RuleEdgeScope.forRuleLookup(resolveOntologyDataDomain(tenantId));
         Object morphiaFilter = compileEdgeFilterToMorphia(edgeFilterCtx);
         Set<String> ids = ontologySrcIdsByDst(dataDomain, predicate, dst, morphiaFilter);
         pushIdPredicate(ids);
@@ -557,7 +557,7 @@ public class QueryToPredicateJsonListener extends BIAPIQueryBaseListener {
             return;
         }
 
-        DataDomain dataDomain = resolveOntologyDataDomain(tenantId);
+        DataDomain dataDomain = com.e2eq.framework.model.persistent.base.RuleEdgeScope.forRuleLookup(resolveOntologyDataDomain(tenantId));
         Object morphiaFilter = compileEdgeFilterToMorphia(edgeFilterCtx);
         Set<String> ids = ontologyDstIdsBySrc(dataDomain, predicate, src, morphiaFilter);
         pushIdPredicate(ids);
