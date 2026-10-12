@@ -125,6 +125,20 @@ public final class SeedLoader {
         apply(packRefs, context, resolveSeedPacks(context));
     }
 
+    /** Resolve exact artifacts without writes; persist the returned plan before execution. */
+    public SeedPlan plan(List<SeedPackRef> refs, SeedContext context) {
+        return new SeedPlanSupport(this, objectMapper, conflictPolicy).plan(refs, context);
+    }
+
+    public SeedPlan planArchetype(String archetypeName, SeedContext context) {
+        return new SeedPlanSupport(this, objectMapper, conflictPolicy).planArchetype(archetypeName, context);
+    }
+
+    /** Validate the complete stored plan before writing through the existing seed engine. */
+    public void applyPlan(SeedPlan plan, SeedContext context) {
+        new SeedPlanSupport(this, objectMapper, conflictPolicy).applyPlan(plan, context);
+    }
+
     private void apply(List<SeedPackRef> packRefs, SeedContext context, SeedResolution resolution) {
         Objects.requireNonNull(packRefs, "packRefs");
         Objects.requireNonNull(context, "context");
@@ -171,6 +185,11 @@ public final class SeedLoader {
     }
 
     private void applyDatasets(SeedPackDescriptor descriptor, SeedContext context) {
+        applyDatasets(descriptor, context, null);
+    }
+
+    void applyDatasets(SeedPackDescriptor descriptor, SeedContext context,
+                               Map<Dataset, DatasetPayload> prepared) {
         List<Dataset> datasets = orderDatasetsByDependencies(descriptor);
         if (datasets.isEmpty()) {
             Log.debugf("Seed pack %s has no datasets", descriptor.identity());
@@ -184,7 +203,8 @@ public final class SeedLoader {
             }
             Log.infov("Applying seed dataset {0}/{1} into realm {2}", descriptor.getManifest().getSeedPack(), dataset.getCollection(), context.getRealm());
             long parseStart = System.currentTimeMillis();
-            DatasetPayload payload = readDataset(descriptor, dataset);
+            DatasetPayload payload = prepared == null ? readDataset(descriptor, dataset)
+                    : Objects.requireNonNull(prepared.get(dataset), "prepared dataset");
             long parseDur = System.currentTimeMillis() - parseStart;
             if (seedMetrics != null) {
                 seedMetrics.recordDatasetParse(
@@ -366,7 +386,7 @@ public final class SeedLoader {
         }
     }
 
-    private List<Dataset> orderDatasetsByDependencies(SeedPackDescriptor descriptor) {
+    List<Dataset> orderDatasetsByDependencies(SeedPackDescriptor descriptor) {
         List<Dataset> datasets = new ArrayList<>(descriptor.getManifest().getDatasets());
         if (datasets.isEmpty()) {
             return datasets;
@@ -477,7 +497,7 @@ public final class SeedLoader {
         return dependency;
     }
 
-    private List<SeedTransform> buildTransforms(Dataset dataset) {
+    List<SeedTransform> buildTransforms(Dataset dataset) {
         if (dataset.getTransforms().isEmpty()) {
             return List.of();
         }
@@ -539,7 +559,7 @@ public final class SeedLoader {
         }
     }
 
-   private DatasetPayload readDataset(SeedPackDescriptor descriptor, Dataset dataset) {
+   DatasetPayload readDataset(SeedPackDescriptor descriptor, Dataset dataset) {
        // check if the dataset.getFile() actually exists or not
 
       /*if (!Files.exists(Path.of(dataset.getFile()))) {
@@ -650,7 +670,7 @@ public final class SeedLoader {
         }
     }
 
-    private SeedResolution resolveSeedPacks(SeedContext context) {
+    SeedResolution resolveSeedPacks(SeedContext context) {
         Map<String, List<SeedPackDescriptor>> descriptors = new HashMap<>();
         for (SeedSource source : seedSources) {
             try {
@@ -665,7 +685,7 @@ public final class SeedLoader {
         return new SeedResolution(descriptors);
     }
 
-    private static final class DatasetPayload {
+    static final class DatasetPayload {
         private final String checksum;
         private final List<Map<String, Object>> records;
 
@@ -683,7 +703,7 @@ public final class SeedLoader {
         }
     }
 
-    private static final class SeedResolution {
+    static final class SeedResolution {
         private final Map<String, List<SeedPackDescriptor>> byName;
 
         private SeedResolution(Map<String, List<SeedPackDescriptor>> byName) {
@@ -693,7 +713,7 @@ public final class SeedLoader {
                     .toList()));
         }
 
-        private SeedPackDescriptor resolve(SeedPackRef ref) {
+        SeedPackDescriptor resolve(SeedPackRef ref) {
             List<SeedPackDescriptor> descriptors = byName.get(ref.getName());
             if (descriptors == null || descriptors.isEmpty()) {
                 throw new SeedLoadingException("No seed pack named " + ref.getName() + " found");
@@ -702,17 +722,23 @@ public final class SeedLoader {
                 SeedPackDescriptor descriptor = descriptors.get(i);
                 Semver version = Semver.parse(descriptor.getManifest().getVersion());
                 if (ref.matches(version)) {
+                    long candidates = descriptors.stream().filter(d -> d.identity().equals(descriptor.identity())).count();
+                    if (candidates != 1) throw new SeedLoadingException("SEED_PACK_AMBIGUOUS: " + descriptor.identity());
                     return descriptor;
                 }
             }
             throw new SeedLoadingException("No version of seed pack " + ref.getName() + " matches " + Optional.ofNullable(ref.getSpecification()).orElse("latest"));
         }
 
-        private Optional<SeedPackDescriptor> findArchetype(String archetype) {
-            return byName.values().stream()
+        Optional<SeedPackDescriptor> findArchetype(String archetype) {
+            List<SeedPackDescriptor> candidates = byName.values().stream()
                     .flatMap(List::stream)
                     .filter(descriptor -> descriptor.getManifest().findArchetype(archetype).isPresent())
-                    .max(Comparator.comparing(d -> Semver.parse(d.getManifest().getVersion())));
+                    .toList();
+            if (candidates.stream().map(d -> d.getManifest().getSeedPack()).distinct().count() > 1)
+                throw new SeedLoadingException("SEED_ARCHETYPE_AMBIGUOUS: " + archetype);
+            return candidates.stream().max(Comparator.comparing(d -> Semver.parse(d.getManifest().getVersion())))
+                    .map(d -> resolve(SeedPackRef.exact(d.getManifest().getSeedPack(), d.getManifest().getVersion())));
         }
     }
 

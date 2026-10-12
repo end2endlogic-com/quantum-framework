@@ -61,7 +61,11 @@ public class SeedLoaderService {
      * @return a configured SeedLoader instance
      */
     public SeedLoader createLoader(SeedContext context) {
-        if (conflictPolicy == SeedConflictPolicy.SEED_WINS) {
+        return createLoader(context, conflictPolicy);
+    }
+
+    private SeedLoader createLoader(SeedContext context, SeedConflictPolicy policy) {
+        if (policy == SeedConflictPolicy.SEED_WINS) {
             Log.warn("SeedLoaderService: conflict policy is SEED_WINS — this may overwrite existing data when checksums differ. Use only in dev/test.");
         }
 
@@ -69,7 +73,7 @@ public class SeedLoaderService {
                 .seedRepository(seedRepository)
                 .seedRegistry(seedRegistry)
                 .objectMapper(objectMapper)
-                .conflictPolicy(conflictPolicy)
+                .conflictPolicy(policy)
                 .batchSize(batchSize)
                 .seedMetrics(seedMetrics)
                 .seedDatasetValidator(seedDatasetValidator);
@@ -154,6 +158,21 @@ public class SeedLoaderService {
             // Clear MDC
             org.slf4j.MDC.clear();
         }
+    }
+
+    /** Resolve an exact, serializable plan without applying it. Persist it before execution. */
+    public SeedPlan planSeeds(SeedContext context, List<SeedPackRef> packRefs) {
+        return createLoader(context, SeedConflictPolicy.ERROR).plan(packRefs, context);
+    }
+
+    public SeedPlan planArchetype(SeedContext context, String archetypeName) {
+        return createLoader(context, SeedConflictPolicy.ERROR).planArchetype(archetypeName, context);
+    }
+
+    /** Execute a stored plan; artifact or context drift is an error, never an overwrite. */
+    @Transactional
+    public void applyPlan(SeedContext context, SeedPlan plan) {
+        createLoader(context, SeedConflictPolicy.ERROR).applyPlan(plan, context);
     }
 
     /**
