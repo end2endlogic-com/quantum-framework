@@ -51,6 +51,7 @@ public final class ControlPlaneRealmMapper {
         realm.setDeploymentType(parseDeploymentType(entry.getDeploymentType()));
         realm.setTenancyMode(parseTenancyMode(entry.getTenancyMode()));
         realm.setEmailDomain(entry.getEmailDomain());
+        realm.setDefaultAdminUserId(entry.getDefaultAdminUserId());
         realm.setConnectionString(entry.getConnectionString());
         if (hasText(entry.getTenantId()) && hasText(entry.getOrgRefName())
                 && hasText(entry.getAccountNumber())) {
@@ -58,6 +59,7 @@ public final class ControlPlaneRealmMapper {
                 .tenantId(entry.getTenantId())
                 .orgRefName(entry.getOrgRefName())
                 .accountId(entry.getAccountNumber())
+                .dataSegment(entry.getDataSegment() == null ? 0 : entry.getDataSegment())
                 .defaultRealm(entry.getRefName())
                 .build());
         }
@@ -72,11 +74,13 @@ public final class ControlPlaneRealmMapper {
         entry.setDeploymentType(realm.getDeploymentType().name());
         entry.setTenancyMode(realm.getTenancyMode().name());
         entry.setEmailDomain(realm.getEmailDomain());
+        entry.setDefaultAdminUserId(realm.getDefaultAdminUserId());
         entry.setConnectionString(realm.getConnectionString());
         if (realm.getDomainContext() != null) {
             entry.setTenantId(realm.getDomainContext().getTenantId());
             entry.setOrgRefName(realm.getDomainContext().getOrgRefName());
             entry.setAccountNumber(realm.getDomainContext().getAccountId());
+            entry.setDataSegment(realm.getDomainContext().getDataSegment());
         }
         return entry;
     }

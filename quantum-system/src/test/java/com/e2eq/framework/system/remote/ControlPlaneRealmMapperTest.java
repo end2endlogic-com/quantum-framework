@@ -15,6 +15,34 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class ControlPlaneRealmMapperTest {
 
     @Test
+    void catalogJsonRoundTripPreservesCustomAdministratorAndDataSegment() throws Exception {
+        var original = com.e2eq.framework.model.security.Realm.builder()
+            .refName("customer-realm").databaseName("customer-realm").emailDomain("customer.example")
+            .defaultAdminUserId("owner@identity.example")
+            .domainContext(com.e2eq.framework.model.security.DomainContext.builder()
+                .tenantId("tenant-a").orgRefName("org-a").accountId("account-a")
+                .defaultRealm("customer-realm").dataSegment(7).build()).build();
+        var wire = new com.fasterxml.jackson.databind.ObjectMapper();
+        var entry = wire.readValue(wire.writeValueAsBytes(ControlPlaneRealmMapper.toEntry(original)),
+            RealmCatalogEntry.class);
+        var restored = ControlPlaneRealmMapper.fromEntry(entry);
+        assertEquals(original.getDefaultAdminUserId(), restored.getDefaultAdminUserId());
+        assertEquals(original.getDomainContext(), restored.getDomainContext());
+    }
+
+    @Test
+    void legacyCatalogDomainDefaultsOnlyTheAbsentSegment() {
+        var entry = new RealmCatalogEntry();
+        entry.setRefName("legacy");
+        entry.setDatabaseName("legacy");
+        entry.setEmailDomain("legacy.example");
+        entry.setTenantId("tenant");
+        entry.setOrgRefName("org");
+        entry.setAccountNumber("account");
+        assertEquals(0, ControlPlaneRealmMapper.fromEntry(entry).getDomainContext().getDataSegment());
+    }
+
+    @Test
     void mapsRealmTenancyModeWithoutConflatingItWithDeploymentType() {
         RealmCatalogEntry entry = new RealmCatalogEntry();
         entry.setRefName("pooled-realm");

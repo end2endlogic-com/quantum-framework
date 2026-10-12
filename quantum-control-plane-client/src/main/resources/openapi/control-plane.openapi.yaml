@@ -137,8 +137,10 @@ components:
           type: string
           enum: [SINGLE_TENANT, MULTI_TENANT]
           default: SINGLE_TENANT
-          description: "tenant-selection contract; multi-tenant realms require X-Tenant-Id"
+          description: "tenant-selection contract; multi-tenant realms validate the signed token tenant or an explicit X-Tenant-Id switch"
         emailDomain: { type: string }
+        defaultAdminUserId: { type: string, description: "registered realm administrator; never inferred from the email domain by remote consumers" }
+        dataSegment: { type: integer, format: int32, default: 0 }
         tenantId: { type: string }
         orgRefName: { type: string }
         accountNumber: { type: string }

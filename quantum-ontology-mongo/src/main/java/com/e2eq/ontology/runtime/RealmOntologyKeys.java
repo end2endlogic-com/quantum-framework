@@ -22,21 +22,28 @@ import java.util.function.Function;
  *
  * <p>The registry is consulted through {@link #registry}, installed by
  * {@link RealmOntologyKeyResolver} at startup. Registered keys are cached for the life of the
- * process (a realm's domain does not change); an unregistered realm is re-checked after
- * {@link #UNREGISTERED_RECHECK_MILLIS}, or at once after {@link #refresh} (called when a realm is
- * registered). The first time a registered key is used for a realm, {@link #onRegistered} moves
- * TBoxes stored under the legacy key to it; if that move fails (the hook throws), the next lookup
- * runs it again.</p>
+ * process. Missing realms are never cached: another process may register one between requests.
+ * The first registered lookup migrates legacy TBoxes before exposing the new key. Registry and
+ * migration failures fail closed and are retried only on the next caller lookup.</p>
  */
 public final class RealmOntologyKeys {
 
-    static final long UNREGISTERED_RECHECK_MILLIS = 60_000L;
-
     private static volatile Function<String, Optional<DataDomain>> registry;
     private static volatile BiConsumer<String, DataDomain> onRegistered;
-    private static final Map<String, Entry> CACHE = new ConcurrentHashMap<>();
+    private static final Map<String, DataDomain> CACHE = new ConcurrentHashMap<>();
 
-    private record Entry(DataDomain key, boolean registered, boolean migrated, long checkedAt) {
+    public enum FailureCode { REGISTRY_UNAVAILABLE, INCOMPLETE_DOMAIN, MIGRATION_FAILED }
+
+    /** A lookup failure must never be interpreted as an unregistered realm or an empty TBox. */
+    public static final class ResolutionException extends IllegalStateException {
+        private final FailureCode code;
+
+        private ResolutionException(FailureCode code, String realm, Throwable cause) {
+            super(code + ": cannot resolve ontology domain for realm " + realm, cause);
+            this.code = code;
+        }
+
+        public FailureCode getCode() { return code; }
     }
 
     private RealmOntologyKeys() {
@@ -66,59 +73,39 @@ public final class RealmOntologyKeys {
         CACHE.remove(realm);
     }
 
-    /** The key for {@code realm}: its registered domain, or the legacy key when unregistered. */
+    /** The registered key is visible only after its legacy records have migrated successfully. */
     public static DataDomain forRealm(String realm) {
-        Entry cached = CACHE.get(realm);
-        long now = System.currentTimeMillis();
-        if (cached != null && cached.registered()) {
-            if (!cached.migrated()) {
-                migrate(realm, cached);
-            }
-            return copy(cached.key());
-        }
-        if (cached != null && now - cached.checkedAt() < UNREGISTERED_RECHECK_MILLIS) {
-            return copy(cached.key());
-        }
         Function<String, Optional<DataDomain>> lookup = registry;
-        Optional<DataDomain> registered = Optional.empty();
-        if (lookup != null) {
+        if (lookup == null) {
+            return legacy(realm);
+        }
+        // computeIfAbsent serializes first-use migration for a realm. Returning null does not
+        // cache a miss, and throwing does not cache a failed lookup or partial migration.
+        DataDomain key = CACHE.computeIfAbsent(realm, name -> {
+            Optional<DataDomain> registered;
             try {
-                registered = lookup.apply(realm).filter(RealmOntologyKeys::complete);
+                registered = lookup.apply(name);
             } catch (RuntimeException e) {
-                // A registry outage (or a lookup with no caller token, e.g. at startup in remote
-                // mode) must not pin a realm to a key: answer with the previous key, or the legacy
-                // key, without caching, so the next lookup asks the registry again.
-                return copy(cached != null ? cached.key() : legacy(realm));
+                throw new ResolutionException(FailureCode.REGISTRY_UNAVAILABLE, name, e);
             }
-        }
-        if (registered.isEmpty()) {
-            DataDomain legacy = legacy(realm);
-            CACHE.put(realm, new Entry(legacy, false, false, now));
-            return copy(legacy);
-        }
-        DataDomain key = normalize(realm, registered.get());
-        Entry entry = new Entry(key, true, false, now);
-        Entry previous = CACHE.put(realm, entry);
-        if (previous == null || !previous.registered()) {
-            migrate(realm, entry);
-        }
-        return copy(key);
-    }
-
-    /**
-     * Run the first-use hook for a registered entry and mark it migrated only when the hook
-     * returns. A hook that throws leaves the entry unmigrated, so the next lookup retries it.
-     */
-    private static void migrate(String realm, Entry entry) {
-        BiConsumer<String, DataDomain> hook = onRegistered;
-        if (hook != null) {
-            try {
-                hook.accept(realm, copy(entry.key()));
-            } catch (RuntimeException e) {
-                return;
+            if (registered.isEmpty()) {
+                return null;
             }
-        }
-        CACHE.replace(realm, entry, new Entry(entry.key(), true, true, entry.checkedAt()));
+            if (!complete(registered.get())) {
+                throw new ResolutionException(FailureCode.INCOMPLETE_DOMAIN, name, null);
+            }
+            DataDomain resolved = normalize(name, registered.get());
+            BiConsumer<String, DataDomain> hook = onRegistered;
+            if (hook != null) {
+                try {
+                    hook.accept(name, copy(resolved));
+                } catch (RuntimeException e) {
+                    throw new ResolutionException(FailureCode.MIGRATION_FAILED, name, e);
+                }
+            }
+            return resolved;
+        });
+        return key == null ? legacy(realm) : copy(key);
     }
 
     /** The pre-registry key: every field is the realm name. */
