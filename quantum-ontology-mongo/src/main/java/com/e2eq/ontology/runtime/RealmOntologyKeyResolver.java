@@ -5,6 +5,7 @@ import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper;
 import com.e2eq.framework.model.security.DomainContext;
 import com.e2eq.framework.model.securityrules.SecurityCallScope;
+import com.e2eq.framework.system.catalog.RealmRegistered;
 import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.Updates;
 import io.quarkus.logging.Log;
@@ -12,6 +13,7 @@ import io.quarkus.runtime.Startup;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.event.Observes;
 import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 import org.bson.Document;
@@ -22,7 +24,8 @@ import java.util.Optional;
  * Connects {@link RealmOntologyKeys} to the realm registry ({@link SystemDirectory}: local repos
  * when embedded, the control plane in remote mode) before anything reads an ontology, and moves a
  * realm's TBoxes from the legacy realm-name key to its registered key the first time that key is
- * used.
+ * used. A {@link RealmRegistered} event drops the realm's cached key, so a realm looked up before it
+ * was provisioned picks up its registered key at once.
  */
 @Startup(1)
 @ApplicationScoped
@@ -48,6 +51,14 @@ public class RealmOntologyKeyResolver {
     @PreDestroy
     void uninstall() {
         RealmOntologyKeys.uninstall();
+    }
+
+    /**
+     * A realm was registered (or re-registered): drop its cached key, including a "not registered"
+     * answer from before provisioning, so the next lookup reads the registry again.
+     */
+    void onRealmRegistered(@Observes RealmRegistered event) {
+        RealmOntologyKeys.refresh(event.refName());
     }
 
     /** The realm's registered domain: the domain context its users act in. */
