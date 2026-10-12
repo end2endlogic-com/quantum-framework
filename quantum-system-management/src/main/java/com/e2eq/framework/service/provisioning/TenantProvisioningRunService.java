@@ -38,6 +38,9 @@ public class TenantProvisioningRunService {
     @Inject
     EnvConfigUtils envConfigUtils;
 
+    @Inject
+    TenantInitializationPlanner initializationPlanner;
+
     public TenantProvisioningRunResponse startProvisioning(TenantProvisioningService.ProvisionTenantCommand command) {
         return startProvisioning(command, newExecutionRef());
     }
@@ -57,13 +60,20 @@ public class TenantProvisioningRunService {
             return toResponse(run);
         }
         TenantProvisioningService.ProvisioningContext context = provisioningService.initializeContext(command);
+        context.setInitializationPlan(initializationPlanner.plan(context));
+        String planJson = initializationPlanner.encode(context.getInitializationPlan());
         TenantProvisioningWorkflow workflow = workflowService.resolveCurrentWorkflow(systemRealm);
         List<TenantProvisioningWorkflowStepResponse> workflowSteps = workflowDefaults.validateSteps(workflow.getWorkflowDefinitionJson());
+        if (!context.getArchetypes().isEmpty() && workflowSteps.stream().noneMatch(step ->
+                TenantProvisioningWorkflowDefaults.STEP_REQUESTED_ARCHETYPES.equals(step.getKey())))
+            throw new IllegalArgumentException("PROVISIONING_WORKFLOW_ARCHETYPE_STEP_REQUIRED");
 
         TenantProvisioningRun run = TenantProvisioningRun.builder()
             .refName(executionRef)
             .executionRef(executionRef)
             .requestFingerprint(fingerprint)
+            .initializationPlanJson(planJson)
+            .initializationPlanSha256(TenantInitializationPlanner.digest(planJson))
             .displayName("Provision tenant " + context.getRealmId())
             .workflowRefName(workflow.getRefName())
             .workflowVersion(workflow.getWorkflowVersion())
@@ -99,7 +109,7 @@ public class TenantProvisioningRunService {
 
     static void requireMatchingRequest(TenantProvisioningRun run, String fingerprint) {
         if (run.getRequestFingerprint() == null) {
-            throw new IllegalStateException("PROVISIONING_REQUEST_UNPINNED: inspect the legacy run and use its explicit retry endpoint");
+            throw new IllegalStateException("PROVISIONING_REQUEST_UNPINNED: legacy runs require reviewed recovery before execution");
         }
         if (!run.getRequestFingerprint().equals(fingerprint)) {
             throw new IllegalStateException("PROVISIONING_REQUEST_CONFLICT: operation key belongs to a different command");
@@ -164,6 +174,9 @@ public class TenantProvisioningRunService {
             .build();
 
         TenantProvisioningService.ProvisioningContext context = provisioningService.initializeContext(command);
+        context.setInitializationPlan(initializationPlanner.decode(run.getInitializationPlanJson(), run.getInitializationPlanSha256()));
+        initializationPlanner.validate(context.getInitializationPlan(), context);
+        restoreResult(context, run);
         if (!runRepo.claimFailedRun(systemRealm, executionRef)) {
             return getRun(executionRef);
         }
@@ -173,6 +186,16 @@ public class TenantProvisioningRunService {
     }
 
     private TenantProvisioningRun execute(String systemRealm, TenantProvisioningRun run, TenantProvisioningService.ProvisioningContext context) {
+        try {
+            initializationPlanner.validate(context.getInitializationPlan(), context);
+        } catch (RuntimeException failure) {
+            run.setStatus(TenantProvisioningRun.Status.FAILED);
+            run.setFailureReason("Initialization plan validation failed before provisioning writes.");
+            run.setFailureDetail(rootMessage(failure));
+            run.setUpdatedAt(Instant.now());
+            runRepo.save(systemRealm, run);
+            throw new TenantProvisioningRunFailedException(run, resolveStatus(failure), run.getFailureReason(), failure);
+        }
         Instant now = Instant.now();
         if (run.getStartedAt() == null) {
             run.setStartedAt(now);
@@ -294,6 +317,13 @@ public class TenantProvisioningRunService {
             return Response.Status.CONFLICT;
         }
         return Response.Status.INTERNAL_SERVER_ERROR;
+    }
+
+    private void restoreResult(TenantProvisioningService.ProvisioningContext context, TenantProvisioningRun run) {
+        context.getResult().realmCreated = run.isRealmCreated();
+        context.getResult().userCreated = run.isUserCreated();
+        context.getResult().appliedSeedArchetypes.addAll(run.getAppliedSeedArchetypes());
+        context.getResult().warnings.addAll(run.getWarnings());
     }
 
     private void copyResult(TenantProvisioningRun run, TenantProvisioningService.ProvisionResult result) {

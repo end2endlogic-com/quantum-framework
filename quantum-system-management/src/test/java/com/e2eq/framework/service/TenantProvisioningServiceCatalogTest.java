@@ -21,6 +21,20 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class TenantProvisioningServiceCatalogTest {
 
     @Test
+    void initializationCarriesOwningApplicationIntoMigrationAndSeedAuthorization() {
+        TenantProvisioningService service = new TenantProvisioningService();
+        service.envConfigUtils = env();
+        var context = service.initializeContext(TenantProvisioningService.ProvisionTenantCommand.builder()
+            .applicationId("shipping-app").tenantEmailDomain("acme.com").orgRefName("acme.com")
+            .accountId("4444555566").adminUserId("admin@acme.com").adminSubject("admin-acme")
+            .adminPassword("unused-in-context-test").build());
+        assertEquals("shipping-app", context.getTenantPrincipal().getApplicationId());
+        assertEquals("shipping-app", context.getMigrationResource().getApplicationId());
+        assertEquals("shipping-app", context.getSeedResource().getApplicationId());
+        assertEquals(context.getDomainContext(), context.getTenantPrincipal().getDomainContext());
+    }
+
+    @Test
     void initializeContextKeepsEmailDomainSeparateFromDataDomainIdentifiers() {
         TenantProvisioningService service = new TenantProvisioningService();
         service.realmCatalog = new RecordingRealmCatalog(null);

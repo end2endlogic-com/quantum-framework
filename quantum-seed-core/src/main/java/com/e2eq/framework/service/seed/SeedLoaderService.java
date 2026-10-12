@@ -165,6 +165,14 @@ public class SeedLoaderService {
         return createLoader(context, SeedConflictPolicy.ERROR).plan(packRefs, context);
     }
 
+    public SeedPlan planApplicable(SeedContext context) {
+        return createLoader(context, SeedConflictPolicy.ERROR).planApplicable(context);
+    }
+
+    public void validatePlan(SeedContext context, SeedPlan plan) {
+        createLoader(context, SeedConflictPolicy.ERROR).validatePlan(plan, context);
+    }
+
     public SeedPlan planArchetype(SeedContext context, String archetypeName) {
         return createLoader(context, SeedConflictPolicy.ERROR).planArchetype(archetypeName, context);
     }

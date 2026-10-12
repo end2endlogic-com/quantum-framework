@@ -95,6 +95,7 @@ public class TenantProvisioningService implements TenantLifecycle {
     @Inject SeedLoaderService seedLoaderService;
 
     @Inject SeedDiscoveryService seedDiscoveryService;
+    @Inject com.e2eq.framework.service.provisioning.TenantInitializationPlanner initializationPlanner;
 
     @Inject Instance<RealmArchiveProvider> realmArchiveProviders;
     @Inject Instance<TenantAccessRevocationProvider> tenantAccessRevocationProviders;
@@ -213,6 +214,7 @@ public class TenantProvisioningService implements TenantLifecycle {
         private String demoUserId;
         private String demoPassword;
         private List<String> archetypes;
+        private com.e2eq.framework.service.provisioning.TenantInitializationPlan initializationPlan;
     }
 
     /**
@@ -263,6 +265,8 @@ public class TenantProvisioningService implements TenantLifecycle {
 
     public ProvisionResult provisionTenant(ProvisionTenantCommand command) {
         ProvisioningContext context = initializeContext(command);
+        context.setInitializationPlan(initializationPlanner.plan(context));
+        initializationPlanner.validate(context.getInitializationPlan(), context);
         ensureRealmCatalog(context);
         ensureOrganizationDirectory(context);
         ensureRealmMembership(context);
@@ -285,6 +289,7 @@ public class TenantProvisioningService implements TenantLifecycle {
         TenantDeploymentTopology deploymentTopology = resolveDeploymentTopology(command);
         String tenantId = normalizeDataDomainIdentifier(command.getTenantEmailDomain());
         String realmId = resolvePlacementRealmId(command, deploymentTopology, tenantId);
+        String applicationId = resolveApplicationIdOrNull(command);
         String normalizedTenantDisplayName = command.getTenantDisplayName() == null || command.getTenantDisplayName().isBlank()
             ? tenantId
             : command.getTenantDisplayName().trim();
@@ -337,6 +342,8 @@ public class TenantProvisioningService implements TenantLifecycle {
 
         PrincipalContext tenantPrincipal = new PrincipalContext.Builder()
             .withDefaultRealm(realmId)
+            .withApplicationId(applicationId)
+            .withDomainContext(dc)
             .withDataDomain(dataDomain)
             .withUserId(command.getAdminUserId())
             .withRoles(new String[]{"admin"})
@@ -345,6 +352,7 @@ public class TenantProvisioningService implements TenantLifecycle {
 
         ResourceContext migrationResource = new ResourceContext.Builder()
             .withRealm(realmId)
+            .withApplicationId(applicationId)
             .withArea("MIGRATION")
             .withFunctionalDomain("DB")
             .withAction("APPLY")
@@ -352,6 +360,7 @@ public class TenantProvisioningService implements TenantLifecycle {
 
         ResourceContext seedResource = new ResourceContext.Builder()
             .withRealm(realmId)
+            .withApplicationId(applicationId)
             .withArea("SEED")
             .withFunctionalDomain("SEED")
             .withAction("APPLY")
@@ -359,7 +368,7 @@ public class TenantProvisioningService implements TenantLifecycle {
 
         return ProvisioningContext.builder()
             .command(command)
-            .applicationId(resolveApplicationIdOrNull(command))
+            .applicationId(applicationId)
             .result(result)
             .systemRealm(envConfigUtils.getSystemRealm())
             .realmId(realmId)
@@ -664,7 +673,7 @@ public class TenantProvisioningService implements TenantLifecycle {
         }
         withDropPendingRetry(context.getRealmId(), "run migrations", () ->
             SecurityCallScope.runWithContexts(context.getTenantPrincipal(), context.getMigrationResource(), () ->
-                migrationService.runAllUnRunMigrations(context.getRealmId(), context.getEmitter())
+                migrationService.runPlan(requirePlan(context).migrations(), context.getEmitter())
             )
         );
     }
@@ -853,24 +862,8 @@ public class TenantProvisioningService implements TenantLifecycle {
                 context.getTenantId(), context.getRealmId());
             return;
         }
-        SeedContext seedContext = seedContext(context);
-        Map<String, SeedPackDescriptor> latestByPack;
-        try {
-            latestByPack = seedDiscoveryService.discoverLatestApplicable(seedContext, null);
-        } catch (IOException e) {
-            throw new IllegalStateException("Failed to discover seed packs: " + e.getMessage(), e);
-        }
-
-        List<SeedPackRef> baseRefs = latestByPack.values().stream()
-            .map(d -> SeedPackRef.exact(d.getManifest().getSeedPack(), d.getManifest().getVersion()))
-            .toList();
-        if (baseRefs.isEmpty()) {
-            return;
-        }
-
-        Log.infof("Applying %d base seed pack(s) (GLOBAL/unscoped/per-tenant) to realm %s", baseRefs.size(), context.getRealmId());
         SecurityCallScope.runWithContexts(context.getTenantPrincipal(), context.getSeedResource(), () ->
-            seedLoaderService.applySeeds(seedContext, baseRefs)
+            seedLoaderService.applyPlan(seedContext(context), requirePlan(context).baseSeeds())
         );
     }
 
@@ -886,19 +879,18 @@ public class TenantProvisioningService implements TenantLifecycle {
         }
 
         SeedContext seedContext = seedContext(context);
-        for (String archetype : context.getArchetypes()) {
-            String at = archetype == null ? null : archetype.trim();
-            if (at == null || at.isEmpty()) {
-                continue;
-            }
-            Log.infof("Applying seed archetype '%s' to realm %s", at, context.getRealmId());
+        for (var archetype : requirePlan(context).archetypes()) {
             SecurityCallScope.runWithContexts(context.getTenantPrincipal(), context.getSeedResource(), () ->
-                seedLoaderService.applyArchetype(seedContext, at)
+                seedLoaderService.applyPlan(seedContext, archetype.seeds())
             );
-            if (!context.getResult().appliedSeedArchetypes.contains(at)) {
-                context.getResult().appliedSeedArchetypes.add(at);
-            }
+            if (!context.getResult().appliedSeedArchetypes.contains(archetype.name()))
+                context.getResult().appliedSeedArchetypes.add(archetype.name());
         }
+    }
+
+    private com.e2eq.framework.service.provisioning.TenantInitializationPlan requirePlan(ProvisioningContext context) {
+        if (context.getInitializationPlan() == null) throw new IllegalStateException("PROVISIONING_PLAN_REQUIRED");
+        return context.getInitializationPlan();
     }
 
     public void verifyRealmInitialization(ProvisioningContext context) {
@@ -968,15 +960,7 @@ public class TenantProvisioningService implements TenantLifecycle {
     }
 
     private SeedContext seedContext(ProvisioningContext context) {
-        return SeedContext.builder(context.getRealmId())
-            .tenantId(context.getDomainContext().getTenantId())
-            .orgRefName(context.getDomainContext().getOrgRefName())
-            .accountId(context.getDomainContext().getAccountId())
-            .ownerId(context.getCommand().getAdminUserId())
-            .variable("adminUserId", context.getCommand().getAdminUserId())
-            .variable("baselineAdminUserId", context.getBaselineAdminUserId())
-            .variable("demoUserId", context.getDemoUserId())
-            .build();
+        return com.e2eq.framework.service.provisioning.TenantInitializationPlanner.seedContext(context);
     }
 
     private void ensureUserProfileProjectionIfEnabled(String realmId,

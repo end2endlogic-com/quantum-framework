@@ -45,6 +45,8 @@ public class ChangeSetRecord extends BaseModel {
     * Checksum of the changeSet implementation.
     */
    protected String checksum;
+   /** Exact definition applied, including implementation bytes and catalog metadata. */
+   protected String definitionSha256;
    @NotNull
    protected String author;
    protected String description;

@@ -40,6 +40,9 @@ public class TenantProvisioningRun extends BaseModel {
     private String executionRef;
     /** Digest of the original non-secret command; rejects reuse of an operation key with different intent. */
     private String requestFingerprint;
+    /** Exact typed initialization snapshot; its checksum guards storage corruption. */
+    private String initializationPlanJson;
+    private String initializationPlanSha256;
     private String workflowRefName;
     private int workflowVersion;
     private String workflowDefinitionJson;

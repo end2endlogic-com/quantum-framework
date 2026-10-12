@@ -172,6 +172,16 @@ class SeedPlanTest {
         assertTrue(writes.isEmpty());
     }
 
+    @Test void applicablePlanningAndPreflightAreReadOnlyAndFailOnUnavailableSource() {
+        source.pack("b", "1.0.0", List.of()); source.pack("a", "1.0.0", List.of());
+        SeedPlan plan = loader().planApplicable(context);
+        assertEquals(List.of("a", "b"), plan.packs().stream().map(SeedPlan.Pack::name).toList());
+        loader().validatePlan(plan, context);
+        assertTrue(writes.isEmpty()); assertTrue(receipts.isEmpty());
+        source.unavailable = true;
+        assertThrows(SeedLoadingException.class, () -> loader().planApplicable(context));
+    }
+
     static void assertFailure(String code, Runnable action) {
         assertTrue(assertThrows(SeedLoadingException.class, action::run).getMessage().startsWith(code));
     }

@@ -27,6 +27,11 @@ final class SeedPlanSupport {
         return plan(refs, context, loader.resolveSeedPacks(context));
     }
 
+    public SeedPlan planApplicable(SeedContext context) {
+        SeedResolution resolution = loader.resolveSeedPacks(context);
+        return plan(resolution.latestApplicable(context), context, resolution);
+    }
+
     public SeedPlan planArchetype(String archetypeName, SeedContext context) {
         SeedResolution resolution = loader.resolveSeedPacks(context);
         SeedPackDescriptor owner = resolution.findArchetype(archetypeName)
@@ -80,6 +85,14 @@ final class SeedPlanSupport {
      * The caller owns durable plan storage, exclusive execution and receipt reconciliation.
      */
     public void applyPlan(SeedPlan plan, SeedContext context) {
+        prepare(plan, context).forEach((descriptor, payloads) -> loader.applyDatasets(descriptor, context, payloads));
+    }
+
+    public void validatePlan(SeedPlan plan, SeedContext context) {
+        prepare(plan, context);
+    }
+
+    private Map<SeedPackDescriptor, Map<Dataset, DatasetPayload>> prepare(SeedPlan plan, SeedContext context) {
         if (!plan.contextSha256().equals(contextHash(context)))
             throw new SeedLoadingException("SEED_PLAN_CONTEXT_MISMATCH");
         if (conflictPolicy != SeedConflictPolicy.ERROR)
@@ -116,7 +129,7 @@ final class SeedPlanSupport {
             seen.put(pack.name(), descriptor);
             prepared.put(descriptor, payloads);
         }
-        prepared.forEach((descriptor, payloads) -> loader.applyDatasets(descriptor, context, payloads));
+        return prepared;
     }
 
     private String contextHash(SeedContext context) {

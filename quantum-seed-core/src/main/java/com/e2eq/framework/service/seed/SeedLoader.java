@@ -130,6 +130,14 @@ public final class SeedLoader {
         return new SeedPlanSupport(this, objectMapper, conflictPolicy).plan(refs, context);
     }
 
+    public SeedPlan planApplicable(SeedContext context) {
+        return new SeedPlanSupport(this, objectMapper, conflictPolicy).planApplicable(context);
+    }
+
+    public void validatePlan(SeedPlan plan, SeedContext context) {
+        new SeedPlanSupport(this, objectMapper, conflictPolicy).validatePlan(plan, context);
+    }
+
     public SeedPlan planArchetype(String archetypeName, SeedContext context) {
         return new SeedPlanSupport(this, objectMapper, conflictPolicy).planArchetype(archetypeName, context);
     }
@@ -728,6 +736,16 @@ public final class SeedLoader {
                 }
             }
             throw new SeedLoadingException("No version of seed pack " + ref.getName() + " matches " + Optional.ofNullable(ref.getSpecification()).orElse("latest"));
+        }
+
+        List<SeedPackRef> latestApplicable(SeedContext context) {
+            List<SeedPackRef> refs = new ArrayList<>();
+            for (String name : new java.util.TreeSet<>(byName.keySet())) {
+                byName.get(name).stream().filter(d -> ScopeMatcher.isApplicable(d, context))
+                    .max(Comparator.comparing(d -> Semver.parse(d.getManifest().getVersion())))
+                    .ifPresent(d -> refs.add(SeedPackRef.exact(name, d.getManifest().getVersion())));
+            }
+            return refs;
         }
 
         Optional<SeedPackDescriptor> findArchetype(String archetype) {

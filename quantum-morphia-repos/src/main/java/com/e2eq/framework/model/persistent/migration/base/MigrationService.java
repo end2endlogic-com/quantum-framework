@@ -572,6 +572,11 @@ public class MigrationService {
 
 
    public void updateChangeLog (MorphiaSession ds, String realm, ChangeSetBean changeSetBean, MultiEmitter<? super String> emitter) {
+      updateChangeLog(ds, realm, changeSetBean, emitter, null);
+   }
+
+   private void updateChangeLog(MorphiaSession ds, String realm, ChangeSetBean changeSetBean,
+                                MultiEmitter<? super String> emitter, String definitionSha256) {
       // Upsert ChangeSetRecord by changeSetName to avoid duplicate-key on older deployments with a unique index on name only
       Optional<ChangeSetRecord> existing = changesetRecordRepo.findLatestByChangeSetName(ds, changeSetBean.getName());
       ChangeSetRecord record;
@@ -593,6 +598,7 @@ public class MigrationService {
       record.setDbToVersionInt(changeSetBean.getDbToVersionInt());
       record.setChangeSetVersion(changeSetBean.getChangeSetVersion());
       record.setChecksum(changeSetBean.getChecksum());
+      record.setDefinitionSha256(definitionSha256);
       record.setLastExecutedDate(new Date());
       record.setScope(changeSetBean.getScope());
       record.setSuccessful(true);
@@ -615,6 +621,55 @@ public class MigrationService {
             databaseVersion = databaseVersionRepo.save(ds, databaseVersion);
          }
       }
+   }
+
+   /** Resolve an exact ordered catalog without opening a datastore or writing a version row. */
+   public MigrationPlan planRealm(String realm) {
+      requireRealmOwnedByThisMigrationService(realm, "plan migrations");
+      return MigrationPlanSupport.plan(realm, targetDatabaseVersion, databaseScope, getAllChangeSetBeans());
+   }
+
+   public void validatePlan(MigrationPlan plan) {
+      requireRealmOwnedByThisMigrationService(plan.realm(), "validate migration plan");
+      MigrationPlanSupport.validate(plan, targetDatabaseVersion, databaseScope, getAllChangeSetBeans());
+   }
+
+   /** Revalidate under the existing realm lock; each migration and its receipt commit together. */
+   public void runPlan(MigrationPlan plan, MultiEmitter<? super String> emitter) {
+      requireRealmOwnedByThisMigrationService(plan.realm(), "run migration plan");
+      getMigrationLock(plan.realm()).runLocked(() -> {
+         List<ChangeSetBean> selected = MigrationPlanSupport.validate(plan,
+            targetDatabaseVersion, databaseScope, getAllChangeSetBeans());
+         Datastore datastore = morphiaDataStoreWrapper.getDataStore(plan.realm());
+         Optional<DatabaseVersion> current = getCurrentDatabaseVersion(datastore);
+         if (current.isPresent() && current.get().getCurrentSemVersion().isGreaterThan(plan.targetVersion()))
+            throw new IllegalStateException("MIGRATION_DATABASE_NEWER_THAN_PLAN: " + plan.realm());
+         // Check every receipt before the first mutation, including unexpected newer/legacy receipts.
+         List<ChangeSetBean> pending = new ArrayList<>();
+         for (int i = 0; i < selected.size(); i++) {
+            if (!MigrationPlanSupport.alreadyApplied(plan.entries().get(i),
+                  changesetRecordRepo.findLatestByChangeSetName(datastore, selected.get(i).getName())))
+               pending.add(selected.get(i));
+         }
+         for (ChangeSetBean bean : pending) {
+            try (MorphiaSession session = datastore.startSession()) {
+               session.startTransaction();
+               try {
+                  bean.execute(session, mongoClient, emitter);
+                  MigrationPlan.Entry entry = plan.entries().stream()
+                     .filter(value -> value.name().equals(bean.getName())).findFirst().orElseThrow();
+                  updateChangeLog(session, plan.realm(), bean, emitter, entry.definitionSha256());
+                  session.commitTransaction();
+               } catch (Exception failure) {
+                  session.abortTransaction();
+                  throw new IllegalStateException("MIGRATION_PLAN_EXECUTION_FAILED: " + bean.getName(), failure);
+               }
+            }
+         }
+         current = getCurrentDatabaseVersion(datastore);
+         if (current.isEmpty() || current.get().getCurrentSemVersion().isLowerThan(plan.targetVersion()))
+            saveDatabaseVersion(datastore, plan.targetVersion());
+      });
    }
 
    public void runChangeSetBean(String changeSetName, String realm, MultiEmitter<? super String> emitter) throws Exception {

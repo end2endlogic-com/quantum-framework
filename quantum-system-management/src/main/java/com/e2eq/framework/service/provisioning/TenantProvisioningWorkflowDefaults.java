@@ -117,6 +117,20 @@ public class TenantProvisioningWorkflowDefaults {
     }
 
     public List<TenantProvisioningWorkflowStepResponse> validateSteps(String workflowDefinitionJson) {
+        // Execution must never use parseSteps' legacy display fallback for malformed definitions.
+        try {
+            var root = objectMapper.readTree(workflowDefinitionJson);
+            var raw = root == null ? null : root.get("steps");
+            if (raw == null || !raw.isArray() || raw.isEmpty())
+                throw new IllegalArgumentException("PROVISIONING_WORKFLOW_STEPS_REQUIRED");
+            for (var step : raw) {
+                if (!step.isObject() || !step.path("key").isTextual() || step.path("key").asText().isBlank()
+                        || (step.has("required") && !step.get("required").isBoolean()))
+                    throw new IllegalArgumentException("PROVISIONING_WORKFLOW_STEP_INVALID");
+            }
+        } catch (java.io.IOException failure) {
+            throw new IllegalArgumentException("PROVISIONING_WORKFLOW_INVALID_JSON", failure);
+        }
         List<TenantProvisioningWorkflowStepResponse> steps = parseSteps(workflowDefinitionJson);
         if (steps.isEmpty()) {
             throw new IllegalArgumentException("Tenant provisioning workflow must define at least one step.");
@@ -140,6 +154,15 @@ public class TenantProvisioningWorkflowDefaults {
             if (!seenKeys.contains(requiredKey)) {
                 throw new IllegalArgumentException("Tenant provisioning workflow must include required step: " + requiredKey);
             }
+        }
+        List<String> canonicalOrder = List.of(STEP_REALM_CATALOG, STEP_REALM_MEMBERSHIP,
+            STEP_REALM_MIGRATIONS, STEP_TENANT_IDENTITIES, STEP_BASE_SEED_PACKS,
+            STEP_REQUESTED_ARCHETYPES, STEP_VERIFICATION);
+        int previous = -1;
+        for (var step : steps) {
+            int position = canonicalOrder.indexOf(step.getKey());
+            if (position <= previous) throw new IllegalArgumentException("PROVISIONING_WORKFLOW_ORDER_INVALID");
+            previous = position;
         }
         return steps;
     }
