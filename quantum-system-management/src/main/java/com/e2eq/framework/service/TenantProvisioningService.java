@@ -195,6 +195,7 @@ public class TenantProvisioningService implements TenantLifecycle {
     public static class ProvisioningContext {
         private ProvisionTenantCommand command;
         private ProvisionResult result;
+        private String applicationId;
         private String systemRealm;
         private String realmId;
         private String tenantId;
@@ -358,6 +359,7 @@ public class TenantProvisioningService implements TenantLifecycle {
 
         return ProvisioningContext.builder()
             .command(command)
+            .applicationId(resolveApplicationIdOrNull(command))
             .result(result)
             .systemRealm(envConfigUtils.getSystemRealm())
             .realmId(realmId)

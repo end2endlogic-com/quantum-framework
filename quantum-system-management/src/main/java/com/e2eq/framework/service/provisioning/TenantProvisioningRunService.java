@@ -42,23 +42,19 @@ public class TenantProvisioningRunService {
         return startProvisioning(command, newExecutionRef());
     }
 
-    /** Caller-supplied authority key makes explicit retries resume the same durable run. */
+    /** Repeated submission observes the same run; only the explicit retry endpoint may re-execute it. */
     public TenantProvisioningRunResponse startProvisioning(TenantProvisioningService.ProvisionTenantCommand command,
                                                           String executionRef) {
         String systemRealm = envConfigUtils.getSystemRealm();
         if (executionRef == null || !executionRef.matches("[A-Za-z0-9_-]{16,128}")) {
             throw new IllegalArgumentException("PROVISIONING_REQUEST_ID_INVALID");
         }
+        String fingerprint = requestFingerprint(command);
         var existing = runRepo.findByExecutionRef(systemRealm, executionRef);
         if (existing.isPresent()) {
             var run = existing.get();
-            if (!java.util.Objects.equals(run.getAdminUserId(), command.getAdminUserId())
-                    || !java.util.Objects.equals(run.getApplicationId(), command.getApplicationId())
-                    || !java.util.Objects.equals(run.getOrgRefName(), command.getOrgRefName())) {
-                throw new IllegalArgumentException("PROVISIONING_REQUEST_CONFLICT");
-            }
-            return run.getStatus() == TenantProvisioningRun.Status.FAILED
-                    ? retry(executionRef, command.getAdminPassword()) : toResponse(run);
+            requireMatchingRequest(run, fingerprint);
+            return toResponse(run);
         }
         TenantProvisioningService.ProvisioningContext context = provisioningService.initializeContext(command);
         TenantProvisioningWorkflow workflow = workflowService.resolveCurrentWorkflow(systemRealm);
@@ -67,6 +63,7 @@ public class TenantProvisioningRunService {
         TenantProvisioningRun run = TenantProvisioningRun.builder()
             .refName(executionRef)
             .executionRef(executionRef)
+            .requestFingerprint(fingerprint)
             .displayName("Provision tenant " + context.getRealmId())
             .workflowRefName(workflow.getRefName())
             .workflowVersion(workflow.getWorkflowVersion())
@@ -82,13 +79,57 @@ public class TenantProvisioningRunService {
             .adminDisplayName(command.getAdminDisplayName())
             .adminSubject(command.getAdminSubject())
             .adminCredentialType(command.getAdminCredentialType())
-            .applicationId(command.getApplicationId())
+            .applicationId(context.getApplicationId())
             .overwriteAll(command.isOverwriteAll())
             .requestedArchetypes(new ArrayList<>(context.getArchetypes()))
             .steps(toStepStates(workflowSteps))
             .build();
-        run = runRepo.save(systemRealm, run);
+        try {
+            run = runRepo.save(systemRealm, run);
+        } catch (com.mongodb.MongoWriteException conflict) {
+            if (conflict.getError().getCategory() != com.mongodb.ErrorCategory.DUPLICATE_KEY) throw conflict;
+            // The unique executionRef index arbitrates concurrent initial requests.
+            // The loser observes the winner; it must never execute or retry it here.
+            var winner = runRepo.findByExecutionRef(systemRealm, executionRef).orElseThrow(() -> conflict);
+            requireMatchingRequest(winner, fingerprint);
+            return toResponse(winner);
+        }
         return toResponse(execute(systemRealm, run, context));
+    }
+
+    static void requireMatchingRequest(TenantProvisioningRun run, String fingerprint) {
+        if (run.getRequestFingerprint() == null) {
+            throw new IllegalStateException("PROVISIONING_REQUEST_UNPINNED: inspect the legacy run and use its explicit retry endpoint");
+        }
+        if (!run.getRequestFingerprint().equals(fingerprint)) {
+            throw new IllegalStateException("PROVISIONING_REQUEST_CONFLICT: operation key belongs to a different command");
+        }
+    }
+
+    /** Passwords are deliberately excluded: explicit retries may supply them again. */
+    static String requestFingerprint(TenantProvisioningService.ProvisionTenantCommand command) {
+        java.util.Objects.requireNonNull(command, "command");
+        var fields = new java.util.LinkedHashMap<String, Object>();
+        fields.put("version", 1);
+        fields.put("tenantDisplayName", command.getTenantDisplayName());
+        fields.put("tenantEmailDomain", command.getTenantEmailDomain());
+        fields.put("orgRefName", command.getOrgRefName());
+        fields.put("accountId", command.getAccountId());
+        fields.put("adminUserId", command.getAdminUserId());
+        fields.put("adminDisplayName", command.getAdminDisplayName());
+        fields.put("adminSubject", command.getAdminSubject());
+        fields.put("adminCredentialType", command.getAdminCredentialType());
+        fields.put("applicationId", command.getApplicationId());
+        fields.put("deploymentTopology", command.getDeploymentTopology());
+        fields.put("placementRealmId", command.getPlacementRealmId());
+        fields.put("archetypes", command.getArchetypes());
+        fields.put("overwriteAll", command.isOverwriteAll());
+        try {
+            byte[] payload = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsBytes(fields);
+            return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(payload));
+        } catch (java.io.IOException | java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException("PROVISIONING_REQUEST_FINGERPRINT_FAILED", e);
+        }
     }
 
     public TenantProvisioningRunResponse getRun(String executionRef) {

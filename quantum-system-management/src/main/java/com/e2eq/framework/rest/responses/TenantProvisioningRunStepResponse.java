@@ -5,6 +5,7 @@ import lombok.Data;
 
 import java.time.Instant;
 
+@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
 @Data
 @Builder
 public class TenantProvisioningRunStepResponse {

@@ -38,6 +38,8 @@ import java.util.List;
 public class TenantProvisioningRun extends BaseModel {
 
     private String executionRef;
+    /** Digest of the original non-secret command; rejects reuse of an operation key with different intent. */
+    private String requestFingerprint;
     private String workflowRefName;
     private int workflowVersion;
     private String workflowDefinitionJson;

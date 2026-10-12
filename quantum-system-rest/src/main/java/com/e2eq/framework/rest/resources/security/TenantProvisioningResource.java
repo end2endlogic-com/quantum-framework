@@ -15,6 +15,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
+import jakarta.ws.rs.HeaderParam;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
@@ -23,6 +24,9 @@ import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
+import org.eclipse.microprofile.openapi.annotations.media.Content;
+import org.eclipse.microprofile.openapi.annotations.media.Schema;
+import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 
 import java.util.List;
 import io.quarkus.arc.properties.IfBuildProperty;
@@ -76,11 +80,14 @@ public class TenantProvisioningResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     @RolesAllowed({"admin", "system"})
-    public Response provision(ProvisionTenantRequest req) {
+    @APIResponse(responseCode = "200", description = "Existing provisioning operation",
+        content = @Content(schema = @Schema(implementation = TenantProvisioningRunResponse.class)))
+    @APIResponse(responseCode = "201", description = "Provisioning operation created",
+        content = @Content(schema = @Schema(implementation = TenantProvisioningRunResponse.class)))
+    public Response provision(ProvisionTenantRequest req, @HeaderParam("Idempotency-Key") String executionRef) {
         try {
             List<String> archetypes = firstNonEmpty(req.seedArchetypes, req.archetypes);
-            TenantProvisioningRunResponse run = provisioningRunService.startProvisioning(
-                TenantProvisioningService.ProvisionTenantCommand.builder()
+            var command = TenantProvisioningService.ProvisionTenantCommand.builder()
                     .tenantDisplayName(req.tenantDisplayName)
                     .tenantEmailDomain(req.tenantEmailDomain)
                     .orgRefName(req.orgRefName)
@@ -93,8 +100,10 @@ public class TenantProvisioningResource {
                     .placementRealmId(req.placementRealmId)
                     .archetypes(archetypes)
                     .overwriteAll(true)
-                    .build()
-            );
+                    .build();
+            TenantProvisioningRunResponse run = executionRef == null
+                ? provisioningRunService.startProvisioning(command)
+                : provisioningRunService.startProvisioning(command, executionRef);
             int status = (run.isRealmCreated() || run.isUserCreated())
                 ? Response.Status.CREATED.getStatusCode()
                 : Response.Status.OK.getStatusCode();
@@ -118,6 +127,8 @@ public class TenantProvisioningResource {
     @Path("runs/{executionRef}")
     @Produces(MediaType.APPLICATION_JSON)
     @RolesAllowed({"admin", "system"})
+    @APIResponse(responseCode = "200", description = "Authoritative provisioning receipt",
+        content = @Content(schema = @Schema(implementation = TenantProvisioningRunResponse.class)))
     public Response getRun(@PathParam("executionRef") String executionRef) {
         return Response.ok(provisioningRunService.getRun(executionRef)).build();
     }
@@ -127,6 +138,8 @@ public class TenantProvisioningResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     @RolesAllowed({"admin", "system"})
+    @APIResponse(responseCode = "200", description = "Provisioning receipt after explicit retry",
+        content = @Content(schema = @Schema(implementation = TenantProvisioningRunResponse.class)))
     public Response retry(@PathParam("executionRef") String executionRef, TenantProvisioningRetryRequest request) {
         try {
             TenantProvisioningRunResponse run = provisioningRunService.retry(
