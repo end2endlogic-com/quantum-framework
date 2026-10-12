@@ -66,7 +66,9 @@ public class RealmOntologyKeyResolver {
     /**
      * Re-key TBoxes saved under the legacy key (every field the realm name) to the registered key, so
      * a realm that published before keeps its active model. A system migration of the realm's own
-     * ontology records: done directly on the collection, logged, and never fatal.
+     * ontology records: done directly on the collection and logged. A failure is rethrown so
+     * {@link RealmOntologyKeys} keeps the move pending and runs it again on the realm's next lookup;
+     * it never fails that lookup.
      */
     void moveLegacyTBoxes(String realm, DataDomain key) {
         DataDomain legacy = RealmOntologyKeys.legacy(realm);
@@ -88,8 +90,9 @@ public class RealmOntologyKeyResolver {
                         moved.getModifiedCount(), realm, key.getTenantId());
             }
         } catch (RuntimeException e) {
-            Log.warnf(e, "RealmOntologyKeyResolver: could not move legacy TBoxes of realm %s to tenant %s",
+            Log.warnf(e, "RealmOntologyKeyResolver: could not move legacy TBoxes of realm %s to tenant %s; retrying on next lookup",
                     realm, key.getTenantId());
+            throw e;
         }
     }
 }

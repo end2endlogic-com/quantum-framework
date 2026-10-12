@@ -23,8 +23,10 @@ import java.util.function.Function;
  * <p>The registry is consulted through {@link #registry}, installed by
  * {@link RealmOntologyKeyResolver} at startup. Registered keys are cached for the life of the
  * process (a realm's domain does not change); an unregistered realm is re-checked after
- * {@link #UNREGISTERED_RECHECK_MILLIS}. The first time a registered key is used for a realm,
- * {@link #onRegistered} moves TBoxes stored under the legacy key to it.</p>
+ * {@link #UNREGISTERED_RECHECK_MILLIS}, or at once after {@link #refresh} (called when a realm is
+ * registered). The first time a registered key is used for a realm, {@link #onRegistered} moves
+ * TBoxes stored under the legacy key to it; if that move fails (the hook throws), the next lookup
+ * runs it again.</p>
  */
 public final class RealmOntologyKeys {
 
@@ -34,7 +36,7 @@ public final class RealmOntologyKeys {
     private static volatile BiConsumer<String, DataDomain> onRegistered;
     private static final Map<String, Entry> CACHE = new ConcurrentHashMap<>();
 
-    private record Entry(DataDomain key, boolean registered, long checkedAt) {
+    private record Entry(DataDomain key, boolean registered, boolean migrated, long checkedAt) {
     }
 
     private RealmOntologyKeys() {
@@ -42,7 +44,8 @@ public final class RealmOntologyKeys {
 
     /**
      * Install the registry lookup (realm -> registered domain) and the hook run once per realm
-     * when its registered key is first used. Clears the cache.
+     * when its registered key is first used. The hook signals failure by throwing; it is then run
+     * again on the realm's next lookup. Clears the cache.
      */
     public static void install(Function<String, Optional<DataDomain>> lookup,
                                BiConsumer<String, DataDomain> firstUse) {
@@ -67,7 +70,13 @@ public final class RealmOntologyKeys {
     public static DataDomain forRealm(String realm) {
         Entry cached = CACHE.get(realm);
         long now = System.currentTimeMillis();
-        if (cached != null && (cached.registered() || now - cached.checkedAt() < UNREGISTERED_RECHECK_MILLIS)) {
+        if (cached != null && cached.registered()) {
+            if (!cached.migrated()) {
+                migrate(realm, cached);
+            }
+            return copy(cached.key());
+        }
+        if (cached != null && now - cached.checkedAt() < UNREGISTERED_RECHECK_MILLIS) {
             return copy(cached.key());
         }
         Function<String, Optional<DataDomain>> lookup = registry;
@@ -84,18 +93,32 @@ public final class RealmOntologyKeys {
         }
         if (registered.isEmpty()) {
             DataDomain legacy = legacy(realm);
-            CACHE.put(realm, new Entry(legacy, false, now));
+            CACHE.put(realm, new Entry(legacy, false, false, now));
             return copy(legacy);
         }
         DataDomain key = normalize(realm, registered.get());
-        Entry previous = CACHE.put(realm, new Entry(key, true, now));
+        Entry entry = new Entry(key, true, false, now);
+        Entry previous = CACHE.put(realm, entry);
         if (previous == null || !previous.registered()) {
-            BiConsumer<String, DataDomain> hook = onRegistered;
-            if (hook != null) {
-                hook.accept(realm, copy(key));
-            }
+            migrate(realm, entry);
         }
         return copy(key);
+    }
+
+    /**
+     * Run the first-use hook for a registered entry and mark it migrated only when the hook
+     * returns. A hook that throws leaves the entry unmigrated, so the next lookup retries it.
+     */
+    private static void migrate(String realm, Entry entry) {
+        BiConsumer<String, DataDomain> hook = onRegistered;
+        if (hook != null) {
+            try {
+                hook.accept(realm, copy(entry.key()));
+            } catch (RuntimeException e) {
+                return;
+            }
+        }
+        CACHE.replace(realm, entry, new Entry(entry.key(), true, true, entry.checkedAt()));
     }
 
     /** The pre-registry key: every field is the realm name. */

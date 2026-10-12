@@ -51,6 +51,23 @@ class RealmOntologyKeysTest {
     }
 
     @Test
+    void aFailedLegacyMoveRunsAgainOnTheNextLookup() {
+        List<String> moved = new ArrayList<>();
+        AtomicInteger attempts = new AtomicInteger();
+        RealmOntologyKeys.install(realm -> Optional.of(TENANT), (realm, key) -> {
+            if (attempts.incrementAndGet() == 1)
+                throw new IllegalStateException("mongo blip");
+            moved.add(realm + "->" + key.getTenantId());
+        });
+        assertEquals("acme.com", RealmOntologyKeys.forRealm("acme").getTenantId(), "the key does not wait on the move");
+        assertTrue(moved.isEmpty());
+        RealmOntologyKeys.forRealm("acme");
+        RealmOntologyKeys.forRealm("acme");
+        assertEquals(List.of("acme->acme.com"), moved, "retried once on the next lookup, then done");
+        assertEquals(2, attempts.get());
+    }
+
+    @Test
     void anIncompleteRegistrationKeepsTheLegacyKey() {
         RealmOntologyKeys.install(realm -> Optional.of(new DataDomain("acme.com", null, "acme.com", 0, null)), (r, k) -> fail("no move"));
         assertEquals("acme", RealmOntologyKeys.forRealm("acme").getTenantId());
