@@ -69,6 +69,18 @@ class RealmOntologyKeysTest {
     }
 
     @Test
+    void aFailedLookupIsNotRememberedAsUnregistered() {
+        AtomicInteger calls = new AtomicInteger();
+        RealmOntologyKeys.install(realm -> {
+            if (calls.incrementAndGet() == 1)
+                throw new IllegalStateException("no token yet");
+            return Optional.of(TENANT);
+        }, (r, k) -> { });
+        assertEquals("acme", RealmOntologyKeys.forRealm("acme").getTenantId(), "legacy while the registry cannot answer");
+        assertEquals("acme.com", RealmOntologyKeys.forRealm("acme").getTenantId(), "asked again, not pinned to legacy");
+    }
+
+    @Test
     void callersCannotChangeTheCachedKey() {
         RealmOntologyKeys.install(realm -> Optional.of(TENANT), (r, k) -> { });
         RealmOntologyKeys.forRealm("acme").setTenantId("tampered");

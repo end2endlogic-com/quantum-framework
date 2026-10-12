@@ -76,11 +76,10 @@ public final class RealmOntologyKeys {
             try {
                 registered = lookup.apply(realm).filter(RealmOntologyKeys::complete);
             } catch (RuntimeException e) {
-                // A registry outage must not move a realm's model to another key; keep the
-                // previous answer if there is one, otherwise the legacy key, and re-check soon.
-                if (cached != null) {
-                    return copy(cached.key());
-                }
+                // A registry outage (or a lookup with no caller token, e.g. at startup in remote
+                // mode) must not pin a realm to a key: answer with the previous key, or the legacy
+                // key, without caching, so the next lookup asks the registry again.
+                return copy(cached != null ? cached.key() : legacy(realm));
             }
         }
         if (registered.isEmpty()) {
