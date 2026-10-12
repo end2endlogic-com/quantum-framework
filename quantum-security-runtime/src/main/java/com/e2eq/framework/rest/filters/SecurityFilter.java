@@ -560,7 +560,14 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
 
         PrincipalContext contextWithImpersonation = handleImpersonation(requestContext, baseContext);
         PrincipalContext contextWithRealm = applyRealmOverride(contextWithImpersonation, realm);
-        PrincipalContext contextWithTenant = applyTenantSelection(contextWithRealm, tenantId);
+        // The signed tenant claim names a tenant of the realm the token was
+        // issued for. It applies only while the request stays in that realm;
+        // after an X-Realm switch the caller must select a tenant explicitly.
+        String tokenTenantId = buildResult.tokenRealm != null
+                && buildResult.tokenRealm.equals(contextWithRealm.getDefaultRealm())
+                ? buildResult.tokenTenantId
+                : null;
+        PrincipalContext contextWithTenant = applyTenantSelection(contextWithRealm, tenantId, tokenTenantId);
 
         // Apply custom property resolvers
         return applyCustomProperties(requestContext, contextWithTenant, credentials);
@@ -572,10 +579,21 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
     private static class ContextBuildResult {
         final PrincipalContext context;
         final CredentialUserIdPassword credentials;
+        /** Tenant named by the verified token's {@code tenantId} claim, or null. */
+        final String tokenTenantId;
+        /** Realm the verified token was issued for (before any X-Realm switch), or null. */
+        final String tokenRealm;
 
         ContextBuildResult(PrincipalContext context, CredentialUserIdPassword credentials) {
+            this(context, credentials, null, null);
+        }
+
+        ContextBuildResult(PrincipalContext context, CredentialUserIdPassword credentials,
+                           String tokenTenantId, String tokenRealm) {
             this.context = context;
             this.credentials = credentials;
+            this.tokenTenantId = tokenTenantId;
+            this.tokenRealm = tokenRealm;
         }
     }
 
@@ -725,7 +743,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                 .withArea2RealmOverrides(creds.getArea2RealmOverrides())
                 .withDataDomainPolicy(creds.getDataDomainPolicy())
                 .build();
-        return new ContextBuildResult(context, creds);
+        return new ContextBuildResult(context, creds, claimString("tenantId"), authorityRealm);
     }
 
     /**
@@ -825,7 +843,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                 .withRoles(roles)
                 .withScope("AUTHENTICATED")
                 .build();
-        return new ContextBuildResult(context, null);
+        return new ContextBuildResult(context, null, providerClaim(claims, "tenantId"), signedRealm);
     }
 
     private static String providerClaim(ProviderClaims claims, String name) {
@@ -1383,13 +1401,28 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
     }
 
     /**
-     * Applies the tenant selected inside the effective realm. A legacy or
-     * explicitly single-tenant realm derives its tenant from the realm's
-     * DomainContext and therefore does not require X-Tenant-Id. An explicitly
-     * multi-tenant realm requires the header and validates both the user's
-     * assignment and the realm's tenant membership before changing context.
+     * Applies tenant selection without a token tenant claim. See
+     * {@link #applyTenantSelection(PrincipalContext, String, String)}.
      */
     PrincipalContext applyTenantSelection(PrincipalContext context, String requestedTenantId) {
+        return applyTenantSelection(context, requestedTenantId, null);
+    }
+
+    /**
+     * Applies the tenant selected inside the effective realm. A legacy or
+     * explicitly single-tenant realm derives its tenant from the realm's
+     * DomainContext and therefore does not require X-Tenant-Id.
+     *
+     * <p>In an explicitly multi-tenant realm the tenant resolves from who is
+     * signed in: without X-Tenant-Id it is the tenant carried by the verified
+     * token ({@code tokenTenantId}). X-Tenant-Id is only an explicit tenant
+     * switch. Either way the tenant must be authorized by the user's realm
+     * assignment and be an active member of the realm, and the data domain is
+     * built from that membership. With neither a header nor a token tenant
+     * the request fails closed.
+     */
+    PrincipalContext applyTenantSelection(PrincipalContext context, String requestedTenantId,
+                                          String tokenTenantId) {
         // Public endpoints (OIDC discovery, JWKS, provider discovery, and login)
         // are processed through this filter before a principal exists.  Do not
         // make their availability depend on the remote control plane when no
@@ -1416,17 +1449,24 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                 throw new jakarta.ws.rs.ForbiddenException(
                     "X-Tenant-Id cannot be resolved because realm '" + effectiveRealm + "' is not registered");
             }
+            // A token tenant is checked like an explicit header: a stale token
+            // must not keep its projected tenant in a realm that is gone.
+            if (tokenTenantId != null && !tokenTenantId.isBlank()) {
+                throw new jakarta.ws.rs.ForbiddenException(
+                    "Token tenant '" + tokenTenantId.trim() + "' cannot be resolved because realm '"
+                        + effectiveRealm + "' is not registered");
+            }
             return context;
         }
 
         Realm realm = realmOpt.get();
-        String tenantId = requestedTenantId == null ? null : requestedTenantId.trim();
+        String headerTenantId = requestedTenantId == null ? null : requestedTenantId.trim();
         if (realm.getTenancyMode() != RealmTenancyMode.MULTI_TENANT) {
             String defaultTenantId = realm.getDomainContext() == null
                 ? null
                 : realm.getDomainContext().getTenantId();
-            if (tenantId != null && !tenantId.isBlank()
-                    && !tenantId.equals(defaultTenantId)) {
+            if (headerTenantId != null && !headerTenantId.isBlank()
+                    && !headerTenantId.equals(defaultTenantId)) {
                 throw new jakarta.ws.rs.ForbiddenException(
                     "X-Tenant-Id does not match the single tenant configured for realm '"
                         + effectiveRealm + "'");
@@ -1434,9 +1474,14 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
             return context;
         }
 
+        // X-Tenant-Id is an explicit switch; otherwise the signed-in tenant applies.
+        final String tenantId = headerTenantId != null && !headerTenantId.isBlank()
+            ? headerTenantId
+            : (tokenTenantId == null ? null : tokenTenantId.trim());
         if (tenantId == null || tenantId.isBlank()) {
             throw new jakarta.ws.rs.BadRequestException(
-                "X-Tenant-Id is required for multi-tenant realm '" + effectiveRealm + "'");
+                "No tenant for multi-tenant realm '" + effectiveRealm
+                    + "': the token carries no tenant and no X-Tenant-Id was selected");
         }
 
         com.e2eq.framework.model.security.UserRealmRole assignment = realmMembershipService
