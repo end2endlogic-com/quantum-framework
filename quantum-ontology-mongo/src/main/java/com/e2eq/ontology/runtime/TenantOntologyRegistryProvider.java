@@ -227,6 +227,8 @@ public class TenantOntologyRegistryProvider {
     private String activeHashOrEmpty(String realm) {
         try {
             return tenantTboxRepo.findActiveTBoxHash(realmDataDomain(realm)).orElse("");
+        } catch (RealmOntologyKeys.ResolutionException e) {
+            throw e;
         } catch (Throwable t) {
             // A probe failure must never break registry loading; treat as "unknown" so the
             // next check re-probes rather than pinning a bad stamp.
@@ -425,35 +427,11 @@ public class TenantOntologyRegistryProvider {
      * so activation can never silently fail to be observed because the two sides
      * derived different DataDomains (closes follow-up N3).
      *
-     * <p><b>Principal-independent by contract.</b> This function is a PURE
-     * function of the {@code realm} string: it makes NO reference to the ambient
-     * {@link SecurityContext}/{@link PrincipalContext}. For a given realm it
-     * returns byte-identical org/account/tenantId/owner/dataSegment regardless of
-     * which caller (HTTP request under a JWT principal, the
-     * {@code OntologyReindexer} system principal, or no principal at all) invokes
-     * it. The fixed per-realm convention is:
-     * {@code tenantId == org == account == owner == realm} and
-     * {@code dataSegment == 0}.</p>
-     *
-     * <p>This is the single realm-deterministic key used by BOTH the admission
-     * write ({@code TBoxAdmissionService.dataDomainFor}) and the realm read
-     * ({@code findActiveTBox(realmDataDomain(realm))}). Because every caller now
-     * computes the identical key for a realm, the per-realm registry cache
-     * ({@code realmRegistries.computeIfAbsent(realm, ...)}) is also correct:
-     * whichever thread warms the cache first derives the same lookup key, so the
-     * first-warmer-wins behaviour can no longer pin a principal-dependent key.</p>
-     *
-     * <p>The tenant-active lookup ({@code TenantOntologyTBoxRepo.findActiveTBox})
-     * keys only on org/account/tenantId/dataSegment (not owner), all of which are
-     * constants of {@code realm} here, so write == read is deterministic per realm.
-     * Admission may additionally layer an explicit request-body DataDomain on top
-     * of this base, but it must not diverge from this key for {realm}-scoped
-     * endpoints (enforced in {@code TBoxAdmissionService.dataDomainFor}).</p>
-     *
-     * <p>The key is the realm's registered domain (its realm record's domain context), so a
-     * tenant admin publishing a model writes into their own tenant and passes the write filter
-     * check; an unregistered realm keeps the legacy key, every field the realm name. See
-     * {@link RealmOntologyKeys}.</p>
+     * <p>Principal-independent by contract: derive tenant, organization, account and segment
+     * from the registered realm domain, with the realm name as a fixed owner. Admission and read
+     * paths share this lookup. A realm absent from the registry keeps the legacy realm-name key;
+     * registry outages and failed legacy migrations raise a typed error instead of changing keys.
+     * See {@link RealmOntologyKeys}.</p>
      *
      * @param realm the realm; must be non-blank
      * @return the canonical, principal-independent DataDomain for the realm
@@ -507,6 +485,9 @@ public class TenantOntologyRegistryProvider {
                         doc.getYamlHash(),
                         false);
             }
+        } catch (RealmOntologyKeys.ResolutionException e) {
+            // Unknown registry state or an unfinished re-key must not activate the legacy path.
+            throw e;
         } catch (Throwable t) {
             Log.warnf("Failed to load active TenantOntologyTBox for realm %s, "
                     + "falling back to legacy load: %s", realm, t.getMessage());

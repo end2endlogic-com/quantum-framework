@@ -46,6 +46,37 @@ public class TenantOntologyRegistryProviderAdmittedTest {
     }
 
     @Test
+    void registryFailureCannotFallThroughToLegacyOntologyLoading() {
+        var tenantRepo = mock(TenantOntologyTBoxRepo.class);
+        var provider = newProvider(tenantRepo);
+        RealmOntologyKeys.install(realm -> { throw new IllegalStateException("registry unavailable"); }, null);
+        try {
+            var error = assertThrows(RealmOntologyKeys.ResolutionException.class,
+                () -> provider.getRegistryForRealm(REALM));
+            assertEquals(RealmOntologyKeys.FailureCode.REGISTRY_UNAVAILABLE, error.getCode());
+            verifyNoInteractions(tenantRepo, provider.tboxRepo, provider.metaService);
+        } finally {
+            RealmOntologyKeys.uninstall();
+        }
+    }
+
+    @Test
+    void migrationFailureCannotFallThroughToLegacyOntologyLoading() {
+        var tenantRepo = mock(TenantOntologyTBoxRepo.class);
+        var provider = newProvider(tenantRepo);
+        RealmOntologyKeys.install(realm -> Optional.of(new DataDomain("org", "account", "tenant", 0, "owner")),
+            (realm, key) -> { throw new IllegalStateException("migration unavailable"); });
+        try {
+            var error = assertThrows(RealmOntologyKeys.ResolutionException.class,
+                () -> provider.getRegistryForRealm(REALM));
+            assertEquals(RealmOntologyKeys.FailureCode.MIGRATION_FAILED, error.getCode());
+            verifyNoInteractions(tenantRepo, provider.tboxRepo, provider.metaService);
+        } finally {
+            RealmOntologyKeys.uninstall();
+        }
+    }
+
+    @Test
     void returnsAdmittedSetWhenActiveDocHasNonNullField() {
         TenantOntologyTBoxRepo tenantRepo = mock(TenantOntologyTBoxRepo.class);
         when(tenantRepo.findActiveTBox(any(DataDomain.class)))
