@@ -59,63 +59,69 @@ public class BootstrapPackService {
         return runRepository.list();
     }
 
+    public java.util.Optional<BootstrapPackRun> findRun(String executionRef) {
+        return runRepository.find(executionRef);
+    }
+
     public BootstrapPackRun apply(ApplyBootstrapPackRequest request) {
-        BootstrapPackDefinition pack = registry
-            .find(request.packRef())
-            .orElseThrow(() ->
-                new IllegalArgumentException(
-                    "Unknown bootstrap pack: " + request.packRef()
-                )
-            );
+        return applyRun(request, buildRunRef(), false);
+    }
 
-        Instant packStartedAt = Instant.now();
-        Map<String, Object> scope = buildScope(request, pack);
-        List<BootstrapPackStepRun> stepRuns = new ArrayList<>();
-        Map<String, BootstrapPackStepRun> completedSteps =
-            new LinkedHashMap<>();
+    /** A duplicate key observes its run, including FAILED/RUNNING; it never starts recovery. */
+    public BootstrapPackRun apply(ApplyBootstrapPackRequest request, String executionRef) {
+        if (executionRef == null || !executionRef.matches("[A-Za-z0-9_-]{16,128}"))
+            throw new IllegalArgumentException("BOOTSTRAP_EXECUTION_KEY_INVALID");
+        if (!runRepository.isDurable()) throw new IllegalStateException("BOOTSTRAP_DURABLE_RUN_STORE_REQUIRED");
+        return applyRun(request, executionRef, true);
+    }
 
+    private BootstrapPackRun applyRun(ApplyBootstrapPackRequest input, String executionRef, boolean keyed) {
+        ApplyBootstrapPackRequest request = BootstrapRunIdentity.copy(input, ApplyBootstrapPackRequest.class);
+        String fingerprint = BootstrapRunIdentity.fingerprint(request);
+        var existing = runRepository.find(executionRef);
+        if (existing.isPresent()) return matching(existing.get(), fingerprint);
+        String runtime = org.eclipse.microprofile.config.ConfigProvider.getConfig()
+            .getOptionalValue("quantum.provisioning.runtime-artifact-sha256", String.class).orElse(null);
+        if (keyed && (runtime == null || !runtime.matches("[0-9a-f]{64}")))
+            throw new IllegalStateException("BOOTSTRAP_RUNTIME_IDENTITY_REQUIRED");
+        BootstrapPackDefinition pack = BootstrapRunIdentity.copy(registry.find(request.packRef())
+            .orElseThrow(() -> new IllegalArgumentException("Unknown bootstrap pack: " + request.packRef())),
+            BootstrapPackDefinition.class);
+        Instant started = Instant.now();
+        Map<String,Object> scope = buildScope(request, pack);
+        String definition = BootstrapRunIdentity.json(pack);
+        BootstrapPackRun initial = new BootstrapPackRun(executionRef, pack.packRef(), pack.packVersion(),
+            pack.productRef(), pack.profileRef(), request.mode(), BootstrapPackRunStatus.RUNNING,
+            scope, List.of(), started, null, fingerprint, definition, runtime);
+        var creation = runRepository.createIfAbsent(initial);
+        if (!creation.created()) return matching(creation.run(),fingerprint);
+        List<BootstrapPackStepRun> steps = new ArrayList<>();
+        Map<String,BootstrapPackStepRun> completed = new LinkedHashMap<>();
         for (BootstrapPackStepDefinition step : pack.steps()) {
-            BootstrapPackStepRun stepRun = executeStep(
-                pack,
-                request,
-                scope,
-                step,
-                completedSteps
-            );
-            stepRuns.add(stepRun);
-            completedSteps.put(step.stepRef(), stepRun);
-            if (stepRun.status() == BootstrapStepStatus.FAILED) {
-                BootstrapPackRun failedRun = new BootstrapPackRun(
-                    buildRunRef(),
-                    pack.packRef(),
-                    pack.packVersion(),
-                    pack.productRef(),
-                    pack.profileRef(),
-                    request.mode(),
-                    BootstrapPackRunStatus.FAILED,
-                    scope,
-                    stepRuns,
-                    packStartedAt,
-                    Instant.now()
-                );
-                return runRepository.save(failedRun);
-            }
+            BootstrapPackStepRun result = executeStep(pack,request,scope,step,completed);
+            steps.add(result); completed.put(step.stepRef(),result);
+            boolean failed = result.status() == BootstrapStepStatus.FAILED;
+            BootstrapPackRun checkpoint = checkpoint(initial,steps,
+                failed ? BootstrapPackRunStatus.FAILED : BootstrapPackRunStatus.RUNNING);
+            runRepository.save(checkpoint);
+            if (failed) return checkpoint;
         }
+        return runRepository.save(checkpoint(initial,steps,BootstrapPackRunStatus.COMPLETED));
+    }
 
-        BootstrapPackRun completedRun = new BootstrapPackRun(
-            buildRunRef(),
-            pack.packRef(),
-            pack.packVersion(),
-            pack.productRef(),
-            pack.profileRef(),
-            request.mode(),
-            BootstrapPackRunStatus.COMPLETED,
-            scope,
-            stepRuns,
-            packStartedAt,
-            Instant.now()
-        );
-        return runRepository.save(completedRun);
+    private BootstrapPackRun matching(BootstrapPackRun run,String fingerprint) {
+        if (run.requestFingerprint() == null) throw new IllegalStateException("BOOTSTRAP_RUN_UNPINNED");
+        if (!run.requestFingerprint().equals(fingerprint))
+            throw new IllegalStateException("BOOTSTRAP_REQUEST_CONFLICT");
+        return run;
+    }
+
+    private BootstrapPackRun checkpoint(BootstrapPackRun initial,List<BootstrapPackStepRun> steps,
+                                        BootstrapPackRunStatus status) {
+        return new BootstrapPackRun(initial.packRunRef(),initial.packRef(),initial.packVersion(),
+            initial.productRef(),initial.profileRef(),initial.mode(),status,initial.scope(),steps,
+            initial.startedAt(),status == BootstrapPackRunStatus.RUNNING ? null : Instant.now(),
+            initial.requestFingerprint(),initial.packDefinitionJson(),initial.runtimeArtifactSha256());
     }
 
     private BootstrapPackStepRun executeStep(
@@ -179,6 +185,8 @@ public class BootstrapPackService {
                     step.config()
                 )
             );
+            if (result == null)
+                throw new IllegalStateException("BOOTSTRAP_STEP_RESULT_MISSING");
         } catch (RuntimeException failure) {
             return new BootstrapPackStepRun(
                 step.stepRef(),

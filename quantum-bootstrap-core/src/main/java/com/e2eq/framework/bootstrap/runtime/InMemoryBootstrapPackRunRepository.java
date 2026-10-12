@@ -2,7 +2,6 @@ package com.e2eq.framework.bootstrap.runtime;
 
 import com.e2eq.framework.bootstrap.model.BootstrapPackRun;
 import com.e2eq.framework.bootstrap.spi.BootstrapPackRunRepository;
-import jakarta.enterprise.context.ApplicationScoped;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -10,10 +9,18 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-@ApplicationScoped
+/** Explicit test/embedded fixture; never selected implicitly by CDI. */
 public class InMemoryBootstrapPackRunRepository implements BootstrapPackRunRepository {
 
     private final Map<String, BootstrapPackRun> runs = new LinkedHashMap<>();
+
+    @Override
+    public synchronized Creation createIfAbsent(BootstrapPackRun run) {
+        var current=runs.get(run.packRunRef());
+        if(current!=null)return new Creation(current,false);
+        runs.put(run.packRunRef(),run);
+        return new Creation(run,true);
+    }
 
     @Override
     public synchronized BootstrapPackRun save(BootstrapPackRun run) {

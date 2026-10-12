@@ -1,6 +1,7 @@
 package com.e2eq.framework.bootstrap.model;
 
 public enum BootstrapPackRunStatus {
+    RUNNING,
     COMPLETED,
     FAILED
 }

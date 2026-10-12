@@ -8,8 +8,8 @@ public record BootstrapStepResult(
         Map<String, Object> details
 ) {
     public BootstrapStepResult {
-        status = status == null ? BootstrapStepStatus.COMPLETED : status;
-        outcome = outcome == null ? BootstrapStepOutcome.ALREADY_PRESENT : outcome;
+        if (status == null || outcome == null)
+            throw new IllegalArgumentException("BOOTSTRAP_STEP_RESULT_REQUIRED: status and outcome must be explicit");
         details = details == null ? Map.of() : Map.copyOf(details);
     }
 }
