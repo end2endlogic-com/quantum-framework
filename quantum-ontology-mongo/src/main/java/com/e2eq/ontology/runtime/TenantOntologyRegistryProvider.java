@@ -450,21 +450,18 @@ public class TenantOntologyRegistryProvider {
      * of this base, but it must not diverge from this key for {realm}-scoped
      * endpoints (enforced in {@code TBoxAdmissionService.dataDomainFor}).</p>
      *
-     * @param realm the realm (== tenantId); must be non-blank
+     * <p>The key is the realm's registered domain (its realm record's domain context), so a
+     * tenant admin publishing a model writes into their own tenant and passes the write filter
+     * check; an unregistered realm keeps the legacy key, every field the realm name. See
+     * {@link RealmOntologyKeys}.</p>
+     *
+     * @param realm the realm; must be non-blank
      * @return the canonical, principal-independent DataDomain for the realm
      */
     public static DataDomain realmDataDomain(String realm) {
-        // PURE function of realm: do NOT read SecurityContext/PrincipalContext here.
-        // The lookup key MUST be identical for the same realm across every caller
-        // (HTTP-under-JWT, OntologyReindexer system principal, or no principal),
-        // otherwise admission-write and realm-read can drift onto different keys
-        // and an activation is silently missed (the multi-principal blocker).
-        String tenantId = realm;
-        String org = realm;
-        String account = realm;
-        String owner = realm;
-        int segment = 0;
-        return new DataDomain(org, account, tenantId, segment, owner);
+        // Principal-independent: derived from the realm's registry entry, never from who is
+        // calling, so admission-write and realm-read always agree (RealmOntologyKeys).
+        return RealmOntologyKeys.forRealm(realm);
     }
 
     // --- Private Methods ---
