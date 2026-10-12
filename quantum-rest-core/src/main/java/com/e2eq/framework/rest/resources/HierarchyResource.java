@@ -1,5 +1,7 @@
 package com.e2eq.framework.rest.resources;
 
+import com.e2eq.framework.rest.core.BaseResource;
+
 import com.e2eq.framework.model.TreeNode;
 import com.e2eq.framework.model.persistent.base.HierarchicalModel;
 import com.e2eq.framework.model.persistent.base.StaticDynamicList;
