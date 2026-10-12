@@ -240,8 +240,13 @@ public class SeedStartupRunner {
             } else
             try {
                Optional<CredentialUserIdPassword> oAdminCred = credRepo.findByUserId(adminUserId, envConfigUtils.getSystemRealm(), true);
-               if (!oAdminCred.isPresent()) {
-                   Log.warnf("SeedStartupRunner: admin user %s not found in realm %s. Seeding will proceed with system context",
+               if (!oAdminCred.isPresent() && realmSeedDomain(realmRecord, adminUserId) != null) {
+                   // The realm is registered with its own domain: seed as its admin in that domain,
+                   // never as the system user (whose domain the realm's users cannot see).
+                   Log.infof("SeedStartupRunner: admin user %s has no local credential; seeding %s as that admin in the realm's registered domain",
+                      adminUserId, realm);
+               } else if (!oAdminCred.isPresent()) {
+                   Log.warnf("SeedStartupRunner: admin user %s not found in realm %s and the realm has no registered domain. Seeding will proceed with system context",
                       adminUserId, credRepo.getDatabaseName());
                       oAdminCred = credRepo.findByUserId(envConfigUtils.getSystemUserId(), envConfigUtils.getSystemRealm(), true);
                       if (!oAdminCred.isPresent()) {
@@ -257,11 +262,14 @@ public class SeedStartupRunner {
             } catch (Exception e) {
                 Log.warnf("SeedStartupRunner: error looking up admin user in realm %s: %s", realm, e.getMessage());
             }
-            if (adminCred == null) {
+            DataDomain realmDomain = realmSeedDomain(realmRecord, adminUserId);
+            if (adminCred == null && realmDomain == null) {
                 Log.warnf("SeedStartupRunner: admin user %s not found in realm %s. Seeding will proceed with realm-only context; tenant substitutions may be blank.", adminUserId, realm);
             }
 
-            DataDomain adminDD = (adminCred != null) ? adminCred.getDataDomain() : null;
+            // Who the seeds run as: the realm's admin (its credential, or else the realm's registered
+            // domain under the admin's user id); the system user only for a realm with neither.
+            DataDomain adminDD = (adminCred != null && adminCred.getDataDomain() != null) ? adminCred.getDataDomain() : realmDomain;
             String resolvedOwnerId = null;
             if (adminCred != null ) {
                 resolvedOwnerId = adminCred.getUserId();
@@ -357,9 +365,14 @@ public class SeedStartupRunner {
 
     SeedContext buildSeedContext(String realm, Realm realmRecord, CredentialUserIdPassword adminCred) {
         SeedContext.Builder ctxBuilder = SeedContext.builder(realm);
+        String realmAdminUserId = resolveAdminUserId(realmRecord, "admin@" + resolveEmailDomain(realm, realmRecord));
         DataDomain seedDataDomain = null;
+        DataDomain registered = realmSeedDomain(realmRecord, realmAdminUserId);
         if (adminCred != null && adminCred.getDataDomain() != null) {
             seedDataDomain = adminCred.getDataDomain();
+        } else if (registered != null) {
+            // The realm's registered domain (its domainContext): what the realm's users act in.
+            seedDataDomain = registered;
         } else if (realmRecord != null && realmRecord.getDataDomain() != null) {
             seedDataDomain = realmRecord.getDataDomain();
         }
@@ -385,6 +398,26 @@ public class SeedStartupRunner {
                 .variable("baselineAdminUserId", baselineAdminUserId)
                 .variable("demoUserId", demoUserId);
         return ctxBuilder.build();
+    }
+
+    /**
+     * The realm's registered domain, from its realm record's domain context (the domain the realm's
+     * users act in), owned by the realm's admin; null when the realm has none. The record's own
+     * dataDomain says who owns the registry entry, not the realm's tenant, so it is not used here.
+     */
+    static DataDomain realmSeedDomain(Realm realmRecord, String adminUserId) {
+        if (realmRecord == null || realmRecord.getDomainContext() == null) {
+            return null;
+        }
+        var dc = realmRecord.getDomainContext();
+        if (isBlank(dc.getTenantId()) || isBlank(dc.getOrgRefName()) || isBlank(dc.getAccountId())) {
+            return null;
+        }
+        return new DataDomain(dc.getOrgRefName(), dc.getAccountId(), dc.getTenantId(), dc.getDataSegment(), adminUserId);
+    }
+
+    private static boolean isBlank(String s) {
+        return s == null || s.isBlank();
     }
 
     private String resolveEmailDomain(String realm, Realm realmRecord) {
