@@ -3,6 +3,7 @@ package com.e2eq.ontology.mongo;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.persistent.morphia.PostPersistHook;
+import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import com.e2eq.ontology.annotations.OntologyClass;
 import com.e2eq.ontology.core.ComputedEdgeProvider;
 import com.e2eq.ontology.core.DataDomainInfo;
@@ -85,12 +86,19 @@ public class OntologyWriteHook implements PostPersistHook {
         }
 
         String srcId = extractor.idOf(entity);
-        // Capture prior edges for this source to support cascade diffs - now scoped by DataDomain
-        java.util.List<OntologyEdge> priorAll = edgeRepo.findBySrc(dataDomain, srcId);
         java.util.List<OntologyEdge> priorExplicit = new java.util.ArrayList<>();
-        for (OntologyEdge e : priorAll) if (!e.isInferred()) priorExplicit.add(e);
-        // First, apply materialization so explicit edges are upserted and stale ones pruned
-        materializer.apply(realmId, dataDomain, srcId, entityType, explicit);
+        // Edge materialization is derived from a write the caller was already allowed to make
+        // (this hook runs after it), and every edge is scoped to the entity's DataDomain. The
+        // caller's row filters describe its business records, not OntologyEdge: judging the edges
+        // by them fails closed and silently drops the edges. Only the hook's own edge reads and
+        // writes skip the rules; direct OntologyEdge writes and the cascade below stay checked.
+        try (SecurityCallScope.Scope ignored = SecurityCallScope.openIgnoringRules()) {
+            // Capture prior edges for this source to support cascade diffs - now scoped by DataDomain
+            java.util.List<OntologyEdge> priorAll = edgeRepo.findBySrc(dataDomain, srcId);
+            for (OntologyEdge e : priorAll) if (!e.isInferred()) priorExplicit.add(e);
+            // First, apply materialization so explicit edges are upserted and stale ones pruned
+            materializer.apply(realmId, dataDomain, srcId, entityType, explicit);
+        }
         // Then handle ORPHAN_REMOVE cascade based on prior vs new state and repo contents
         try { cascadeExecutor.onAfterPersist(realmId, dataDomain, srcId, entity, priorExplicit, explicit); } catch (Throwable ignored) {}
     }
