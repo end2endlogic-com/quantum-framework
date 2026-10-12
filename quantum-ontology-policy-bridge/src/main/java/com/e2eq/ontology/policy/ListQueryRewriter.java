@@ -18,6 +18,12 @@ import org.bson.conversions.Bson;
  * All operations are scoped by DataDomain (orgRefName, accountNum, tenantId, dataSegment)
  * to ensure proper isolation across organizations and accounts.
  *
+ * <p>{@code quantum.ontology.rule-edge-scope} widens edge lookups for an application whose tenants share one
+ * realm and whose relationships cross them (a party reading records other tenants hold about it):
+ * {@code DATA_DOMAIN} (the default) matches edges in the caller's whole DataDomain; {@code ACCOUNT} matches edges
+ * in any tenant of the caller's organisation, account and data segment -- never another organisation or account.
+ * The query being rewritten keeps every other constraint its rules put on it.</p>
+ *
  * <p>When a {@link ComputedEdgeReader} is available, edge lookups go through it so
  * LAZY/ONDEMAND computed edges participate in {@code hasEdge} / {@code hasIncomingEdge}
  * rewrites the same way EAGER store rows do. Without the reader (unit tests with a
@@ -102,42 +108,58 @@ public class ListQueryRewriter {
         return ComputedEdgeReader.normalizeRealmId(raw);
     }
 
-    private Set<String> srcIdsByDst(DataDomain dataDomain, String predicate, String dstId, Filter... edgeFilters) {
+    /** Set by tests or manual construction; otherwise the configured {@code quantum.ontology.rule-edge-scope}. */
+    private com.e2eq.framework.model.persistent.base.RuleEdgeScope ruleEdgeScope;
+
+    public void setRuleEdgeScope(com.e2eq.framework.model.persistent.base.RuleEdgeScope scope) {
+        this.ruleEdgeScope = scope;
+    }
+
+    /** The DataDomain a rule's edge lookup uses: the caller's, or -- scope ACCOUNT -- any tenant of it. */
+    DataDomain lookupDomain(DataDomain dataDomain) {
+        var scope = ruleEdgeScope != null ? ruleEdgeScope : com.e2eq.framework.model.persistent.base.RuleEdgeScope.configured();
+        return scope.lookupDomain(dataDomain);
+    }
+
+    private Set<String> srcIdsByDst(DataDomain callerDomain, String predicate, String dstId, Filter... edgeFilters) {
+        DataDomain dataDomain = lookupDomain(callerDomain);
         String p = canon(predicate);
         boolean hasFilters = edgeFilters != null && edgeFilters.length > 0;
         ComputedEdgeReader reader = getComputedEdgeReader();
         if (reader != null) {
             return hasFilters
-                    ? reader.srcIdsByDst(realmHint(dataDomain), dataDomain, p, dstId, edgeFilters)
-                    : reader.srcIdsByDst(realmHint(dataDomain), dataDomain, p, dstId);
+                    ? reader.srcIdsByDst(realmHint(callerDomain), dataDomain, p, dstId, edgeFilters)
+                    : reader.srcIdsByDst(realmHint(callerDomain), dataDomain, p, dstId);
         }
         return hasFilters
                 ? getRepo().srcIdsByDst(dataDomain, p, dstId, edgeFilters)
                 : getRepo().srcIdsByDst(dataDomain, p, dstId);
     }
 
-    private Set<String> srcIdsByDstIn(DataDomain dataDomain, String predicate, Collection<String> dstIds, Filter... edgeFilters) {
+    private Set<String> srcIdsByDstIn(DataDomain callerDomain, String predicate, Collection<String> dstIds, Filter... edgeFilters) {
+        DataDomain dataDomain = lookupDomain(callerDomain);
         String p = canon(predicate);
         boolean hasFilters = edgeFilters != null && edgeFilters.length > 0;
         ComputedEdgeReader reader = getComputedEdgeReader();
         if (reader != null) {
             return hasFilters
-                    ? reader.srcIdsByDstIn(realmHint(dataDomain), dataDomain, p, dstIds, edgeFilters)
-                    : reader.srcIdsByDstIn(realmHint(dataDomain), dataDomain, p, dstIds);
+                    ? reader.srcIdsByDstIn(realmHint(callerDomain), dataDomain, p, dstIds, edgeFilters)
+                    : reader.srcIdsByDstIn(realmHint(callerDomain), dataDomain, p, dstIds);
         }
         return hasFilters
                 ? getRepo().srcIdsByDstIn(dataDomain, p, dstIds, edgeFilters)
                 : getRepo().srcIdsByDstIn(dataDomain, p, dstIds);
     }
 
-    private Set<String> dstIdsBySrc(DataDomain dataDomain, String predicate, String srcId, Filter... edgeFilters) {
+    private Set<String> dstIdsBySrc(DataDomain callerDomain, String predicate, String srcId, Filter... edgeFilters) {
+        DataDomain dataDomain = lookupDomain(callerDomain);
         String p = canon(predicate);
         boolean hasFilters = edgeFilters != null && edgeFilters.length > 0;
         ComputedEdgeReader reader = getComputedEdgeReader();
         if (reader != null) {
             return hasFilters
-                    ? reader.dstIdsBySrc(realmHint(dataDomain), dataDomain, p, srcId, edgeFilters)
-                    : reader.dstIdsBySrc(realmHint(dataDomain), dataDomain, p, srcId);
+                    ? reader.dstIdsBySrc(realmHint(callerDomain), dataDomain, p, srcId, edgeFilters)
+                    : reader.dstIdsBySrc(realmHint(callerDomain), dataDomain, p, srcId);
         }
         return hasFilters
                 ? getRepo().dstIdsBySrc(dataDomain, p, srcId, edgeFilters)

@@ -111,6 +111,21 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
      * Validates that the DataDomain has all required fields for scoping.
      * @throws IllegalArgumentException if any required field is missing
      */
+    /**
+     * A DataDomain tenant meaning "any tenant of the caller's organisation, account and data segment". Only for
+     * reads that policy explicitly widens (see the policy bridge's {@code quantum.ontology.rule-edge-scope});
+     * writes and deletes refuse it ({@link #validateWritableDataDomain}).
+     */
+    public static final String ANY_TENANT = com.e2eq.framework.model.persistent.base.RuleEdgeScope.ANY_TENANT;
+
+    /** As {@link #validateDataDomain}, and never {@link #ANY_TENANT}: a mutation is always scoped to one tenant. */
+    private void validateWritableDataDomain(DataDomain dd) {
+        validateDataDomain(dd);
+        if (ANY_TENANT.equals(dd.getTenantId())) {
+            throw new IllegalArgumentException("DataDomain.tenantId '*' (any tenant) is for reads only; a write names its tenant");
+        }
+    }
+
     private void validateDataDomain(DataDomain dd) {
         if (dd == null) {
             throw new IllegalArgumentException("DataDomain must be provided");
@@ -130,6 +145,14 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
      * Creates Morphia filters for the full DataDomain scope.
      */
     public Filter[] dataDomainFilters(DataDomain dd) {
+        if (ANY_TENANT.equals(dd.getTenantId())) {
+            // A widened read: every tenant of the organisation, account and data segment.
+            return new Filter[] {
+                Filters.eq("dataDomain.orgRefName", dd.getOrgRefName()),
+                Filters.eq("dataDomain.accountNum", dd.getAccountNum()),
+                Filters.eq("dataDomain.dataSegment", dd.getDataSegment())
+            };
+        }
         return new Filter[] {
             Filters.eq("dataDomain.orgRefName", dd.getOrgRefName()),
             Filters.eq("dataDomain.accountNum", dd.getAccountNum()),
@@ -346,7 +369,7 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
                        boolean inferred,
                        Map<String, Object> prov,
                        Map<String, Object> props) {
-        validateDataDomain(dataDomain);
+        validateWritableDataDomain(dataDomain);
         if (srcType == null || srcType.isBlank()) {
             throw new IllegalArgumentException("srcType must be provided for edge " + src + "-" + p + "-" + dst);
         }
@@ -711,7 +734,7 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
     }
 
     public void deleteBySrc(String realmId, DataDomain dataDomain, String src, boolean inferredOnly) {
-        validateDataDomain(dataDomain);
+        validateWritableDataDomain(dataDomain);
         Query<OntologyEdge> q = ds(realmId).find(OntologyEdge.class);
         for (Filter f : dataDomainFilters(dataDomain)) {
             q.filter(f);
@@ -729,7 +752,7 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
     }
 
     public void deleteBySrcAndPredicate(String realmId, DataDomain dataDomain, String src, String p) {
-        validateDataDomain(dataDomain);
+        validateWritableDataDomain(dataDomain);
         Query<OntologyEdge> q = ds(realmId).find(OntologyEdge.class);
         for (Filter f : dataDomainFilters(dataDomain)) {
             q.filter(f);
@@ -747,7 +770,7 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
     }
 
     public void deleteInferredBySrcNotIn(String realmId, DataDomain dataDomain, String src, String p, Collection<String> dstKeep) {
-        validateDataDomain(dataDomain);
+        validateWritableDataDomain(dataDomain);
         Query<OntologyEdge> q = ds(realmId).find(OntologyEdge.class);
         for (Filter f : dataDomainFilters(dataDomain)) {
             q.filter(f);
@@ -769,7 +792,7 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
     }
 
     public void deleteExplicitBySrcNotIn(String realmId, DataDomain dataDomain, String src, String p, Collection<String> dstKeep) {
-        validateDataDomain(dataDomain);
+        validateWritableDataDomain(dataDomain);
         // Treat explicit edges as those where inferred != true AND derived != true (handles nulls)
         Query<OntologyEdge> q = ds(realmId).find(OntologyEdge.class);
         for (Filter f : dataDomainFilters(dataDomain)) {
@@ -792,7 +815,7 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
     }
 
     public void deleteDerivedBySrcNotIn(String realmId, DataDomain dataDomain, String src, String p, Collection<String> dstKeep) {
-        validateDataDomain(dataDomain);
+        validateWritableDataDomain(dataDomain);
         Query<OntologyEdge> q = ds(realmId).find(OntologyEdge.class);
         for (Filter f : dataDomainFilters(dataDomain)) {
             q.filter(f);
@@ -1153,7 +1176,7 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
                               List<EdgeRecord.Support> support,
                               Map<String, Object> prov,
                               Map<String, Object> props) {
-        validateDataDomain(dataDomain);
+        validateWritableDataDomain(dataDomain);
         if (srcType == null || srcType.isBlank()) {
             throw new IllegalArgumentException("srcType must be provided for edge " + src + "-" + p + "-" + dst);
         }
@@ -1230,7 +1253,7 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
     }
 
     public void pruneDerivedWithoutSupport(String realmId, DataDomain dataDomain) {
-        validateDataDomain(dataDomain);
+        validateWritableDataDomain(dataDomain);
         // Delete derived edges whose support is null or empty
         org.bson.Document filter = dataDomainDocFilter(dataDomain)
                 .append("derived", true)
@@ -1249,7 +1272,7 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
     }
 
     public void deleteDerivedByDataDomain(String realmId, DataDomain dataDomain) {
-        validateDataDomain(dataDomain);
+        validateWritableDataDomain(dataDomain);
         org.bson.Document filter = dataDomainDocFilter(dataDomain)
                 .append("derived", true);
         ds(realmId).getCollection(OntologyEdge.class).deleteMany(filter);
