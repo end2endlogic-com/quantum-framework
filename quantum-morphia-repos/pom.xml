@@ -66,6 +66,11 @@
 
   <dependencies>
     <dependency>
+      <groupId>com.end2endlogic</groupId>
+      <artifactId>quantum-query-runtime</artifactId>
+      <version>${quantum.version}</version>
+    </dependency>
+    <dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-arc</artifactId>
     </dependency>
