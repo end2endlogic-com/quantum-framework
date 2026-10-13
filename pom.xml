@@ -75,6 +75,7 @@
         <module>quantum-ontology-mongo</module>
         <module>quantum-ontology-rest</module>
         <module>quantum-models</module>
+        <module>quantum-query-runtime</module>
         <module>quantum-morphia-repos</module>
         <module>quantum-contract-core</module>
         <module>quantum-contract-rest</module>
@@ -286,6 +287,7 @@
                 <module>quantum-ontology-mongo</module>
                 <module>quantum-ontology-rest</module>
                 <module>quantum-models</module>
+                <module>quantum-query-runtime</module>
                 <module>quantum-morphia-repos</module>
                 <module>quantum-contract-core</module>
                 <module>quantum-contract-rest</module>
