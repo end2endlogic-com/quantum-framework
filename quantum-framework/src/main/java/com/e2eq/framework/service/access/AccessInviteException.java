@@ -21,8 +21,24 @@ public class AccessInviteException extends RuntimeException {
         INVITE_SIGN_IN_REQUIRED,
         /** Caller is neither the inviter nor an administrator of the invite's realm (403). */
         INVITE_NOT_AUTHORIZED,
-        /** Inviter tried to grant a role it does not hold (403). */
+        /** Inviter tried to grant a role it does not hold in the invite's realm (403). */
         INVITE_ROLE_NOT_GRANTABLE,
+        /** Inviter tried to grant an application it may not hand out in the invite's realm (403). */
+        INVITE_APPLICATION_NOT_GRANTABLE,
+        /**
+         * The inviter cannot access the invite's realm: it is not in the inviter's authorizedRealms,
+         * does not match its realmRegEx, or is the system realm and the inviter is not the system
+         * user (403).
+         */
+        INVITE_REALM_NOT_ACCESSIBLE,
+        /**
+         * The existing account's realm access is a realmRegEx that does not include the invite's
+         * realm; attaching it would replace the pattern and cut the account off from its other
+         * realms, so an administrator must grant the realm instead (409).
+         */
+        INVITE_ACCOUNT_REALM_CONFLICT,
+        /** An invite is for exactly one concrete realm; multi-realm or wildcard requests are refused (400). */
+        INVITE_SINGLE_REALM_REQUIRED,
         /** Invite does not exist in this realm (404). */
         INVITE_NOT_FOUND,
         /** Provisioning failed after the token was verified; the invite stays pending (500). Details are logged only. */

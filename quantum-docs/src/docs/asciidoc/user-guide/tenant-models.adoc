@@ -380,14 +380,33 @@ Access invites are exposed at:
 - `POST /access/invites/{refName}/resend`
 - `POST /access/invites/accept`
 
-All but `accept` require an authenticated caller in the target tenant. A realm administrator is a caller whose credential home realm is this realm and holds `admin`, or who has an active realm-role assignment with `admin` for this realm (an `admin` role from another realm reached through `X-Realm` does not count), or the framework system principal. Listing returns every invite to a realm administrator and only the caller's own invites to anyone else. Reading, revoking, and resending an invite require the inviter or a realm administrator. An inviter can grant only roles it holds in this realm, and never `system`. Invite acceptance is `@PermitAll` because the recipient may not yet have tenant access.
+All but `accept` require an authenticated caller in the target tenant. Invite acceptance is `@PermitAll` because the recipient may not yet have tenant access.
+
+===== Realm-scoped invites
+
+*One realm per invite.* An invite is for exactly one realm: the realm of the request context (`realm` / `X-Realm`). Granting access to five realms takes five invites. A request whose optional `realm` names a different realm, whose `realms` names more than one realm, or that uses a wildcard or pattern is refused with `400 INVITE_SINGLE_REALM_REQUIRED`.
+
+*The inviter must be able to access that realm.* The request header is not trusted on its own; the realm must be registered, and the service checks it against the inviter's own credential, with the same precedence as sign-in. The realm is accessible when it is:
+
+- the credential's home realm (`domainContext.defaultRealm`), or
+- listed in the credential's `authorizedRealms`, or
+- when `authorizedRealms` is empty, matched in full by its `realmRegEx` (case-insensitive and anchored; `*` alone means every realm, and `*` elsewhere is a wildcard). An explicit `authorizedRealms` list takes precedence and the pattern is then not consulted.
+
+The system realm is never accessible this way; only the framework system user can invite into it. Any other realm is refused with `403 INVITE_REALM_NOT_ACCESSIBLE`.
+
+*Realm administrator.* The framework system principal, or a caller that can access the realm and holds `admin` there (as a flat credential role or in its `UserRealmRole` for the realm). Listing returns every invite to a realm administrator and only the caller's own invites to anyone else. Reading, revoking, and resending an invite require the inviter or a realm administrator.
+
+*Grantable roles and applications.* An inviter can grant only roles it holds in that same realm: its flat credential roles plus the roles of its `UserRealmRole` for the realm (`403 INVITE_ROLE_NOT_GRANTABLE`). Only the framework system user can grant `system`. Applications named in `authorizedApplications` must be registered; a realm administrator may grant any of them (and the admin-only `*`), anyone else only applications its own `UserRealmRole` grant for the realm already includes (`403 INVITE_APPLICATION_NOT_GRANTABLE`). The inviter's realm access, roles, and applications are checked again when the invite is accepted, so an inviter that has since lost them can no longer hand them out (invites created by the framework system principal are exempt). Because flat roles apply in every realm a user can access, inviting an existing account that cannot yet access the realm also brings its flat roles into the realm; the inviter must hold those roles in the realm too (other than the baseline `user`), otherwise acceptance is refused with `403 INVITE_ROLE_NOT_GRANTABLE`.
+
+*Roles apply only in the invited realm.* Flat credential roles apply in every realm the user can access, by design. Invited roles are therefore never written to the credential: on acceptance they go to the invitee's `UserRealmRole` for (userId, invited realm), unioned with any existing assignment for that realm. Named applications are unioned into `UserRealmRole.authorizedApplications`; when the invite names none, that field is left as it is. There is one `UserRealmRole` per (userId, realm), so accepting again merges instead of duplicating. In embedded mode the unique index `uidx_user_realm_role_realm_user` (realmRefName, userId) is created by the first invite acceptance rather than at datastore start-up; if existing duplicate assignments prevent it, acceptance fails closed until they are merged. A new assignment takes the realm's own data domain and tenant. A concurrent change to the same assignment between read and write is refused (optimistic version check) and the acceptance can be retried.
 
 The persisted `AccessInvite` model includes:
 
 - `email` or `targetUserId`
 - `invitedByUserId`
 - `scopeRefs`
-- `grantedRoles`
+- `grantedRoles` (realm-scoped; written to the invitee's `UserRealmRole` for the invite's realm)
+- `authorizedApplications` (optional; written to the same `UserRealmRole`)
 - `allowedFunctionalAreas`
 - `allowedFunctionalDomains`
 - `allowedActions`
@@ -432,6 +451,7 @@ Representative creation response:
 
 Important invite behavior:
 
+- the invite is for the request's realm only; `realm`, if sent, must name that same realm and `realms` may not name more than one
 - either `email` or `targetUserId` is required
 - only one active pending invite is allowed for the same email or target user
 - the invite is bound to the `email` or `targetUserId` given at creation; acceptance can only ever apply to that identity
@@ -475,7 +495,12 @@ What happens when an invite is accepted:
 - a request `userId` or `email` that differs from the invite is refused with `403 INVITE_IDENTITY_MISMATCH` and logged (clients should omit both fields)
 - a signed-in caller must be the invited user; any other signed-in user is refused with `403 INVITE_IDENTITY_MISMATCH`
 - if the invited user already has an account, the caller must be signed in as that user; otherwise the call is refused with `401 INVITE_SIGN_IN_REQUIRED` and no access is attached
-- if the invited user has no account, one is created for the invited identity and a password is required
+- the inviter must still be able to access the realm and still hold the granted roles and applications there; otherwise `403 INVITE_REALM_NOT_ACCESSIBLE`, `INVITE_ROLE_NOT_GRANTABLE`, or `INVITE_APPLICATION_NOT_GRANTABLE`, and the invite stays pending
+- if the invited user has no account, one is created for the invited identity and a password is required; the new credential gets only the flat `user` role and the invite's realm as its home realm
+- an existing user gets the invite's realm added to `authorizedRealms`, unless its `realmRegEx` already grants it; when the account's access is a `realmRegEx` that does not include the realm, adding a list entry would cut it off from its other realms, so acceptance is refused with `409 INVITE_ACCOUNT_REALM_CONFLICT` and an administrator must grant the realm
+- the realm in the accept request must be a registered realm; otherwise the request is refused as `400 INVITE_TOKEN_INVALID`
+- the invited roles, and any named applications, are written to the user's `UserRealmRole` for the invite's realm (merged by union), never to the credential's flat roles
+- if any step after the claim fails (credential, assignment, profile, or an `AccessInviteProvisioner`), the grant is rolled back: a just-created account is deleted, the prior `UserRealmRole` is restored (or the new one removed), and a realm entry added by the attempt is removed; then the claim is released and the invite stays pending
 - the invite is claimed atomically, so a token can be used once; a reused, revoked, or already-accepted token returns `409 INVITE_NOT_PENDING`, an expired one `410 INVITE_EXPIRED`, an unknown or altered one `400 INVITE_TOKEN_INVALID`
 - a `UserProfile` is created if needed
 - the invite status is changed to `ACCEPTED`

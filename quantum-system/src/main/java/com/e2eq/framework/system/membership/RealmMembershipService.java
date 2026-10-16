@@ -191,6 +191,14 @@ public class RealmMembershipService {
                 assignment.getUserId(), assignment.getRealmRefName(), systemRealmId);
         if (existingRole.isPresent()) {
             UserRealmRole existing = existingRole.get();
+            if (assignment.getVersion() != null && !assignment.getVersion().equals(existing.getVersion())) {
+                // The caller read this assignment and it has changed since (another grant, a
+                // suspension, a role removal). Copying the stale copy over it would silently undo
+                // that change; refuse so the caller re-reads and retries.
+                throw new java.util.ConcurrentModificationException(
+                    "UserRealmRole for user '" + assignment.getUserId() + "' in realm '"
+                        + assignment.getRealmRefName() + "' changed since it was read; re-read and retry");
+            }
             if (assignment.getDataDomain() == null) {
                 // Legacy control-plane clients may omit internal tenant storage
                 // scope. An update through that seam must

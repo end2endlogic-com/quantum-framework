@@ -21,6 +21,7 @@ public class AccessInviteResponse {
     private List<String> allowedFunctionalAreas;
     private List<String> allowedFunctionalDomains;
     private List<String> allowedActions;
+    private List<String> authorizedApplications;
     private String status;
     private Date expiresAt;
     private Date acceptedAt;

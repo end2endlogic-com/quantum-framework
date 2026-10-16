@@ -25,8 +25,16 @@ import java.util.List;
  * datastore). The credential remains the authoritative realm-access boundary:
  * an assignment can supply roles and application grants inside an authorized
  * realm, but must never authorize a realm excluded by the credential's
- * authorizedRealms/realmRegEx contract. The credential's flat roles[] remains
- * the user's roles in their default realm for compatibility.
+ * authorizedRealms/realmRegEx contract.
+ *
+ * Role scope: the credential's flat roles[] apply in every realm the user can
+ * access (by design). A UserRealmRole adds roles within its one realm only.
+ * Roles that must hold in a single realm (for example roles granted by an
+ * access invite) belong here, never on the credential's flat roles.
+ *
+ * There is at most one assignment per (userId, realmRefName). The unique index
+ * enforcing it is created by UserRealmRoleRepo.ensureUniqueAssignmentIndex
+ * (not declared here, so existing duplicates cannot break datastore start-up).
  */
 @Entity
 @RegisterForReflection

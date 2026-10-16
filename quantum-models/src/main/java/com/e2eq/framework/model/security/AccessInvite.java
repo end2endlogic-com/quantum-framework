@@ -76,6 +76,18 @@ public class AccessInvite extends BaseModel {
     @Builder.Default
     protected List<String> allowedActions = new ArrayList<>();
 
+    /**
+     * Applications granted in this invite's realm; written to the invitee's
+     * {@code UserRealmRole.authorizedApplications} on acceptance. Null or empty: not named.
+     */
+    protected List<String> authorizedApplications;
+
+    /**
+     * True only when the framework system principal created the invite. Such invites are exempt
+     * from the acceptance-time re-check of the inviter; the inviter's userId alone never is.
+     */
+    protected boolean issuedBySystemPrincipal;
+
     protected String inviteMessage;
 
     @NotNull

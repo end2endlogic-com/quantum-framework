@@ -15,9 +15,10 @@ public interface AccessInviteProvisioner {
     }
 
     /**
-     * Called once the invite has been claimed. If this (or any later step) throws, the claim is
-     * released and the invitee may retry, so implementations must be idempotent: a retry can run
-     * this again for the same invite and user.
+     * Called once the invite has been claimed and its realm grant written. If this (or any later
+     * step) throws, the realm grant is rolled back, the claim is released, and the invitee may
+     * retry, so implementations must be idempotent: a retry can run this again for the same invite
+     * and user.
      */
     default void onInviteAccepted(String realm, AccessInvite invite, CredentialUserIdPassword credential, UserProfile profile) {
     }

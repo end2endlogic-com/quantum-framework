@@ -16,12 +16,16 @@ class AccessInviteExceptionMapperTest {
     void mapsEachCodeToATypedRestError() {
         assertMapped(Code.INVALID_REQUEST, 400);
         assertMapped(Code.INVITE_TOKEN_INVALID, 400);
+        assertMapped(Code.INVITE_SINGLE_REALM_REQUIRED, 400);
         assertMapped(Code.INVITE_SIGN_IN_REQUIRED, 401);
         assertMapped(Code.INVITE_IDENTITY_MISMATCH, 403);
         assertMapped(Code.INVITE_NOT_AUTHORIZED, 403);
         assertMapped(Code.INVITE_ROLE_NOT_GRANTABLE, 403);
+        assertMapped(Code.INVITE_APPLICATION_NOT_GRANTABLE, 403);
+        assertMapped(Code.INVITE_REALM_NOT_ACCESSIBLE, 403);
         assertMapped(Code.INVITE_NOT_FOUND, 404);
         assertMapped(Code.INVITE_NOT_PENDING, 409);
+        assertMapped(Code.INVITE_ACCOUNT_REALM_CONFLICT, 409);
         assertMapped(Code.INVITE_EXPIRED, 410);
         assertMapped(Code.INVITE_PROVISIONING_FAILED, 500);
     }

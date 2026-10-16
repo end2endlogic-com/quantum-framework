@@ -33,6 +33,26 @@ public class AccessInviteRequest {
 
     protected List<String> allowedActions = new ArrayList<>();
 
+    /**
+     * Optional. An invite is for exactly one realm: the realm of the request (its realm context /
+     * X-Realm). When given, this must name that same realm; a wildcard or pattern is refused.
+     */
+    protected String realm;
+
+    /**
+     * Refused when it names more than one realm. Present only so a multi-realm request fails
+     * explicitly ({@code 400 INVITE_SINGLE_REALM_REQUIRED}) instead of being silently narrowed;
+     * granting access to several realms takes one invite per realm.
+     */
+    protected List<String> realms;
+
+    /**
+     * Applications the invitee may use in the invite's realm. Recorded on the invitee's
+     * {@code UserRealmRole.authorizedApplications} for that realm on acceptance; when omitted that
+     * field is left untouched.
+     */
+    protected List<String> authorizedApplications;
+
     protected Integer expiresInDays;
 
     protected String inviteMessage;

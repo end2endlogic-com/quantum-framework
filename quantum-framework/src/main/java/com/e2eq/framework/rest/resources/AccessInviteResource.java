@@ -47,7 +47,7 @@ public class AccessInviteResource {
 
     @GET
     @Operation(summary = "List access invites",
-        description = "Administrators see every invite in the realm; other callers see only the invites they created. Invite tokens are never returned.")
+        description = "Realm administrators (the system principal, or a caller that can access this realm and holds admin here as a flat or realm-scoped role) see every invite in the realm; other callers see only the invites they created. Invite tokens are never returned.")
     @APIResponses({
         @APIResponse(responseCode = "200", description = "Invites visible to the caller",
             content = @Content(mediaType = "application/json", schema = @Schema(implementation = AccessInviteResponse.class))),
@@ -85,12 +85,21 @@ public class AccessInviteResource {
 
     @POST
     @Operation(summary = "Create access invite",
-        description = "Binds the invite to the given email or targetUserId; acceptance can only ever apply to that identity. The inviter can grant only roles it holds in this realm, never system. The raw token is returned here only when no invite delivery channel is configured.")
+        description = "An invite is for exactly one realm: the realm of this request (realm / X-Realm). To grant several realms, send one invite per realm; "
+            + "a body realm naming another realm, a realms list with more than one realm, or a wildcard is refused (400 INVITE_SINGLE_REALM_REQUIRED). "
+            + "The inviter must be able to access that realm by its own credential (authorizedRealms, a full-match realmRegEx where * means every realm, or its home realm); "
+            + "the system realm is reserved for the framework system user (403 INVITE_REALM_NOT_ACCESSIBLE). "
+            + "The inviter can grant only roles it holds in that same realm (flat plus realm-scoped roles), never system, and only applications it may grant there. "
+            + "Granted roles and applications apply only in that realm: on acceptance they are written to the invitee's UserRealmRole for the realm, never to the credential's flat roles. "
+            + "Binds the invite to the given email or targetUserId; acceptance can only ever apply to that identity. The raw token is returned here only when no invite delivery channel is configured.")
     @APIResponses({
         @APIResponse(responseCode = "201", description = "Invite created; inviteToken is present only when no delivery channel is configured",
             content = @Content(mediaType = "application/json", schema = @Schema(implementation = AccessInviteResponse.class))),
-        @APIResponse(responseCode = "403", description = "INVITE_ROLE_NOT_GRANTABLE or INVITE_NOT_AUTHORIZED",
-            content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
+        @APIResponse(responseCode = "400", description = "INVITE_SINGLE_REALM_REQUIRED or INVALID_REQUEST (for example an unknown application)",
+            content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class))),
+        @APIResponse(responseCode = "403", description = "INVITE_REALM_NOT_ACCESSIBLE, INVITE_ROLE_NOT_GRANTABLE, INVITE_APPLICATION_NOT_GRANTABLE, or INVITE_NOT_AUTHORIZED",
+            content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class))),
+        @APIResponse(responseCode = "503", description = "The application registry could not be consulted; the invite was not created")
     })
     @SecurityRequirement(name = "bearerAuth")
     public Response create(AccessInviteRequest request) {
@@ -156,7 +165,10 @@ public class AccessInviteResource {
         description = "The account identity comes only from the invite (its targetUserId, else its email). "
             + "A body userId or email that differs from the invite is refused (403 INVITE_IDENTITY_MISMATCH). "
             + "If the invited identity already has an account, the caller must be signed in as it (401 INVITE_SIGN_IN_REQUIRED otherwise). "
-            + "If not, an account is created for the invited identity and a password is required. Tokens are single-use.")
+            + "If not, an account is created for the invited identity (flat role user only) and a password is required. "
+            + "The invite's roles and applications are written to the user's UserRealmRole for the invite's realm only, merged by union with any existing assignment; never to the credential's flat roles. "
+            + "The inviter's realm access and grantable roles are re-checked, including any flat roles an existing account would bring into the realm; if the inviter does not qualify the invite stays pending (403). "
+            + "The realm must be registered (otherwise 400 INVITE_TOKEN_INVALID). If a later step fails, the grant is rolled back and the invite stays pending. Tokens are single-use.")
     @APIResponses({
         @APIResponse(responseCode = "200", description = "Invite accepted",
             content = @Content(mediaType = "application/json", schema = @Schema(implementation = AccessInviteAcceptResponse.class))),
@@ -164,9 +176,9 @@ public class AccessInviteResource {
             content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class))),
         @APIResponse(responseCode = "401", description = "INVITE_SIGN_IN_REQUIRED",
             content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class))),
-        @APIResponse(responseCode = "403", description = "INVITE_IDENTITY_MISMATCH",
+        @APIResponse(responseCode = "403", description = "INVITE_IDENTITY_MISMATCH; or INVITE_REALM_NOT_ACCESSIBLE, INVITE_ROLE_NOT_GRANTABLE, INVITE_APPLICATION_NOT_GRANTABLE when the inviter no longer qualifies",
             content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class))),
-        @APIResponse(responseCode = "409", description = "INVITE_NOT_PENDING (already accepted or revoked)",
+        @APIResponse(responseCode = "409", description = "INVITE_NOT_PENDING (already accepted or revoked), or INVITE_ACCOUNT_REALM_CONFLICT (the account's realmRegEx does not include this realm; an administrator must grant it)",
             content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class))),
         @APIResponse(responseCode = "410", description = "INVITE_EXPIRED",
             content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
