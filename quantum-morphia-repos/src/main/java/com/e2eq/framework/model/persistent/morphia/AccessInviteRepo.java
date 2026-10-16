@@ -96,6 +96,26 @@ public class AccessInviteRepo extends MorphiaRepo<AccessInvite> {
         return reverted != null;
     }
 
+    /**
+     * Marks a still-pending invite EXPIRED only if it is past its expiry and still carries the
+     * token that was presented, so a concurrent resend (token rotation) is never overwritten.
+     */
+    public boolean expirePending(String realm, ObjectId id, String tokenHash, Date now) {
+        AccessInvite expired = getMorphiaDataStoreWrapper().getDataStore(realm)
+            .find(AccessInvite.class)
+            .filter(
+                Filters.eq("_id", id),
+                Filters.eq("tokenHash", tokenHash),
+                Filters.eq("status", AccessInvite.Status.PENDING),
+                Filters.lte("expiresAt", now)
+            )
+            .modify(
+                new ModifyOptions().returnDocument(ReturnDocument.AFTER),
+                UpdateOperators.set("status", AccessInvite.Status.EXPIRED)
+            );
+        return expired != null;
+    }
+
     /** Atomically revokes an invite that is still pending. */
     public Optional<AccessInvite> revokePending(String realm, ObjectId id) {
         return Optional.ofNullable(

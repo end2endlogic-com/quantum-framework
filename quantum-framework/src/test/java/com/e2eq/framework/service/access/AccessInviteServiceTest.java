@@ -285,9 +285,68 @@ class AccessInviteServiceTest extends BaseRepoTest {
     @Test
     void adminCanRevokeAnotherUsersInvite() {
         AccessInviteResponse invite = createInvite(user("inviter"), user("rv-admin"), null);
-        AccessInviteResponse revoked = as(principal(user("realm-admin"), "admin", "user"),
+        String admin = realmAdmin();
+        AccessInviteResponse revoked = as(principal(admin, "admin", "user"),
             () -> inviteService.revokeInvite(realm, invite.getRefName()));
         assertEquals("REVOKED", revoked.getStatus());
+    }
+
+    @Test
+    void adminOfAnotherRealmIsNotAdminHere() {
+        // Credential role "admin" whose home realm is not this realm (e.g. reached via X-Realm).
+        String foreignAdmin = user("foreign-admin");
+        createAccount(foreignAdmin, Set.of("admin", "user"), testUtils.getSystemDomainContext());
+        AccessInviteResponse invite = createInvite(user("inviter"), user("xr"), null);
+        PrincipalContext caller = principal(foreignAdmin, "admin", "user");
+
+        assertRefused(Code.INVITE_NOT_AUTHORIZED, () -> as(caller, () -> inviteService.revokeInvite(realm, invite.getRefName())));
+        assertRefused(Code.INVITE_NOT_AUTHORIZED, () -> as(caller, () -> inviteService.resendInvite(realm, invite.getRefName(), null)));
+        assertRefused(Code.INVITE_NOT_AUTHORIZED, () -> as(caller, () -> inviteService.getInvite(realm, invite.getRefName())));
+        assertTrue(as(caller, () -> inviteService.listInvites(realm)).stream()
+            .noneMatch(i -> invite.getRefName().equals(i.getRefName())));
+        AccessInviteRequest escalate = new AccessInviteRequest();
+        escalate.setEmail(user("xr-escalate"));
+        escalate.setGrantedRoles(List.of("admin"));
+        assertRefused(Code.INVITE_ROLE_NOT_GRANTABLE, () -> as(caller, () -> inviteService.createInvite(realm, foreignAdmin, escalate)));
+    }
+
+    @Test
+    void realmAdminCannotGrantTheSystemRole() {
+        String admin = realmAdmin();
+        AccessInviteRequest request = new AccessInviteRequest();
+        request.setEmail(user("sys"));
+        request.setGrantedRoles(List.of("system"));
+        assertRefused(Code.INVITE_ROLE_NOT_GRANTABLE,
+            () -> as(principal(admin, "admin", "user"), () -> inviteService.createInvite(realm, admin, request)));
+    }
+
+    @Test
+    void delegatedSessionCannotAccept() {
+        String existing = user("delegated");
+        createAccount(existing);
+        AccessInviteResponse invite = createInvite(user("inviter"), existing, null);
+        PrincipalContext delegated = SecurityCallScope.actingOnBehalfOf(principal(existing, "user"), user("agent"), null);
+
+        assertRefused(Code.INVITE_IDENTITY_MISMATCH, () -> as(delegated, () -> inviteService.acceptInvite(accept(invite.getInviteToken()))));
+        assertFalse(hasRealm(findCredential(existing).orElseThrow()));
+        assertEquals(AccessInvite.Status.PENDING, reload(invite).getStatus());
+    }
+
+    @Test
+    void existingAccountIsMatchedCaseInsensitively() {
+        String lower = user("mixed");
+        String stored = "Mixed-" + suffix + "@Invite-Test.example";
+        userIds.add(stored);
+        createAccount(stored);
+        AccessInviteResponse invite = createInvite(user("inviter"), lower, null);
+
+        AccessInviteAcceptRequest anonymousAttempt = accept(invite.getInviteToken());
+        anonymousAttempt.setPassword(PASSWORD);
+        assertRefused(Code.INVITE_SIGN_IN_REQUIRED, () -> anonymous(() -> inviteService.acceptInvite(anonymousAttempt)));
+
+        AccessInviteAcceptResponse response = as(principal(stored, "user"), () -> inviteService.acceptInvite(accept(invite.getInviteToken())));
+        assertEquals(stored, response.getUserId());
+        assertTrue(hasRealm(findCredential(stored).orElseThrow()));
     }
 
     @Test
@@ -332,7 +391,7 @@ class AccessInviteServiceTest extends BaseRepoTest {
         AccessInviteResponse listed = own.stream().filter(i -> invite.getRefName().equals(i.getRefName())).findFirst().orElseThrow();
         assertNull(listed.getInviteToken());
 
-        List<AccessInviteResponse> admin = as(principal(user("realm-admin"), "admin"), () -> inviteService.listInvites(realm));
+        List<AccessInviteResponse> admin = as(principal(realmAdmin(), "admin"), () -> inviteService.listInvites(realm));
         assertTrue(admin.stream().anyMatch(i -> invite.getRefName().equals(i.getRefName())));
         assertTrue(admin.stream().allMatch(i -> i.getInviteToken() == null));
 
@@ -392,8 +451,19 @@ class AccessInviteServiceTest extends BaseRepoTest {
     }
 
     private void createAccount(String userId) {
+        createAccount(userId, Set.of("user"), testUtils.getSystemDomainContext());
+    }
+
+    private void createAccount(String userId, Set<String> roles, com.e2eq.framework.model.security.DomainContext domainContext) {
         as(pContext, () -> authProviderFactory.getUserManager()
-            .createUser(userId, PASSWORD, false, Set.of("user"), testUtils.getSystemDomainContext()));
+            .createUser(userId, PASSWORD, false, roles, domainContext));
+    }
+
+    /** An administrator whose credential home realm is this test realm. */
+    private String realmAdmin() {
+        String admin = user("realm-admin");
+        createAccount(admin, Set.of("admin", "user"), testUtils.getTestDomainContext());
+        return admin;
     }
 
     private Optional<CredentialUserIdPassword> findCredential(String userId) {

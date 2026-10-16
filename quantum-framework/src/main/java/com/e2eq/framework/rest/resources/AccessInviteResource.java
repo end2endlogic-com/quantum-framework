@@ -65,7 +65,7 @@ public class AccessInviteResource {
 
     @GET
     @Path("{refName}")
-    @Operation(summary = "Get access invite", description = "Only the inviter or a realm administrator may read an invite. The token is never returned.")
+    @Operation(summary = "Get access invite", description = "Only the inviter or an administrator of this realm may read an invite. The token is never returned.")
     @APIResponses({
         @APIResponse(responseCode = "200", description = "Invite",
             content = @Content(mediaType = "application/json", schema = @Schema(implementation = AccessInviteResponse.class))),
@@ -85,9 +85,9 @@ public class AccessInviteResource {
 
     @POST
     @Operation(summary = "Create access invite",
-        description = "Binds the invite to the given email or targetUserId; acceptance can only ever apply to that identity. A non-administrator cannot grant a role it does not hold. The raw token is returned only in this response.")
+        description = "Binds the invite to the given email or targetUserId; acceptance can only ever apply to that identity. The inviter can grant only roles it holds in this realm, never system. The raw token is returned here only when no invite delivery channel is configured.")
     @APIResponses({
-        @APIResponse(responseCode = "201", description = "Invite created; includes the one-time inviteToken",
+        @APIResponse(responseCode = "201", description = "Invite created; inviteToken is present only when no delivery channel is configured",
             content = @Content(mediaType = "application/json", schema = @Schema(implementation = AccessInviteResponse.class))),
         @APIResponse(responseCode = "403", description = "INVITE_ROLE_NOT_GRANTABLE or INVITE_NOT_AUTHORIZED",
             content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
@@ -129,10 +129,10 @@ public class AccessInviteResource {
     @POST
     @Path("{refName}/resend")
     @Operation(summary = "Resend access invite",
-        description = "Only the inviter or a realm administrator may resend a pending invite. Rotates the token (the previous token stops working), renews the expiry, notifies the invitee, and returns the new token once.")
+        description = "Only the inviter or a realm administrator may resend a pending invite. Rotates the token (the previous token stops working), renews the expiry, and notifies the invitee. The new token is returned only when no delivery channel is configured.")
     @SecurityRequirement(name = "bearerAuth")
     @APIResponses({
-        @APIResponse(responseCode = "200", description = "Invite re-issued; includes the new one-time inviteToken",
+        @APIResponse(responseCode = "200", description = "Invite re-issued; inviteToken is present only when no delivery channel is configured",
             content = @Content(mediaType = "application/json", schema = @Schema(implementation = AccessInviteResponse.class))),
         @APIResponse(responseCode = "403", description = "INVITE_NOT_AUTHORIZED",
             content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class))),

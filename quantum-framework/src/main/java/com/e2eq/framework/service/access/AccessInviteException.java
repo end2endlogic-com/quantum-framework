@@ -24,7 +24,9 @@ public class AccessInviteException extends RuntimeException {
         /** Inviter tried to grant a role it does not hold (403). */
         INVITE_ROLE_NOT_GRANTABLE,
         /** Invite does not exist in this realm (404). */
-        INVITE_NOT_FOUND
+        INVITE_NOT_FOUND,
+        /** Provisioning failed after the token was verified; the invite stays pending (500). Details are logged only. */
+        INVITE_PROVISIONING_FAILED
     }
 
     private final Code code;

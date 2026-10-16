@@ -13,6 +13,7 @@ import lombok.experimental.SuperBuilder;
 @NoArgsConstructor
 public class AccessInviteAcceptRequest {
     protected String realm;
+    @ToString.Exclude
     protected String token;
     /**
      * Optional echo of the invited user ID. The account identity always comes from the invite;
@@ -26,5 +27,6 @@ public class AccessInviteAcceptRequest {
     protected String email;
     protected String firstName;
     protected String lastName;
+    @ToString.Exclude
     protected String password;
 }

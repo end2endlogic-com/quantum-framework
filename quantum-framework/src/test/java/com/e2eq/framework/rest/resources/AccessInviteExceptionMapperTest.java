@@ -23,6 +23,7 @@ class AccessInviteExceptionMapperTest {
         assertMapped(Code.INVITE_NOT_FOUND, 404);
         assertMapped(Code.INVITE_NOT_PENDING, 409);
         assertMapped(Code.INVITE_EXPIRED, 410);
+        assertMapped(Code.INVITE_PROVISIONING_FAILED, 500);
     }
 
     private void assertMapped(Code code, int status) {

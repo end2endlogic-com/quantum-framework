@@ -6,6 +6,7 @@ import com.e2eq.framework.model.persistent.base.EntityReference;
 import com.e2eq.framework.model.persistent.morphia.AccessInviteRepo;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
+import com.e2eq.framework.model.persistent.morphia.UserRealmRoleRepo;
 import com.e2eq.framework.model.security.AccessInvite;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.CredentialUserIdPassword.RealmEntry;
@@ -26,6 +27,7 @@ import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.WebApplicationException;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -40,13 +42,15 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 
 @ApplicationScoped
 public class AccessInviteService {
 
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
-    private static final Set<String> ADMIN_ROLES = Set.of("admin", "system");
+    private static final String ADMIN_ROLE = "admin";
+    private static final String SYSTEM_ROLE = "system";
 
     @Inject
     AccessInviteRepo inviteRepo;
@@ -56,6 +60,17 @@ public class AccessInviteService {
 
     @Inject
     UserProfileRepo userProfileRepo;
+
+    @Inject
+    UserRealmRoleRepo userRealmRoleRepo;
+
+    /**
+     * Whether create/resend return the raw invite token to the inviter. Unset (default): only when
+     * no delivering {@link AccessInviteNotificationService} is installed, so with a real delivery
+     * channel the token reaches only the invitee. {@code true}/{@code false} force the behavior.
+     */
+    @ConfigProperty(name = "quantum.access-invites.return-token")
+    Optional<Boolean> returnTokenToInviter;
 
     @Inject
     AuthProviderFactory authProviderFactory;
@@ -96,7 +111,7 @@ public class AccessInviteService {
         String rawToken = generateToken();
         String tokenHash = hashToken(rawToken);
         AccessInvite invite = AccessInvite.builder()
-            .refName("invite-" + Instant.now().toEpochMilli())
+            .refName("invite-" + UUID.randomUUID())
             .displayName("Invite " + (normalizedEmail != null ? normalizedEmail : normalizedTargetUserId))
             // The invited identity is fixed here and is the only identity acceptance may bind to.
             .email(normalizedEmail)
@@ -119,7 +134,7 @@ public class AccessInviteService {
         for (AccessInviteNotificationService notificationService : notificationServices) {
             notificationService.sendInviteNotification(realm, invite, rawToken);
         }
-        return toResponse(invite, rawToken);
+        return toResponse(invite, tokenForInviter(rawToken));
     }
 
     /**
@@ -128,7 +143,7 @@ public class AccessInviteService {
      */
     public List<AccessInviteResponse> listInvites(String realm) {
         PrincipalContext caller = requireCaller();
-        boolean admin = isAdministrator(caller);
+        boolean admin = isRealmAdministrator(caller, realm);
         String callerUserId = normalize(caller.getUserId());
         return inviteRepo.getAllListIgnoreRules(realm).stream()
             .filter(invite -> admin || (callerUserId != null && callerUserId.equalsIgnoreCase(invite.getInvitedByUserId())))
@@ -165,7 +180,7 @@ public class AccessInviteService {
         for (AccessInviteNotificationService notificationService : notificationServices) {
             notificationService.sendInviteNotification(realm, rotated, rawToken);
         }
-        return toResponse(rotated, rawToken);
+        return toResponse(rotated, tokenForInviter(rawToken));
     }
 
     /**
@@ -218,11 +233,13 @@ public class AccessInviteService {
             throw failure(Code.INVITE_IDENTITY_MISMATCH, "The signed-in user is not the user this invite was issued to.");
         }
 
-        boolean accountExists = SecurityCallScope.runWithContexts(
-            securityUtils.getSystemPrincipalContext(),
-            securityUtils.getSystemSecurityResourceContext(),
-            () -> credentialRepo.findByUserId(invitedUserId, securityUtils.getSystemPrincipalContext().getDefaultRealm(), true).isPresent()
+        // Match the identity the way the unique userId index does (case-insensitive) and use the
+        // stored spelling from then on.
+        Optional<String> existingUserId = inSystemScope(
+            () -> credentialRepo.findByUserIdIgnoreCaseIgnoreRules(invitedUserId, systemRealm()).map(CredentialUserIdPassword::getUserId)
         );
+        final boolean accountExists = existingUserId.isPresent();
+        final String accountUserId = existingUserId.orElse(invitedUserId);
         if (accountExists && authenticatedUserId == null) {
             throw failure(Code.INVITE_SIGN_IN_REQUIRED, "An account already exists for this invite. Sign in as that account, then accept the invite.");
         }
@@ -230,7 +247,7 @@ public class AccessInviteService {
             throw failure(Code.INVALID_REQUEST, "A password is required when accepting an invite for a new user.");
         }
 
-        AccessInvite claimed = inviteRepo.claimPending(realm, invite.getId(), invite.getTokenHash(), new Date(), invitedUserId)
+        AccessInvite claimed = inviteRepo.claimPending(realm, invite.getId(), invite.getTokenHash(), new Date(), accountUserId)
             .orElseThrow(() -> failure(Code.INVITE_NOT_PENDING, "Invite is no longer pending."));
 
         final String firstName = request.getFirstName();
@@ -243,7 +260,7 @@ public class AccessInviteService {
                 () -> acceptInviteInSystemScope(
                     finalRealm,
                     claimed,
-                    invitedUserId,
+                    accountUserId,
                     invitedEmail != null ? invitedEmail : invitedUserId,
                     accountExists,
                     firstName,
@@ -253,8 +270,13 @@ public class AccessInviteService {
             );
         }
         catch (RuntimeException e) {
-            inviteRepo.releaseClaim(finalRealm, claimed.getId(), claimed.getTokenHash(), invitedUserId);
-            throw e;
+            inviteRepo.releaseClaim(finalRealm, claimed.getId(), claimed.getTokenHash(), accountUserId);
+            if (e instanceof AccessInviteException || e instanceof WebApplicationException) {
+                // Typed refusals (including provisioner validation errors) keep their status.
+                throw e;
+            }
+            Log.errorf(e, "access-invite.accept.failed realm=%s invite=%s", finalRealm, claimed.getRefName());
+            throw failure(Code.INVITE_PROVISIONING_FAILED, "The invite could not be accepted. Try again or contact the inviter.");
         }
     }
 
@@ -326,7 +348,7 @@ public class AccessInviteService {
         String password,
         List<String> grantedRoles
     ) {
-        Optional<CredentialUserIdPassword> existing = credentialRepo.findByUserId(userId, securityUtils.getSystemPrincipalContext().getDefaultRealm(), true);
+        Optional<CredentialUserIdPassword> existing = credentialRepo.findByUserIdIgnoreCaseIgnoreRules(userId, systemRealm());
         if (existing.isPresent()) {
             if (!accountExists) {
                 // The account appeared between the pre-check and the claim; never attach access to an
@@ -338,7 +360,7 @@ public class AccessInviteService {
             return credentialRepo.save(securityUtils.getSystemPrincipalContext().getDefaultRealm(), credential);
         }
         if (accountExists) {
-            throw new IllegalStateException("Invited account disappeared during invite acceptance: " + userId);
+            throw failure(Code.INVITE_PROVISIONING_FAILED, "The invite could not be accepted. Try again or contact the inviter.");
         }
 
         if (password == null || password.isBlank()) {
@@ -354,13 +376,22 @@ public class AccessInviteService {
         }
 
         DomainContext domainContext = buildInviteDomainContext(realm);
-        authProviderFactory.getUserManager().createUser(
-            userId,
-            password,
-            false,
-            roles,
-            domainContext
-        );
+        try {
+            authProviderFactory.getUserManager().createUser(
+                userId,
+                password,
+                false,
+                roles,
+                domainContext
+            );
+        }
+        catch (RuntimeException e) {
+            if (credentialRepo.findByUserIdIgnoreCaseIgnoreRules(userId, systemRealm()).isPresent()) {
+                // Lost a race with another account creation for the same identity.
+                throw failure(Code.INVITE_SIGN_IN_REQUIRED, "An account already exists for this invite. Sign in as that account, then accept the invite.");
+            }
+            throw e;
+        }
 
         CredentialUserIdPassword credential = credentialRepo.findByUserId(userId, securityUtils.getSystemPrincipalContext().getDefaultRealm(), true)
             .orElseThrow(() -> new IllegalStateException("User created but credential was not found for userId: " + userId));
@@ -453,8 +484,8 @@ public class AccessInviteService {
             realm,
             invite.getRefName(),
             field,
-            authenticatedUserId == null ? "<anonymous>" : authenticatedUserId,
-            presentedValue
+            authenticatedUserId == null ? "<anonymous>" : sanitizeForLog(authenticatedUserId),
+            sanitizeForLog(presentedValue)
         );
     }
 
@@ -477,17 +508,61 @@ public class AccessInviteService {
         return caller;
     }
 
-    private boolean isAdministrator(PrincipalContext caller) {
-        String[] roles = caller.getRoles();
-        if (roles == null) {
+    /** The framework's own system principal (seeders, jobs, internal services). */
+    private boolean isSystemPrincipal(PrincipalContext caller) {
+        String systemUserId = normalize(securityUtils.getEnvConfigUtils().getSystemUserId());
+        String callerUserId = normalize(caller.getUserId());
+        if (systemUserId == null || !systemUserId.equals(callerUserId) || caller.getRoles() == null) {
             return false;
         }
-        for (String role : roles) {
-            if (role != null && ADMIN_ROLES.contains(role.trim().toLowerCase(Locale.ROOT))) {
+        for (String role : caller.getRoles()) {
+            if (SYSTEM_ROLE.equalsIgnoreCase(role)) {
                 return true;
             }
         }
         return false;
+    }
+
+    /**
+     * Roles the caller holds in {@code realm} specifically: its credential roles only when that
+     * realm is the credential's home realm, plus its active realm-role assignment for the realm.
+     * The merged principal role list is deliberately not used, because it carries home-realm
+     * roles into any realm the caller switches to.
+     */
+    private Set<String> rolesInRealm(PrincipalContext caller, String realm) {
+        String callerUserId = authenticatedUserId(caller);
+        Set<String> roles = new LinkedHashSet<>();
+        if (callerUserId == null || realm == null) {
+            return roles;
+        }
+        inSystemScope(() -> {
+            credentialRepo.findByUserIdIgnoreCaseIgnoreRules(callerUserId, systemRealm()).ifPresent(credential -> {
+                String homeRealm = credential.getDomainContext() != null ? credential.getDomainContext().getDefaultRealm() : null;
+                if (homeRealm != null && homeRealm.equalsIgnoreCase(realm) && credential.getRoles() != null) {
+                    addNormalized(roles, List.of(credential.getRoles()));
+                }
+                userRealmRoleRepo.findActiveAssignmentForRealmWithIgnoreRules(credential.getUserId(), realm, systemRealm())
+                    .ifPresent(assignment -> addNormalized(roles, assignment.getRoles()));
+            });
+            return null;
+        });
+        return roles;
+    }
+
+    private void addNormalized(Set<String> target, List<String> values) {
+        if (values == null) {
+            return;
+        }
+        for (String value : values) {
+            String normalized = normalize(value);
+            if (normalized != null) {
+                target.add(normalized);
+            }
+        }
+    }
+
+    private boolean isRealmAdministrator(PrincipalContext caller, String realm) {
+        return isSystemPrincipal(caller) || rolesInRealm(caller, realm).contains(ADMIN_ROLE);
     }
 
     /** Loads an invite the caller may manage: the caller created it, or administers the realm. */
@@ -497,10 +572,10 @@ public class AccessInviteService {
             .orElseThrow(() -> failure(Code.INVITE_NOT_FOUND, "Invite not found: " + refName));
         String callerUserId = normalize(caller.getUserId());
         boolean inviter = callerUserId != null && callerUserId.equalsIgnoreCase(invite.getInvitedByUserId());
-        if (!inviter && !isAdministrator(caller)) {
+        if (!inviter && !isRealmAdministrator(caller, realm)) {
             Log.warnf(
                 "access-invite.%s.refused reason=not-inviter realm=%s invite=%s caller=%s",
-                operation, realm, invite.getRefName(), callerUserId
+                operation, realm, invite.getRefName(), sanitizeForLog(callerUserId)
             );
             throw failure(Code.INVITE_NOT_AUTHORIZED, "Only the inviter or a realm administrator can " + operation + " this invite.");
         }
@@ -516,27 +591,52 @@ public class AccessInviteService {
             return;
         }
         PrincipalContext caller = requireCaller();
-        if (isAdministrator(caller)) {
+        if (isSystemPrincipal(caller)) {
             return;
         }
-        Set<String> held = new LinkedHashSet<>();
-        if (caller.getRoles() != null) {
-            for (String role : caller.getRoles()) {
-                String normalized = normalize(role);
-                if (normalized != null) {
-                    held.add(normalized);
-                }
-            }
-        }
+        Set<String> held = rolesInRealm(caller, realm);
         for (String role : grantedRoles) {
-            if (!held.contains(role)) {
+            if (SYSTEM_ROLE.equals(role) || !held.contains(role)) {
                 Log.warnf(
                     "access-invite.create.refused reason=role-not-grantable realm=%s inviter=%s role=%s",
-                    realm, inviterUserId, role
+                    realm, sanitizeForLog(inviterUserId), sanitizeForLog(role)
                 );
-                throw failure(Code.INVITE_ROLE_NOT_GRANTABLE, "You cannot grant the role '" + role + "' because you do not hold it.");
+                throw failure(Code.INVITE_ROLE_NOT_GRANTABLE, "You cannot grant the role '" + role + "' in this realm.");
             }
         }
+    }
+
+    private String tokenForInviter(String rawToken) {
+        if (returnTokenToInviter != null && returnTokenToInviter.isPresent()) {
+            return returnTokenToInviter.get() ? rawToken : null;
+        }
+        for (AccessInviteNotificationService notificationService : notificationServices) {
+            if (!(notificationService instanceof NoOpAccessInviteNotificationService)) {
+                return null;
+            }
+        }
+        return rawToken;
+    }
+
+    private String systemRealm() {
+        return securityUtils.getSystemPrincipalContext().getDefaultRealm();
+    }
+
+    private <T> T inSystemScope(java.util.function.Supplier<T> action) {
+        return SecurityCallScope.runWithContexts(
+            securityUtils.getSystemPrincipalContext(),
+            securityUtils.getSystemSecurityResourceContext(),
+            action
+        );
+    }
+
+    /** Strips control characters (log forging) and bounds the length of caller-supplied values. */
+    private static String sanitizeForLog(String value) {
+        if (value == null) {
+            return null;
+        }
+        String cleaned = value.replaceAll("\\p{Cntrl}", "_");
+        return cleaned.length() > 254 ? cleaned.substring(0, 254) : cleaned;
     }
 
     private static AccessInviteException failure(Code code, String message) {
@@ -556,13 +656,10 @@ public class AccessInviteService {
     }
 
     private void expireInviteIfNeeded(String realm, AccessInvite invite) {
-        if (invite.getExpiresAt() != null && invite.getExpiresAt().before(new Date()) && invite.getStatus() == AccessInvite.Status.PENDING) {
-            invite.setStatus(AccessInvite.Status.EXPIRED);
-            SecurityCallScope.runWithContexts(
-                securityUtils.getSystemPrincipalContext(),
-                securityUtils.getSystemSecurityResourceContext(),
-                () -> { inviteRepo.save(realm, invite); }
-            );
+        Date now = new Date();
+        if (invite.getStatus() == AccessInvite.Status.PENDING && invite.getExpiresAt() != null && !invite.getExpiresAt().after(now)) {
+            // Conditional update: never overwrites a concurrent resend that rotated the token.
+            inviteRepo.expirePending(realm, invite.getId(), invite.getTokenHash(), now);
             throw failure(Code.INVITE_EXPIRED, "Invite has expired.");
         }
     }
