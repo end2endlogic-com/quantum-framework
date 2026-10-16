@@ -544,6 +544,8 @@ What happens when an invite is accepted:
 - the invite is claimed atomically, so a token can be used once; a reused, revoked, or already-accepted token returns `409 INVITE_NOT_PENDING`, an expired one `410 INVITE_EXPIRED`, an unknown or altered one `400 INVITE_TOKEN_INVALID`
 - the realm's acceptance policy re-checks the inviter's entitlement to the invite's scope and decides the grant (see <<invite-acceptance-policy>>); the response's `tenantId` names the tenant the invitee was placed in
 - a `UserProfile` is created if needed (in the invitee's partition under `pooled-realm-tenant`)
+- for an account the invite creates, the system-realm directory profile is created as well (in the account's home context), as tenant provisioning does; sign-in refuses a USER account without one as half-created
+- realm roles reach the invitee's token only for the realm the token is issued for: on an `X-Realm` switch the token's role claims are not honored, the target realm's own `UserRealmRole` roles apply, and flat credential roles still apply in every realm
 - the invite status is changed to `ACCEPTED`
 
 Refusals use the shared `RestError` payload with a stable `errorCode`.

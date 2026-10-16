@@ -130,6 +130,8 @@ class AccessInvitePooledRealmTest extends BaseRepoTest {
             morphiaDataStoreWrapper.getDataStore(systemRealm).find(UserRealmRole.class)
                 .filter(Filters.eq("userId", userId)).delete(new dev.morphia.DeleteOptions().multi(true));
         }
+        morphiaDataStoreWrapper.getDataStore(systemRealm).find(UserProfile.class)
+            .filter(Filters.in("userId", userIds)).delete(new dev.morphia.DeleteOptions().multi(true));
         for (String r : REALMS) {
             morphiaDataStoreWrapper.getDataStore(r).find(UserProfile.class)
                 .filter(Filters.in("userId", userIds)).delete(new dev.morphia.DeleteOptions().multi(true));
@@ -184,6 +186,12 @@ class AccessInvitePooledRealmTest extends BaseRepoTest {
         assertEquals("org-a", inA.getDataDomain().getOrgRefName());
         assertEquals(invitee, inA.getDataDomain().getOwnerId());
         assertThrows(ForbiddenException.class, () -> select(invitee, TENANT_B, TENANT_A));
+        // The invitee can sign in to the pooled realm; the token names its tenant.
+        com.e2eq.framework.model.auth.AuthProvider.LoginResponse login = asSystem(() -> authProviderFactory.getAuthProvider()
+            .login(invitee, PASSWORD, "quantum-framework-test", POOLED));
+        assertTrue(login.authenticated(), () -> "login refused: " + login.negativeResponse());
+        assertEquals(POOLED, login.positiveResponse().realm());
+        assertTrue(login.positiveResponse().roles().contains("viewer"));
     }
 
     @Test

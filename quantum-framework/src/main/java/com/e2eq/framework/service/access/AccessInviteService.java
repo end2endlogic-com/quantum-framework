@@ -480,6 +480,12 @@ public class AccessInviteService {
             if (!profileExisted) {
                 rollback.createdProfile = profile;
             }
+            if (!accountExists) {
+                // Sign-in requires a directory profile in the system realm for a USER account
+                // (CustomTokenAuthProvider refuses a "half-created" account), exactly as tenant
+                // provisioning creates one. Without it the new invitee could not log in.
+                rollback.createdSystemProfile = ensureDirectoryProfile(credential, invitedUserId, invitedEmail, firstName, lastName, grant.getHomeContext());
+            }
             for (AccessInviteProvisioner provisioner : provisioners) {
                 provisioner.onInviteAccepted(realm, invite, credential, profile);
             }
@@ -528,6 +534,40 @@ public class AccessInviteService {
             .dataDomain(profileDataDomain != null ? profileDataDomain : buildDataDomain(userId))
             .build();
         return userProfileRepo.save(realm, profile);
+    }
+
+    /**
+     * The system-realm directory profile of an account this acceptance created (the login
+     * precondition tenant provisioning also satisfies), placed in the account's home context.
+     * Returns the profile it created, or null when one already existed.
+     */
+    private UserProfile ensureDirectoryProfile(
+        CredentialUserIdPassword credential,
+        String userId,
+        String email,
+        String firstName,
+        String lastName,
+        DomainContext homeContext
+    ) {
+        String systemRealm = systemRealm();
+        if (userProfileRepo.getByUserIdWithIgnoreRules(systemRealm, credential.getUserId()).isPresent()) {
+            return null;
+        }
+        DomainContext home = homeContext != null ? homeContext : credential.getDomainContext();
+        if (home == null) {
+            throw new IllegalStateException("A new account has no home context for its directory profile");
+        }
+        UserProfile profile = UserProfile.builder()
+            .refName(credential.getUserId())
+            .credentialUserIdPasswordRef(credential.createEntityReference(systemRealm))
+            .userId(credential.getUserId())
+            .email(email)
+            .fname(firstName)
+            .lname(lastName)
+            .displayName(buildDisplayName(userId, firstName, lastName, email))
+            .dataDomain(home.toDataDomain(credential.getUserId()))
+            .build();
+        return userProfileRepo.save(systemRealm, profile);
     }
 
     private CredentialUserIdPassword ensureUserCredential(
@@ -1328,6 +1368,7 @@ public class AccessInviteService {
         /** The assignment as this acceptance wrote it (null when the write did not happen). */
         private UserRealmRole written;
         private UserProfile createdProfile;
+        private UserProfile createdSystemProfile;
 
         private GrantRollback(String realm) {
             this.realm = realm;
@@ -1356,6 +1397,14 @@ public class AccessInviteService {
                 }
                 catch (RuntimeException e) {
                     Log.errorf(e, "access-invite.accept.rollback-failed step=profile realm=%s user=%s", realm, sanitizeForLog(userId));
+                }
+            }
+            if (createdSystemProfile != null && createdCredential != null) {
+                try {
+                    deleteOrFail(() -> userProfileRepo.delete(systemRealm(), createdSystemProfile));
+                }
+                catch (RuntimeException e) {
+                    Log.errorf(e, "access-invite.accept.rollback-failed step=directory-profile realm=%s user=%s", realm, sanitizeForLog(userId));
                 }
             }
             try {

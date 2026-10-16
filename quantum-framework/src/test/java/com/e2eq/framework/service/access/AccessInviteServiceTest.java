@@ -1,6 +1,8 @@
 package com.e2eq.framework.service.access;
 
+import com.e2eq.framework.model.auth.AuthProvider;
 import com.e2eq.framework.model.auth.AuthProviderFactory;
+import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
 import com.e2eq.framework.model.auth.RoleSource;
 import com.e2eq.framework.model.persistent.morphia.AccessInviteRepo;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
@@ -57,6 +59,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class AccessInviteServiceTest extends BaseRepoTest {
 
     private static final String PASSWORD = "Inv1te-Test-P@ssw0rd!";
+    private static final String TEST_APPLICATION_ID = "quantum-framework-test";
 
     @Inject
     AccessInviteService inviteService;
@@ -84,6 +87,9 @@ class AccessInviteServiceTest extends BaseRepoTest {
 
     @Inject
     RealmMembershipService realmMembershipService;
+
+    @Inject
+    UserProfileRepo userProfileRepo;
 
     private String realm;
     /** A second, non-system realm the test inviters can be granted access to. */
@@ -115,7 +121,7 @@ class AccessInviteServiceTest extends BaseRepoTest {
                 .filter(Filters.eq("userId", userId)).delete(new dev.morphia.DeleteOptions().multi(true));
             morphiaDataStoreWrapper.getDataStore(systemRealm).find(UserRealmRole.class)
                 .filter(Filters.eq("userId", userId)).delete(new dev.morphia.DeleteOptions().multi(true));
-            for (String r : List.of(realm, otherRealm)) {
+            for (String r : List.of(realm, otherRealm, systemRealm)) {
                 morphiaDataStoreWrapper.getDataStore(r).find(UserProfile.class)
                     .filter(Filters.eq("userId", userId)).delete(new dev.morphia.DeleteOptions().multi(true));
             }
@@ -765,6 +771,53 @@ class AccessInviteServiceTest extends BaseRepoTest {
         CredentialUserIdPassword after = findCredential(existing).orElseThrow();
         assertTrue(after.getAuthorizedRealms() == null || after.getAuthorizedRealms().isEmpty());
         assertEquals(1, assignments(existing).size());
+    }
+
+    // ---- sign-in after acceptance ----------------------------------------------------------
+
+    @Test
+    void acceptedNewInviteeCanSignIn() {
+        String admin = realmAdmin();
+        String invitee = user("signs-in");
+        AccessInviteResponse invite = createInviteAs(realm, admin, inviteRequest(invitee, List.of("admin")));
+        AccessInviteAcceptRequest request = accept(invite.getInviteToken());
+        request.setPassword(PASSWORD);
+        anonymous(() -> inviteService.acceptInvite(request));
+
+        AuthProvider.LoginResponse login = as(pContext, () -> authProviderFactory.getAuthProvider()
+            .login(invitee, PASSWORD, TEST_APPLICATION_ID, realm));
+        assertTrue(login.authenticated(), () -> "login refused: " + login.negativeResponse());
+        assertEquals(realm, login.positiveResponse().realm());
+        assertTrue(login.positiveResponse().roles().contains("admin"), "the realm role is in the token for its realm");
+        assertTrue(as(pContext, () -> userProfileRepo.getByUserIdWithIgnoreRules(envConfigUtils.getSystemRealm(), invitee)).isPresent(),
+            "the directory profile login needs exists");
+    }
+
+    @Test
+    void tokenRealmRolesDoNotFollowARealmSwitch() {
+        String admin = realmAdmin();
+        String invitee = user("realm-switch");
+        AccessInviteResponse invite = createInviteAs(realm, admin, inviteRequest(invitee, List.of("admin")));
+        AccessInviteAcceptRequest request = accept(invite.getInviteToken());
+        request.setPassword(PASSWORD);
+        anonymous(() -> inviteService.acceptInvite(request));
+        writeAssignment(invitee, otherRealm, List.of("viewer"));
+
+        AuthProvider.LoginResponse login = as(pContext, () -> authProviderFactory.getAuthProvider()
+            .login(invitee, PASSWORD, TEST_APPLICATION_ID, realm));
+        assertTrue(login.authenticated(), () -> "login refused: " + login.negativeResponse());
+        io.quarkus.security.identity.SecurityIdentity token = login.positiveResponse().identity();
+        assertTrue(token.getRoles().contains("admin"), "the token carries the realm role of the realm it was issued for");
+        CredentialUserIdPassword credential = findCredential(invitee).orElseThrow();
+
+        Set<String> inIssuingRealm = Set.of(as(pContext, () -> identityRoleResolver.resolveEffectiveRoles(token, credential, realm, realm)));
+        assertTrue(inIssuingRealm.contains("admin"));
+        assertTrue(inIssuingRealm.contains("user"));
+
+        Set<String> afterSwitch = Set.of(as(pContext, () -> identityRoleResolver.resolveEffectiveRoles(token, credential, realm, otherRealm)));
+        assertFalse(afterSwitch.contains("admin"), "admin in the issuing realm does not carry into another realm");
+        assertTrue(afterSwitch.contains("user"), "flat credential roles still apply in every realm");
+        assertTrue(afterSwitch.contains("viewer"), "the target realm's own assignment applies");
     }
 
     // ---- helpers ---------------------------------------------------------------------------

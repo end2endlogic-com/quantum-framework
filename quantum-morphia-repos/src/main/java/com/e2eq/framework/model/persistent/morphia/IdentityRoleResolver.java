@@ -89,7 +89,15 @@ public class IdentityRoleResolver {
                                           String applicationId) {
         String targetRealm = requireRealm(effectiveRealm);
         LinkedHashMap<String, EnumSet<RoleSource>> provenance = new LinkedHashMap<>();
-        if (identity != null) {
+        // A token's role claims include the UserRealmRole roles of the realm it was issued for.
+        // They are honored only in that realm: after a realm switch (X-Realm) the target realm's
+        // own assignment supplies realm roles (REALM below) and the credential supplies the flat
+        // roles, which apply in every realm by design (CREDENTIAL below). Without a credential
+        // there is nothing to re-derive from, so the token's roles stand.
+        boolean tokenRolesApply = credential == null
+            || authorityRealm == null
+            || sameRealm(authorityRealm, targetRealm);
+        if (identity != null && tokenRolesApply) {
             addRoles(provenance, identity.getRoles(), RoleSource.TOKEN);
         }
         if (credential != null) {
