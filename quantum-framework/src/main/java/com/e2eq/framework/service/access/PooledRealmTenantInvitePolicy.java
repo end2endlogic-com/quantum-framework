@@ -6,6 +6,7 @@ import com.e2eq.framework.model.security.AccessInvite;
 import com.e2eq.framework.model.security.DomainContext;
 import com.e2eq.framework.model.security.InviteScope;
 import com.e2eq.framework.model.security.Realm;
+import com.e2eq.framework.model.security.RealmTenancyMode;
 import com.e2eq.framework.model.security.RealmTenantMembership;
 import com.e2eq.framework.model.security.UserRealmRole;
 import com.e2eq.framework.service.access.AccessInviteException.Code;
@@ -88,6 +89,10 @@ public class PooledRealmTenantInvitePolicy implements InviteAcceptancePolicy {
                 "The inviter can no longer grant access to this tenant. Ask for a new invite.");
         }
 
+        UserRealmRole inviteeAssignment = acceptance.inviteeAssignment();
+        requireReproduciblePartition(realm, invite, snapshot, inviteeAssignment);
+        requireRolesStayWithinInviterTenants(realm, acceptance, tenantId, inviteeAssignment);
+
         DataDomain partition = copy(snapshot, acceptance.inviteeUserId());
         DomainContext home = DomainContext.builder()
             .tenantId(tenantId)
@@ -109,10 +114,84 @@ public class PooledRealmTenantInvitePolicy implements InviteAcceptancePolicy {
             .build();
     }
 
+    /**
+     * Only a MULTI_TENANT realm: that is where request tenant selection (SecurityFilter) enforces
+     * the tenant grant this policy writes. A SHARED realm that is not MULTI_TENANT is refused.
+     */
     private void requirePooled(Realm realm) {
-        if (!InviteAcceptancePolicies.pooled(realm)) {
+        if (realm.getTenancyMode() != RealmTenancyMode.MULTI_TENANT) {
             throw new AccessInviteException(Code.INVITE_POLICY_UNAVAILABLE,
-                "The pooled-realm invite policy only serves realms that hold several tenants.");
+                "The pooled-realm invite policy only serves multi-tenant realms.");
+        }
+    }
+
+    /**
+     * The invitee must work in exactly the inviter's partition. Request tenant selection takes the
+     * data segment, location and business transaction from the invitee's assignment default
+     * partition only when it is for the same tenant/org/account, otherwise the defaults. An
+     * existing member whose assignment would give it a different refinement than the snapshot
+     * (for example a data segment the inviter is limited to) is refused rather than widened.
+     */
+    private void requireReproduciblePartition(Realm realm, AccessInvite invite, DataDomain snapshot, UserRealmRole inviteeAssignment) {
+        if (inviteeAssignment == null) {
+            return; // a new assignment takes the snapshot as its default partition
+        }
+        DataDomain existing = inviteeAssignment.getDataDomain();
+        boolean sameCoordinate = existing != null
+            && Objects.equals(snapshot.getTenantId(), existing.getTenantId())
+            && Objects.equals(snapshot.getOrgRefName(), existing.getOrgRefName())
+            && Objects.equals(snapshot.getAccountNum(), existing.getAccountNum());
+        int segment = sameCoordinate ? existing.getDataSegment() : 0;
+        String location = sameCoordinate ? existing.getLocationId() : null;
+        String transaction = sameCoordinate ? existing.getBusinessTransactionId() : null;
+        if (segment != snapshot.getDataSegment()
+            || !Objects.equals(location, snapshot.getLocationId())
+            || !Objects.equals(transaction, snapshot.getBusinessTransactionId())) {
+            Log.warnf("access-invite.accept.refused reason=existing-member-partition-differs realm=%s invite=%s",
+                realm.getRefName(), invite.getRefName());
+            throw new AccessInviteException(Code.INVITE_SCOPE_UNRESOLVABLE,
+                "Your existing access in this realm uses a different data partition than this invite. Ask a realm administrator to grant it.");
+        }
+    }
+
+    /**
+     * Roles are realm-scoped (one role list per user and realm), so roles an invite adds also apply
+     * in every other tenant the invitee's assignment already authorizes. Adding a role is therefore
+     * allowed only when the inviter is entitled to all of those tenants (or is a realm administrator
+     * or the system principal); an assignment with a tenant pattern needs an administrator.
+     */
+    private void requireRolesStayWithinInviterTenants(Realm realm, InviteAcceptance acceptance, String tenantId, UserRealmRole inviteeAssignment) {
+        AccessInvite invite = acceptance.invite();
+        if (inviteeAssignment == null || invite.isIssuedBySystemPrincipal() || acceptance.inviterRealmAdministrator()) {
+            return;
+        }
+        java.util.Set<String> held = new java.util.HashSet<>();
+        if (inviteeAssignment.getRoles() != null) {
+            inviteeAssignment.getRoles().stream().filter(Objects::nonNull).map(r -> r.trim().toLowerCase(java.util.Locale.ROOT)).forEach(held::add);
+        }
+        boolean addsRoles = invite.getGrantedRoles() != null && invite.getGrantedRoles().stream()
+            .filter(Objects::nonNull)
+            .map(r -> r.trim().toLowerCase(java.util.Locale.ROOT))
+            .anyMatch(r -> !r.isEmpty() && !held.contains(r));
+        if (!addsRoles) {
+            return;
+        }
+        boolean pattern = inviteeAssignment.getAuthorizedTenantRegEx() != null && !inviteeAssignment.getAuthorizedTenantRegEx().isBlank();
+        boolean entitled = !pattern;
+        if (entitled && inviteeAssignment.getAuthorizedTenantIds() != null) {
+            for (String other : inviteeAssignment.getAuthorizedTenantIds()) {
+                if (other != null && !other.trim().equals(tenantId)
+                    && !AccessibleTenantResolver.isAuthorized(acceptance.inviterAssignment(), other.trim())) {
+                    entitled = false;
+                    break;
+                }
+            }
+        }
+        if (!entitled) {
+            Log.warnf("access-invite.accept.refused reason=roles-would-reach-tenants-outside-inviter realm=%s invite=%s",
+                realm.getRefName(), invite.getRefName());
+            throw new AccessInviteException(Code.INVITE_ROLE_NOT_GRANTABLE,
+                "This invite's roles would also apply in tenants the inviter cannot grant. Ask a realm administrator.");
         }
     }
 

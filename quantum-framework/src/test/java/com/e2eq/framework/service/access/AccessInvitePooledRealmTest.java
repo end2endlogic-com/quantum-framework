@@ -74,6 +74,9 @@ class AccessInvitePooledRealmTest extends BaseRepoTest {
     /** Pooled realm whose policy comes from the application property, not the Realm record. */
     private static final String POOLED_BY_CONFIG = "invite-pooled-cfg";
 
+    /** SHARED deployment but SINGLE_TENANT: request tenant selection does not run there. */
+    private static final String SHARED_SINGLE = "invite-shared-single";
+
     private static final String TENANT_A = "tenant-a.pooled";
     private static final String TENANT_B = "tenant-b.pooled";
 
@@ -106,7 +109,7 @@ class AccessInvitePooledRealmTest extends BaseRepoTest {
 
     private String suffix;
     private final List<String> userIds = new ArrayList<>();
-    private static final List<String> REALMS = List.of(POOLED, POOLED_NO_POLICY, POOLED_UNKNOWN, POOLED_THROWING, POOLED_BY_CONFIG);
+    private static final List<String> REALMS = List.of(POOLED, POOLED_NO_POLICY, POOLED_UNKNOWN, POOLED_THROWING, POOLED_BY_CONFIG, SHARED_SINGLE);
 
     @BeforeEach
     void setUp() {
@@ -307,7 +310,10 @@ class AccessInvitePooledRealmTest extends BaseRepoTest {
 
     @Test
     void existingMemberOfAJoinsBAndKeepsBothWithMergedRoles() {
+        // The inviter works in tenant B and is also entitled to A, so the realm-scoped role it adds
+        // reaches no tenant it could not grant itself.
         String inviterB = member("inviter-b", TENANT_B, List.of("editor"));
+        writeAssignment(inviterB, List.of("editor"), List.of(TENANT_B, TENANT_A), partition(TENANT_B, 0));
         String existing = user("member-a");
         createAccount(existing, Set.of("user"), homeIn(TENANT_A));
         writeAssignment(existing, List.of("viewer"), List.of(TENANT_A), partition(TENANT_A, 0));
@@ -334,7 +340,131 @@ class AccessInvitePooledRealmTest extends BaseRepoTest {
         assertEquals("org-b", inB.getDataDomain().getOrgRefName());
     }
 
+    @Test
+    void addingARoleThatWouldReachATenantTheInviterLacksIsRefused() {
+        String inviterB = member("inviter-b-only", TENANT_B, List.of("editor", "viewer"));
+        String existing = user("member-a-roles");
+        createAccount(existing, Set.of("user"), homeIn(TENANT_A));
+        writeAssignment(existing, List.of("viewer"), List.of(TENANT_A), partition(TENANT_A, 0));
+        PrincipalContext inB = inviterIn(POOLED, inviterB, partition(TENANT_B, 0));
+        PrincipalContext member = principalBuilder(POOLED, existing, partition(TENANT_A, 0)).withRoles(new String[]{"user"}).build();
+
+        AccessInviteRequest addsEditor = new AccessInviteRequest();
+        addsEditor.setTargetUserId(existing);
+        addsEditor.setGrantedRoles(List.of("editor"));
+        AccessInviteResponse refused = create(POOLED, inB, addsEditor);
+        assertRefused(Code.INVITE_ROLE_NOT_GRANTABLE, () -> as(member, () -> inviteService.acceptInvite(accept(POOLED, refused.getInviteToken()))));
+        assertEquals(List.of(TENANT_A), assignment(existing, POOLED).getAuthorizedTenantIds());
+        assertEquals(AccessInvite.Status.PENDING, storedInvite(POOLED, refused).getStatus());
+        as(inB, () -> inviteService.revokeInvite(POOLED, refused.getRefName()));
+
+        // Joining B with only roles the member already holds is fine.
+        AccessInviteRequest sameRoles = new AccessInviteRequest();
+        sameRoles.setTargetUserId(existing);
+        sameRoles.setGrantedRoles(List.of("viewer"));
+        AccessInviteResponse ok = create(POOLED, inB, sameRoles);
+        as(member, () -> inviteService.acceptInvite(accept(POOLED, ok.getInviteToken())));
+        assertEquals(List.of(TENANT_A, TENANT_B), assignment(existing, POOLED).getAuthorizedTenantIds());
+        assertEquals(Set.of("viewer"), realmRoles(existing, POOLED));
+    }
+
+    @Test
+    void existingMemberWhoseDefaultPartitionDiffersCannotTakeANarrowerPartition() {
+        String inviter = member("inviter-seg-b", TENANT_B, List.of("viewer"));
+        writeAssignment(inviter, List.of("viewer"), List.of(TENANT_B, TENANT_A), partition(TENANT_B, 0));
+        String existing = user("member-a-seg");
+        createAccount(existing, Set.of("user"), homeIn(TENANT_A));
+        writeAssignment(existing, List.of("viewer"), List.of(TENANT_A), partition(TENANT_A, 0));
+
+        AccessInviteRequest request = new AccessInviteRequest();
+        request.setTargetUserId(existing);
+        request.setGrantedRoles(List.of("viewer"));
+        AccessInviteResponse invite = create(POOLED, inviterIn(POOLED, inviter, partition(TENANT_B, 3)), request);
+        PrincipalContext member = principalBuilder(POOLED, existing, partition(TENANT_A, 0)).withRoles(new String[]{"user"}).build();
+        // In tenant B the member would work in segment 0, wider than the inviter's segment 3.
+        assertRefused(Code.INVITE_SCOPE_UNRESOLVABLE, () -> as(member, () -> inviteService.acceptInvite(accept(POOLED, invite.getInviteToken()))));
+        assertEquals(List.of(TENANT_A), assignment(existing, POOLED).getAuthorizedTenantIds());
+    }
+
+    @Test
+    void failedAcceptanceByAnExistingMemberRemovesOnlyWhatItAdded() {
+        String inviterB = member("inviter-rb", TENANT_B, List.of("editor"));
+        writeAssignment(inviterB, List.of("editor"), List.of(TENANT_B, TENANT_A), partition(TENANT_B, 0));
+        String existing = user("member-a-rb");
+        createAccount(existing, Set.of("user"), homeIn(TENANT_A));
+        writeAssignment(existing, List.of("viewer"), List.of(TENANT_A), partition(TENANT_A, 0));
+
+        AccessInviteRequest request = new AccessInviteRequest();
+        request.setTargetUserId(existing);
+        request.setGrantedRoles(List.of("editor"));
+        request.setInviteMessage(FailingTestInviteProvisioner.FAIL_MARKER);
+        AccessInviteResponse invite = create(POOLED, inviterIn(POOLED, inviterB, partition(TENANT_B, 0)), request);
+        PrincipalContext member = principalBuilder(POOLED, existing, partition(TENANT_A, 0)).withRoles(new String[]{"user"}).build();
+
+        assertRefused(Code.INVITE_PROVISIONING_FAILED, () -> as(member, () -> inviteService.acceptInvite(accept(POOLED, invite.getInviteToken()))));
+        UserRealmRole after = assignment(existing, POOLED);
+        assertEquals(List.of(TENANT_A), after.getAuthorizedTenantIds(), "the added tenant is removed");
+        assertEquals(List.of("viewer"), after.getRoles(), "the added role is removed");
+        assertEquals(UserRealmRole.STATUS_ACTIVE, after.getStatus());
+        assertEquals(AccessInvite.Status.PENDING, storedInvite(POOLED, invite).getStatus());
+    }
+
+    @Test
+    void failedAcceptanceOfANewInviteeRemovesItsProfile() {
+        String inviter = member("inviter-rbp", TENANT_A, List.of("viewer"));
+        String invitee = user("invitee-rbp");
+        AccessInviteRequest request = request(invitee, "viewer");
+        request.setInviteMessage(FailingTestInviteProvisioner.FAIL_MARKER);
+        AccessInviteResponse invite = create(POOLED, inviterIn(POOLED, inviter, partition(TENANT_A, 0)), request);
+        assertRefused(Code.INVITE_PROVISIONING_FAILED, () -> acceptAnonymously(POOLED, invite, invitee));
+        assertTrue(findCredential(invitee).isEmpty());
+        assertTrue(assignments(invitee).isEmpty());
+        try (var cursor = morphiaDataStoreWrapper.getDataStore(POOLED).find(UserProfile.class)
+            .filter(Filters.eq("userId", invitee)).iterator()) {
+            assertTrue(cursor.toList().isEmpty(), "the profile created by the attempt is removed");
+        }
+    }
+
+    // ---- invite management ----------------------------------------------------------------
+
+    @Test
+    void tenantAdministratorManagesOnlyItsTenantsInvites() {
+        String inviterB = member("inviter-mgmt-b", TENANT_B, List.of("viewer"));
+        String inviterA = member("inviter-mgmt-a", TENANT_A, List.of("viewer"));
+        AccessInviteResponse inviteB = create(POOLED, inviterIn(POOLED, inviterB, partition(TENANT_B, 0)), request(user("for-b"), "viewer"));
+        AccessInviteResponse inviteA = create(POOLED, inviterIn(POOLED, inviterA, partition(TENANT_A, 0)), request(user("for-a"), "viewer"));
+
+        // Admin by its realm-scoped role, entitled to tenant A only.
+        String adminA = member("admin-a", TENANT_A, List.of("admin", "viewer"));
+        PrincipalContext asAdminA = inviterIn(POOLED, adminA, partition(TENANT_A, 0));
+
+        List<String> listed = as(asAdminA, () -> inviteService.listInvites(POOLED)).stream().map(AccessInviteResponse::getRefName).toList();
+        assertTrue(listed.contains(inviteA.getRefName()));
+        assertTrue(!listed.contains(inviteB.getRefName()), "another tenant's invites are not listed");
+        assertRefused(Code.INVITE_NOT_AUTHORIZED, () -> as(asAdminA, () -> inviteService.getInvite(POOLED, inviteB.getRefName())));
+        assertRefused(Code.INVITE_NOT_AUTHORIZED, () -> as(asAdminA, () -> inviteService.resendInvite(POOLED, inviteB.getRefName(), null)));
+        assertRefused(Code.INVITE_NOT_AUTHORIZED, () -> as(asAdminA, () -> inviteService.revokeInvite(POOLED, inviteB.getRefName())));
+        assertEquals(inviteA.getRefName(), as(asAdminA, () -> inviteService.getInvite(POOLED, inviteA.getRefName())).getRefName());
+    }
+
     // ---- fail closed ----------------------------------------------------------------------
+
+    @Test
+    void sharedRealmThatIsNotMultiTenantIsNotServedByThePooledPolicy() {
+        Realm shared = Realm.builder()
+            .refName(SHARED_SINGLE).displayName(SHARED_SINGLE).databaseName(SHARED_SINGLE)
+            .emailDomain(SHARED_SINGLE + ".invite-test.example")
+            .tenancyMode(RealmTenancyMode.SINGLE_TENANT)
+            .deploymentType(com.e2eq.framework.model.security.RealmDeploymentType.SHARED)
+            .inviteAcceptancePolicy(PooledRealmTenantInvitePolicy.ID)
+            .domainContext(DomainContext.builder().tenantId(TENANT_A).orgRefName("org-a").accountId("acct-a").defaultRealm(SHARED_SINGLE).build())
+            .build();
+        Realm registered = asSystem(() -> systemDirectory.findRealmByRefName(SHARED_SINGLE).orElseGet(() -> systemDirectory.registerRealm(shared)));
+        String inviter = member("inviter-shared", TENANT_A, List.of("viewer"), SHARED_SINGLE);
+        assertRefused(Code.INVITE_POLICY_UNAVAILABLE,
+            () -> create(registered.getRefName(), inviterIn(SHARED_SINGLE, inviter, partition(TENANT_A, 0)), request(user("x"))));
+    }
+
 
     @Test
     void pooledRealmWithoutPolicyRefusesInvites() {

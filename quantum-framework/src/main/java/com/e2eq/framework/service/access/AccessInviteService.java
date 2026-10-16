@@ -224,17 +224,53 @@ public class AccessInviteService {
     }
 
     /**
-     * Lists invites in the realm. Administrators see every invite; any other caller sees only the
-     * invites it created. Tokens are never included.
+     * Lists invites in the realm. Administrators see every invite they may manage (in a pooled
+     * realm only those for tenants their realm assignment authorizes); any other caller sees only
+     * the invites it created. Tokens are never included.
      */
     public List<AccessInviteResponse> listInvites(String realm) {
         PrincipalContext caller = requireCaller();
-        boolean admin = isRealmAdministrator(caller, realm);
+        InviteManagement management = inviteManagement(caller, realm);
         String callerUserId = normalize(caller.getUserId());
         return inviteRepo.getAllListIgnoreRules(realm).stream()
-            .filter(invite -> admin || (callerUserId != null && callerUserId.equalsIgnoreCase(invite.getInvitedByUserId())))
+            .filter(invite -> (callerUserId != null && callerUserId.equalsIgnoreCase(invite.getInvitedByUserId()))
+                || management.mayManage(invite))
             .map(invite -> toResponse(invite, null))
             .toList();
+    }
+
+    /**
+     * What a caller may administer among a realm's invites. In a dedicated realm a realm
+     * administrator manages every invite. In a pooled realm (several tenants) realm-scoped admin
+     * roles do not cross tenants: an administrator manages only invites whose scope tenant its own
+     * realm assignment authorizes; an invite with no recorded scope only the system principal
+     * manages. The system principal manages everything.
+     */
+    private record InviteManagement(boolean systemPrincipal, boolean admin, boolean pooled, UserRealmRole assignment) {
+        boolean mayManage(AccessInvite invite) {
+            if (systemPrincipal) {
+                return true;
+            }
+            if (!admin) {
+                return false;
+            }
+            if (!pooled) {
+                return true;
+            }
+            String tenant = invite.getScope() == null || invite.getScope().getDataDomain() == null
+                ? null : invite.getScope().getDataDomain().getTenantId();
+            return tenant != null && com.e2eq.framework.model.auth.AccessibleTenantResolver.isAuthorized(assignment, tenant);
+        }
+    }
+
+    private InviteManagement inviteManagement(PrincipalContext caller, String realm) {
+        boolean system = isSystemPrincipal(caller);
+        boolean admin = isRealmAdministrator(caller, realm);
+        boolean pooled = registeredRealm(realm).map(InviteAcceptancePolicies::pooled).orElse(true);
+        UserRealmRole assignment = admin && pooled && !system
+            ? activeAssignment(authenticatedUserId(caller), realm).orElse(null)
+            : null;
+        return new InviteManagement(system, admin, pooled, assignment);
     }
 
     public AccessInviteResponse getInvite(String realm, String refName) {
@@ -418,14 +454,15 @@ public class AccessInviteService {
             CredentialUserIdPassword inviter = invite.isIssuedBySystemPrincipal() ? null : credentialOf(invite.getInvitedByUserId()).orElse(null);
             boolean inviterAdmin = inviter != null && credentialCanAccessRealm(inviter, realm) && rolesInRealm(inviter, realm).contains(ADMIN_ROLE);
             UserRealmRole inviterAssignment = inviter == null ? null : activeAssignment(inviter.getUserId(), realm).orElse(null);
+            UserRealmRole inviteeAssignment = accountExists ? assignment(existingAccount.getUserId(), realm).orElse(null) : null;
             grant = policy.resolveGrant(new InviteAcceptance(
-                realmRecord, invite, invitedUserId, accountExists, existingAccount, inviterAdmin, inviterAssignment));
+                realmRecord, invite, invitedUserId, accountExists, existingAccount, inviterAdmin, inviterAssignment, inviteeAssignment));
             requireGrantWithinInvite(realmRecord, invite, policy, grant, accountExists);
 
             if (accountExists) {
                 CredentialUserIdPassword existing = existingAccount;
                 rollback.captureAssignment(existing.getUserId());
-                ensureRealmAssignment(realm, existing, grant);
+                rollback.written = ensureRealmAssignment(realm, existing, grant);
                 rollback.realmEntryAdded = !hasExplicitRealmEntry(existing, realm);
                 rollback.userId = existing.getUserId();
                 credential = ensureUserCredential(realm, invitedUserId, true, null, null);
@@ -436,9 +473,13 @@ public class AccessInviteService {
                 rollback.createdCredential = credential;
                 rollback.userId = credential.getUserId();
                 rollback.captureAssignment(credential.getUserId());
-                ensureRealmAssignment(realm, credential, grant);
+                rollback.written = ensureRealmAssignment(realm, credential, grant);
             }
+            boolean profileExisted = userProfileRepo.getByUserIdWithIgnoreRules(realm, invitedUserId).isPresent();
             profile = ensureUserProfile(realm, credential, invitedUserId, invitedEmail, firstName, lastName, grant.getProfileDataDomain());
+            if (!profileExisted) {
+                rollback.createdProfile = profile;
+            }
             for (AccessInviteProvisioner provisioner : provisioners) {
                 provisioner.onInviteAccepted(realm, invite, credential, profile);
             }
@@ -897,7 +938,7 @@ public class AccessInviteService {
             .orElseThrow(() -> failure(Code.INVITE_NOT_FOUND, "Invite not found: " + refName));
         String callerUserId = normalize(caller.getUserId());
         boolean inviter = callerUserId != null && callerUserId.equalsIgnoreCase(invite.getInvitedByUserId());
-        if (!inviter && !isRealmAdministrator(caller, realm)) {
+        if (!inviter && !inviteManagement(caller, realm).mayManage(invite)) {
             Log.warnf(
                 "access-invite.%s.refused reason=not-inviter realm=%s invite=%s caller=%s",
                 operation, realm, invite.getRefName(), sanitizeForLog(callerUserId)
@@ -1119,6 +1160,26 @@ public class AccessInviteService {
             throw policyFault(realm, invite, policy, "no-home-context");
         }
         if (InviteAcceptancePolicies.pooled(realm)) {
+            // The invite's scope bounds the grant: every tenant and coordinate must be the scope's.
+            DataDomain scope = invite.getScope() == null ? null : invite.getScope().getDataDomain();
+            if (scope == null) {
+                throw policyFault(realm, invite, policy, "pooled-invite-without-scope");
+            }
+            if (grant.getAssignmentDataDomain() != null && !sameCoordinate(scope, grant.getAssignmentDataDomain())) {
+                throw policyFault(realm, invite, policy, "assignment-outside-scope");
+            }
+            if (!accountExists) {
+                DomainContext home = grant.getHomeContext();
+                if (!java.util.Objects.equals(scope.getTenantId(), home.getTenantId())
+                    || !java.util.Objects.equals(scope.getOrgRefName(), home.getOrgRefName())
+                    || !java.util.Objects.equals(scope.getAccountNum(), home.getAccountId())
+                    || !realm.getRefName().equalsIgnoreCase(String.valueOf(home.getDefaultRealm()))) {
+                    throw policyFault(realm, invite, policy, "home-context-outside-scope");
+                }
+            }
+            if (grant.getProfileDataDomain() != null && !sameCoordinate(scope, grant.getProfileDataDomain())) {
+                throw policyFault(realm, invite, policy, "profile-outside-scope");
+            }
             Set<String> tenants = new LinkedHashSet<>();
             if (grant.getNewAssignmentTenantIds() != null) {
                 tenants.addAll(grant.getNewAssignmentTenantIds());
@@ -1133,11 +1194,24 @@ public class AccessInviteService {
                 tenants.add(grant.getHomeContext().getTenantId());
             }
             for (String tenant : tenants) {
-                if (tenant == null || realmMembershipService.tenantInRealm(realm.getRefName(), tenant).isEmpty()) {
+                if (!scope.getTenantId().equals(tenant)) {
+                    throw policyFault(realm, invite, policy, "tenant-outside-scope");
+                }
+                if (realmMembershipService.tenantInRealm(realm.getRefName(), tenant).isEmpty()) {
                     throw policyFault(realm, invite, policy, "tenant-not-active-member");
                 }
             }
         }
+    }
+
+    /** Same tenant, org, account, data segment, location and business transaction (owner may differ). */
+    private static boolean sameCoordinate(DataDomain expected, DataDomain actual) {
+        return java.util.Objects.equals(expected.getTenantId(), actual.getTenantId())
+            && java.util.Objects.equals(expected.getOrgRefName(), actual.getOrgRefName())
+            && java.util.Objects.equals(expected.getAccountNum(), actual.getAccountNum())
+            && expected.getDataSegment() == actual.getDataSegment()
+            && java.util.Objects.equals(expected.getLocationId(), actual.getLocationId())
+            && java.util.Objects.equals(expected.getBusinessTransactionId(), actual.getBusinessTransactionId());
     }
 
     private AccessInviteException policyFault(Realm realm, AccessInvite invite, InviteAcceptancePolicy policy, String reason) {
@@ -1251,6 +1325,9 @@ public class AccessInviteService {
         private UserRealmRole priorAssignment;
         private boolean realmEntryAdded;
         private CredentialUserIdPassword createdCredential;
+        /** The assignment as this acceptance wrote it (null when the write did not happen). */
+        private UserRealmRole written;
+        private UserProfile createdProfile;
 
         private GrantRollback(String realm) {
             this.realm = realm;
@@ -1271,9 +1348,22 @@ public class AccessInviteService {
                     Log.errorf(e, "access-invite.accept.rollback-failed step=assignment realm=%s user=%s", realm, sanitizeForLog(userId));
                 }
             }
+            // Profile removal cascades to the profile's credentials (UserProfileRepo.delete), so it is
+            // done only for an account this acceptance created; an existing account keeps the profile.
+            if (createdProfile != null && createdCredential != null) {
+                try {
+                    deleteOrFail(() -> userProfileRepo.delete(realm, createdProfile));
+                }
+                catch (RuntimeException e) {
+                    Log.errorf(e, "access-invite.accept.rollback-failed step=profile realm=%s user=%s", realm, sanitizeForLog(userId));
+                }
+            }
             try {
                 if (createdCredential != null) {
-                    deleteOrFail(() -> credentialRepo.delete(systemRealm(), createdCredential));
+                    // Already gone when the created profile's cascading delete removed it.
+                    if (credentialRepo.findByUserIdIgnoreCaseIgnoreRules(createdCredential.getUserId(), systemRealm()).isPresent()) {
+                        deleteOrFail(() -> credentialRepo.delete(systemRealm(), createdCredential));
+                    }
                 }
                 else if (realmEntryAdded) {
                     credentialRepo.findByUserIdIgnoreCaseIgnoreRules(userId, systemRealm()).ifPresent(current -> {
@@ -1302,27 +1392,83 @@ public class AccessInviteService {
             }
         }
 
+        /**
+         * Removes only what this acceptance added, from the assignment as it is now: a change made
+         * meanwhile (a suspension, a removed role, another tenant grant) is kept, never overwritten
+         * with the snapshot taken before the acceptance.
+         */
         private void restoreAssignment() {
-            Optional<UserRealmRole> current = assignment(userId, realm);
-            if (current.isEmpty()) {
+            if (written == null) {
+                return; // the assignment write itself failed; nothing of ours to remove
+            }
+            Optional<UserRealmRole> currentOpt = assignment(userId, realm);
+            if (currentOpt.isEmpty()) {
                 return;
             }
-            if (priorAssignment == null) {
-                if (quantumModeConfig.isRemote()) {
-                    Log.errorf("access-invite.accept.rollback-incomplete realm=%s user=%s: remote membership store has no delete; remove the assignment manually",
-                        realm, sanitizeForLog(userId));
-                    return;
+            UserRealmRole current = currentOpt.get();
+            if (priorAssignment == null && !quantumModeConfig.isRemote()) {
+                deleteOrFail(() -> userRealmRoleRepo.delete(systemRealm(), current));
+                return;
+            }
+            UserRealmRole prior = priorAssignment;
+            current.setRoles(minusIgnoreCase(current.getRoles(), added(written.getRoles(), prior == null ? null : prior.getRoles())));
+            current.setAuthorizedTenantIds(minusExact(current.getAuthorizedTenantIds(),
+                added(written.getAuthorizedTenantIds(), prior == null ? null : prior.getAuthorizedTenantIds())));
+            List<String> priorApps = prior == null ? null : prior.getAuthorizedApplications();
+            List<String> apps = minusExact(current.getAuthorizedApplications(), added(written.getAuthorizedApplications(), priorApps));
+            // A wildcard grant collapses named applications into '*'; put back the ones it replaced.
+            apps = unionExact(apps, added(priorApps, written.getAuthorizedApplications()));
+            current.setAuthorizedApplications(priorApps == null && apps.isEmpty() ? null : apps);
+            if (prior == null) {
+                // Remote mode cannot delete: leave the assignment inert instead of granting anything.
+                current.setStatus(UserRealmRole.STATUS_SUSPENDED);
+                Log.errorf("access-invite.accept.rollback-incomplete realm=%s user=%s: remote membership store has no delete; the assignment was emptied and suspended",
+                    realm, sanitizeForLog(userId));
+            }
+            else {
+                if (!java.util.Objects.equals(prior.getStatus(), written.getStatus())
+                    && java.util.Objects.equals(current.getStatus(), written.getStatus())) {
+                    current.setStatus(prior.getStatus());
                 }
-                deleteOrFail(() -> userRealmRoleRepo.delete(systemRealm(), current.get()));
-                return;
+                if (prior.getSubject() == null && written.getSubject() != null
+                    && java.util.Objects.equals(current.getSubject(), written.getSubject())) {
+                    current.setSubject(null);
+                }
             }
-            UserRealmRole restored = current.get();
-            restored.setRoles(priorAssignment.getRoles());
-            restored.setAuthorizedApplications(priorAssignment.getAuthorizedApplications());
-            restored.setAuthorizedTenantIds(priorAssignment.getAuthorizedTenantIds());
-            restored.setStatus(priorAssignment.getStatus());
-            realmMembershipService.upsertUserRealmRole(restored);
+            realmMembershipService.upsertUserRealmRole(current);
         }
+    }
+
+    /** Values in {@code after} that are not in {@code before} (exact match). */
+    private static List<String> added(List<String> after, List<String> before) {
+        List<String> out = new ArrayList<>();
+        if (after == null) {
+            return out;
+        }
+        for (String value : after) {
+            if (value != null && (before == null || before.stream().noneMatch(value::equals))) {
+                out.add(value);
+            }
+        }
+        return out;
+    }
+
+    private static List<String> minusExact(List<String> values, List<String> removed) {
+        if (values == null) {
+            return null;
+        }
+        List<String> out = new ArrayList<>(values);
+        out.removeIf(value -> value != null && removed.contains(value));
+        return out;
+    }
+
+    private static List<String> minusIgnoreCase(List<String> values, List<String> removed) {
+        if (values == null) {
+            return null;
+        }
+        List<String> out = new ArrayList<>(values);
+        out.removeIf(value -> value != null && removed.stream().anyMatch(r -> r.equalsIgnoreCase(value.trim())));
+        return out;
     }
 
     private static List<String> unionIgnoreCase(List<String> existing, List<String> added) {

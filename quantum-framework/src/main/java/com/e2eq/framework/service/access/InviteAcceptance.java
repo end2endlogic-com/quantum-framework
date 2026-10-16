@@ -16,6 +16,7 @@ import com.e2eq.framework.model.security.UserRealmRole;
  * @param existingCredential         the invitee's credential when it exists, else null
  * @param inviterRealmAdministrator  true when the inviter still administers the realm
  * @param inviterAssignment          the inviter's current active realm assignment, or null
+ * @param inviteeAssignment          the invitee's current realm assignment (any status), or null
  */
 public record InviteAcceptance(
     Realm realm,
@@ -24,6 +25,7 @@ public record InviteAcceptance(
     boolean accountExists,
     CredentialUserIdPassword existingCredential,
     boolean inviterRealmAdministrator,
-    UserRealmRole inviterAssignment
+    UserRealmRole inviterAssignment,
+    UserRealmRole inviteeAssignment
 ) {
 }
