@@ -377,9 +377,10 @@ Access invites are exposed at:
 - `GET /access/invites/{refName}`
 - `POST /access/invites`
 - `POST /access/invites/{refName}/revoke`
+- `POST /access/invites/{refName}/resend`
 - `POST /access/invites/accept`
 
-The first four require an authenticated caller in the target tenant. Invite acceptance is `@PermitAll` because the recipient may not yet have tenant access.
+All but `accept` require an authenticated caller in the target tenant. Listing returns every invite to an administrator (`admin` or `system` role) and only the caller's own invites to anyone else. Reading, revoking, and resending an invite require the inviter or an administrator. A non-administrator cannot grant a role it does not hold. Invite acceptance is `@PermitAll` because the recipient may not yet have tenant access.
 
 The persisted `AccessInvite` model includes:
 
@@ -433,9 +434,12 @@ Important invite behavior:
 
 - either `email` or `targetUserId` is required
 - only one active pending invite is allowed for the same email or target user
-- tokens are stored as a hash; the raw token is only returned at invite creation time
+- the invite is bound to the `email` or `targetUserId` given at creation; acceptance can only ever apply to that identity
+- tokens are stored only as a SHA-256 hash (no fragment of the raw token is persisted), compared in constant time, and are single-use
+- the raw token is returned only at creation time and by `resend`, never by list or get
 - invites expire automatically based on `expiresAt`
 - invites can be revoked before acceptance
+- `resend` rotates the token (the previous token stops working) and renews the expiry
 
 Representative accept request:
 
@@ -444,7 +448,6 @@ Representative accept request:
 {
   "realm": "acme-example",
   "token": "raw-token-returned-at-create-time-only",
-  "email": "jane.doe@partner.example",
   "firstName": "Jane",
   "lastName": "Doe",
   "password": "choose-a-password"
@@ -467,11 +470,16 @@ Representative accept response:
 What happens when an invite is accepted:
 
 - the invite token is validated and checked for expiry
-- the user identity is resolved from the authenticated user, request payload, invite target user, or invite email
-- if the user does not already exist, a new credential is created and a password is required
-- if the user already exists, the service ensures the user is authorized for the tenant realm
+- the user identity is always the invite's `targetUserId`, else its `email`; the request cannot choose it
+- a request `userId` or `email` that differs from the invite is refused with `403 INVITE_IDENTITY_MISMATCH` and logged (clients should omit both fields)
+- a signed-in caller must be the invited user; any other signed-in user is refused with `403 INVITE_IDENTITY_MISMATCH`
+- if the invited user already has an account, the caller must be signed in as that user; otherwise the call is refused with `401 INVITE_SIGN_IN_REQUIRED` and no access is attached
+- if the invited user has no account, one is created for the invited identity and a password is required
+- the invite is claimed atomically, so a token can be used once; a reused, revoked, or already-accepted token returns `409 INVITE_NOT_PENDING`, an expired one `410 INVITE_EXPIRED`, an unknown or altered one `400 INVITE_TOKEN_INVALID`
 - a `UserProfile` is created if needed
 - the invite status is changed to `ACCEPTED`
+
+Refusals use the shared `RestError` payload with a stable `errorCode`.
 
 ==== Invite extension points
 

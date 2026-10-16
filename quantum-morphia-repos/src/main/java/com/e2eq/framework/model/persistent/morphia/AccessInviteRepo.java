@@ -1,9 +1,14 @@
 package com.e2eq.framework.model.persistent.morphia;
 
 import com.e2eq.framework.model.security.AccessInvite;
+import com.mongodb.client.model.ReturnDocument;
+import dev.morphia.ModifyOptions;
 import dev.morphia.query.filters.Filters;
+import dev.morphia.query.updates.UpdateOperators;
 import jakarta.enterprise.context.ApplicationScoped;
+import org.bson.types.ObjectId;
 
+import java.util.Date;
 import java.util.List;
 import java.util.Optional;
 
@@ -44,5 +49,86 @@ public class AccessInviteRepo extends MorphiaRepo<AccessInvite> {
             .filter(Filters.eq("targetUserId", targetUserId))
             .iterator()
             .toList();
+    }
+
+    /**
+     * Atomically consumes a pending, unexpired invite. Only one caller can win the claim for a
+     * given token; a concurrent or repeated acceptance sees an empty result.
+     */
+    public Optional<AccessInvite> claimPending(String realm, ObjectId id, String tokenHash, Date now, String acceptedUserId) {
+        return Optional.ofNullable(
+            getMorphiaDataStoreWrapper().getDataStore(realm)
+                .find(AccessInvite.class)
+                .filter(
+                    Filters.eq("_id", id),
+                    Filters.eq("tokenHash", tokenHash),
+                    Filters.eq("status", AccessInvite.Status.PENDING),
+                    Filters.gt("expiresAt", now)
+                )
+                .modify(
+                    new ModifyOptions().returnDocument(ReturnDocument.AFTER),
+                    UpdateOperators.set("status", AccessInvite.Status.ACCEPTED),
+                    UpdateOperators.set("acceptedAt", now),
+                    UpdateOperators.set("acceptedUserId", acceptedUserId)
+                )
+        );
+    }
+
+    /**
+     * Returns a claimed invite to PENDING when provisioning failed after the claim, so the
+     * legitimate invitee can retry. Only reverts the exact claim (same token, same accepted user).
+     */
+    public boolean releaseClaim(String realm, ObjectId id, String tokenHash, String acceptedUserId) {
+        AccessInvite reverted = getMorphiaDataStoreWrapper().getDataStore(realm)
+            .find(AccessInvite.class)
+            .filter(
+                Filters.eq("_id", id),
+                Filters.eq("tokenHash", tokenHash),
+                Filters.eq("status", AccessInvite.Status.ACCEPTED),
+                Filters.eq("acceptedUserId", acceptedUserId)
+            )
+            .modify(
+                new ModifyOptions().returnDocument(ReturnDocument.AFTER),
+                UpdateOperators.set("status", AccessInvite.Status.PENDING),
+                UpdateOperators.unset("acceptedAt"),
+                UpdateOperators.unset("acceptedUserId")
+            );
+        return reverted != null;
+    }
+
+    /** Atomically revokes an invite that is still pending. */
+    public Optional<AccessInvite> revokePending(String realm, ObjectId id) {
+        return Optional.ofNullable(
+            getMorphiaDataStoreWrapper().getDataStore(realm)
+                .find(AccessInvite.class)
+                .filter(Filters.eq("_id", id), Filters.eq("status", AccessInvite.Status.PENDING))
+                .modify(
+                    new ModifyOptions().returnDocument(ReturnDocument.AFTER),
+                    UpdateOperators.set("status", AccessInvite.Status.REVOKED)
+                )
+        );
+    }
+
+    /**
+     * Atomically replaces the token of a pending invite (resend). The previous token stops
+     * working as soon as this returns.
+     */
+    public Optional<AccessInvite> rotatePendingToken(String realm, ObjectId id, String expectedTokenHash,
+                                                     String newTokenHash, String newTokenHint, Date newExpiresAt) {
+        return Optional.ofNullable(
+            getMorphiaDataStoreWrapper().getDataStore(realm)
+                .find(AccessInvite.class)
+                .filter(
+                    Filters.eq("_id", id),
+                    Filters.eq("tokenHash", expectedTokenHash),
+                    Filters.eq("status", AccessInvite.Status.PENDING)
+                )
+                .modify(
+                    new ModifyOptions().returnDocument(ReturnDocument.AFTER),
+                    UpdateOperators.set("tokenHash", newTokenHash),
+                    UpdateOperators.set("tokenHint", newTokenHint),
+                    UpdateOperators.set("expiresAt", newExpiresAt)
+                )
+        );
     }
 }

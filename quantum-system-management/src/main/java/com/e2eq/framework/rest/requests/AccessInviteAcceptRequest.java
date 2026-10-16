@@ -14,7 +14,15 @@ import lombok.experimental.SuperBuilder;
 public class AccessInviteAcceptRequest {
     protected String realm;
     protected String token;
+    /**
+     * Optional echo of the invited user ID. The account identity always comes from the invite;
+     * a value that differs from it is refused with INVITE_IDENTITY_MISMATCH. New clients should omit it.
+     */
     protected String userId;
+    /**
+     * Optional echo of the invited email. A value that differs from the invite is refused with
+     * INVITE_IDENTITY_MISMATCH. New clients should omit it.
+     */
     protected String email;
     protected String firstName;
     protected String lastName;
