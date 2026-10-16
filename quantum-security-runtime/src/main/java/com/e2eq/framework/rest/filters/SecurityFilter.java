@@ -1506,7 +1506,23 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                 .accountId(membership.getAccountId())
                 .dataSegment(0)
                 .build();
+        // The user's default partition in the realm (its assignment's data domain) refines the
+        // membership coordinate when it is for this same tenant/org/account: its data segment and
+        // location carry over (an invite into a partition with a data segment lands there).
+        // Tenant, org and account always come from the membership.
+        DataDomain partition = assignment.getDataDomain();
+        boolean partitionApplies = partition != null
+            && tenantId.equals(partition.getTenantId() == null ? null : partition.getTenantId().trim())
+            && java.util.Objects.equals(membership.getOrganizationRefName(), partition.getOrgRefName())
+            && java.util.Objects.equals(membership.getAccountId(), partition.getAccountNum());
+        if (partitionApplies) {
+            tenantContext.setDataSegment(partition.getDataSegment());
+        }
         DataDomain effectiveDataDomain = tenantContext.toDataDomain(context.getUserId());
+        if (partitionApplies) {
+            effectiveDataDomain.setLocationId(partition.getLocationId());
+            effectiveDataDomain.setBusinessTransactionId(partition.getBusinessTransactionId());
+        }
 
         return new PrincipalContext.Builder()
             .withDefaultRealm(effectiveRealm)

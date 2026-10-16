@@ -22,6 +22,10 @@ public class AccessInviteResponse {
     private List<String> allowedFunctionalDomains;
     private List<String> allowedActions;
     private List<String> authorizedApplications;
+    /** Id of the acceptance policy governing the invite. */
+    private String acceptancePolicy;
+    /** The inviter's resolved partition snapshotted at creation (the invitee's placement source). */
+    private com.e2eq.framework.model.security.InviteScope scope;
     private String status;
     private Date expiresAt;
     private Date acceptedAt;

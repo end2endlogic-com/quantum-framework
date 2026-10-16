@@ -1,0 +1,619 @@
+package com.e2eq.framework.service.access;
+
+import com.e2eq.framework.api.system.SystemDirectory;
+import com.e2eq.framework.model.auth.AuthProviderFactory;
+import com.e2eq.framework.model.auth.RoleSource;
+import com.e2eq.framework.model.persistent.base.DataDomain;
+import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
+import com.e2eq.framework.model.persistent.morphia.IdentityRoleResolver;
+import com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper;
+import com.e2eq.framework.model.security.AccessInvite;
+import com.e2eq.framework.model.security.CredentialUserIdPassword;
+import com.e2eq.framework.model.security.DataDomainPolicy;
+import com.e2eq.framework.model.security.DataDomainPolicyEntry;
+import com.e2eq.framework.model.security.DomainContext;
+import com.e2eq.framework.model.security.Realm;
+import com.e2eq.framework.model.security.RealmTenancyMode;
+import com.e2eq.framework.model.security.RealmTenantMembership;
+import com.e2eq.framework.model.security.UserProfile;
+import com.e2eq.framework.model.security.UserRealmRole;
+import com.e2eq.framework.model.securityrules.PrincipalContext;
+import com.e2eq.framework.model.securityrules.SecurityCallScope;
+import com.e2eq.framework.persistent.BaseRepoTest;
+import com.e2eq.framework.rest.filters.TenantSelectionProbe;
+import com.e2eq.framework.rest.requests.AccessInviteAcceptRequest;
+import com.e2eq.framework.rest.requests.AccessInviteRequest;
+import com.e2eq.framework.rest.requests.AccessInviteScopeClaim;
+import com.e2eq.framework.rest.responses.AccessInviteAcceptResponse;
+import com.e2eq.framework.rest.responses.AccessInviteResponse;
+import com.e2eq.framework.service.access.AccessInviteException.Code;
+import com.e2eq.framework.system.membership.RealmMembershipService;
+import com.e2eq.framework.util.EnvConfigUtils;
+import dev.morphia.query.filters.Filters;
+import io.quarkus.test.junit.QuarkusTest;
+import jakarta.inject.Inject;
+import jakarta.ws.rs.ForbiddenException;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
+
+import java.util.ArrayList;
+import java.util.EnumSet;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+import java.util.function.Supplier;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+/**
+ * Invites in a pooled realm (several tenants in one realm, separated by DataDomain): the invite
+ * carries the inviter's resolved partition and the {@code pooled-realm-tenant} acceptance policy
+ * places the invitee in it.
+ */
+@QuarkusTest
+class AccessInvitePooledRealmTest extends BaseRepoTest {
+
+    private static final String PASSWORD = "Inv1te-Pooled-P@ssw0rd!";
+
+    /** Pooled realm whose Realm record names the pooled policy. */
+    private static final String POOLED = "invite-pooled-test";
+    /** Pooled realm without any configured policy. */
+    private static final String POOLED_NO_POLICY = "invite-pooled-nopolicy";
+    /** Pooled realm naming a policy no bean provides. */
+    private static final String POOLED_UNKNOWN = "invite-pooled-unknown";
+    /** Pooled realm whose policy throws while resolving the grant. */
+    private static final String POOLED_THROWING = "invite-pooled-throwing";
+    /** Pooled realm whose policy comes from the application property, not the Realm record. */
+    private static final String POOLED_BY_CONFIG = "invite-pooled-cfg";
+
+    private static final String TENANT_A = "tenant-a.pooled";
+    private static final String TENANT_B = "tenant-b.pooled";
+
+    @Inject
+    AccessInviteService inviteService;
+
+    @Inject
+    CredentialRepo credentialRepo;
+
+    @Inject
+    AuthProviderFactory authProviderFactory;
+
+    @Inject
+    EnvConfigUtils envConfigUtils;
+
+    @Inject
+    MorphiaDataStoreWrapper morphiaDataStoreWrapper;
+
+    @Inject
+    IdentityRoleResolver identityRoleResolver;
+
+    @Inject
+    SystemDirectory systemDirectory;
+
+    @Inject
+    RealmMembershipService realmMembershipService;
+
+    @Inject
+    com.e2eq.framework.util.SecurityUtils securityUtils;
+
+    private String suffix;
+    private final List<String> userIds = new ArrayList<>();
+    private static final List<String> REALMS = List.of(POOLED, POOLED_NO_POLICY, POOLED_UNKNOWN, POOLED_THROWING, POOLED_BY_CONFIG);
+
+    @BeforeEach
+    void setUp() {
+        suffix = UUID.randomUUID().toString().substring(0, 8);
+        registerPooledRealm(POOLED, PooledRealmTenantInvitePolicy.ID);
+        registerPooledRealm(POOLED_NO_POLICY, null);
+        registerPooledRealm(POOLED_UNKNOWN, "no-such-policy");
+        registerPooledRealm(POOLED_THROWING, ThrowingTestInvitePolicy.ID);
+        registerPooledRealm(POOLED_BY_CONFIG, null);
+    }
+
+    @AfterEach
+    void tearDown() {
+        String systemRealm = envConfigUtils.getSystemRealm();
+        for (String userId : userIds) {
+            morphiaDataStoreWrapper.getDataStore(systemRealm).find(CredentialUserIdPassword.class)
+                .filter(Filters.eq("userId", userId)).delete(new dev.morphia.DeleteOptions().multi(true));
+            morphiaDataStoreWrapper.getDataStore(systemRealm).find(UserRealmRole.class)
+                .filter(Filters.eq("userId", userId)).delete(new dev.morphia.DeleteOptions().multi(true));
+        }
+        for (String r : REALMS) {
+            morphiaDataStoreWrapper.getDataStore(r).find(UserProfile.class)
+                .filter(Filters.in("userId", userIds)).delete(new dev.morphia.DeleteOptions().multi(true));
+            morphiaDataStoreWrapper.getDataStore(r).find(AccessInvite.class)
+                .filter(Filters.in("invitedByUserId", userIds)).delete(new dev.morphia.DeleteOptions().multi(true));
+        }
+        userIds.clear();
+    }
+
+    // ---- placement ------------------------------------------------------------------------
+
+    @Test
+    void inviteeLandsInTheInvitersTenantOnly() {
+        String inviter = member("inviter-a", TENANT_A, List.of("viewer"));
+        String invitee = user("invitee");
+
+        AccessInviteResponse invite = create(POOLED, inviterIn(POOLED, inviter, partition(TENANT_A, 0)), request(invitee, "viewer"));
+        assertEquals(PooledRealmTenantInvitePolicy.ID, invite.getAcceptancePolicy());
+        assertEquals(TENANT_A, invite.getScope().getDataDomain().getTenantId());
+        assertEquals(POOLED, invite.getScope().getRealmRefName());
+        AccessInvite stored = storedInvite(POOLED, invite);
+        assertEquals(TENANT_A, stored.getDataDomain().getTenantId(), "the invite record lives in the inviter's partition");
+        assertEquals(inviter, stored.getDataDomain().getOwnerId());
+
+        AccessInviteAcceptResponse accepted = acceptAnonymously(POOLED, invite, invitee);
+        assertEquals(TENANT_A, accepted.getTenantId());
+
+        UserRealmRole assignment = assignment(invitee, POOLED);
+        assertEquals(List.of(TENANT_A), assignment.getAuthorizedTenantIds());
+        assertEquals(TENANT_A, assignment.getDataDomain().getTenantId());
+        assertEquals("org-a", assignment.getDataDomain().getOrgRefName());
+        assertEquals("acct-a", assignment.getDataDomain().getAccountNum());
+        assertEquals(invitee, assignment.getDataDomain().getOwnerId(), "the invitee owns its partition, not the inviter");
+        assertEquals("org-a", assignment.getSponsoringOrgRefName());
+
+        CredentialUserIdPassword credential = credential(invitee);
+        assertEquals(TENANT_A, credential.getDomainContext().getTenantId());
+        assertEquals(POOLED, credential.getDomainContext().getDefaultRealm());
+        assertEquals("org-a", credential.getDomainContext().getOrgRefName());
+        assertEquals("acct-a", credential.getDomainContext().getAccountId());
+        assertEquals(List.of("user"), List.of(credential.getRoles()), "invited roles never land on flat credential roles");
+
+        UserProfile profile = profile(POOLED, invitee);
+        assertEquals(TENANT_A, profile.getDataDomain().getTenantId());
+        assertEquals(invitee, profile.getDataDomain().getOwnerId());
+
+        assertEquals(Set.of("viewer"), realmRoles(invitee, POOLED));
+
+        // The request path: the invitee enters tenant A with A's partition and is refused tenant B.
+        PrincipalContext inA = select(invitee, null, TENANT_A);
+        assertEquals(TENANT_A, inA.getDataDomain().getTenantId());
+        assertEquals("org-a", inA.getDataDomain().getOrgRefName());
+        assertEquals(invitee, inA.getDataDomain().getOwnerId());
+        assertThrows(ForbiddenException.class, () -> select(invitee, TENANT_B, TENANT_A));
+    }
+
+    @Test
+    void partitionWithADataSegmentIsCarriedToTheInvitee() {
+        String inviter = member("inviter-seg", TENANT_A, List.of("viewer"));
+        String invitee = user("invitee-seg");
+
+        AccessInviteResponse invite = create(POOLED, inviterIn(POOLED, inviter, partition(TENANT_A, 4)), request(invitee, "viewer"));
+        assertEquals(4, invite.getScope().getDataDomain().getDataSegment());
+        acceptAnonymously(POOLED, invite, invitee);
+
+        assertEquals(4, assignment(invitee, POOLED).getDataDomain().getDataSegment());
+        assertEquals(4, credential(invitee).getDomainContext().getDataSegment());
+        assertEquals(4, profile(POOLED, invitee).getDataDomain().getDataSegment());
+        PrincipalContext inA = select(invitee, null, TENANT_A);
+        assertEquals(4, inA.getDataDomain().getDataSegment(), "the request partition keeps the data segment");
+    }
+
+    @Test
+    void partitionRuleOnAFieldOtherThanTenantIsCarried() {
+        String inviter = member("inviter-loc", TENANT_A, List.of("viewer"));
+        String invitee = user("invitee-loc");
+        // A DataDomainPolicy rule (not the request) places invites at a location within tenant A.
+        DataDomain fixed = partition(TENANT_A, 2);
+        fixed.setOwnerId(inviter);
+        fixed.setLocationId("dock-7");
+        PrincipalContext principal = principalBuilder(POOLED, inviter, partition(TENANT_A, 0))
+            .withDataDomainPolicy(policy("SECURITY:ACCESS_INVITE", DataDomainPolicyEntry.ResolutionMode.FIXED, fixed, null))
+            .build();
+
+        AccessInviteResponse invite = create(POOLED, principal, request(invitee, "viewer"));
+        assertEquals("dock-7", invite.getScope().getDataDomain().getLocationId());
+        assertEquals(2, invite.getScope().getDataDomain().getDataSegment());
+        acceptAnonymously(POOLED, invite, invitee);
+
+        UserRealmRole assignment = assignment(invitee, POOLED);
+        assertEquals("dock-7", assignment.getDataDomain().getLocationId());
+        assertEquals(2, assignment.getDataDomain().getDataSegment());
+        assertEquals("dock-7", profile(POOLED, invitee).getDataDomain().getLocationId());
+        PrincipalContext inA = select(invitee, null, TENANT_A);
+        assertEquals("dock-7", inA.getDataDomain().getLocationId());
+        assertEquals(2, inA.getDataDomain().getDataSegment());
+    }
+
+    @Test
+    void partitionWithAPolicyFilterIsRefused() {
+        String inviter = member("inviter-filter", TENANT_A, List.of("viewer"));
+        PrincipalContext principal = principalBuilder(POOLED, inviter, partition(TENANT_A, 0))
+            .withDataDomainPolicy(policy("SECURITY:*", DataDomainPolicyEntry.ResolutionMode.FROM_CREDENTIAL, null, "dataSegment <= 2"))
+            .build();
+        assertRefused(Code.INVITE_SCOPE_UNRESOLVABLE, () -> create(POOLED, principal, request(user("x"), "viewer")));
+    }
+
+    @Test
+    void partitionWithAnOrgOutsideTheTenantMembershipIsRefused() {
+        String inviter = member("inviter-org", TENANT_A, List.of("viewer"));
+        DataDomain otherOrg = partition(TENANT_A, 0);
+        otherOrg.setOrgRefName("org-elsewhere");
+        assertRefused(Code.INVITE_SCOPE_UNRESOLVABLE,
+            () -> create(POOLED, inviterIn(POOLED, inviter, otherOrg), request(user("x"), "viewer")));
+    }
+
+    @Test
+    void partitionResolvedInAnotherRealmIsRefused() {
+        String inviter = member("inviter-elsewhere", TENANT_A, List.of("viewer"));
+        // The inviter's verified context is another realm; its partition there says nothing about this one.
+        assertRefused(Code.INVITE_SCOPE_UNRESOLVABLE,
+            () -> create(POOLED, inviterIn(POOLED_BY_CONFIG, inviter, partition(TENANT_A, 0)), request(user("x"), "viewer")));
+    }
+
+    // ---- entitlement ----------------------------------------------------------------------
+
+    @Test
+    void inviterNotAuthorizedForTheTenantCannotInviteIntoIt() {
+        String inviter = member("inviter-only-a", TENANT_A, List.of("viewer"));
+        assertRefused(Code.INVITE_SCOPE_NOT_AUTHORIZED,
+            () -> create(POOLED, inviterIn(POOLED, inviter, partition(TENANT_B, 0)), request(user("x"), "viewer")));
+    }
+
+    @Test
+    void realmAdministratorMayInviteIntoAnyTenant() {
+        String admin = user("realm-admin");
+        createAccount(admin, Set.of("admin", "user"), homeIn(TENANT_A));
+        String invitee = user("invitee-admin");
+        AccessInviteResponse invite = create(POOLED, inviterIn(POOLED, admin, partition(TENANT_B, 0)), request(invitee));
+        acceptAnonymously(POOLED, invite, invitee);
+        assertEquals(List.of(TENANT_B), assignment(invitee, POOLED).getAuthorizedTenantIds());
+    }
+
+    @Test
+    void scopeIsTakenFromTheTokenNotTheBody() {
+        String inviter = member("inviter-body", TENANT_A, List.of("viewer"));
+        PrincipalContext principal = inviterIn(POOLED, inviter, partition(TENANT_A, 0));
+
+        AccessInviteRequest claimsB = request(user("x"), "viewer");
+        claimsB.setScope(AccessInviteScopeClaim.builder().tenantId(TENANT_B).build());
+        assertRefused(Code.INVITE_SCOPE_NOT_AUTHORIZED, () -> create(POOLED, principal, claimsB));
+
+        AccessInviteRequest claimsSegment = request(user("y"), "viewer");
+        claimsSegment.setScope(AccessInviteScopeClaim.builder().tenantId(TENANT_A).dataSegment(9).build());
+        assertRefused(Code.INVITE_SCOPE_NOT_AUTHORIZED, () -> create(POOLED, principal, claimsSegment));
+
+        // Echoing the verified scope is accepted.
+        AccessInviteRequest echoes = request(user("z"), "viewer");
+        echoes.setScope(AccessInviteScopeClaim.builder().realm(POOLED).tenantId(TENANT_A).orgRefName("org-a").dataSegment(0).build());
+        assertEquals(TENANT_A, create(POOLED, principal, echoes).getScope().getDataDomain().getTenantId());
+    }
+
+    @Test
+    void inviterWhoLosesTheTenantBeforeAcceptanceLeavesTheInvitePending() {
+        String inviter = member("inviter-loses", TENANT_A, List.of("viewer"));
+        String invitee = user("invitee-pending");
+        AccessInviteResponse invite = create(POOLED, inviterIn(POOLED, inviter, partition(TENANT_A, 0)), request(invitee, "viewer"));
+
+        writeAssignment(inviter, List.of("viewer"), List.of(TENANT_B), partition(TENANT_B, 0));
+
+        assertRefused(Code.INVITE_SCOPE_NOT_AUTHORIZED, () -> acceptAnonymously(POOLED, invite, invitee));
+        assertEquals(AccessInvite.Status.PENDING, storedInvite(POOLED, invite).getStatus());
+        assertTrue(findCredential(invitee).isEmpty(), "no account is left behind");
+        assertTrue(assignments(invitee).isEmpty(), "no assignment is left behind");
+    }
+
+    // ---- several tenants ------------------------------------------------------------------
+
+    @Test
+    void existingMemberOfAJoinsBAndKeepsBothWithMergedRoles() {
+        String inviterB = member("inviter-b", TENANT_B, List.of("editor"));
+        String existing = user("member-a");
+        createAccount(existing, Set.of("user"), homeIn(TENANT_A));
+        writeAssignment(existing, List.of("viewer"), List.of(TENANT_A), partition(TENANT_A, 0));
+
+        AccessInviteRequest request = new AccessInviteRequest();
+        request.setTargetUserId(existing);
+        request.setGrantedRoles(List.of("editor"));
+        AccessInviteResponse invite = create(POOLED, inviterIn(POOLED, inviterB, partition(TENANT_B, 0)), request);
+
+        AccessInviteAcceptRequest accept = accept(POOLED, invite.getInviteToken());
+        AccessInviteAcceptResponse accepted = as(principalBuilder(POOLED, existing, partition(TENANT_A, 0)).withRoles(new String[]{"user"}).build(),
+            () -> inviteService.acceptInvite(accept));
+        assertEquals(TENANT_B, accepted.getTenantId());
+
+        UserRealmRole assignment = assignment(existing, POOLED);
+        assertEquals(List.of(TENANT_A, TENANT_B), assignment.getAuthorizedTenantIds());
+        assertEquals(TENANT_A, assignment.getDataDomain().getTenantId(), "the member keeps its default partition");
+        assertEquals(Set.of("viewer", "editor"), realmRoles(existing, POOLED));
+        assertEquals(TENANT_A, credential(existing).getDomainContext().getTenantId(), "an existing home context is untouched");
+
+        assertEquals(TENANT_A, select(existing, null, TENANT_A).getDataDomain().getTenantId());
+        PrincipalContext inB = select(existing, TENANT_B, TENANT_A);
+        assertEquals(TENANT_B, inB.getDataDomain().getTenantId());
+        assertEquals("org-b", inB.getDataDomain().getOrgRefName());
+    }
+
+    // ---- fail closed ----------------------------------------------------------------------
+
+    @Test
+    void pooledRealmWithoutPolicyRefusesInvites() {
+        String inviter = member("inviter-np", TENANT_A, List.of("viewer"), POOLED_NO_POLICY);
+        assertRefused(Code.INVITE_POLICY_UNAVAILABLE,
+            () -> create(POOLED_NO_POLICY, inviterIn(POOLED_NO_POLICY, inviter, partition(TENANT_A, 0)), request(user("x"))));
+    }
+
+    @Test
+    void unknownPolicyRefusesInvites() {
+        String inviter = member("inviter-unk", TENANT_A, List.of("viewer"), POOLED_UNKNOWN);
+        assertRefused(Code.INVITE_POLICY_UNAVAILABLE,
+            () -> create(POOLED_UNKNOWN, inviterIn(POOLED_UNKNOWN, inviter, partition(TENANT_A, 0)), request(user("x"))));
+    }
+
+    @Test
+    void requestCannotPickAnotherPolicy() {
+        String inviter = member("inviter-pick", TENANT_A, List.of("viewer"));
+        AccessInviteRequest request = request(user("x"));
+        request.setAcceptancePolicy(DedicatedRealmInvitePolicy.ID);
+        assertRefused(Code.INVITE_POLICY_UNAVAILABLE,
+            () -> create(POOLED, inviterIn(POOLED, inviter, partition(TENANT_A, 0)), request));
+    }
+
+    @Test
+    void policyConfiguredByApplicationPropertyIsUsed() {
+        String inviter = member("inviter-cfg", TENANT_A, List.of("viewer"), POOLED_BY_CONFIG);
+        String invitee = user("invitee-cfg");
+        AccessInviteResponse invite = create(POOLED_BY_CONFIG, inviterIn(POOLED_BY_CONFIG, inviter, partition(TENANT_A, 0)), request(invitee));
+        assertEquals(PooledRealmTenantInvitePolicy.ID, invite.getAcceptancePolicy());
+        acceptAnonymously(POOLED_BY_CONFIG, invite, invitee);
+        assertEquals(List.of(TENANT_A), assignment(invitee, POOLED_BY_CONFIG).getAuthorizedTenantIds());
+    }
+
+    @Test
+    void policyThatThrowsRollsBackEverything() {
+        String inviter = member("inviter-throw", TENANT_A, List.of("viewer"), POOLED_THROWING);
+        String invitee = user("invitee-throw");
+        AccessInviteResponse invite = create(POOLED_THROWING, inviterIn(POOLED_THROWING, inviter, partition(TENANT_A, 0)), request(invitee, "viewer"));
+        assertEquals(ThrowingTestInvitePolicy.ID, invite.getAcceptancePolicy());
+
+        assertRefused(Code.INVITE_PROVISIONING_FAILED, () -> acceptAnonymously(POOLED_THROWING, invite, invitee));
+        assertEquals(AccessInvite.Status.PENDING, storedInvite(POOLED_THROWING, invite).getStatus());
+        assertTrue(findCredential(invitee).isEmpty());
+        assertTrue(assignments(invitee).isEmpty());
+    }
+
+    @Test
+    void dedicatedPolicyRefusesAPooledRealm() {
+        DedicatedRealmInvitePolicy dedicated = new DedicatedRealmInvitePolicy();
+        Realm pooled = systemDirectory.findRealmByRefName(POOLED).orElseThrow();
+        assertRefused(Code.INVITE_POLICY_UNAVAILABLE,
+            () -> dedicated.validateCreate(new InviteCreation(pooled, null, null, false, false, null, null, null)));
+    }
+
+    // ---- helpers ---------------------------------------------------------------------------
+
+    private void registerPooledRealm(String refName, String policyId) {
+        asSystem(() -> {
+            Realm realm = systemDirectory.findRealmByRefName(refName).orElseGet(() -> systemDirectory.registerRealm(Realm.builder()
+                .refName(refName)
+                .displayName(refName)
+                .databaseName(refName)
+                .emailDomain(refName + ".invite-test.example")
+                .tenancyMode(RealmTenancyMode.MULTI_TENANT)
+                .inviteAcceptancePolicy(policyId)
+                .domainContext(DomainContext.builder()
+                    .tenantId(TENANT_A).orgRefName("org-a").accountId("acct-a").defaultRealm(refName).build())
+                .build()));
+            ensureMembership(refName, TENANT_A, "org-a", "acct-a");
+            ensureMembership(refName, TENANT_B, "org-b", "acct-b");
+            return realm;
+        });
+    }
+
+    private void ensureMembership(String realm, String tenantId, String org, String account) {
+        if (realmMembershipService.tenantInRealm(realm, tenantId).isPresent()) {
+            return;
+        }
+        realmMembershipService.upsertMembership(RealmTenantMembership.builder()
+            .refName(org + "-" + realm)
+            .displayName(org + " in " + realm)
+            .realmRefName(realm)
+            .tenantId(tenantId)
+            .organizationRefName(org)
+            .accountId(account)
+            .membershipRole(TENANT_A.equals(tenantId) ? RealmTenantMembership.MEMBERSHIP_ROLE_OWNER : RealmTenantMembership.MEMBERSHIP_ROLE_PARTICIPANT)
+            .participationStatus(RealmTenantMembership.PARTICIPATION_STATUS_ACTIVE)
+            .build());
+    }
+
+    private String user(String label) {
+        String userId = label + "-" + suffix + "@pooled-invite-test.example";
+        userIds.add(userId);
+        return userId;
+    }
+
+    /** A user whose home realm is {@code realm} (default POOLED), assigned {@code tenant} with {@code roles}. */
+    private String member(String label, String tenant, List<String> roles) {
+        return member(label, tenant, roles, POOLED);
+    }
+
+    private String member(String label, String tenant, List<String> roles, String realm) {
+        String userId = user(label);
+        DomainContext home = DomainContext.builder().tenantId(tenant).defaultRealm(realm)
+            .orgRefName(TENANT_A.equals(tenant) ? "org-a" : "org-b").accountId(TENANT_A.equals(tenant) ? "acct-a" : "acct-b").build();
+        createAccount(userId, Set.of("user"), home);
+        writeAssignment(userId, realm, roles, List.of(tenant), partition(tenant, 0));
+        return userId;
+    }
+
+    private static DataDomain partition(String tenant, int dataSegment) {
+        boolean a = TENANT_A.equals(tenant);
+        return DataDomain.builder()
+            .tenantId(tenant)
+            .orgRefName(a ? "org-a" : "org-b")
+            .accountNum(a ? "acct-a" : "acct-b")
+            .dataSegment(dataSegment)
+            .ownerId("unset")
+            .build();
+    }
+
+    private static DomainContext homeIn(String tenant) {
+        boolean a = TENANT_A.equals(tenant);
+        return DomainContext.builder().tenantId(tenant).defaultRealm(POOLED)
+            .orgRefName(a ? "org-a" : "org-b").accountId(a ? "acct-a" : "acct-b").build();
+    }
+
+    private static DataDomainPolicy policy(String key, DataDomainPolicyEntry.ResolutionMode mode, DataDomain fixed, String filter) {
+        DataDomainPolicyEntry entry = new DataDomainPolicyEntry();
+        entry.setResolutionMode(mode);
+        if (fixed != null) {
+            entry.setDataDomains(List.of(fixed));
+        }
+        entry.setFilter(filter);
+        DataDomainPolicy policy = new DataDomainPolicy();
+        policy.setPolicyEntries(Map.of(key, entry));
+        return policy;
+    }
+
+    /** The verified principal of a signed-in inviter in {@code realm} whose resolved partition is {@code domain}. */
+    private PrincipalContext inviterIn(String realm, String userId, DataDomain domain) {
+        return principalBuilder(realm, userId, domain).build();
+    }
+
+    private PrincipalContext.Builder principalBuilder(String realm, String userId, DataDomain domain) {
+        DataDomain owned = PooledRealmTenantInvitePolicy.copy(domain, userId);
+        // Admin principal roles only permit the policy-governed save; invite authority comes from
+        // the inviter's credential and realm assignment.
+        return new PrincipalContext.Builder()
+            .withDefaultRealm(realm)
+            .withDataDomain(owned)
+            .withUserId(userId)
+            .withScope("Authentication")
+            .withRoles(new String[]{"admin", "user"});
+    }
+
+    private AccessInviteRequest request(String email, String... roles) {
+        AccessInviteRequest request = new AccessInviteRequest();
+        request.setEmail(email);
+        request.setGrantedRoles(new ArrayList<>(List.of(roles)));
+        return request;
+    }
+
+    private AccessInviteResponse create(String realm, PrincipalContext inviter, AccessInviteRequest request) {
+        return as(inviter, () -> inviteService.createInvite(realm, inviter.getUserId(), request));
+    }
+
+    private AccessInviteAcceptResponse acceptAnonymously(String realm, AccessInviteResponse invite, String invitee) {
+        AccessInviteAcceptRequest request = accept(realm, invite.getInviteToken());
+        request.setPassword(PASSWORD);
+        PrincipalContext anonymous = SecurityCallScope.anonymous(realm, testUtils.getTestDataDomain(), envConfigUtils.getAnonymousUserId());
+        return SecurityCallScope.runWithContexts(anonymous, rContext, () -> inviteService.acceptInvite(request));
+    }
+
+    private AccessInviteAcceptRequest accept(String realm, String token) {
+        assertNotNull(token);
+        AccessInviteAcceptRequest request = new AccessInviteAcceptRequest();
+        request.setRealm(realm);
+        request.setToken(token);
+        return request;
+    }
+
+    private PrincipalContext select(String userId, String headerTenant, String tokenTenant) {
+        PrincipalContext signedIn = new PrincipalContext.Builder()
+            .withDefaultRealm(POOLED)
+            .withDataDomain(PooledRealmTenantInvitePolicy.copy(partition(TENANT_A, 0), userId))
+            .withUserId(userId)
+            .withScope("Authentication")
+            .withRoles(new String[]{"user"})
+            .build();
+        return asSystem(() -> TenantSelectionProbe.select(systemDirectory, realmMembershipService, signedIn, headerTenant, tokenTenant));
+    }
+
+    private <T> T as(PrincipalContext principal, Supplier<T> action) {
+        return SecurityCallScope.runWithContexts(principal, rContext, action);
+    }
+
+    /** Test fixtures are written as the framework system principal, like the service's own writes. */
+    private <T> T asSystem(Supplier<T> action) {
+        return SecurityCallScope.runWithContexts(securityUtils.getSystemPrincipalContext(), securityUtils.getSystemSecurityResourceContext(), action);
+    }
+
+    private void createAccount(String userId, Set<String> roles, DomainContext domainContext) {
+        asSystem(() -> authProviderFactory.getUserManager().createUser(userId, PASSWORD, false, roles, domainContext));
+    }
+
+    private void writeAssignment(String userId, List<String> roles, List<String> tenants, DataDomain domain) {
+        writeAssignment(userId, POOLED, roles, tenants, domain);
+    }
+
+    private void writeAssignment(String userId, String realm, List<String> roles, List<String> tenants, DataDomain domain) {
+        asSystem(() -> {
+            UserRealmRole assignment = realmMembershipService.realmsForUser(userId).stream()
+                .filter(candidate -> realm.equals(candidate.getRealmRefName()))
+                .findFirst()
+                .orElseGet(() -> UserRealmRole.builder()
+                    .refName("user-realm-role:" + userId + ":" + realm)
+                    .userId(userId)
+                    .realmRefName(realm)
+                    .status(UserRealmRole.STATUS_ACTIVE)
+                    .dataDomain(PooledRealmTenantInvitePolicy.copy(domain, userId))
+                    .build());
+            assignment.setRoles(new ArrayList<>(roles));
+            assignment.setAuthorizedTenantIds(new ArrayList<>(tenants));
+            return realmMembershipService.upsertUserRealmRole(assignment);
+        });
+    }
+
+    private UserRealmRole assignment(String userId, String realm) {
+        List<UserRealmRole> found = assignments(userId).stream().filter(a -> realm.equals(a.getRealmRefName())).toList();
+        assertEquals(1, found.size(), "exactly one assignment per (user, realm)");
+        return found.get(0);
+    }
+
+    private List<UserRealmRole> assignments(String userId) {
+        try (var cursor = morphiaDataStoreWrapper.getDataStore(envConfigUtils.getSystemRealm()).find(UserRealmRole.class)
+            .filter(Filters.eq("userId", userId)).iterator()) {
+            return cursor.toList();
+        }
+    }
+
+    private Set<String> realmRoles(String userId, String realm) {
+        Map<String, EnumSet<RoleSource>> sources = as(pContext, () -> identityRoleResolver.resolveRoleSources(userId, realm, null));
+        Set<String> out = new LinkedHashSet<>();
+        sources.forEach((role, from) -> {
+            if (from.contains(RoleSource.REALM)) {
+                out.add(role);
+            }
+        });
+        return out;
+    }
+
+    private Optional<CredentialUserIdPassword> findCredential(String userId) {
+        return as(pContext, () -> credentialRepo.findByUserId(userId, envConfigUtils.getSystemRealm(), true));
+    }
+
+    private CredentialUserIdPassword credential(String userId) {
+        return findCredential(userId).orElseThrow();
+    }
+
+    private UserProfile profile(String realm, String userId) {
+        try (var cursor = morphiaDataStoreWrapper.getDataStore(realm).find(UserProfile.class)
+            .filter(Filters.eq("userId", userId)).iterator()) {
+            List<UserProfile> found = cursor.toList();
+            assertEquals(1, found.size());
+            return found.get(0);
+        }
+    }
+
+    private AccessInvite storedInvite(String realm, AccessInviteResponse invite) {
+        try (var cursor = morphiaDataStoreWrapper.getDataStore(realm).find(AccessInvite.class)
+            .filter(Filters.eq("refName", invite.getRefName())).iterator()) {
+            return cursor.toList().get(0);
+        }
+    }
+
+    private static void assertRefused(Code expected, Executable action) {
+        AccessInviteException refused = assertThrows(AccessInviteException.class, action);
+        assertEquals(expected, refused.getCode(), refused.getMessage());
+    }
+}

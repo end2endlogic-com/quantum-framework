@@ -32,6 +32,15 @@ import java.util.List;
  * Roles that must hold in a single realm (for example roles granted by an
  * access invite) belong here, never on the credential's flat roles.
  *
+ * Data domain: the assignment's own dataDomain is the user's default partition
+ * inside the realm. In a pooled realm, tenant selection builds the request
+ * partition from the tenant's RealmTenantMembership and, when this data domain
+ * is for the same tenant/org/account, carries over its dataSegment, locationId
+ * and businessTransactionId. An access invite accepted under the
+ * pooled-realm-tenant policy writes the inviter's partition here (owner = the
+ * invitee) for a new assignment and unions the tenant into authorizedTenantIds;
+ * an existing assignment keeps its default partition.
+ *
  * There is at most one assignment per (userId, realmRefName). The unique index
  * enforcing it is created by UserRealmRoleRepo.ensureUniqueAssignmentIndex
  * (not declared here, so existing duplicates cannot break datastore start-up).

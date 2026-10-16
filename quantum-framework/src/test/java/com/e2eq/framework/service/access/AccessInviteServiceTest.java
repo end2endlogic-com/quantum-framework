@@ -536,6 +536,15 @@ class AccessInviteServiceTest extends BaseRepoTest {
         assertEquals(List.of("viewer"), assignments.get(0).getRoles());
         assertEquals(UserRealmRole.STATUS_ACTIVE, assignments.get(0).getStatus());
         assertTrue(realmRoles(invitee, otherRealm).isEmpty(), "the roles apply in the invited realm only");
+
+        // A dedicated realm keeps its pre-policy placement: the realm's own tenant and data domain.
+        assertEquals(DedicatedRealmInvitePolicy.ID, invite.getAcceptancePolicy());
+        assertNotNull(invite.getScope(), "the inviter's resolved partition is recorded");
+        Realm registered = as(pContext, () -> systemDirectory.findRealmByRefName(realm).orElseThrow());
+        assertEquals(List.of(registered.getDomainContext().getTenantId()), assignments.get(0).getAuthorizedTenantIds());
+        assertEquals(registered.getDomainContext().getTenantId(), assignments.get(0).getDataDomain().getTenantId());
+        assertEquals(realm, credential.getDomainContext().getTenantId());
+        assertEquals(realm, credential.getDomainContext().getDefaultRealm());
     }
 
     @Test

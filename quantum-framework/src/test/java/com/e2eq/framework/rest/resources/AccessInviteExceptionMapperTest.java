@@ -23,7 +23,10 @@ class AccessInviteExceptionMapperTest {
         assertMapped(Code.INVITE_ROLE_NOT_GRANTABLE, 403);
         assertMapped(Code.INVITE_APPLICATION_NOT_GRANTABLE, 403);
         assertMapped(Code.INVITE_REALM_NOT_ACCESSIBLE, 403);
+        assertMapped(Code.INVITE_SCOPE_NOT_AUTHORIZED, 403);
+        assertMapped(Code.INVITE_SCOPE_UNRESOLVABLE, 403);
         assertMapped(Code.INVITE_NOT_FOUND, 404);
+        assertMapped(Code.INVITE_POLICY_UNAVAILABLE, 409);
         assertMapped(Code.INVITE_NOT_PENDING, 409);
         assertMapped(Code.INVITE_ACCOUNT_REALM_CONFLICT, 409);
         assertMapped(Code.INVITE_EXPIRED, 410);

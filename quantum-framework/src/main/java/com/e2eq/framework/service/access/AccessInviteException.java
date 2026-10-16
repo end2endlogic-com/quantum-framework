@@ -39,6 +39,24 @@ public class AccessInviteException extends RuntimeException {
         INVITE_ACCOUNT_REALM_CONFLICT,
         /** An invite is for exactly one concrete realm; multi-realm or wildcard requests are refused (400). */
         INVITE_SINGLE_REALM_REQUIRED,
+        /**
+         * The inviter is not entitled to the partition the invite applies to (for example, in a
+         * pooled realm its realm assignment does not authorize the tenant and it is not a realm
+         * administrator), or the request claimed a scope other than the inviter's verified one (403).
+         */
+        INVITE_SCOPE_NOT_AUTHORIZED,
+        /**
+         * The inviter's data partition could not be resolved for the invite's realm, or the policy
+         * cannot carry it to the invitee (for example it names an org the tenant's realm membership
+         * does not, or it adds a policy filter). Nothing falls back to default fields (403).
+         */
+        INVITE_SCOPE_UNRESOLVABLE,
+        /**
+         * No usable acceptance policy: the configured or recorded policy id is unknown, a pooled
+         * realm has no policy configured, the request named a policy other than the realm's, or
+         * the policy does not serve this kind of realm (409).
+         */
+        INVITE_POLICY_UNAVAILABLE,
         /** Invite does not exist in this realm (404). */
         INVITE_NOT_FOUND,
         /** Provisioning failed after the token was verified; the invite stays pending (500). Details are logged only. */

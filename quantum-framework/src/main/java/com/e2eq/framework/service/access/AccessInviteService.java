@@ -10,7 +10,9 @@ import com.e2eq.framework.model.persistent.morphia.UserRealmRoleRepo;
 import com.e2eq.framework.model.security.AccessInvite;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.CredentialUserIdPassword.RealmEntry;
+import com.e2eq.framework.model.security.DataDomainResolution;
 import com.e2eq.framework.model.security.DomainContext;
+import com.e2eq.framework.model.security.InviteScope;
 import com.e2eq.framework.model.security.UserProfile;
 import com.e2eq.framework.model.security.UserRealmRole;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
@@ -18,6 +20,7 @@ import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import com.e2eq.framework.model.securityrules.SecurityContext;
 import com.e2eq.framework.rest.requests.AccessInviteAcceptRequest;
 import com.e2eq.framework.rest.requests.AccessInviteRequest;
+import com.e2eq.framework.rest.requests.AccessInviteScopeClaim;
 import com.e2eq.framework.rest.responses.AccessInviteAcceptResponse;
 import com.e2eq.framework.rest.responses.AccessInviteResponse;
 import com.e2eq.framework.service.access.AccessInviteException.Code;
@@ -91,6 +94,12 @@ public class AccessInviteService {
     @Inject
     QuantumModeConfig quantumModeConfig;
 
+    @Inject
+    InviteAcceptancePolicies acceptancePolicies;
+
+    @Inject
+    com.e2eq.framework.model.persistent.morphia.interceptors.ddpolicy.DataDomainResolver dataDomainResolver;
+
     /** Set once the unique (realmRefName, userId) assignment index is known to exist. */
     private final java.util.concurrent.atomic.AtomicBoolean uniqueAssignmentIndexReady = new java.util.concurrent.atomic.AtomicBoolean();
 
@@ -127,10 +136,11 @@ public class AccessInviteService {
         realm = requireSingleRealm(realm, request);
         PrincipalContext caller = requireCaller();
         String requestedRealm = realm;
-        realm = registeredRealm(realm).map(Realm::getRefName).orElseThrow(() -> {
+        Realm realmRecord = registeredRealm(realm).orElseThrow(() -> {
             Log.warnf("access-invite.create.refused reason=realm-not-registered realm=%s", sanitizeForLog(requestedRealm));
             return failure(Code.INVITE_REALM_NOT_ACCESSIBLE, "You cannot invite users into this realm.");
         });
+        realm = realmRecord.getRefName();
         String callerUserId = authenticatedUserId(caller);
         if (!isSystemPrincipal(caller) && (normalize(inviterUserId) == null || !normalize(inviterUserId).equals(callerUserId))) {
             throw failure(Code.INVITE_NOT_AUTHORIZED, "An invite can only be created by the signed-in caller.");
@@ -147,6 +157,27 @@ public class AccessInviteService {
         enforceGrantableRoles(caller, realm, inviterUserId, grantedRoles);
         List<String> applications = normalizeApplications(request.getAuthorizedApplications());
         enforceGrantableApplications(caller, realm, inviterUserId, applications);
+
+        // The acceptance policy runs before the application provisioners. The scope is the
+        // inviter's partition resolved from its verified principal; the body can only echo it.
+        final String inviteRealm = realm;
+        InviteAcceptancePolicy policy = inSystemScope(() -> acceptancePolicies.forCreate(realmRecord, request.getAcceptancePolicy()));
+        InviteScope scope = snapshotScope(caller, realm);
+        requireScopeClaimMatches(realm, callerUserId, request.getScope(), scope);
+        InviteCreation creation = new InviteCreation(
+            realmRecord,
+            caller,
+            callerUserId,
+            isSystemPrincipal(caller),
+            isRealmAdministrator(caller, realm),
+            activeAssignment(callerUserId, realm).orElse(null),
+            scope,
+            request
+        );
+        DataDomain recordDataDomain = inSystemScope(() -> {
+            policy.validateCreate(creation);
+            return policy.inviteRecordDataDomain(creation);
+        });
 
         for (AccessInviteProvisioner provisioner : provisioners) {
             provisioner.validateInviteCreation(realm, inviterUserId, request);
@@ -174,16 +205,18 @@ public class AccessInviteService {
             .grantedRoles(grantedRoles)
             .authorizedApplications(applications.isEmpty() ? null : applications)
             .issuedBySystemPrincipal(isSystemPrincipal(caller))
+            .acceptancePolicy(policy.id())
+            .scope(scope)
             .allowedFunctionalAreas(normalizeList(request.getAllowedFunctionalAreas()))
             .allowedFunctionalDomains(normalizeList(request.getAllowedFunctionalDomains()))
             .allowedActions(normalizeList(request.getAllowedActions()))
             .inviteMessage(request.getInviteMessage())
             .expiresAt(Date.from(Instant.now().plus(defaultExpiryDays(request.getExpiresInDays()), ChronoUnit.DAYS)))
             .status(AccessInvite.Status.PENDING)
-            .dataDomain(buildDataDomain(inviterUserId))
+            .dataDomain(recordDataDomain != null ? recordDataDomain : buildDataDomain(inviterUserId))
             .build();
 
-        invite = inviteRepo.save(realm, invite);
+        invite = inviteRepo.save(inviteRealm, invite);
         for (AccessInviteNotificationService notificationService : notificationServices) {
             notificationService.sendInviteNotification(realm, invite, rawToken);
         }
@@ -263,12 +296,12 @@ public class AccessInviteService {
         String presentedRealm = requestedRealm;
         // Only a registered realm is ever opened, under its registered spelling (an anonymous caller
         // must not be able to make the service open datastores for arbitrary names).
-        String realm = (CONCRETE_REALM.matcher(requestedRealm).matches() ? registeredRealm(requestedRealm) : Optional.<Realm>empty())
-            .map(Realm::getRefName)
+        Realm realmRecord = (CONCRETE_REALM.matcher(requestedRealm).matches() ? registeredRealm(requestedRealm) : Optional.<Realm>empty())
             .orElseThrow(() -> {
                 Log.warnf("access-invite.accept.refused reason=realm-not-registered realm=%s", sanitizeForLog(presentedRealm));
                 return failure(Code.INVITE_TOKEN_INVALID, "Invite token is invalid.");
             });
+        String realm = realmRecord.getRefName();
 
         String presentedHash = hashToken(request.getToken());
         AccessInvite invite = inviteRepo.findByTokenHash(realm, presentedHash)
@@ -320,6 +353,10 @@ public class AccessInviteService {
             }
         }
 
+        // The policy is selected before the claim (an unavailable policy leaves the invite pending
+        // untouched); it decides the grant after the claim, so any failure is rolled back.
+        InviteAcceptancePolicy policy = inSystemScope(() -> acceptancePolicies.forAccept(realmRecord, invite));
+
         AccessInvite claimed = inviteRepo.claimPending(realm, invite.getId(), invite.getTokenHash(), new Date(), accountUserId)
             .orElseThrow(() -> failure(Code.INVITE_NOT_PENDING, "Invite is no longer pending."));
 
@@ -331,7 +368,8 @@ public class AccessInviteService {
                 securityUtils.getSystemPrincipalContext(),
                 securityUtils.getSystemSecurityResourceContext(),
                 () -> acceptInviteInSystemScope(
-                    finalRealm,
+                    realmRecord,
+                    policy,
                     claimed,
                     accountUserId,
                     invitedEmail != null ? invitedEmail : invitedUserId,
@@ -354,7 +392,8 @@ public class AccessInviteService {
     }
 
     private AccessInviteAcceptResponse acceptInviteInSystemScope(
-        String realm,
+        Realm realmRecord,
+        InviteAcceptancePolicy policy,
         AccessInvite invite,
         String invitedUserId,
         String invitedEmail,
@@ -365,28 +404,41 @@ public class AccessInviteService {
     ) {
         // Everything this acceptance grants is undone if any later step fails, so a released
         // (still pending) invite never leaves access behind.
+        String realm = realmRecord.getRefName();
         GrantRollback rollback = new GrantRollback(realm);
         CredentialUserIdPassword credential;
         UserProfile profile;
+        InviteGrant grant;
         try {
+            CredentialUserIdPassword existingAccount = accountExists
+                ? credentialRepo.findByUserIdIgnoreCaseIgnoreRules(invitedUserId, systemRealm())
+                    .orElseThrow(() -> failure(Code.INVITE_PROVISIONING_FAILED, "The invite could not be accepted. Try again or contact the inviter."))
+                : null;
+            // The policy re-runs its create-time entitlement check against the recorded scope.
+            CredentialUserIdPassword inviter = invite.isIssuedBySystemPrincipal() ? null : credentialOf(invite.getInvitedByUserId()).orElse(null);
+            boolean inviterAdmin = inviter != null && credentialCanAccessRealm(inviter, realm) && rolesInRealm(inviter, realm).contains(ADMIN_ROLE);
+            UserRealmRole inviterAssignment = inviter == null ? null : activeAssignment(inviter.getUserId(), realm).orElse(null);
+            grant = policy.resolveGrant(new InviteAcceptance(
+                realmRecord, invite, invitedUserId, accountExists, existingAccount, inviterAdmin, inviterAssignment));
+            requireGrantWithinInvite(realmRecord, invite, policy, grant, accountExists);
+
             if (accountExists) {
-                CredentialUserIdPassword existing = credentialRepo.findByUserIdIgnoreCaseIgnoreRules(invitedUserId, systemRealm())
-                    .orElseThrow(() -> failure(Code.INVITE_PROVISIONING_FAILED, "The invite could not be accepted. Try again or contact the inviter."));
+                CredentialUserIdPassword existing = existingAccount;
                 rollback.captureAssignment(existing.getUserId());
-                ensureRealmAssignment(realm, invite, existing);
+                ensureRealmAssignment(realm, existing, grant);
                 rollback.realmEntryAdded = !hasExplicitRealmEntry(existing, realm);
                 rollback.userId = existing.getUserId();
-                credential = ensureUserCredential(realm, invitedUserId, true, null);
+                credential = ensureUserCredential(realm, invitedUserId, true, null, null);
                 rollback.realmEntryAdded = rollback.realmEntryAdded && hasExplicitRealmEntry(credential, realm);
             }
             else {
-                credential = ensureUserCredential(realm, invitedUserId, false, password);
+                credential = ensureUserCredential(realm, invitedUserId, false, password, grant.getHomeContext());
                 rollback.createdCredential = credential;
                 rollback.userId = credential.getUserId();
                 rollback.captureAssignment(credential.getUserId());
-                ensureRealmAssignment(realm, invite, credential);
+                ensureRealmAssignment(realm, credential, grant);
             }
-            profile = ensureUserProfile(realm, credential, invitedUserId, invitedEmail, firstName, lastName);
+            profile = ensureUserProfile(realm, credential, invitedUserId, invitedEmail, firstName, lastName, grant.getProfileDataDomain());
             for (AccessInviteProvisioner provisioner : provisioners) {
                 provisioner.onInviteAccepted(realm, invite, credential, profile);
             }
@@ -402,6 +454,7 @@ public class AccessInviteService {
             .defaultRealm(realm)
             .inviteRefName(invite.getRefName())
             .grantedScopes(invite.getScopeRefs() == null ? List.of() : invite.getScopeRefs().stream().map(EntityReference::getEntityRefName).toList())
+            .tenantId(grant.getTenantId())
             .build();
     }
 
@@ -411,7 +464,8 @@ public class AccessInviteService {
         String userId,
         String email,
         String firstName,
-        String lastName
+        String lastName,
+        DataDomain profileDataDomain
     ) {
         Optional<UserProfile> existing = userProfileRepo.getByUserIdWithIgnoreRules(realm, userId);
         if (existing.isPresent()) {
@@ -430,7 +484,7 @@ public class AccessInviteService {
             .fname(firstName)
             .lname(lastName)
             .displayName(buildDisplayName(userId, firstName, lastName, email))
-            .dataDomain(buildDataDomain(userId))
+            .dataDomain(profileDataDomain != null ? profileDataDomain : buildDataDomain(userId))
             .build();
         return userProfileRepo.save(realm, profile);
     }
@@ -439,7 +493,8 @@ public class AccessInviteService {
         String realm,
         String userId,
         boolean accountExists,
-        String password
+        String password,
+        DomainContext homeContext
     ) {
         Optional<CredentialUserIdPassword> existing = credentialRepo.findByUserIdIgnoreCaseIgnoreRules(userId, systemRealm());
         if (existing.isPresent()) {
@@ -466,7 +521,10 @@ public class AccessInviteService {
         Set<String> roles = new LinkedHashSet<>();
         roles.add(BASELINE_USER_ROLE);
 
-        DomainContext domainContext = buildInviteDomainContext(realm);
+        if (homeContext == null) {
+            throw new IllegalStateException("The acceptance policy returned no home context for a new account");
+        }
+        DomainContext domainContext = homeContext;
         try {
             authProviderFactory.getUserManager().createUser(
                 userId,
@@ -517,17 +575,6 @@ public class AccessInviteService {
             authorizedRealms.add(entry);
             credential.setAuthorizedRealms(authorizedRealms);
         }
-    }
-
-    private DomainContext buildInviteDomainContext(String realm) {
-        DataDomain base = buildDataDomain("invite");
-        return DomainContext.builder()
-            .tenantId(realm)
-            .defaultRealm(realm)
-            .orgRefName(base.getOrgRefName())
-            .accountId(base.getAccountNum())
-            .dataSegment(base.getDataSegment())
-            .build();
     }
 
     private DataDomain buildDataDomain(String ownerId) {
@@ -1002,19 +1049,24 @@ public class AccessInviteService {
      * {@code authorizedApplications}; otherwise that field is left as it is. One document per
      * (userId, realm), so accepting again merges instead of duplicating.
      */
-    private UserRealmRole ensureRealmAssignment(String realm, AccessInvite invite, CredentialUserIdPassword credential) {
+    private UserRealmRole ensureRealmAssignment(String realm, CredentialUserIdPassword credential, InviteGrant grant) {
         String userId = credential.getUserId();
         requireUniqueAssignmentIndex();
-        UserRealmRole assignment = assignment(userId, realm).orElseGet(() -> newAssignment(userId, realm));
+        UserRealmRole assignment = assignment(userId, realm).orElseGet(() -> newAssignment(userId, realm, grant));
         if (assignment.getSubject() == null) {
             assignment.setSubject(credential.getSubject());
         }
         if (assignment.getStatus() == null) {
             assignment.setStatus(UserRealmRole.STATUS_ACTIVE);
         }
-        assignment.setRoles(unionIgnoreCase(assignment.getRoles(), invite.getGrantedRoles()));
+        assignment.setRoles(unionIgnoreCase(assignment.getRoles(), grant.getRoles()));
+        if (grant.getAddTenantIds() != null && !grant.getAddTenantIds().isEmpty()) {
+            // Membership in several tenants of a pooled realm: the tenant is added, never replaces
+            // the others, and the assignment's default partition (its data domain) is kept.
+            assignment.setAuthorizedTenantIds(unionExact(assignment.getAuthorizedTenantIds(), grant.getAddTenantIds()));
+        }
 
-        List<String> invitedApplications = normalizeApplications(invite.getAuthorizedApplications());
+        List<String> invitedApplications = normalizeApplications(grant.getAuthorizedApplications());
         if (!invitedApplications.isEmpty()) {
             List<String> current = assignment.getAuthorizedApplications();
             boolean wildcard = invitedApplications.contains(UserRealmRole.APPLICATION_WILDCARD)
@@ -1026,26 +1078,151 @@ public class AccessInviteService {
         return realmMembershipService.upsertUserRealmRole(assignment);
     }
 
-    /** A new assignment scoped like a provisioned one: the realm's own data domain and tenant. */
-    private UserRealmRole newAssignment(String userId, String realm) {
-        DomainContext realmContext = registeredRealm(realm).map(Realm::getDomainContext)
-            .orElseThrow(() -> new IllegalStateException("Realm '" + realm + "' has no registered data-domain configuration"));
-        List<String> tenants = realmContext.getTenantId() == null ? null : List.of(realmContext.getTenantId());
+    /** A new assignment scoped as the acceptance policy decided (its data domain and initial tenants). */
+    private UserRealmRole newAssignment(String userId, String realm, InviteGrant grant) {
+        if (grant.getAssignmentDataDomain() == null) {
+            throw new IllegalStateException("The acceptance policy returned no data domain for the realm assignment");
+        }
         return UserRealmRole.builder()
             .refName("user-realm-role:" + userId + ":" + realm)
             .displayName(userId + " in " + realm)
             .userId(userId)
             .realmRefName(realm)
             .status(UserRealmRole.STATUS_ACTIVE)
-            .authorizedTenantIds(tenants)
-            .sponsoringOrgRefName(realmContext.getOrgRefName())
-            .dataDomain(DataDomain.builder()
-                .orgRefName(realmContext.getOrgRefName())
-                .accountNum(realmContext.getAccountId())
-                .tenantId(realmContext.getTenantId())
-                .ownerId(userId)
-                .build())
+            .authorizedTenantIds(grant.getNewAssignmentTenantIds() == null ? null : new ArrayList<>(grant.getNewAssignmentTenantIds()))
+            .sponsoringOrgRefName(grant.getSponsoringOrgRefName())
+            .dataDomain(grant.getAssignmentDataDomain())
             .build();
+    }
+
+    /**
+     * A policy may narrow what an invite grants but never widen it: its roles and applications must
+     * be ones the invite carries (and that were checked against the inviter), and in a pooled realm
+     * every tenant it names must be an active member of the realm.
+     */
+    private void requireGrantWithinInvite(Realm realm, AccessInvite invite, InviteAcceptancePolicy policy, InviteGrant grant, boolean accountExists) {
+        if (grant == null) {
+            throw policyFault(realm, invite, policy, "no-grant");
+        }
+        Set<String> invitedRoles = new LinkedHashSet<>();
+        addNormalized(invitedRoles, invite.getGrantedRoles());
+        Set<String> grantRoles = new LinkedHashSet<>();
+        addNormalized(grantRoles, grant.getRoles());
+        if (!invitedRoles.containsAll(grantRoles)) {
+            throw policyFault(realm, invite, policy, "roles-outside-invite");
+        }
+        List<String> invitedApplications = normalizeApplications(invite.getAuthorizedApplications());
+        if (!invitedApplications.containsAll(normalizeApplications(grant.getAuthorizedApplications()))) {
+            throw policyFault(realm, invite, policy, "applications-outside-invite");
+        }
+        if (!accountExists && grant.getHomeContext() == null) {
+            throw policyFault(realm, invite, policy, "no-home-context");
+        }
+        if (InviteAcceptancePolicies.pooled(realm)) {
+            Set<String> tenants = new LinkedHashSet<>();
+            if (grant.getNewAssignmentTenantIds() != null) {
+                tenants.addAll(grant.getNewAssignmentTenantIds());
+            }
+            if (grant.getAddTenantIds() != null) {
+                tenants.addAll(grant.getAddTenantIds());
+            }
+            if (grant.getAssignmentDataDomain() != null) {
+                tenants.add(grant.getAssignmentDataDomain().getTenantId());
+            }
+            if (!accountExists) {
+                tenants.add(grant.getHomeContext().getTenantId());
+            }
+            for (String tenant : tenants) {
+                if (tenant == null || realmMembershipService.tenantInRealm(realm.getRefName(), tenant).isEmpty()) {
+                    throw policyFault(realm, invite, policy, "tenant-not-active-member");
+                }
+            }
+        }
+    }
+
+    private AccessInviteException policyFault(Realm realm, AccessInvite invite, InviteAcceptancePolicy policy, String reason) {
+        Log.errorf("access-invite.accept.refused reason=policy-grant-%s realm=%s invite=%s policy=%s",
+            reason, realm.getRefName(), invite.getRefName(), policy.id());
+        return failure(Code.INVITE_POLICY_UNAVAILABLE, "The invite policy for this realm returned an invalid grant.");
+    }
+
+    private static final String INVITE_FUNCTIONAL_AREA = "SECURITY";
+    private static final String INVITE_FUNCTIONAL_DOMAIN = "ACCESS_INVITE";
+
+    /**
+     * The inviter's data partition, resolved by the framework's {@code DataDomainResolver} from its
+     * verified principal context (principal DataDomainPolicy, then the global policy, then the
+     * principal's DataDomain) for the invite's functional area. Whatever fields that yields are
+     * kept. An unresolvable partition is refused; nothing falls back to default fields.
+     */
+    private InviteScope snapshotScope(PrincipalContext caller, String realm) {
+        DataDomainResolution resolution;
+        try {
+            resolution = dataDomainResolver.resolveForQuery(caller, INVITE_FUNCTIONAL_AREA, INVITE_FUNCTIONAL_DOMAIN, AccessInvite.class);
+        }
+        catch (RuntimeException e) {
+            Log.warnf(e, "access-invite.create.refused reason=partition-resolution-failed realm=%s", sanitizeForLog(realm));
+            throw failure(Code.INVITE_SCOPE_UNRESOLVABLE, "Your data partition could not be resolved for this realm.");
+        }
+        if (resolution == null || !resolution.isResolved() || resolution.dataDomain() == null) {
+            Log.warnf("access-invite.create.refused reason=partition-unresolvable realm=%s detail=%s", sanitizeForLog(realm),
+                resolution == null ? "null" : sanitizeForLog(resolution.reason()));
+            throw failure(Code.INVITE_SCOPE_UNRESOLVABLE, "Your data partition could not be resolved for this realm.");
+        }
+        DataDomain resolved = resolution.dataDomain();
+        DataDomain partition = new DataDomain();
+        partition.setOrgRefName(resolved.getOrgRefName());
+        partition.setAccountNum(resolved.getAccountNum());
+        partition.setTenantId(resolved.getTenantId());
+        partition.setDataSegment(resolved.getDataSegment());
+        partition.setOwnerId(resolved.getOwnerId());
+        partition.setLocationId(resolved.getLocationId());
+        partition.setBusinessTransactionId(resolved.getBusinessTransactionId());
+        String policyFilter = null;
+        java.util.Map<String, Object> facetFilters = null;
+        if (resolution instanceof DataDomainResolution.Resolved detail) {
+            policyFilter = detail.policyFilter();
+            facetFilters = detail.facetFilters() == null || detail.facetFilters().isEmpty() ? null : new java.util.LinkedHashMap<>(detail.facetFilters());
+        }
+        return InviteScope.builder()
+            .realmRefName(trimToNull(caller.getDefaultRealm()))
+            .dataDomain(partition)
+            .policyFilter(policyFilter)
+            .facetFilters(facetFilters)
+            .resolvedBy("DataDomainResolver:" + INVITE_FUNCTIONAL_AREA + ":" + INVITE_FUNCTIONAL_DOMAIN)
+            .build();
+    }
+
+    /** A scope in the request body may only repeat the resolved one; any differing field is refused. */
+    private void requireScopeClaimMatches(String realm, String callerUserId, AccessInviteScopeClaim claim, InviteScope scope) {
+        if (claim == null) {
+            return;
+        }
+        DataDomain partition = scope.getDataDomain();
+        List<String> differing = new ArrayList<>();
+        if (trimToNull(claim.getRealm()) != null && !claim.getRealm().trim().equalsIgnoreCase(String.valueOf(scope.getRealmRefName()))) {
+            differing.add("realm");
+        }
+        compareClaim(differing, "tenantId", claim.getTenantId(), partition.getTenantId());
+        compareClaim(differing, "orgRefName", claim.getOrgRefName(), partition.getOrgRefName());
+        compareClaim(differing, "accountNum", claim.getAccountNum(), partition.getAccountNum());
+        compareClaim(differing, "locationId", claim.getLocationId(), partition.getLocationId());
+        compareClaim(differing, "businessTransactionId", claim.getBusinessTransactionId(), partition.getBusinessTransactionId());
+        if (claim.getDataSegment() != null && claim.getDataSegment() != partition.getDataSegment()) {
+            differing.add("dataSegment");
+        }
+        if (!differing.isEmpty()) {
+            Log.warnf("access-invite.create.refused reason=scope-claim-differs realm=%s inviter=%s fields=%s",
+                sanitizeForLog(realm), sanitizeForLog(callerUserId), differing);
+            throw failure(Code.INVITE_SCOPE_NOT_AUTHORIZED, "An invite applies to your current data partition; the requested scope differs from it.");
+        }
+    }
+
+    private static void compareClaim(List<String> differing, String field, String claimed, String resolved) {
+        String value = trimToNull(claimed);
+        if (value != null && !value.equals(resolved)) {
+            differing.add(field);
+        }
     }
 
     /**
@@ -1142,6 +1319,7 @@ public class AccessInviteService {
             UserRealmRole restored = current.get();
             restored.setRoles(priorAssignment.getRoles());
             restored.setAuthorizedApplications(priorAssignment.getAuthorizedApplications());
+            restored.setAuthorizedTenantIds(priorAssignment.getAuthorizedTenantIds());
             restored.setStatus(priorAssignment.getStatus());
             realmMembershipService.upsertUserRealmRole(restored);
         }
@@ -1396,6 +1574,8 @@ public class AccessInviteService {
             .allowedFunctionalDomains(invite.getAllowedFunctionalDomains() == null ? List.of() : invite.getAllowedFunctionalDomains())
             .allowedActions(invite.getAllowedActions() == null ? List.of() : invite.getAllowedActions())
             .authorizedApplications(invite.getAuthorizedApplications() == null ? List.of() : invite.getAuthorizedApplications())
+            .acceptancePolicy(invite.getAcceptancePolicy())
+            .scope(invite.getScope())
             .status(invite.getStatus() != null ? invite.getStatus().name() : null)
             .expiresAt(invite.getExpiresAt())
             .acceptedAt(invite.getAcceptedAt())

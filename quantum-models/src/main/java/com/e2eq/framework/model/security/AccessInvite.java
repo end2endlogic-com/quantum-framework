@@ -88,6 +88,21 @@ public class AccessInvite extends BaseModel {
      */
     protected boolean issuedBySystemPrincipal;
 
+    /**
+     * Id of the {@code InviteAcceptancePolicy} that governs this invite, fixed at creation from the
+     * realm's configuration. Null only on invites created before acceptance policies existed; those
+     * use the realm's configured policy.
+     */
+    protected String acceptancePolicy;
+
+    /**
+     * The inviter's resolved data partition when the invite was created, from its verified
+     * principal context (never the request body). The acceptance policy derives the invitee's
+     * placement from it.
+     */
+    @Valid
+    protected InviteScope scope;
+
     protected String inviteMessage;
 
     @NotNull

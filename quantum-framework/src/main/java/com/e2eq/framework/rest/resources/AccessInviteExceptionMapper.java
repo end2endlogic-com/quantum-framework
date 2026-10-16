@@ -29,9 +29,10 @@ public class AccessInviteExceptionMapper implements ExceptionMapper<AccessInvite
         return switch (code) {
             case INVALID_REQUEST, INVITE_TOKEN_INVALID, INVITE_SINGLE_REALM_REQUIRED -> Response.Status.BAD_REQUEST;
             case INVITE_EXPIRED -> Response.Status.GONE;
-            case INVITE_NOT_PENDING, INVITE_ACCOUNT_REALM_CONFLICT -> Response.Status.CONFLICT;
+            case INVITE_NOT_PENDING, INVITE_ACCOUNT_REALM_CONFLICT, INVITE_POLICY_UNAVAILABLE -> Response.Status.CONFLICT;
             case INVITE_IDENTITY_MISMATCH, INVITE_NOT_AUTHORIZED, INVITE_ROLE_NOT_GRANTABLE,
-                 INVITE_APPLICATION_NOT_GRANTABLE, INVITE_REALM_NOT_ACCESSIBLE -> Response.Status.FORBIDDEN;
+                 INVITE_APPLICATION_NOT_GRANTABLE, INVITE_REALM_NOT_ACCESSIBLE,
+                 INVITE_SCOPE_NOT_AUTHORIZED, INVITE_SCOPE_UNRESOLVABLE -> Response.Status.FORBIDDEN;
             case INVITE_SIGN_IN_REQUIRED -> Response.Status.UNAUTHORIZED;
             case INVITE_NOT_FOUND -> Response.Status.NOT_FOUND;
             case INVITE_PROVISIONING_FAILED -> Response.Status.INTERNAL_SERVER_ERROR;

@@ -398,7 +398,43 @@ The system realm is never accessible this way; only the framework system user ca
 
 *Grantable roles and applications.* An inviter can grant only roles it holds in that same realm: its flat credential roles plus the roles of its `UserRealmRole` for the realm (`403 INVITE_ROLE_NOT_GRANTABLE`). Only the framework system user can grant `system`. Applications named in `authorizedApplications` must be registered; a realm administrator may grant any of them (and the admin-only `*`), anyone else only applications its own `UserRealmRole` grant for the realm already includes (`403 INVITE_APPLICATION_NOT_GRANTABLE`). The inviter's realm access, roles, and applications are checked again when the invite is accepted, so an inviter that has since lost them can no longer hand them out (invites created by the framework system principal are exempt). Because flat roles apply in every realm a user can access, inviting an existing account that cannot yet access the realm also brings its flat roles into the realm; the inviter must hold those roles in the realm too (other than the baseline `user`), otherwise acceptance is refused with `403 INVITE_ROLE_NOT_GRANTABLE`.
 
-*Roles apply only in the invited realm.* Flat credential roles apply in every realm the user can access, by design. Invited roles are therefore never written to the credential: on acceptance they go to the invitee's `UserRealmRole` for (userId, invited realm), unioned with any existing assignment for that realm. Named applications are unioned into `UserRealmRole.authorizedApplications`; when the invite names none, that field is left as it is. There is one `UserRealmRole` per (userId, realm), so accepting again merges instead of duplicating. In embedded mode the unique index `uidx_user_realm_role_realm_user` (realmRefName, userId) is created by the first invite acceptance rather than at datastore start-up; if existing duplicate assignments prevent it, acceptance fails closed until they are merged. A new assignment takes the realm's own data domain and tenant. A concurrent change to the same assignment between read and write is refused (optimistic version check) and the acceptance can be retried.
+*Roles apply only in the invited realm.* Flat credential roles apply in every realm the user can access, by design. Invited roles are therefore never written to the credential: on acceptance they go to the invitee's `UserRealmRole` for (userId, invited realm), unioned with any existing assignment for that realm. Named applications are unioned into `UserRealmRole.authorizedApplications`; when the invite names none, that field is left as it is. There is one `UserRealmRole` per (userId, realm), so accepting again merges instead of duplicating. In embedded mode the unique index `uidx_user_realm_role_realm_user` (realmRefName, userId) is created by the first invite acceptance rather than at datastore start-up; if existing duplicate assignments prevent it, acceptance fails closed until they are merged. A new assignment takes the data domain and tenant the realm's acceptance policy decides: the realm's own under `dedicated-realm`, the inviter's partition under `pooled-realm-tenant`. A concurrent change to the same assignment between read and write is refused (optimistic version check) and the acceptance can be retried.
+
+[[invite-acceptance-policy]]
+===== Pooled realms: invite acceptance policy
+
+An invite records only one realm, but a pooled realm (`Realm.tenancyMode = MULTI_TENANT` or `Realm.deploymentType = SHARED`, as set by `POOLED_REALM` provisioning) holds many tenants separated by DataDomain. Where the invitee lands inside the realm is decided by an *invite acceptance policy*, a CDI bean implementing `InviteAcceptancePolicy` and selected by id.
+
+*Which policy.* The realm's policy id comes from `Realm.inviteAcceptancePolicy`; when that is unset, from the application property `quantum.access-invites.realm-policy."<realm>"` (for realms whose catalog is owned by a remote control plane, which does not carry the field yet). If both are set they must agree. Without either, a dedicated realm uses `dedicated-realm` and a pooled realm refuses invites with `409 INVITE_POLICY_UNAVAILABLE`. An unknown or ambiguous id is refused the same way. A request may send `acceptancePolicy` only to repeat the realm's policy. The id is recorded on the invite, and acceptance is refused (`409 INVITE_POLICY_UNAVAILABLE`, invite stays pending) if the realm's policy has changed since.
+
+[source,properties]
+----
+# b2bi: one shared realm for every tenant
+quantum.access-invites.realm-policy."b2bi-com"=pooled-realm-tenant
+----
+
+*Scope snapshot.* When an invite is created the service resolves the inviter's data partition with the framework's `DataDomainResolver` (`resolveForQuery` for `SECURITY:ACCESS_INVITE`): the principal's `DataDomainPolicy`, then the global policy, then the principal's own DataDomain. The principal is the verified, signed-in context (after pooled-realm tenant selection), never request fields. The result is stored as `AccessInvite.scope` (`InviteScope`): the realm it was resolved in, every DataDomain field it yields (tenant, org, account, data segment, owner, location, business transaction), and any policy filter or facet filters. A partition that cannot be resolved is refused with `403 INVITE_SCOPE_UNRESOLVABLE`; nothing falls back to default fields. A request `scope` may only echo the snapshot: any field that differs is refused with `403 INVITE_SCOPE_NOT_AUTHORIZED`.
+
+*Built-in policies.*
+
+[cols="1,3,3",options="header"]
+|===
+|Policy |At creation |At acceptance
+|`dedicated-realm` (default)
+|Refuses a pooled realm.
+|Today's placement: a new account's home context is the realm; a new `UserRealmRole` takes the realm's registered data domain and tenant.
+|`pooled-realm-tenant`
+|The scope must be resolved in this realm, its tenant must be an active `RealmTenantMembership` of the realm, its org/account must be that membership's, and it must carry no policy filter or facet filters (else `403 INVITE_SCOPE_UNRESOLVABLE`). The inviter must be entitled to the tenant: its `UserRealmRole` for the realm authorizes it (`authorizedTenantIds` / `authorizedTenantRegEx`), or it is a realm administrator or the system principal (else `403 INVITE_SCOPE_NOT_AUTHORIZED`). The invite record itself is stored in the inviter's partition.
+|Re-runs the creation checks against the inviter's current assignment; if the inviter has lost the tenant, `403 INVITE_SCOPE_NOT_AUTHORIZED` and the invite stays pending. The invitee's partition is the snapshot with `ownerId` set to the invitee. A new account's home context is that tenant/org/account/data segment; a new `UserRealmRole` takes the partition as its data domain; the tenant is unioned into `authorizedTenantIds` (an existing member keeps its other tenants and its default partition, so one user can belong to several tenants); the `UserProfile` is created in the partition. Roles stay realm-scoped: one role list per (user, realm).
+|===
+
+Pooled-realm tenant selection (`SecurityFilter`) builds a request's DataDomain from the tenant's `RealmTenantMembership`. When the user's `UserRealmRole` data domain (its default partition in the realm) is for that same tenant, org and account, its data segment, location, and business transaction carry over, so an invitee placed in a partition with a data segment works in that segment. Another tenant of the same user does not inherit it.
+
+*Fail closed.* A policy that throws while resolving the grant rolls back everything the acceptance wrote and releases the claim. The service also refuses a grant that names roles or applications the invite does not carry, or (in a pooled realm) a tenant that is not an active member of the realm.
+
+*Order.* Creation: realm access, grantable roles and applications, then `InviteAcceptancePolicy.validateCreate`, then `AccessInviteProvisioner.validateInviteCreation` and `validateScopes`. Acceptance: identity binding and the inviter's realm/role re-check, the claim, `InviteAcceptancePolicy.resolveGrant`, the grant (credential, `UserRealmRole`, `UserProfile`), then `AccessInviteProvisioner.onInviteAccepted`. Provisioners therefore see the invitee already placed.
+
+*Custom policies.* An application whose pooled realm needs other rules (for example partner and operator tenants) adds an `@ApplicationScoped` `InviteAcceptancePolicy` with its own id and configures the realm to use it. It receives the realm, the invite (with its scope snapshot), the invitee, and the inviter's current assignment and administrator status, and returns an `InviteGrant`.
 
 The persisted `AccessInvite` model includes:
 
@@ -406,6 +442,8 @@ The persisted `AccessInvite` model includes:
 - `invitedByUserId`
 - `scopeRefs`
 - `grantedRoles` (realm-scoped; written to the invitee's `UserRealmRole` for the invite's realm)
+- `acceptancePolicy` (id of the realm's acceptance policy when the invite was created)
+- `scope` (`InviteScope`: the inviter's resolved partition when the invite was created)
 - `authorizedApplications` (optional; written to the same `UserRealmRole`)
 - `allowedFunctionalAreas`
 - `allowedFunctionalDomains`
@@ -502,22 +540,24 @@ What happens when an invite is accepted:
 - the invited roles, and any named applications, are written to the user's `UserRealmRole` for the invite's realm (merged by union), never to the credential's flat roles
 - if any step after the claim fails (credential, assignment, profile, or an `AccessInviteProvisioner`), the grant is rolled back: a just-created account is deleted, the prior `UserRealmRole` is restored (or the new one removed), and a realm entry added by the attempt is removed; then the claim is released and the invite stays pending
 - the invite is claimed atomically, so a token can be used once; a reused, revoked, or already-accepted token returns `409 INVITE_NOT_PENDING`, an expired one `410 INVITE_EXPIRED`, an unknown or altered one `400 INVITE_TOKEN_INVALID`
-- a `UserProfile` is created if needed
+- the realm's acceptance policy re-checks the inviter's entitlement to the invite's scope and decides the grant (see <<invite-acceptance-policy>>); the response's `tenantId` names the tenant the invitee was placed in
+- a `UserProfile` is created if needed (in the invitee's partition under `pooled-realm-tenant`)
 - the invite status is changed to `ACCEPTED`
 
 Refusals use the shared `RestError` payload with a stable `errorCode`.
 
 ==== Invite extension points
 
-The invite flow is intentionally extensible through two SPIs:
+The invite flow is intentionally extensible through three SPIs:
 
+- `InviteAcceptancePolicy` (where the invitee lands; see <<invite-acceptance-policy>>)
 - `AccessInviteProvisioner`
 - `AccessInviteNotificationService`
 
 `AccessInviteProvisioner` can:
 
 - validate requested scopes when the invite is created
-- perform application-specific provisioning when the invite is accepted
+- perform application-specific provisioning when the invite is accepted (after the acceptance policy's grant is written)
 
 `AccessInviteNotificationService` can:
 

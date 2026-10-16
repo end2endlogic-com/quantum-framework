@@ -225,6 +225,37 @@ class SecurityFilterTenantSelectionTest {
     }
 
     @Test
+    void assignmentPartitionRefinesTheSameTenantOnly() {
+        Realm realm = realm("pooled", RealmTenancyMode.MULTI_TENANT, "realm-default");
+        UserRealmRole assignment = assignment("pooled", "tenant-a", "tenant-b");
+        DataDomain partition = DataDomain.builder()
+            .tenantId("tenant-a").orgRefName("org-a").accountNum("account-a")
+            .dataSegment(3).ownerId("user@example.test").build();
+        partition.setLocationId("dock-7");
+        assignment.setDataDomain(partition);
+
+        PrincipalContext inA = filter(realm, assignment, membership("pooled", "tenant-a", "org-a", "account-a"))
+            .applyTenantSelection(context("pooled", "tenant-a"), null, "tenant-a");
+        assertEquals(3, inA.getDataDomain().getDataSegment());
+        assertEquals("dock-7", inA.getDataDomain().getLocationId());
+        assertEquals(3, inA.getDomainContext().getDataSegment());
+        assertEquals("user@example.test", inA.getDataDomain().getOwnerId());
+
+        // Another tenant of the same user does not inherit tenant A's partition.
+        PrincipalContext inB = filter(realm, assignment, membership("pooled", "tenant-b", "org-b", "account-b"))
+            .applyTenantSelection(context("pooled", "tenant-a"), "tenant-b", "tenant-a");
+        assertEquals(0, inB.getDataDomain().getDataSegment());
+        assertEquals(null, inB.getDataDomain().getLocationId());
+
+        // A partition whose org differs from the membership is ignored: the membership is authoritative.
+        partition.setOrgRefName("other-org");
+        PrincipalContext mismatch = filter(realm, assignment, membership("pooled", "tenant-a", "org-a", "account-a"))
+            .applyTenantSelection(context("pooled", "tenant-a"), null, "tenant-a");
+        assertEquals("org-a", mismatch.getDataDomain().getOrgRefName());
+        assertEquals(0, mismatch.getDataDomain().getDataSegment());
+    }
+
+    @Test
     void multiTenantRealmBuildsDataDomainFromAuthorizedMembership() {
         Realm realm = realm("pooled", RealmTenancyMode.MULTI_TENANT, "tenant-a");
         SecurityFilter filter = filter(realm, assignment("pooled", "tenant-b"),

@@ -53,6 +53,19 @@ public class AccessInviteRequest {
      */
     protected List<String> authorizedApplications;
 
+    /**
+     * Optional. Id of the acceptance policy; when given it must be the policy configured for the
+     * invite's realm (a request can never pick a different policy).
+     */
+    protected String acceptancePolicy;
+
+    /**
+     * Optional echo of the partition the invite applies to. The scope is always taken from the
+     * inviter's verified principal context; a claim that differs is refused
+     * ({@code 403 INVITE_SCOPE_NOT_AUTHORIZED}).
+     */
+    protected AccessInviteScopeClaim scope;
+
     protected Integer expiresInDays;
 
     protected String inviteMessage;
