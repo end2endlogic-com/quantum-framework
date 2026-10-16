@@ -795,7 +795,9 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
             contextRealm = realmOverride;
             realmSwitched = true;
         }
-        String[] roles = claims.getTokenRoles().toArray(String[]::new);
+        String[] roles = realmSwitched
+                ? delegatedRolesAfterRealmSwitch(userId, claims.getTokenRoles(), signedRealm, contextRealm)
+                : claims.getTokenRoles().toArray(String[]::new);
 
         Log.infof("Delegated identity: principal from trusted-issuer token claims (iss=%s, sub=%s, userId=%s, realm=%s, roles=%s)",
                 claims.getIssuer(), sub, userId, contextRealm, java.util.Arrays.toString(roles));
@@ -1241,11 +1243,39 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         throw new IllegalStateException("Neither impersonateSubject nor impersonateUserId provided");
     }
 
+    /**
+     * The token's role claims include the issuing realm's UserRealmRole roles, which apply only
+     * in that realm. After an X-Realm switch they are removed (a role that is also a flat role is
+     * removed too: fail closed) and the target realm's own assignment roles are added; the
+     * remaining token roles are the flat credential roles, which apply in every realm by design.
+     */
+    String[] delegatedRolesAfterRealmSwitch(String userId, java.util.Collection<String> tokenRoles,
+                                            String issuingRealm, String targetRealm) {
+        java.util.Set<String> issuingRealmRoles = new java.util.HashSet<>();
+        realmMembershipService.assignmentForUser(userId, issuingRealm)
+                .map(com.e2eq.framework.model.security.UserRealmRole::getRoles)
+                .ifPresent(list -> list.stream().filter(java.util.Objects::nonNull)
+                        .map(r -> r.trim().toLowerCase(Locale.ROOT)).forEach(issuingRealmRoles::add));
+        java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>();
+        if (tokenRoles != null) {
+            for (String role : tokenRoles) {
+                if (role != null && !issuingRealmRoles.contains(role.trim().toLowerCase(Locale.ROOT))) {
+                    out.add(role);
+                }
+            }
+        }
+        realmMembershipService.assignmentForUser(userId, targetRealm)
+                .map(com.e2eq.framework.model.security.UserRealmRole::getRoles)
+                .ifPresent(list -> list.stream().filter(java.util.Objects::nonNull).forEach(out::add));
+        return out.toArray(String[]::new);
+    }
+
     private PrincipalContext buildImpersonatedContext(CredentialUserIdPassword targetCreds, CredentialUserIdPassword originalCreds,
                                                      String actingOnBehalfOfSubject, String actingOnBehalfOfUserId) {
         // Use the target credential's realm for UserProfile/UserGroup lookups during impersonation
         String targetRealm = targetCreds.getDomainContext().getDefaultRealm();
-        String[] roles = resolveEffectiveRoles(securityIdentity, targetCreds, targetRealm);
+        // The token is the impersonator's: its role claims are never the target's roles.
+        String[] roles = resolveEffectiveRoles(null, targetCreds, targetRealm);
         DataDomain dataDomain = targetCreds.getDomainContext().toDataDomain(targetCreds.getUserId());
 
         return new PrincipalContext.Builder()

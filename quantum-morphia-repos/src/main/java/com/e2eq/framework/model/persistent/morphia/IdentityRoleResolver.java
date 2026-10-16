@@ -93,10 +93,9 @@ public class IdentityRoleResolver {
         // They are honored only in that realm: after a realm switch (X-Realm) the target realm's
         // own assignment supplies realm roles (REALM below) and the credential supplies the flat
         // roles, which apply in every realm by design (CREDENTIAL below). Without a credential
-        // there is nothing to re-derive from, so the token's roles stand.
-        boolean tokenRolesApply = credential == null
-            || authorityRealm == null
-            || sameRealm(authorityRealm, targetRealm);
+        // there is nothing to re-derive from, so the token's roles stand; with a credential but no
+        // known authority realm they are not honored (fail closed).
+        boolean tokenRolesApply = credential == null || sameRealm(authorityRealm, targetRealm);
         if (identity != null && tokenRolesApply) {
             addRoles(provenance, identity.getRoles(), RoleSource.TOKEN);
         }
@@ -166,7 +165,9 @@ public class IdentityRoleResolver {
             authorityRealm = credentialHomeRealm(credential.get());
         }
 
-        if (currentIdentityMatches(identity, securityIdentity)) {
+        // Token roles are honored only in the realm the token was issued for (see resolveEffectiveRoles).
+        if (currentIdentityMatches(identity, securityIdentity)
+            && (credential.isEmpty() || sameRealm(authorityRealm, targetRealm))) {
             addRoles(out, securityIdentity.getRoles(), RoleSource.TOKEN);
         }
 

@@ -225,6 +225,28 @@ class SecurityFilterTenantSelectionTest {
     }
 
     @Test
+    void delegatedRealmSwitchDropsTheIssuingRealmsRolesAndAddsTheTargets() {
+        SecurityFilter filter = new SecurityFilter();
+        filter.realmMembershipService = new RealmMembershipService() {
+            @Override
+            public Optional<UserRealmRole> assignmentForUser(String userId, String realmRefName) {
+                if ("realm-a".equals(realmRefName)) {
+                    return Optional.of(UserRealmRole.builder().userId(userId).realmRefName("realm-a").roles(List.of("admin")).build());
+                }
+                if ("realm-b".equals(realmRefName)) {
+                    return Optional.of(UserRealmRole.builder().userId(userId).realmRefName("realm-b").roles(List.of("viewer")).build());
+                }
+                return Optional.empty();
+            }
+        };
+        List<String> roles = List.of(filter.delegatedRolesAfterRealmSwitch(
+            "user@example.test", List.of("user", "admin"), "realm-a", "realm-b"));
+        assertTrue(roles.contains("user"), "flat roles stay");
+        assertTrue(roles.contains("viewer"), "the target realm's own roles apply");
+        assertTrue(!roles.contains("admin"), "realm A's admin does not follow the switch");
+    }
+
+    @Test
     void assignmentPartitionRefinesTheSameTenantOnly() {
         Realm realm = realm("pooled", RealmTenancyMode.MULTI_TENANT, "realm-default");
         UserRealmRole assignment = assignment("pooled", "tenant-a", "tenant-b");
