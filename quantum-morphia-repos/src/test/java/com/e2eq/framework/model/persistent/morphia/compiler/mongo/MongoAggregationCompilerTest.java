@@ -200,7 +200,10 @@ public class MongoAggregationCompilerTest {
                 java.util.Set.of("taxId", "wholesaleCost")
         );
 
-        List<Bson> pipeline = c.compile(plan, java.util.Map.of("order.supplier", supplierPolicy));
+        // A governed compile supplies a policy for every hop; the order hop's policy is empty here.
+        List<Bson> pipeline = c.compile(plan, java.util.Map.of(
+                "order", new MongoAggregationCompiler.StagePolicy(java.util.Set.of()),
+                "order.supplier", supplierPolicy));
 
         // Find both $lookup stages in order
         List<Document> lookups = pipeline.stream()
@@ -231,5 +234,20 @@ public class MongoAggregationCompilerTest {
         Document redactionDoc = (Document) hop2Redaction.get("$project");
         assertEquals(0, redactionDoc.get("taxId"));
         assertEquals(0, redactionDoc.get("wholesaleCost"));
+    }
+
+    @Test
+    void governedCompileRefusesAHopWithoutAPolicy() {
+        JoinSpec orderJs = new JoinSpec("orders", "_id", "order.entityId", "dataDomain.tenantId", false);
+        LogicalPlan.Expand orderExp = new LogicalPlan.Expand("order", 1, null, false, orderJs);
+        JoinSpec supplierJs = new JoinSpec("suppliers", "_id", "order.supplier.entityId", "dataDomain.tenantId", false);
+        LogicalPlan.Expand supplierExp = new LogicalPlan.Expand("order.supplier", 2, null, false, supplierJs);
+        LogicalPlan plan = new LogicalPlan(Dummy.class, null, List.of(orderExp, supplierExp), null, null);
+
+        MongoAggregationCompiler c = new MongoAggregationCompiler();
+        IllegalArgumentException refused = org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                () -> c.compile(plan, java.util.Map.of("order.supplier",
+                        new MongoAggregationCompiler.StagePolicy(Filters.eq("active", true)))));
+        assertTrue(refused.getMessage().contains("'order'"), refused.getMessage());
     }
 }

@@ -2185,8 +2185,30 @@ public class RuleContext {
         }
 
         DataDomainResolver ddResolver = (dataDomainResolvers != null && !dataDomainResolvers.isUnsatisfied()) ? dataDomainResolvers.get() : null;
-        org.apache.commons.text.StringSubstitutor sub = new org.apache.commons.text.StringSubstitutor(
-                MorphiaUtils.buildVariableBundle(pcontext, rcontext, null, null, ddResolver).strings);
+        // Variables are substituted as text, so a value is admitted only when it cannot carry query
+        // syntax. A principal attribute such as "x) || (refName:y" would otherwise rewrite the
+        // governed clause it is substituted into.
+        java.util.Map<String, String> variableValues =
+                MorphiaUtils.buildVariableBundle(pcontext, rcontext, null, null, ddResolver).strings;
+        org.apache.commons.text.StringSubstitutor sub = new org.apache.commons.text.StringSubstitutor(key -> {
+            String value = variableValues.get(key);
+            if (value != null && !isSafeGovernedLiteral(value)) {
+                throw new SecurityException("Cannot lower a security rule into a federated filter: variable '"
+                        + key + "' resolves to a value containing query syntax. Federated queries fail closed.");
+            }
+            return value;
+        });
+
+        // The caller's query must be a complete expression on its own before it is wrapped in
+        // parentheses and conjoined with the governed clauses.
+        if (userQuery != null && !userQuery.isBlank()) {
+            try {
+                MorphiaUtils.validateCompleteQueryString(userQuery.trim());
+            } catch (RuntimeException invalid) {
+                throw new SecurityException("Federated query rejected: the caller query is not a self-contained "
+                        + "BIAPIQuery expression", invalid);
+            }
+        }
 
         List<String> governedClauses = new ArrayList<>();
         List<com.e2eq.framework.model.securityrules.GovernedFilterProjection.RuleTrim> ruleTrims =
@@ -2237,8 +2259,13 @@ public class RuleContext {
         }
         String governed = String.join(" && ", all);
 
-        // Fail closed: the composed governed string must be a valid BIAPIQuery.
-        MorphiaUtils.validateQueryString(governed);
+        // Fail closed: the composed governed string must be one complete BIAPIQuery expression.
+        try {
+            MorphiaUtils.validateCompleteQueryString(governed);
+        } catch (RuntimeException invalid) {
+            throw new SecurityException("Federated query rejected: the governed filter is not one complete "
+                    + "BIAPIQuery expression", invalid);
+        }
         return com.e2eq.framework.model.securityrules.GovernedFilterProjection.of(
                 governed, response.getFinalEffect(), ruleTrims, excludedFields);
     }
@@ -2254,7 +2281,39 @@ public class RuleContext {
                     + "' into a federated filter: unresolved variable(s) in \"" + filterString
                     + "\". Federated queries fail closed rather than drop a security filter.");
         }
+        try {
+            MorphiaUtils.validateCompleteQueryString(resolved);
+        } catch (RuntimeException invalid) {
+            throw new SecurityException("Cannot lower security rule '" + ruleName
+                    + "' into a federated filter: the resolved clause is not a self-contained BIAPIQuery expression",
+                    invalid);
+        }
         return resolved;
+    }
+
+    /**
+     * True when {@code value} can be substituted into a BIAPIQuery rule string without changing its
+     * structure: no grouping, operator, wildcard, quoting, escaping or substitution characters and
+     * no control characters, and not a {@code null}/{@code true}/{@code false} keyword or an
+     * {@code @@} reference. Commas are refused too: inside a rule's {@code ^[${v}]} list a scalar
+     * value {@code own,foreign} would widen the list. These variables are scalars (the bundle's
+     * string values), so a list-valued variable cannot be lowered here and fails closed. Spaces
+     * are allowed.
+     */
+    static boolean isSafeGovernedLiteral(String value) {
+        String trimmed = value.trim();
+        // Keywords and reference markers that would change the value's type or meaning.
+        if (trimmed.equalsIgnoreCase("null") || trimmed.equalsIgnoreCase("true")
+                || trimmed.equalsIgnoreCase("false") || trimmed.contains("@@")) {
+            return false;
+        }
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (Character.isISOControl(c) || "()[]{}&|!:^\"*~<>=\\$#%;`,".indexOf(c) >= 0) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -2322,9 +2381,6 @@ public class RuleContext {
                     rcontext.getAction()));
         }
 
-        List<Filter> andFilters = new ArrayList<>();
-        List<Filter> orFilters = new ArrayList<>();
-
         MorphiaUtils.VariableBundle vars = resolveVariableBundle(pcontext, rcontext, modelClass);
 
         List<SecurityCheckResponse.RuleFilterInfo> filterInfos = collectEffectiveAllowFilterInfos(response);
@@ -2347,51 +2403,31 @@ public class RuleContext {
                 continue;
             }
 
-            // Backstop: the converters also detect unresolved variables. Anything they flag the
-            // pre-check missed still fails closed for this rule only.
-            int andMark = andFilters.size();
-            int orMark = orFilters.size();
-            boolean ruleFailedClosed = false;
-
-            if (info.getAndFilterString() != null && !info.getAndFilterString().isEmpty()) {
-                try {
-                    andFilters.add(MorphiaUtils.convertToFilter(info.getAndFilterString(), vars, modelClass));
-                } catch (IllegalStateException e) {
-                    if (e.getMessage() != null && e.getMessage().contains("Unresolved resolver variable")) {
-                        ruleFailedClosed = true;
-                    } else {
-                        throw e;
-                    }
+            // Each rule composes from its own and/or clauses only. Sharing these lists across rules
+            // let a rule with both clauses leave them behind, and a later rule's clause was then
+            // OR-ed into the earlier rule's and so dropped.
+            Filter ruleAnd = null;
+            Filter ruleOr = null;
+            try {
+                if (info.getAndFilterString() != null && !info.getAndFilterString().isEmpty()) {
+                    ruleAnd = MorphiaUtils.convertToFilter(info.getAndFilterString(), vars, modelClass);
                 }
+                if (info.getOrFilterString() != null && !info.getOrFilterString().isEmpty()) {
+                    ruleOr = MorphiaUtils.convertToFilter(info.getOrFilterString(), vars, modelClass);
+                }
+            } catch (IllegalStateException e) {
+                // Backstop: the converters also detect unresolved variables. Anything they flag the
+                // pre-check missed still fails closed for this rule only.
+                if (e.getMessage() != null && e.getMessage().contains("Unresolved resolver variable")) {
+                    Log.warnf("Rule '%s' filter has unresolved variable(s) for model %s; failing closed with a match-nothing filter",
+                            info.getRuleName(), modelClass != null ? modelClass.getName() : "null");
+                    filters.add(RuleFilterVariables.matchNothing());
+                    continue;
+                }
+                throw e;
             }
 
-            if (!ruleFailedClosed && info.getOrFilterString() != null && !info.getOrFilterString().isEmpty()) {
-                try {
-                    orFilters.add(MorphiaUtils.convertToFilter(info.getOrFilterString(), vars, modelClass));
-                } catch (IllegalStateException e) {
-                    if (e.getMessage() != null && e.getMessage().contains("Unresolved resolver variable")) {
-                        ruleFailedClosed = true;
-                    } else {
-                        throw e;
-                    }
-                }
-            }
-
-            if (ruleFailedClosed) {
-                // Remove only this rule's partial filters, then contribute match-nothing.
-                while (andFilters.size() > andMark) {
-                    andFilters.remove(andFilters.size() - 1);
-                }
-                while (orFilters.size() > orMark) {
-                    orFilters.remove(orFilters.size() - 1);
-                }
-                Log.warnf("Rule '%s' filter has unresolved variable(s) for model %s; failing closed with a match-nothing filter",
-                        info.getRuleName(), modelClass != null ? modelClass.getName() : "null");
-                filters.add(RuleFilterVariables.matchNothing());
-                continue;
-            }
-
-            if (!andFilters.isEmpty() && !orFilters.isEmpty()) {
+            if (ruleAnd != null && ruleOr != null) {
                 FilterJoinOp joinOp;
                 if (info.getJoinOp() != null && !info.getJoinOp().isBlank()) {
                     joinOp = FilterJoinOp.valueOf(info.getJoinOp());
@@ -2399,23 +2435,14 @@ public class RuleContext {
                     joinOp = FilterJoinOp.AND;
                 }
                 if (joinOp == FilterJoinOp.AND) {
-                    andFilters.add(Filters.or(orFilters.toArray(new Filter[orFilters.size()])));
-                    filters.add(Filters.and(andFilters.toArray(new Filter[andFilters.size()])));
+                    filters.add(Filters.and(ruleAnd, Filters.or(ruleOr)));
                 } else {
-                    orFilters.add(Filters.and(andFilters.toArray(new Filter[andFilters.size()])));
-                    // Correct OR combination should use Filters.or
-                    filters.add(Filters.or(orFilters.toArray(new Filter[orFilters.size()])));
+                    filters.add(Filters.or(ruleOr, Filters.and(ruleAnd)));
                 }
-            } else {
-                if (!andFilters.isEmpty()) {
-                    filters.addAll(andFilters);
-                    andFilters.clear();
-                } else {
-                    if (!orFilters.isEmpty()) {
-                        filters.add(Filters.or(orFilters.toArray(new Filter[orFilters.size()])));
-                        orFilters.clear();
-                    }
-                }
+            } else if (ruleAnd != null) {
+                filters.add(ruleAnd);
+            } else if (ruleOr != null) {
+                filters.add(Filters.or(ruleOr));
             }
         }
 
@@ -2423,7 +2450,7 @@ public class RuleContext {
         // Sucks that we have to do this but Filter does not implement equals there for
         // gets hosed if your using a set.
         List<Filter> rc = new ArrayList<>();
-        HashMap<String, Filter> filterMap = new HashMap<>();
+        java.util.LinkedHashMap<String, Filter> filterMap = new java.util.LinkedHashMap<>();
         filters.forEach(filter -> {
             filterMap.put(filter.toString(), filter);
         });
