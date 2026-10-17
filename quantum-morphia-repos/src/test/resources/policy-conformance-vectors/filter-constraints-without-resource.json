@@ -1,0 +1,62 @@
+{
+  "name": "filter-constraints-without-resource",
+  "description": "A list request (no resource id) with an ALLOW rule that has a row filter: ALLOW, with the filter surfaced as a constraint.",
+  "principal": {
+    "userId": "u1@acme.com",
+    "roles": [
+      "user"
+    ],
+    "defaultRealm": "acme",
+    "dataDomain": {
+      "orgRefName": "acme.com",
+      "accountNum": "0000000001",
+      "tenantId": "acme.com",
+      "dataSegment": 0,
+      "ownerId": "u1@acme.com"
+    }
+  },
+  "resource": {
+    "area": "sales",
+    "functionalDomain": "order",
+    "action": "list",
+    "resourceId": null,
+    "ownerId": "u1@acme.com"
+  },
+  "rules": [
+    {
+      "name": "own-orders",
+      "header": {
+        "identity": "user",
+        "area": "sales",
+        "functionalDomain": "order",
+        "action": "list"
+      },
+      "body": {
+        "realm": "*",
+        "orgRefName": "*",
+        "accountNumber": "*",
+        "tenantId": "*",
+        "dataSegment": "*",
+        "ownerId": "*",
+        "resourceId": "*"
+      },
+      "effect": "ALLOW",
+      "priority": 10,
+      "finalRule": false,
+      "andFilterString": "dataDomain.ownerId:${principalId}"
+    }
+  ],
+  "defaultEffect": "DENY",
+  "expected": {
+    "finalEffect": "ALLOW",
+    "filterConstraints": [
+      {
+        "ruleName": "own-orders",
+        "andFilterString": "dataDomain.ownerId:${principalId}",
+        "orFilterString": null,
+        "joinOp": "AND"
+      }
+    ],
+    "excludedFields": []
+  }
+}

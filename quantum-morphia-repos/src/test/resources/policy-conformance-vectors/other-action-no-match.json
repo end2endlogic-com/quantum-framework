@@ -1,0 +1,54 @@
+{
+  "name": "other-action-no-match",
+  "description": "A rule for another action does not match.",
+  "principal": {
+    "userId": "u1@acme.com",
+    "roles": [
+      "user"
+    ],
+    "defaultRealm": "acme",
+    "dataDomain": {
+      "orgRefName": "acme.com",
+      "accountNum": "0000000001",
+      "tenantId": "acme.com",
+      "dataSegment": 0,
+      "ownerId": "u1@acme.com"
+    }
+  },
+  "resource": {
+    "area": "sales",
+    "functionalDomain": "order",
+    "action": "view",
+    "resourceId": "o-1",
+    "ownerId": "u1@acme.com"
+  },
+  "rules": [
+    {
+      "name": "delete-orders",
+      "header": {
+        "identity": "user",
+        "area": "sales",
+        "functionalDomain": "order",
+        "action": "delete"
+      },
+      "body": {
+        "realm": "*",
+        "orgRefName": "*",
+        "accountNumber": "*",
+        "tenantId": "*",
+        "dataSegment": "*",
+        "ownerId": "*",
+        "resourceId": "*"
+      },
+      "effect": "ALLOW",
+      "priority": 10,
+      "finalRule": false
+    }
+  ],
+  "defaultEffect": "DENY",
+  "expected": {
+    "finalEffect": "DENY",
+    "filterConstraints": [],
+    "excludedFields": []
+  }
+}
