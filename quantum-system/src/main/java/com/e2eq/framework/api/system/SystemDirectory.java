@@ -57,4 +57,26 @@ public interface SystemDirectory {
     Optional<CredentialUserIdPassword> findCredentialBySubject(String subject);
 
     Optional<CredentialUserIdPassword> findCredentialByUserId(String userId);
+
+    /**
+     * The flat (global) roles of the credential bound to {@code subject} (the token's stable
+     * subject, not the userId), with that credential's userId; empty when no credential is bound
+     * to it. This is the narrow identity read that works in every mode: locally it projects the
+     * stored credential, and in remote mode it asks the identity authority over the generated
+     * control-plane contract (1.1.0 {@code flatRolesForSubject}) without moving credential
+     * material across the seam.
+     *
+     * <p>Fails loud (an {@link IllegalStateException}, e.g. a control-plane exception) when no
+     * authoritative answer is available; callers granting authority must treat that as "no
+     * flat roles", never as a reason to trust unverified claims.
+     */
+    default Optional<SubjectFlatRoles> flatRolesForSubject(String subject) {
+        if (subject == null || subject.isBlank()) {
+            return Optional.empty();
+        }
+        // A credential without a subject or userId cannot be confirmed: no flat roles.
+        return findCredentialBySubject(subject)
+            .filter(c -> c.getSubject() != null && c.getUserId() != null)
+            .map(SubjectFlatRoles::fromCredential);
+    }
 }

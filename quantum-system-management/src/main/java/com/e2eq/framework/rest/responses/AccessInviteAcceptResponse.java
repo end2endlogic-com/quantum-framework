@@ -14,6 +14,8 @@ public class AccessInviteAcceptResponse {
     private String defaultRealm;
     private String inviteRefName;
     private List<String> grantedScopes;
+    /** The tenant the invitee was placed in within the realm (pooled realms), else the realm's tenant. */
+    private String tenantId;
 
     public static AccessInviteAcceptResponse empty() {
         return AccessInviteAcceptResponse.builder()

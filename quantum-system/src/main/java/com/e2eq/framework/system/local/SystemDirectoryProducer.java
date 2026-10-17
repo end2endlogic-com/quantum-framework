@@ -12,6 +12,7 @@ import jakarta.inject.Inject;
 import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
+import java.time.Duration;
 import java.util.Optional;
 
 /**
@@ -48,6 +49,18 @@ public class SystemDirectoryProducer {
     @ConfigProperty(name = "quantum.system-service.token")
     Optional<String> serviceToken;
 
+    /**
+     * Identity authority for {@code flatRolesForSubject} (quantum-auth-service). Defaults to
+     * {@code quantum.system-service.base-url}; set it when that points at quantum-system-service,
+     * which does not hold credentials and answers 501 IDENTITY_NOT_HOSTED.
+     */
+    @ConfigProperty(name = "quantum.system-service.identity-base-url")
+    Optional<String> identityBaseUrl;
+
+    /** Per-subject flat-roles cache TTL; bounds revocation lag on realm switches. 0 disables. */
+    @ConfigProperty(name = "quantum.system-service.flat-roles.cache-ttl")
+    Optional<Duration> flatRolesCacheTtl;
+
     @Produces
     @ApplicationScoped
     public SystemDirectory systemDirectory() {
@@ -75,7 +88,12 @@ public class SystemDirectoryProducer {
                             // token is still allowed; otherwise the remote call fails closed.
                         }
                         return serviceToken;
-                    });
+                    },
+                    identityBaseUrl.orElse(null),
+                    // flatRolesForSubject is service-to-service only: service token, never the user's.
+                    () -> serviceToken,
+                    flatRolesCacheTtl.orElse(
+                        com.e2eq.framework.system.remote.RemoteSystemDirectory.DEFAULT_FLAT_ROLES_TTL));
             default:
                 throw new IllegalStateException(
                     "Unknown quantum.system.directory.mode '" + directoryModeOverride.orElse(null)

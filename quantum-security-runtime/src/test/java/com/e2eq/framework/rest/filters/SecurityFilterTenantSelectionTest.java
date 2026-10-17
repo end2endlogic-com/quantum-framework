@@ -224,6 +224,230 @@ class SecurityFilterTenantSelectionTest {
         assertSame(context, filter.applyTenantSelection(context, null));
     }
 
+    private static final String SUB = "subject-123";
+    private static final String USER = "user@example.test";
+
+    private static SecurityFilter switchFilter(SystemDirectory directory, UserRealmRole... assignments) {
+        SecurityFilter filter = new SecurityFilter();
+        filter.systemDirectory = directory;
+        filter.realmMembershipService = new RealmMembershipService() {
+            @Override
+            public Optional<UserRealmRole> assignmentForUser(String userId, String realmRefName) {
+                for (UserRealmRole a : assignments) {
+                    if (a.getUserId().equals(userId) && a.getRealmRefName().equals(realmRefName)) {
+                        return Optional.of(a);
+                    }
+                }
+                return Optional.empty();
+            }
+        };
+        return filter;
+    }
+
+    private static UserRealmRole roles(String realm, String... roles) {
+        return UserRealmRole.builder().userId(USER).realmRefName(realm).roles(List.of(roles)).build();
+    }
+
+    private static SystemDirectory directoryWithCredential(String subject, String userId, String... flatRoles) {
+        CredentialUserIdPassword credential = new CredentialUserIdPassword();
+        credential.setSubject(subject);
+        credential.setUserId(userId);
+        credential.setRoles(flatRoles);
+        return new StubDirectory(Map.of()) {
+            @Override
+            public Optional<CredentialUserIdPassword> findCredentialBySubject(String s) {
+                return subject.equals(s) ? Optional.of(credential) : Optional.empty();
+            }
+        };
+    }
+
+    @Test
+    void delegatedRealmSwitchDropsTheIssuingRealmsRolesAndAddsTheTargets() {
+        SecurityFilter filter = switchFilter(directoryWithCredential(SUB, USER, "user"),
+            roles("realm-a", "admin"), roles("realm-b", "viewer"));
+        List<String> roles = List.of(filter.delegatedRolesAfterRealmSwitch(
+            SUB, USER, List.of("user", "admin"), "realm-b"));
+        assertTrue(roles.contains("user"), "a genuine flat credential role survives the switch");
+        assertTrue(roles.contains("viewer"), "the target realm's own roles apply");
+        assertTrue(!roles.contains("admin"), "realm A's admin does not follow the switch");
+    }
+
+    @Test
+    void delegatedRealmSwitchDropsIdpAssertedRealmRoleMissingFromLocalAssignment() {
+        // The IdP asserts a realm-specific "admin" that the local realm-a assignment never lists.
+        SecurityFilter filter = switchFilter(directoryWithCredential(SUB, USER, "user"),
+            roles("realm-a", "member"), roles("realm-b", "viewer"));
+        List<String> roles = List.of(filter.delegatedRolesAfterRealmSwitch(
+            SUB, USER, List.of("user", "admin"), "realm-b"));
+        assertEquals(List.of("user", "viewer"), roles);
+    }
+
+    @Test
+    void delegatedRealmSwitchWithoutLocalIssuingAssignmentDoesNotLeak() {
+        SecurityFilter filter = switchFilter(directoryWithCredential(SUB, USER, "user"),
+            roles("realm-b", "viewer"));
+        List<String> roles = List.of(filter.delegatedRolesAfterRealmSwitch(
+            SUB, USER, List.of("user", "admin"), "realm-b"));
+        assertEquals(List.of("user", "viewer"), roles);
+    }
+
+    @Test
+    void delegatedRealmSwitchWithoutCredentialCarriesNoTokenRoles() {
+        // No local credential for the subject: nothing proves any token role is global.
+        SecurityFilter filter = switchFilter(new StubDirectory(Map.of()), roles("realm-b", "viewer"));
+        List<String> roles = List.of(filter.delegatedRolesAfterRealmSwitch(
+            SUB, USER, List.of("user", "admin"), "realm-b"));
+        assertEquals(List.of("viewer"), roles);
+    }
+
+    @Test
+    void delegatedRealmSwitchInRemoteModeFailsClosed() {
+        SystemDirectory remote = new StubDirectory(Map.of()) {
+            @Override
+            public Optional<CredentialUserIdPassword> findCredentialBySubject(String s) {
+                throw new IllegalStateException("Credential lookups are control-plane-internal");
+            }
+        };
+        SecurityFilter filter = switchFilter(remote);
+        String[] roles = filter.delegatedRolesAfterRealmSwitch(
+            SUB, USER, List.of("user", "admin"), "realm-b");
+        assertEquals(List.of("ANONYMOUS"), List.of(roles));
+    }
+
+    @Test
+    void delegatedRealmSwitchIgnoresCredentialBoundToAnotherUser() {
+        SecurityFilter filter = switchFilter(directoryWithCredential(SUB, "someone-else", "admin"),
+            roles("realm-b", "viewer"));
+        List<String> roles = List.of(filter.delegatedRolesAfterRealmSwitch(
+            SUB, USER, List.of("admin"), "realm-b"));
+        assertEquals(List.of("viewer"), roles);
+    }
+
+    // --- remote control-plane mode: flat roles from the identity authority (contract 1.1.0) ---
+
+    private static SystemDirectory remoteDirectory(
+            com.e2eq.framework.controlplane.api.IdentityEndpoint identity) {
+        return new com.e2eq.framework.system.remote.RemoteSystemDirectory(
+            (com.e2eq.framework.controlplane.api.DefaultEndpoint) java.lang.reflect.Proxy.newProxyInstance(
+                SecurityFilterTenantSelectionTest.class.getClassLoader(),
+                new Class<?>[]{com.e2eq.framework.controlplane.api.DefaultEndpoint.class},
+                (proxy, method, args) -> {
+                    throw new AssertionError("catalog not used on this path: " + method.getName());
+                }),
+            identity, java.time.Duration.ofSeconds(30), System::nanoTime);
+    }
+
+    private static com.e2eq.framework.controlplane.model.SubjectFlatRolesEntry flatEntry(
+            String subject, String userId, boolean active, String... roles) {
+        var e = new com.e2eq.framework.controlplane.model.SubjectFlatRolesEntry();
+        e.setSubject(subject);
+        e.setUserId(userId);
+        e.setActive(active);
+        e.setRoles(List.of(roles));
+        return e;
+    }
+
+    @Test
+    void remoteModeRealmSwitchKeepsGenuineFlatRolesAndDropsRealmAndIdpRoles() {
+        // Token: flat "user", realm-a's "admin" (UserRealmRole), and an IdP-asserted "idp-ops".
+        SecurityFilter filter = switchFilter(remoteDirectory(s -> flatEntry(s, USER, true, "user")),
+            roles("realm-a", "admin"), roles("realm-b", "viewer"));
+        List<String> roles = List.of(filter.delegatedRolesAfterRealmSwitch(
+            SUB, USER, List.of("user", "admin", "idp-ops"), "realm-b"));
+        assertEquals(List.of("user", "viewer"), roles);
+    }
+
+    @Test
+    void remoteModeRealmSwitchFailsClosedWhenTheControlPlaneIsDown() {
+        SecurityFilter filter = switchFilter(remoteDirectory(s -> {
+            throw new jakarta.ws.rs.ProcessingException("connection refused");
+        }), roles("realm-b", "viewer"));
+        assertEquals(List.of("viewer"), List.of(filter.delegatedRolesAfterRealmSwitch(
+            SUB, USER, List.of("user", "admin"), "realm-b")));
+        SecurityFilter bare = switchFilter(remoteDirectory(s -> {
+            throw new jakarta.ws.rs.ProcessingException("connection refused");
+        }));
+        assertEquals(List.of("ANONYMOUS"), List.of(bare.delegatedRolesAfterRealmSwitch(
+            SUB, USER, List.of("user", "admin"), "realm-b")));
+    }
+
+    @Test
+    void remoteModeRealmSwitchFailsClosedWhenTheControlPlaneRefuses() {
+        SecurityFilter filter = switchFilter(remoteDirectory(s -> {
+            throw new jakarta.ws.rs.WebApplicationException(jakarta.ws.rs.core.Response.status(403).build());
+        }));
+        assertEquals(List.of("ANONYMOUS"), List.of(filter.delegatedRolesAfterRealmSwitch(
+            SUB, USER, List.of("user"), "realm-b")));
+    }
+
+    @Test
+    void remoteModeRealmSwitchIgnoresUnknownSubjectOtherUserAndDisabledCredential() {
+        var notFound = new com.e2eq.framework.controlplane.model.ControlPlaneProblem();
+        notFound.setCode("SUBJECT_NOT_FOUND");
+        notFound.setMessage("no credential is bound to that subject");
+        SecurityFilter unknown = switchFilter(remoteDirectory(s -> {
+            throw new jakarta.ws.rs.WebApplicationException(
+                jakarta.ws.rs.core.Response.status(404).entity(notFound).build());
+        }), roles("realm-b", "viewer"));
+        assertEquals(List.of("viewer"), List.of(unknown.delegatedRolesAfterRealmSwitch(
+            SUB, USER, List.of("user"), "realm-b")));
+
+        SecurityFilter otherUser = switchFilter(remoteDirectory(s -> flatEntry(s, "someone-else", true, "admin")),
+            roles("realm-b", "viewer"));
+        assertEquals(List.of("viewer"), List.of(otherUser.delegatedRolesAfterRealmSwitch(
+            SUB, USER, List.of("admin"), "realm-b")));
+
+        SecurityFilter disabled = switchFilter(remoteDirectory(s -> flatEntry(s, USER, false)),
+            roles("realm-b", "viewer"));
+        assertEquals(List.of("viewer"), List.of(disabled.delegatedRolesAfterRealmSwitch(
+            SUB, USER, List.of("user"), "realm-b")));
+    }
+
+    @Test
+    void anyDirectoryFailureFailsClosedInsteadOfFailingTheRequest() {
+        // e.g. a malformed identity URL or a store failure: not an IllegalStateException.
+        SystemDirectory broken = new StubDirectory(Map.of()) {
+            @Override
+            public Optional<CredentialUserIdPassword> findCredentialBySubject(String s) {
+                throw new IllegalArgumentException("bad identity-base-url\r\nforged log line");
+            }
+        };
+        SecurityFilter filter = switchFilter(broken, roles("realm-b", "viewer"));
+        assertEquals(List.of("viewer"), List.of(filter.delegatedRolesAfterRealmSwitch(
+            SUB, USER, List.of("user", "admin"), "realm-b")));
+    }
+
+    @Test
+    void assignmentPartitionRefinesTheSameTenantOnly() {
+        Realm realm = realm("pooled", RealmTenancyMode.MULTI_TENANT, "realm-default");
+        UserRealmRole assignment = assignment("pooled", "tenant-a", "tenant-b");
+        DataDomain partition = DataDomain.builder()
+            .tenantId("tenant-a").orgRefName("org-a").accountNum("account-a")
+            .dataSegment(3).ownerId("user@example.test").build();
+        partition.setLocationId("dock-7");
+        assignment.setDataDomain(partition);
+
+        PrincipalContext inA = filter(realm, assignment, membership("pooled", "tenant-a", "org-a", "account-a"))
+            .applyTenantSelection(context("pooled", "tenant-a"), null, "tenant-a");
+        assertEquals(3, inA.getDataDomain().getDataSegment());
+        assertEquals("dock-7", inA.getDataDomain().getLocationId());
+        assertEquals(3, inA.getDomainContext().getDataSegment());
+        assertEquals("user@example.test", inA.getDataDomain().getOwnerId());
+
+        // Another tenant of the same user does not inherit tenant A's partition.
+        PrincipalContext inB = filter(realm, assignment, membership("pooled", "tenant-b", "org-b", "account-b"))
+            .applyTenantSelection(context("pooled", "tenant-a"), "tenant-b", "tenant-a");
+        assertEquals(0, inB.getDataDomain().getDataSegment());
+        assertEquals(null, inB.getDataDomain().getLocationId());
+
+        // A partition whose org differs from the membership is ignored: the membership is authoritative.
+        partition.setOrgRefName("other-org");
+        PrincipalContext mismatch = filter(realm, assignment, membership("pooled", "tenant-a", "org-a", "account-a"))
+            .applyTenantSelection(context("pooled", "tenant-a"), null, "tenant-a");
+        assertEquals("org-a", mismatch.getDataDomain().getOrgRefName());
+        assertEquals(0, mismatch.getDataDomain().getDataSegment());
+    }
+
     @Test
     void multiTenantRealmBuildsDataDomainFromAuthorizedMembership() {
         Realm realm = realm("pooled", RealmTenancyMode.MULTI_TENANT, "tenant-a");

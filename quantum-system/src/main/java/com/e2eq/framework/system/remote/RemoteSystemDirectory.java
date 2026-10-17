@@ -1,17 +1,26 @@
 package com.e2eq.framework.system.remote;
 
+import com.e2eq.framework.api.system.SubjectFlatRoles;
 import com.e2eq.framework.api.system.SystemDirectory;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.Realm;
 import com.e2eq.framework.controlplane.api.DefaultEndpoint;
+import com.e2eq.framework.controlplane.api.IdentityEndpoint;
+import com.e2eq.framework.controlplane.model.ControlPlaneProblem;
 import com.e2eq.framework.controlplane.model.RealmCatalogEntry;
+import com.e2eq.framework.controlplane.model.SubjectFlatRolesEntry;
 import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.ProcessingException;
 import jakarta.ws.rs.WebApplicationException;
+import jakarta.ws.rs.core.Response;
 
+import java.time.Duration;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.LongSupplier;
 import java.util.function.Supplier;
 
 /**
@@ -29,12 +38,50 @@ import java.util.function.Supplier;
  *   credential material never crosses the tenant->system seam BY DESIGN
  *   (realm-membership ADR / B4). A code path requesting raw credentials in a
  *   tier-2 app is an architecture error to surface, not to serve.
+ *
+ * The one identity read that does cross the seam is {@link #flatRolesForSubject}
+ * (contract 1.1.0, generated {@link IdentityEndpoint}): flat role names and the
+ * userId, never credential material. It is service-to-service only, so it is sent
+ * with the configured service token ({@code quantum.system-service.token}) and
+ * NEVER with the forwarded end-user bearer; with no service token it fails loud.
+ * It goes to the identity authority ({@code quantum.system-service.identity-base-url},
+ * default the control-plane base URL), which is quantum-auth-service.
+ *
+ * Flat-role answers (found, disabled and unknown subject alike) are cached per
+ * subject for a short TTL (default 30s, {@code quantum.system-service.flat-roles.cache-ttl},
+ * 0 disables). Consequence: revoking a flat role or disabling a credential takes
+ * effect on realm switches within that TTL. Failures (unreachable, refused,
+ * contract violations) are never cached, so an outage fails closed on every call.
  */
 public class RemoteSystemDirectory implements SystemDirectory {
 
     private final DefaultEndpoint client;
     private final String baseUrl;
     private final Supplier<Optional<String>> bearerTokenSupplier;
+
+    // Identity authority (flatRolesForSubject): its own endpoint and the SERVICE token only.
+    private final IdentityEndpoint identityClient;
+    private final String identityBaseUrl;
+    private final Supplier<Optional<String>> serviceTokenSupplier;
+    private final long flatRolesTtlNanos;
+    private final LongSupplier nanoClock;
+
+    /** Default TTL of the per-subject flat-roles cache; bounds how long a revocation can lag. */
+    public static final Duration DEFAULT_FLAT_ROLES_TTL = Duration.ofSeconds(30);
+    // Bounded so a stream of distinct subjects cannot grow the cache without limit.
+    static final int FLAT_ROLES_CACHE_MAX = 10_000;
+    private final Map<String, CachedFlatRoles> flatRolesBySubject = new ConcurrentHashMap<>();
+    // One identity client per service token (rebuilt only when the token rotates).
+    private volatile IdentityClient builtIdentityClient;
+
+    private record IdentityClient(String token, IdentityEndpoint endpoint) {
+    }
+
+    private record CachedFlatRoles(Optional<SubjectFlatRoles> value, long expiresAtNanos) {
+        boolean fresh(long nowNanos) {
+            return nowNanos - expiresAtNanos < 0;
+        }
+    }
 
     // Realm lookups run on EVERY delegated (X-Realm) request; without caching that is one
     // control-plane HTTP round-trip per request. The realm catalog changes rarely, so a short
@@ -59,16 +106,53 @@ public class RemoteSystemDirectory implements SystemDirectory {
 
     /** Production request-scoped bearer forwarding for authenticated catalog reads. */
     public RemoteSystemDirectory(String baseUrl, Supplier<Optional<String>> bearerTokenSupplier) {
+        this(baseUrl, bearerTokenSupplier, null, Optional::empty, DEFAULT_FLAT_ROLES_TTL);
+    }
+
+    /**
+     * Production, with the identity authority: catalog reads forward the request bearer;
+     * {@link #flatRolesForSubject} goes to {@code identityBaseUrl} (null = {@code baseUrl}) with
+     * the service token only.
+     */
+    public RemoteSystemDirectory(String baseUrl, Supplier<Optional<String>> bearerTokenSupplier,
+                                 String identityBaseUrl, Supplier<Optional<String>> serviceTokenSupplier,
+                                 Duration flatRolesTtl) {
         this.client = null;
         this.baseUrl = baseUrl;
         this.bearerTokenSupplier = bearerTokenSupplier;
+        this.identityClient = null;
+        this.identityBaseUrl = identityBaseUrl == null || identityBaseUrl.isBlank() ? baseUrl : identityBaseUrl;
+        this.serviceTokenSupplier = serviceTokenSupplier == null ? Optional::empty : serviceTokenSupplier;
+        this.flatRolesTtlNanos = ttlNanos(flatRolesTtl);
+        this.nanoClock = System::nanoTime;
     }
 
     /** Direct injection of the typed client (tests, alternate transports). */
     public RemoteSystemDirectory(DefaultEndpoint client) {
+        this(client, null, DEFAULT_FLAT_ROLES_TTL, System::nanoTime);
+    }
+
+    /** Direct injection of both typed clients (tests, alternate transports). */
+    public RemoteSystemDirectory(DefaultEndpoint client, IdentityEndpoint identityClient,
+                                 Duration flatRolesTtl, LongSupplier nanoClock) {
         this.client = client;
         this.baseUrl = null;
         this.bearerTokenSupplier = null;
+        this.identityClient = identityClient;
+        this.identityBaseUrl = null;
+        this.serviceTokenSupplier = null;
+        this.flatRolesTtlNanos = ttlNanos(flatRolesTtl);
+        this.nanoClock = nanoClock;
+    }
+
+    private static long ttlNanos(Duration ttl) {
+        if (ttl == null) {
+            return DEFAULT_FLAT_ROLES_TTL.toNanos();
+        }
+        if (ttl.isNegative()) {
+            throw new IllegalArgumentException("flat-roles cache TTL must not be negative: " + ttl);
+        }
+        return ttl.toNanos();
     }
 
     @Override
@@ -141,6 +225,116 @@ public class RemoteSystemDirectory implements SystemDirectory {
     @Override
     public Optional<CredentialUserIdPassword> findCredentialByUserId(String userId) {
         throw credentialLookupsAreControlPlaneInternal();
+    }
+
+    /**
+     * Flat roles of the credential bound to {@code subject}, from the identity authority.
+     * Unknown subject is {@code Optional.empty()} only on the TYPED 404 ({@code SUBJECT_NOT_FOUND});
+     * an untyped 404 (an identity authority still on contract 1.0, a proxy route miss) is a
+     * configuration failure, not an answer. Every failure throws a {@link ControlPlaneException}
+     * (an {@link IllegalStateException}) and is never cached.
+     */
+    @Override
+    public Optional<SubjectFlatRoles> flatRolesForSubject(String subject) {
+        if (subject == null || subject.isBlank()) {
+            return Optional.empty();
+        }
+        long now = nanoClock.getAsLong();
+        CachedFlatRoles hit = flatRolesBySubject.get(subject);
+        if (hit != null && hit.fresh(now)) {
+            return hit.value();
+        }
+        String what = "flat roles for subject " + subject;
+        Optional<SubjectFlatRoles> resolved;
+        try {
+            resolved = Optional.of(toFlatRoles(subject, identityClient().flatRolesForSubject(subject), what));
+        } catch (WebApplicationException e) {
+            int status = e.getResponse() == null ? 0 : e.getResponse().getStatus();
+            if (status != 404 || !SUBJECT_NOT_FOUND.equals(problemCode(e.getResponse()))) {
+                throw ControlPlaneException.rejected(what, status, e);
+            }
+            resolved = Optional.empty();
+        } catch (ProcessingException e) {
+            throw unreachable(what, e);
+        }
+        if (flatRolesTtlNanos > 0) {
+            if (flatRolesBySubject.size() >= FLAT_ROLES_CACHE_MAX) {
+                flatRolesBySubject.clear();
+            }
+            flatRolesBySubject.put(subject, new CachedFlatRoles(resolved, nanoClock.getAsLong() + flatRolesTtlNanos));
+        }
+        return resolved;
+    }
+
+    static final String SUBJECT_NOT_FOUND = "SUBJECT_NOT_FOUND";
+
+    /** The typed refusal code of a control-plane error response, or null when it has none. */
+    private static String problemCode(Response response) {
+        if (response == null) {
+            return null;
+        }
+        try {
+            if (response.getEntity() instanceof ControlPlaneProblem problem) {
+                return problem.getCode();
+            }
+        } catch (RuntimeException notBuffered) {
+            // Inbound client responses expose the body through readEntity only.
+        }
+        try {
+            if (response.hasEntity()) {
+                ControlPlaneProblem problem = response.readEntity(ControlPlaneProblem.class);
+                return problem == null ? null : problem.getCode();
+            }
+        } catch (RuntimeException unreadable) {
+            // Not a ControlPlaneProblem body: no typed code.
+        }
+        return null;
+    }
+
+    private static SubjectFlatRoles toFlatRoles(String subject, SubjectFlatRolesEntry entry, String what) {
+        if (entry == null) {
+            throw ControlPlaneException.contractViolation(what, "empty response body");
+        }
+        if (!subject.equals(entry.getSubject())) {
+            throw ControlPlaneException.contractViolation(what,
+                "response subject " + entry.getSubject() + " does not match the request");
+        }
+        if (entry.getUserId() == null || entry.getUserId().isBlank()
+                || entry.getActive() == null || entry.getRoles() == null) {
+            throw ControlPlaneException.contractViolation(what, "userId, active and roles are required");
+        }
+        if (!entry.getActive() && !entry.getRoles().isEmpty()) {
+            throw ControlPlaneException.contractViolation(what, "a disabled credential carries no roles");
+        }
+        Set<String> roles = new LinkedHashSet<>();
+        for (String role : entry.getRoles()) {
+            if (role != null && !role.isBlank()) {
+                roles.add(role.trim());
+            }
+        }
+        return new SubjectFlatRoles(entry.getSubject(), entry.getUserId(), entry.getActive(), roles);
+    }
+
+    private IdentityEndpoint identityClient() {
+        if (identityClient != null) {
+            return identityClient;
+        }
+        if (identityBaseUrl == null) {
+            throw ControlPlaneException.notConfigured("flat roles for subject",
+                "quantum.system-service.identity-base-url");
+        }
+        // Service-to-service only: never the forwarded end-user bearer.
+        Optional<String> serviceToken = serviceTokenSupplier.get().filter(token -> !token.isBlank());
+        if (serviceToken.isEmpty()) {
+            throw ControlPlaneException.notConfigured("flat roles for subject", "quantum.system-service.token");
+        }
+        IdentityClient current = builtIdentityClient;
+        if (current == null || !current.token().equals(serviceToken.get())) {
+            current = new IdentityClient(serviceToken.get(),
+                ControlPlaneClientFactory.build(IdentityEndpoint.class, identityBaseUrl, serviceToken));
+            builtIdentityClient = current;
+        }
+        return current.endpoint();
     }
 
     private Optional<Realm> getRealm(Supplier<RealmCatalogEntry> call, String what) {

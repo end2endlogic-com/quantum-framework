@@ -59,6 +59,15 @@ public class Realm extends BaseModel {
    }
 
    /**
+    * Id of the access-invite acceptance policy for this realm (an {@code InviteAcceptancePolicy}
+    * bean, for example {@code dedicated-realm} or {@code pooled-realm-tenant}). Optional: when
+    * unset the application property {@code quantum.access-invites.realm-policy."<realm>"} applies,
+    * and otherwise a dedicated realm uses {@code dedicated-realm} while a pooled realm
+    * (MULTI_TENANT or SHARED) refuses invites until a policy is configured.
+    */
+   protected String inviteAcceptancePolicy;
+
+   /**
     this is the last part of a given email which is being used as an identifier.  So
     mingardia@end2endlogic.com for example the email domain would be "end2endlogic.com".
     */
