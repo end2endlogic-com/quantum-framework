@@ -1151,7 +1151,7 @@ public class QueryGatewayResource {
      */
     private Filter[] securedFilterArray(List<Filter> baseFilters, Class<? extends UnversionedBaseModel> modelClass) {
         if (SecurityContext.isIgnoringRules()) {
-            return baseFilters.toArray(new Filter[0]);
+            return com.e2eq.framework.security.runtime.RuleFilterComposition.conjoin(baseFilters);
         }
         java.util.Optional<PrincipalContext> pc = SecurityContext.getPrincipalContext();
         java.util.Optional<ResourceContext> rc = SecurityContext.getResourceContext();
@@ -1172,7 +1172,9 @@ public class QueryGatewayResource {
                             .build());
         }
         List<Filter> secured = ruleContext.getFilters(baseFilters, pc.get(), rc.get(), modelClass);
-        return secured.toArray(new Filter[0]);
+        // One explicit $and: Morphia merges top-level filters on the same field (last wins), so a
+        // caller query on a rule's field (e.g. dataDomain.tenantId) would otherwise replace the rule.
+        return com.e2eq.framework.security.runtime.RuleFilterComposition.conjoin(secured);
     }
 
     /**
