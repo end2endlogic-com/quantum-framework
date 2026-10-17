@@ -233,7 +233,9 @@ public abstract class HierarchicalRepo<
                 continue;
             }
             ObjectId parentId = node.getParent().getEntityId();
-            if (parentId == null || !allowedIds.contains(parentId)) {
+            // A parent hidden by the caller's rules counts as absent, so its visible child
+            // becomes an effective root instead of disappearing with it.
+            if (parentId == null || !allowedNodesById.containsKey(parentId)) {
                 effectiveRootIds.add(id);
             }
         }
