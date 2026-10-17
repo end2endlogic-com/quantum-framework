@@ -1,5 +1,6 @@
 package com.e2eq.framework.model.persistent.morphia;
 
+import com.e2eq.framework.security.runtime.RuleFilterComposition;
 import com.e2eq.framework.annotations.StateGraph;
 import com.e2eq.framework.annotations.Stateful;
 import com.e2eq.framework.annotations.TrackReferences;
@@ -395,14 +396,12 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
                 Filter filter = MorphiaUtils.convertToFilter(query, getPersistentClass());
                 filters.add(Filters.and(filter));
             }
-            Filter[] filterArray = new Filter[filters.size()];
             cursor = datastore.find(getPersistentClass())
-                    .filter(filters.toArray(filterArray))
+                    .filter(RuleFilterComposition.conjoin(filters))
                     .iterator(findOptions);
         } else {
-            Filter[] filterArray = new Filter[filters.size()];
             cursor = datastore.find(getPersistentClass())
-                    .filter(filters.toArray(filterArray))
+                    .filter(RuleFilterComposition.conjoin(filters))
                     .iterator(findOptions);
         }
 
@@ -607,9 +606,8 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
             }
         }
 
-        Filter[] filterArray = new Filter[filters.size()];
         MorphiaCursor<T> cursor = datastore.find(getPersistentClass())
-                .filter(filters.toArray(filterArray))
+                .filter(RuleFilterComposition.conjoin(filters))
                 .iterator(findOptions);
 
         return new CloseableIterator<>() {
@@ -681,14 +679,12 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
                 Log.debugf("Running with filters:%s", filters.stream().map(Filter::toString).collect(Collectors.joining(",")));
 
             }
-            Filter[] filterArray = new Filter[filters.size()];
             cursor = datastore.find(getPersistentClass())
-                    .filter(filters.toArray(filterArray))
+                    .filter(RuleFilterComposition.conjoin(filters))
                     .iterator(findOptions);
         } else {
-            Filter[] filterArray = new Filter[filters.size()];
             cursor = datastore.find(getPersistentClass())
-                    .filter(filters.toArray(filterArray))
+                    .filter(RuleFilterComposition.conjoin(filters))
                     .iterator(findOptions);
         }
 
@@ -992,9 +988,8 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
          FindOptions findOptions = buildFindOptions(0, -1, null, null);
 
-        Filter[] filterArray = new Filter[filters.size()];
          Query<T> query = datastore.find(getPersistentClass())
-                .filter(filters.toArray(filterArray));
+                .filter(RuleFilterComposition.conjoin(filters));
 
         List<T> list = query.iterator(findOptions).toList();
 
@@ -1029,9 +1024,8 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
          FindOptions findOptions = buildFindOptions(0, -1, null, null);
         String realm = datastore.getDatabase().getName();
 
-        Filter[] filterArray = new Filter[filters.size()];
          Query<T> query = datastore.find(getPersistentClass())
-                .filter(filters.toArray(filterArray));
+                .filter(RuleFilterComposition.conjoin(filters));
 
         List<T> list = query.iterator(findOptions).toList();
 
@@ -1068,9 +1062,8 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
                 filters.add(Filters.and(filter));
             }
         }
-        Filter[] filterArray = new Filter[filters.size()];
         long count = datastore.find(getPersistentClass())
-                .filter(filters.toArray(filterArray))
+                .filter(RuleFilterComposition.conjoin(filters))
                 .count();
         return count;
     }
@@ -1929,7 +1922,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
                  new ArrayList<>(), getPersistentClass());
          filters.add(dev.morphia.query.filters.Filters.eq("_id", entity.getId()));
          T stored = datastore.find(getPersistentClass())
-                 .filter(filters.toArray(new Filter[0]))
+                 .filter(RuleFilterComposition.conjoin(filters))
                  .first();
          if (stored == null) {
              throw new SecurityException(
@@ -1960,7 +1953,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
                  new ArrayList<>(), getPersistentClass());
          filters.add(dev.morphia.query.filters.Filters.eq("_id", entity.getId()));
          T stored = session.find(getPersistentClass())
-                 .filter(filters.toArray(new Filter[0]))
+                 .filter(RuleFilterComposition.conjoin(filters))
                  .first();
          if (stored == null) {
              throw new SecurityException(
