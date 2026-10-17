@@ -624,6 +624,42 @@ public class SecurityGatesFollowupTest extends BaseRepoTest {
         assertEquals(List.of(), leaks, "a task was attached to, or changed, a group outside the caller's scope");
     }
 
+    /**
+     * Task creation is broadly allowed but group reads are tenant-scoped: the group lookup must be
+     * evaluated under the group's own rules, not the task-creation context.
+     */
+    @Test
+    void createTaskChecksTheGroupUnderTheGroupsOwnRules() {
+        String role = PREFIX + "group-area";
+        addRuleIn(role, "TASK", "COMPLETION_TASK", null, null);
+        addRuleIn(role, "TASK", "COMPLETION_TASK_GROUP", Partition.TENANT.ruleFilter, null);
+        DataDomain foreignDd = Partition.TENANT.foreign(testUtils.getTestDataDomain());
+        com.e2eq.framework.model.persistent.tasks.CompletionTaskGroup group = system(() -> {
+            com.e2eq.framework.model.persistent.tasks.CompletionTaskGroup g =
+                    new com.e2eq.framework.model.persistent.tasks.CompletionTaskGroup();
+            g.setRefName(PREFIX + "foreign-group-" + new ObjectId().toHexString());
+            g.setDisplayName(PREFIX + "foreign-group");
+            g.setDataDomain(copy(foreignDd));
+            return dataStoreWrapper.getDataStore(realm).save(g);
+        });
+        PrincipalContext caller = principal(role);
+        ResourceContext taskCreate = new ResourceContext.Builder()
+                .withArea("TASK").withFunctionalDomain("COMPLETION_TASK").withAction("save").build();
+
+        boolean attached;
+        ruleContext.clearCacheForRealm(realm);
+        com.e2eq.framework.security.runtime.RuleContext.clearRequestCache();
+        try (SecurityCallScope.Scope ignored = SecurityCallScope.open(caller, taskCreate)) {
+            CompletionTask t = new CompletionTask();
+            t.setRefName(PREFIX + "attach-area-" + new ObjectId().toHexString());
+            t.setDisplayName(PREFIX + "attach");
+            attached = completionTaskRepo.createTask(realm, t, group.getId().toHexString()).getGroup() != null;
+        } catch (RuntimeException refused) {
+            attached = false;
+        }
+        assertTrue(!attached, "createTask attached a task to a group the caller cannot read");
+    }
+
     @Test
     void userProfileStatusUpdateCannotReachForeignProfile() {
         String role = PREFIX + "profile";

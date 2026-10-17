@@ -932,10 +932,37 @@ public class CompletionTaskRepo extends MorphiaRepo<CompletionTask> {
             if (!ObjectId.isValid(groupId)) {
                 throw failure(WorkItemOperationException.Code.INVALID_REQUEST, "Invalid group id");
             }
-            CompletionTaskGroup group = groupRepo.findById(new ObjectId(groupId), realm, false)
+            CompletionTaskGroup group = findGroupForCaller(realm, new ObjectId(groupId))
                     .orElseThrow(() -> failure(WorkItemOperationException.Code.NOT_FOUND,
                             "Group " + groupId + " was not found"));
             task.setGroup(group);
+        }
+    }
+
+    /**
+     * Reads a group under the rules of the group's own functional area (a {@code view} of
+     * {@code TASK/COMPLETION_TASK_GROUP}), not the task-creation context the request arrived with,
+     * so broad task-create rules cannot vouch for a group the caller cannot read.
+     */
+    private Optional<CompletionTaskGroup> findGroupForCaller(String realm, ObjectId groupId) {
+        Optional<com.e2eq.framework.model.securityrules.ResourceContext> current =
+                com.e2eq.framework.model.securityrules.SecurityContext.getResourceContext();
+        if (com.e2eq.framework.model.securityrules.SecurityContext.isIgnoringRules() || current.isEmpty()) {
+            return groupRepo.findById(groupId, realm, false);
+        }
+        CompletionTaskGroup probe = new CompletionTaskGroup();
+        com.e2eq.framework.model.securityrules.ResourceContext groupRc =
+                new com.e2eq.framework.model.securityrules.ResourceContext.Builder()
+                        .withRealm(current.get().getRealm())
+                        .withApplicationId(current.get().getApplicationId())
+                        .withArea(probe.bmFunctionalArea())
+                        .withFunctionalDomain(probe.bmFunctionalDomain())
+                        .withAction("view")
+                        .withResourceId(groupId.toHexString())
+                        .build();
+        try (com.e2eq.framework.model.securityrules.SecurityCallScope.Scope ignored =
+                     com.e2eq.framework.model.securityrules.SecurityCallScope.openResourceOnly(groupRc)) {
+            return groupRepo.findById(groupId, realm, false);
         }
     }
 

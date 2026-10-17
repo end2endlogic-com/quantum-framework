@@ -1318,11 +1318,15 @@ public class QueryGatewayResource {
             // Fail closed: if the model's functional area cannot be determined its exclusions
             // cannot be known, so the read is refused rather than run without them.
             String[] areaDomain = functionalAreaAndDomain(targetModel);
+            // Keep the request's scope (application and resource id) so the target's exclusions
+            // are evaluated for the same request the row policy is.
             ResourceContext targetRc = new ResourceContext.Builder()
                     .withRealm(rc.get().getRealm())
+                    .withApplicationId(rc.get().getApplicationId())
                     .withArea(areaDomain[0])
                     .withFunctionalDomain(areaDomain[1])
                     .withAction("find")
+                    .withResourceId(rc.get().getResourceId())
                     .build();
             java.util.Set<String> targetExcluded = ruleContext.getExcludedFieldPaths(pc.get(), targetRc);
             if (targetExcluded != null) {
