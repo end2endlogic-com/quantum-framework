@@ -14,6 +14,7 @@ import com.e2eq.framework.model.securityrules.SecurityURI;
 import com.e2eq.framework.model.securityrules.SecurityURIBody;
 import com.e2eq.framework.model.securityrules.SecurityURIHeader;
 import com.e2eq.framework.persistent.BaseRepoTest;
+import com.e2eq.framework.security.runtime.RuleFilterComposition;
 import com.e2eq.framework.persistent.TestBookRepo;
 import com.e2eq.framework.test.BookModel;
 import com.e2eq.framework.model.persistent.base.CloseableIterator;
@@ -197,6 +198,10 @@ public class RuleFilterSameFieldOverrideTest extends BaseRepoTest {
         // QueryGateway (BIAPI) find + count
         Response find = as(caller, "find", () -> gateway.find(findRequest(query)));
         check(leaks, "QueryGateway.find", foreign, gatewayRows(find));
+        String orQuery = query + "||refName:" + foreign.getRefName();
+        check(leaks, "QueryGateway.find(||)", foreign, gatewayRows(as(caller, "find", () -> gateway.find(findRequest(orQuery)))));
+        check(leaks, "getListByQuery(||)", foreign, as(caller, "list",
+                () -> bookRepo.getListByQuery(realm, 0, 100, orQuery, null, null)));
         Response countResp = as(caller, "count", () -> gateway.count(countRequest(query)));
         long gwCount = ((QueryGatewayResource.CountResponse) countResp.getEntity()).count;
         if (gwCount > 0) {
@@ -308,6 +313,49 @@ public class RuleFilterSameFieldOverrideTest extends BaseRepoTest {
         }
 
         assertEquals(List.of(), leaks, "fail-closed _id $in [] was merged away on these paths");
+    }
+
+    // ------------------------------------------------- encoded query document
+
+    /**
+     * Pins the encoding the fix relies on, independent of HashMap ordering: Morphia merges
+     * same-field varargs filters (last wins), while {@link RuleFilterComposition#conjoin} keeps
+     * every clause as its own $and document, also beside an _id filter and a chained filter.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void conjoinedQueryDocumentKeepsEverySameFieldClause() {
+        var ds = dataStoreWrapper.getDataStore(realm);
+        Filter rule = Filters.eq("dataDomain.tenantId", "tenant-a");
+        Filter caller = Filters.eq("dataDomain.tenantId", "tenant-b");
+
+        org.bson.Document merged = ((dev.morphia.query.MorphiaQuery<BookModel>) ds.find(BookModel.class)
+                .filter(rule, caller)).toDocument();
+        assertEquals("tenant-b", merged.get("dataDomain.tenantId"),
+                "Morphia varargs merge same-field filters, last one wins: this is the hazard conjoin exists for");
+
+        org.bson.Document conjoined = ((dev.morphia.query.MorphiaQuery<BookModel>) ds.find(BookModel.class)
+                .filter(RuleFilterComposition.conjoin(List.of(caller, rule)))).toDocument();
+        List<org.bson.Document> clauses = (List<org.bson.Document>) conjoined.get("$and");
+        assertEquals(List.of("tenant-b", "tenant-a"),
+                clauses.stream().map(d -> d.get("dataDomain.tenantId")).toList(), "both clauses survive: " + conjoined);
+        assertTrue(!conjoined.containsKey("dataDomain.tenantId"), "no top-level field left to merge into");
+
+        ObjectId id = new ObjectId();
+        Filter matchNothing = Filters.in("_id", List.of());
+        org.bson.Document byId = ((dev.morphia.query.MorphiaQuery<BookModel>) ds.find(BookModel.class)
+                .filter(RuleFilterComposition.conjoin(List.of(Filters.eq("_id", id), matchNothing)))).toDocument();
+        List<org.bson.Document> idClauses = (List<org.bson.Document>) byId.get("$and");
+        assertEquals(id, idClauses.get(0).get("_id"));
+        assertEquals(List.of(), ((java.util.Map<String, Object>) idClauses.get(1).get("_id")).get("$in"),
+                "fail-closed _id $in [] stays its own clause: " + byId);
+
+        org.bson.Document chained = ((dev.morphia.query.MorphiaQuery<BookModel>) ds.find(BookModel.class)
+                .filter(RuleFilterComposition.conjoin(rule))
+                .filter(caller)).toDocument();
+        assertEquals("tenant-b", chained.get("dataDomain.tenantId"));
+        assertEquals("tenant-a", ((List<org.bson.Document>) chained.get("$and")).get(0).get("dataDomain.tenantId"),
+                "a filter chained after the governed $and cannot replace the rule: " + chained);
     }
 
     // ------------------------------------------------------------------ helpers

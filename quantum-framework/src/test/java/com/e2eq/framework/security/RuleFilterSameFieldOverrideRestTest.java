@@ -69,12 +69,16 @@ public class RuleFilterSameFieldOverrideRestTest extends BaseRepoTest {
 
     @Test
     void restListFilterOnForeignTenantReturnsNothing() {
-        List<Map<String, Object>> rows = given().header("X-Realm", realm)
-                .queryParam("filter", "dataDomain.tenantId:" + foreign.getTenantId() + "&&category:" + marker)
-                .when().get("/integration/codelists/list")
-                .then().statusCode(200)
-                .extract().jsonPath().getList("rows");
-        assertTrue(rows == null || rows.isEmpty(), "REST list returned another tenant's rows: " + rows);
+        // Both a bare filter on the rule's field and one combined with another clause.
+        for (String filter : List.of("dataDomain.tenantId:" + foreign.getTenantId(),
+                "dataDomain.tenantId:" + foreign.getTenantId() + "&&category:" + marker)) {
+            List<Map<String, Object>> rows = given().header("X-Realm", realm)
+                    .queryParam("filter", filter)
+                    .when().get("/integration/codelists/list")
+                    .then().statusCode(200)
+                    .extract().jsonPath().getList("rows");
+            assertTrue(rows == null || rows.isEmpty(), "REST list ?filter=" + filter + " returned another tenant's rows: " + rows);
+        }
     }
 
     @Test
