@@ -36,6 +36,9 @@ import java.util.Objects;
  *   <li>Grant: a new account's home context is the partition; a new {@code UserRealmRole}'s data
  *       domain is the partition; the tenant is unioned into {@code authorizedTenantIds} (an existing
  *       member keeps its other tenants and its default partition); roles stay realm-scoped.</li>
+ *   <li>Roles and applications are stored once per user and realm, so an invite that adds either
+ *       to an existing member who already holds other tenants needs an inviter entitled to all of
+ *       them (or a realm administrator, or the system principal).</li>
  * </ul>
  */
 @ApplicationScoped
@@ -91,7 +94,7 @@ public class PooledRealmTenantInvitePolicy implements InviteAcceptancePolicy {
 
         UserRealmRole inviteeAssignment = acceptance.inviteeAssignment();
         requireReproduciblePartition(realm, invite, snapshot, inviteeAssignment);
-        requireRolesStayWithinInviterTenants(realm, acceptance, tenantId, inviteeAssignment);
+        requireGrantsStayWithinInviterTenants(realm, acceptance, tenantId, inviteeAssignment);
 
         DataDomain partition = copy(snapshot, acceptance.inviteeUserId());
         DomainContext home = DomainContext.builder()
@@ -155,44 +158,77 @@ public class PooledRealmTenantInvitePolicy implements InviteAcceptancePolicy {
     }
 
     /**
-     * Roles are realm-scoped (one role list per user and realm), so roles an invite adds also apply
-     * in every other tenant the invitee's assignment already authorizes. Adding a role is therefore
-     * allowed only when the inviter is entitled to all of those tenants (or is a realm administrator
-     * or the system principal); an assignment with a tenant pattern needs an administrator.
+     * Roles and authorized applications are realm-scoped (one {@code UserRealmRole} per user and
+     * realm), so roles or applications an invite adds also apply in every other tenant the
+     * invitee's assignment already authorizes. Adding either is therefore allowed only when the
+     * inviter is entitled to all of those tenants (or is a realm administrator or the system
+     * principal); an assignment with a tenant pattern needs an administrator.
      */
-    private void requireRolesStayWithinInviterTenants(Realm realm, InviteAcceptance acceptance, String tenantId, UserRealmRole inviteeAssignment) {
+    private void requireGrantsStayWithinInviterTenants(Realm realm, InviteAcceptance acceptance, String tenantId, UserRealmRole inviteeAssignment) {
         AccessInvite invite = acceptance.invite();
         if (inviteeAssignment == null || invite.isIssuedBySystemPrincipal() || acceptance.inviterRealmAdministrator()) {
             return;
         }
-        java.util.Set<String> held = new java.util.HashSet<>();
-        if (inviteeAssignment.getRoles() != null) {
-            inviteeAssignment.getRoles().stream().filter(Objects::nonNull).map(r -> r.trim().toLowerCase(java.util.Locale.ROOT)).forEach(held::add);
-        }
-        boolean addsRoles = invite.getGrantedRoles() != null && invite.getGrantedRoles().stream()
-            .filter(Objects::nonNull)
-            .map(r -> r.trim().toLowerCase(java.util.Locale.ROOT))
-            .anyMatch(r -> !r.isEmpty() && !held.contains(r));
-        if (!addsRoles) {
+        boolean addsRoles = addsRoles(invite.getGrantedRoles(), inviteeAssignment.getRoles());
+        boolean addsApplications = addsApplications(invite.getAuthorizedApplications(), inviteeAssignment.getAuthorizedApplications());
+        if (!addsRoles && !addsApplications) {
             return;
         }
-        boolean pattern = inviteeAssignment.getAuthorizedTenantRegEx() != null && !inviteeAssignment.getAuthorizedTenantRegEx().isBlank();
-        boolean entitled = !pattern;
-        if (entitled && inviteeAssignment.getAuthorizedTenantIds() != null) {
-            for (String other : inviteeAssignment.getAuthorizedTenantIds()) {
-                if (other != null && !other.trim().equals(tenantId)
-                    && !AccessibleTenantResolver.isAuthorized(acceptance.inviterAssignment(), other.trim())) {
-                    entitled = false;
-                    break;
-                }
-            }
+        if (inviterEntitledToAllTenants(acceptance.inviterAssignment(), tenantId, inviteeAssignment)) {
+            return;
         }
-        if (!entitled) {
+        if (addsRoles) {
             Log.warnf("access-invite.accept.refused reason=roles-would-reach-tenants-outside-inviter realm=%s invite=%s",
                 realm.getRefName(), invite.getRefName());
             throw new AccessInviteException(Code.INVITE_ROLE_NOT_GRANTABLE,
                 "This invite's roles would also apply in tenants the inviter cannot grant. Ask a realm administrator.");
         }
+        Log.warnf("access-invite.accept.refused reason=applications-would-reach-tenants-outside-inviter realm=%s invite=%s",
+            realm.getRefName(), invite.getRefName());
+        throw new AccessInviteException(Code.INVITE_APPLICATION_NOT_GRANTABLE,
+            "This invite's applications would also apply in tenants the inviter cannot grant. Ask a realm administrator.");
+    }
+
+    private static boolean addsRoles(List<String> granted, List<String> current) {
+        java.util.Set<String> held = new java.util.HashSet<>();
+        if (current != null) {
+            current.stream().filter(Objects::nonNull).map(r -> r.trim().toLowerCase(java.util.Locale.ROOT)).forEach(held::add);
+        }
+        return granted != null && granted.stream()
+            .filter(Objects::nonNull)
+            .map(r -> r.trim().toLowerCase(java.util.Locale.ROOT))
+            .anyMatch(r -> !r.isEmpty() && !held.contains(r));
+    }
+
+    /** Application ids match exactly (as the acceptance merge does); a held wildcard already covers all. */
+    private static boolean addsApplications(List<String> granted, List<String> current) {
+        java.util.Set<String> held = new java.util.HashSet<>();
+        if (current != null) {
+            current.stream().filter(Objects::nonNull).map(String::trim).forEach(held::add);
+        }
+        if (held.contains(UserRealmRole.APPLICATION_WILDCARD)) {
+            return false;
+        }
+        return granted != null && granted.stream()
+            .filter(Objects::nonNull)
+            .map(String::trim)
+            .anyMatch(a -> !a.isEmpty() && !held.contains(a));
+    }
+
+    private static boolean inviterEntitledToAllTenants(UserRealmRole inviterAssignment, String tenantId, UserRealmRole inviteeAssignment) {
+        String pattern = inviteeAssignment.getAuthorizedTenantRegEx();
+        if (pattern != null && !pattern.isBlank()) {
+            return false;
+        }
+        if (inviteeAssignment.getAuthorizedTenantIds() != null) {
+            for (String other : inviteeAssignment.getAuthorizedTenantIds()) {
+                if (other != null && !other.trim().equals(tenantId)
+                    && !AccessibleTenantResolver.isAuthorized(inviterAssignment, other.trim())) {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     /**

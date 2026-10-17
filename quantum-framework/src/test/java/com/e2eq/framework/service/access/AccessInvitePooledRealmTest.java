@@ -377,6 +377,77 @@ class AccessInvitePooledRealmTest extends BaseRepoTest {
     }
 
     @Test
+    void addingAnApplicationThatWouldReachATenantTheInviterLacksIsRefused() {
+        // Applications live once on the realm-wide assignment, like roles: a B-only inviter must
+        // not hand the member's existing A membership an application.
+        String inviterB = member("inviter-b-apps", TENANT_B, List.of("viewer"));
+        writeApplications(inviterB, POOLED, List.of("app-x"));
+        String existing = user("member-a-apps");
+        createAccount(existing, Set.of("user"), homeIn(TENANT_A));
+        writeAssignment(existing, List.of("viewer"), List.of(TENANT_A), partition(TENANT_A, 0));
+        PrincipalContext inB = inviterIn(POOLED, inviterB, partition(TENANT_B, 0));
+        PrincipalContext member = principalBuilder(POOLED, existing, partition(TENANT_A, 0)).withRoles(new String[]{"user"}).build();
+
+        AccessInviteRequest addsApp = new AccessInviteRequest();
+        addsApp.setTargetUserId(existing);
+        addsApp.setGrantedRoles(List.of("viewer"));
+        addsApp.setAuthorizedApplications(List.of("app-x"));
+        AccessInviteResponse refused = create(POOLED, inB, addsApp);
+        assertRefused(Code.INVITE_APPLICATION_NOT_GRANTABLE, () -> as(member, () -> inviteService.acceptInvite(accept(POOLED, refused.getInviteToken()))));
+        assertEquals(List.of(TENANT_A), assignment(existing, POOLED).getAuthorizedTenantIds());
+        assertNoApplications(assignment(existing, POOLED));
+        assertEquals(AccessInvite.Status.PENDING, storedInvite(POOLED, refused).getStatus());
+        as(inB, () -> inviteService.revokeInvite(POOLED, refused.getRefName()));
+
+        // The same inviter without an application in the invite is unaffected.
+        AccessInviteRequest noApp = new AccessInviteRequest();
+        noApp.setTargetUserId(existing);
+        noApp.setGrantedRoles(List.of("viewer"));
+        AccessInviteResponse ok = create(POOLED, inB, noApp);
+        as(member, () -> inviteService.acceptInvite(accept(POOLED, ok.getInviteToken())));
+        assertEquals(List.of(TENANT_A, TENANT_B), assignment(existing, POOLED).getAuthorizedTenantIds());
+        assertNoApplications(assignment(existing, POOLED));
+    }
+
+    @Test
+    void inviterEntitledToEveryTenantOfTheMemberMayAddAnApplication() {
+        String inviterAB = member("inviter-ab-apps", TENANT_B, List.of("viewer"));
+        writeAssignment(inviterAB, List.of("viewer"), List.of(TENANT_B, TENANT_A), partition(TENANT_B, 0));
+        writeApplications(inviterAB, POOLED, List.of("app-x"));
+        String existing = user("member-a-apps-ok");
+        createAccount(existing, Set.of("user"), homeIn(TENANT_A));
+        writeAssignment(existing, List.of("viewer"), List.of(TENANT_A), partition(TENANT_A, 0));
+
+        AccessInviteRequest addsApp = new AccessInviteRequest();
+        addsApp.setTargetUserId(existing);
+        addsApp.setGrantedRoles(List.of("viewer"));
+        addsApp.setAuthorizedApplications(List.of("app-x"));
+        AccessInviteResponse invite = create(POOLED, inviterIn(POOLED, inviterAB, partition(TENANT_B, 0)), addsApp);
+        PrincipalContext member = principalBuilder(POOLED, existing, partition(TENANT_A, 0)).withRoles(new String[]{"user"}).build();
+        as(member, () -> inviteService.acceptInvite(accept(POOLED, invite.getInviteToken())));
+        assertEquals(List.of(TENANT_A, TENANT_B), assignment(existing, POOLED).getAuthorizedTenantIds());
+        assertEquals(List.of("app-x"), assignment(existing, POOLED).getAuthorizedApplications());
+    }
+
+    @Test
+    void realmAdministratorMayAddAnApplicationToAnExistingMember() {
+        String admin = user("realm-admin-apps");
+        createAccount(admin, Set.of("admin", "user"), homeIn(TENANT_B));
+        String existing = user("member-a-apps-admin");
+        createAccount(existing, Set.of("user"), homeIn(TENANT_A));
+        writeAssignment(existing, List.of("viewer"), List.of(TENANT_A), partition(TENANT_A, 0));
+
+        AccessInviteRequest addsApp = new AccessInviteRequest();
+        addsApp.setTargetUserId(existing);
+        addsApp.setAuthorizedApplications(List.of("app-x"));
+        AccessInviteResponse invite = create(POOLED, inviterIn(POOLED, admin, partition(TENANT_B, 0)), addsApp);
+        PrincipalContext member = principalBuilder(POOLED, existing, partition(TENANT_A, 0)).withRoles(new String[]{"user"}).build();
+        as(member, () -> inviteService.acceptInvite(accept(POOLED, invite.getInviteToken())));
+        assertEquals(List.of(TENANT_A, TENANT_B), assignment(existing, POOLED).getAuthorizedTenantIds());
+        assertEquals(List.of("app-x"), assignment(existing, POOLED).getAuthorizedApplications());
+    }
+
+    @Test
     void existingMemberWhoseDefaultPartitionDiffersCannotTakeANarrowerPartition() {
         String inviter = member("inviter-seg-b", TENANT_B, List.of("viewer"));
         writeAssignment(inviter, List.of("viewer"), List.of(TENANT_B, TENANT_A), partition(TENANT_B, 0));
@@ -702,6 +773,17 @@ class AccessInvitePooledRealmTest extends BaseRepoTest {
         });
     }
 
+    private void writeApplications(String userId, String realm, List<String> applications) {
+        asSystem(() -> {
+            UserRealmRole assignment = realmMembershipService.realmsForUser(userId).stream()
+                .filter(candidate -> realm.equals(candidate.getRealmRefName()))
+                .findFirst()
+                .orElseThrow();
+            assignment.setAuthorizedApplications(new ArrayList<>(applications));
+            return realmMembershipService.upsertUserRealmRole(assignment);
+        });
+    }
+
     private UserRealmRole assignment(String userId, String realm) {
         List<UserRealmRole> found = assignments(userId).stream().filter(a -> realm.equals(a.getRealmRefName())).toList();
         assertEquals(1, found.size(), "exactly one assignment per (user, realm)");
@@ -748,6 +830,11 @@ class AccessInvitePooledRealmTest extends BaseRepoTest {
             .filter(Filters.eq("refName", invite.getRefName())).iterator()) {
             return cursor.toList().get(0);
         }
+    }
+
+    private static void assertNoApplications(UserRealmRole assignment) {
+        assertTrue(assignment.getAuthorizedApplications() == null || assignment.getAuthorizedApplications().isEmpty(),
+            "no application was granted: " + assignment.getAuthorizedApplications());
     }
 
     private static void assertRefused(Code expected, Executable action) {
