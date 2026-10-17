@@ -39,8 +39,28 @@ public class RepoUtils {
                     throw new IllegalStateException("RepoUtils.resolve requires a security context or an explicit "
                             + "ignore-rules scope (SecurityCallScope.openIgnoringRules())");
                 }
-                filters = ruleContext.getFilters(filters, SecurityContext.getPrincipalContext().get(),
-                        SecurityContext.getResourceContext().get(), clazz);
+                // Evaluate under the resolved model's own functional area (a view of it), not the
+                // area of whatever request is running.
+                com.e2eq.framework.model.securityrules.ResourceContext current = SecurityContext.getResourceContext().get();
+                BaseModel probe;
+                try {
+                    java.lang.reflect.Constructor<? extends BaseModel> ctor = clazz.getDeclaredConstructor();
+                    ctor.setAccessible(true);
+                    probe = ctor.newInstance();
+                } catch (ReflectiveOperationException e) {
+                    throw new IllegalStateException("Cannot determine the functional area of " + className
+                            + "; refusing to resolve it without its rules", e);
+                }
+                com.e2eq.framework.model.securityrules.ResourceContext target =
+                        new com.e2eq.framework.model.securityrules.ResourceContext.Builder()
+                                .withRealm(current.getRealm())
+                                .withApplicationId(current.getApplicationId())
+                                .withArea(probe.bmFunctionalArea())
+                                .withFunctionalDomain(probe.bmFunctionalDomain())
+                                .withAction("view")
+                                .withResourceId(id.toHexString())
+                                .build();
+                filters = ruleContext.getFilters(filters, SecurityContext.getPrincipalContext().get(), target, clazz);
             }
             return dataStore.getDataStore(getSecurityContextRealmId()).find(clazz)
                     .filter(com.e2eq.framework.security.runtime.RuleFilterComposition.conjoin(filters)).first();
