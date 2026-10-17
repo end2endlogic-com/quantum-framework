@@ -1135,6 +1135,9 @@ public class QueryGatewayResource {
                 .withArea(areaDomain[0])
                 .withFunctionalDomain(areaDomain[1])
                 .withAction(current.getAction())
+                // Keep the concrete resource id: a target rule may reference ${resourceId}, and the
+                // builder's "*" default would widen it (mirrors MorphiaRepo.resolveLookupPolicies).
+                .withResourceId(current.getResourceId())
                 .build();
     }
 
