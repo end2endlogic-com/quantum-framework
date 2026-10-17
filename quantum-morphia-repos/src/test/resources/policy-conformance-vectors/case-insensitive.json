@@ -1,0 +1,54 @@
+{
+  "name": "case-insensitive",
+  "description": "Matching ignores case.",
+  "principal": {
+    "userId": "u1@acme.com",
+    "roles": [
+      "user"
+    ],
+    "defaultRealm": "acme",
+    "dataDomain": {
+      "orgRefName": "acme.com",
+      "accountNum": "0000000001",
+      "tenantId": "acme.com",
+      "dataSegment": 0,
+      "ownerId": "u1@acme.com"
+    }
+  },
+  "resource": {
+    "area": "sales",
+    "functionalDomain": "order",
+    "action": "view",
+    "resourceId": "o-1",
+    "ownerId": "u1@acme.com"
+  },
+  "rules": [
+    {
+      "name": "view-orders",
+      "header": {
+        "identity": "USER",
+        "area": "Sales",
+        "functionalDomain": "ORDER",
+        "action": "View"
+      },
+      "body": {
+        "realm": "*",
+        "orgRefName": "*",
+        "accountNumber": "*",
+        "tenantId": "*",
+        "dataSegment": "*",
+        "ownerId": "*",
+        "resourceId": "*"
+      },
+      "effect": "ALLOW",
+      "priority": 10,
+      "finalRule": false
+    }
+  ],
+  "defaultEffect": "DENY",
+  "expected": {
+    "finalEffect": "ALLOW",
+    "filterConstraints": [],
+    "excludedFields": []
+  }
+}

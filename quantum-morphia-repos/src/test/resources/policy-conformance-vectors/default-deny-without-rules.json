@@ -1,0 +1,32 @@
+{
+  "name": "default-deny-without-rules",
+  "description": "No rule matches: the default effect (DENY) stands.",
+  "principal": {
+    "userId": "u1@acme.com",
+    "roles": [
+      "user"
+    ],
+    "defaultRealm": "acme",
+    "dataDomain": {
+      "orgRefName": "acme.com",
+      "accountNum": "0000000001",
+      "tenantId": "acme.com",
+      "dataSegment": 0,
+      "ownerId": "u1@acme.com"
+    }
+  },
+  "resource": {
+    "area": "sales",
+    "functionalDomain": "order",
+    "action": "view",
+    "resourceId": "o-1",
+    "ownerId": "u1@acme.com"
+  },
+  "rules": [],
+  "defaultEffect": "DENY",
+  "expected": {
+    "finalEffect": "DENY",
+    "filterConstraints": [],
+    "excludedFields": []
+  }
+}

@@ -1,0 +1,75 @@
+{
+  "name": "last-applicable-wins-allow",
+  "description": "The same, the other way round: a later ALLOW overrides an earlier DENY.",
+  "principal": {
+    "userId": "u1@acme.com",
+    "roles": [
+      "user"
+    ],
+    "defaultRealm": "acme",
+    "dataDomain": {
+      "orgRefName": "acme.com",
+      "accountNum": "0000000001",
+      "tenantId": "acme.com",
+      "dataSegment": 0,
+      "ownerId": "u1@acme.com"
+    }
+  },
+  "resource": {
+    "area": "sales",
+    "functionalDomain": "order",
+    "action": "view",
+    "resourceId": "o-1",
+    "ownerId": "u1@acme.com"
+  },
+  "rules": [
+    {
+      "name": "deny-p5",
+      "header": {
+        "identity": "user",
+        "area": "sales",
+        "functionalDomain": "order",
+        "action": "view"
+      },
+      "body": {
+        "realm": "*",
+        "orgRefName": "*",
+        "accountNumber": "*",
+        "tenantId": "*",
+        "dataSegment": "*",
+        "ownerId": "*",
+        "resourceId": "*"
+      },
+      "effect": "DENY",
+      "priority": 5,
+      "finalRule": false
+    },
+    {
+      "name": "allow-p10",
+      "header": {
+        "identity": "user",
+        "area": "sales",
+        "functionalDomain": "order",
+        "action": "view"
+      },
+      "body": {
+        "realm": "*",
+        "orgRefName": "*",
+        "accountNumber": "*",
+        "tenantId": "*",
+        "dataSegment": "*",
+        "ownerId": "*",
+        "resourceId": "*"
+      },
+      "effect": "ALLOW",
+      "priority": 10,
+      "finalRule": false
+    }
+  ],
+  "defaultEffect": "DENY",
+  "expected": {
+    "finalEffect": "ALLOW",
+    "filterConstraints": [],
+    "excludedFields": []
+  }
+}
