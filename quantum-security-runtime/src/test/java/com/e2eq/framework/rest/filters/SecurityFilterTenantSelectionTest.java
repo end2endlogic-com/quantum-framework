@@ -323,6 +323,82 @@ class SecurityFilterTenantSelectionTest {
         assertEquals(List.of("viewer"), roles);
     }
 
+    // --- remote control-plane mode: flat roles from the identity authority (contract 1.1.0) ---
+
+    private static SystemDirectory remoteDirectory(
+            com.e2eq.framework.controlplane.api.IdentityEndpoint identity) {
+        return new com.e2eq.framework.system.remote.RemoteSystemDirectory(
+            (com.e2eq.framework.controlplane.api.DefaultEndpoint) java.lang.reflect.Proxy.newProxyInstance(
+                SecurityFilterTenantSelectionTest.class.getClassLoader(),
+                new Class<?>[]{com.e2eq.framework.controlplane.api.DefaultEndpoint.class},
+                (proxy, method, args) -> {
+                    throw new AssertionError("catalog not used on this path: " + method.getName());
+                }),
+            identity, java.time.Duration.ofSeconds(30), System::nanoTime);
+    }
+
+    private static com.e2eq.framework.controlplane.model.SubjectFlatRolesEntry flatEntry(
+            String subject, String userId, boolean active, String... roles) {
+        var e = new com.e2eq.framework.controlplane.model.SubjectFlatRolesEntry();
+        e.setSubject(subject);
+        e.setUserId(userId);
+        e.setActive(active);
+        e.setRoles(List.of(roles));
+        return e;
+    }
+
+    @Test
+    void remoteModeRealmSwitchKeepsGenuineFlatRolesAndDropsRealmAndIdpRoles() {
+        // Token: flat "user", realm-a's "admin" (UserRealmRole), and an IdP-asserted "idp-ops".
+        SecurityFilter filter = switchFilter(remoteDirectory(s -> flatEntry(s, USER, true, "user")),
+            roles("realm-a", "admin"), roles("realm-b", "viewer"));
+        List<String> roles = List.of(filter.delegatedRolesAfterRealmSwitch(
+            SUB, USER, List.of("user", "admin", "idp-ops"), "realm-b"));
+        assertEquals(List.of("user", "viewer"), roles);
+    }
+
+    @Test
+    void remoteModeRealmSwitchFailsClosedWhenTheControlPlaneIsDown() {
+        SecurityFilter filter = switchFilter(remoteDirectory(s -> {
+            throw new jakarta.ws.rs.ProcessingException("connection refused");
+        }), roles("realm-b", "viewer"));
+        assertEquals(List.of("viewer"), List.of(filter.delegatedRolesAfterRealmSwitch(
+            SUB, USER, List.of("user", "admin"), "realm-b")));
+        SecurityFilter bare = switchFilter(remoteDirectory(s -> {
+            throw new jakarta.ws.rs.ProcessingException("connection refused");
+        }));
+        assertEquals(List.of("ANONYMOUS"), List.of(bare.delegatedRolesAfterRealmSwitch(
+            SUB, USER, List.of("user", "admin"), "realm-b")));
+    }
+
+    @Test
+    void remoteModeRealmSwitchFailsClosedWhenTheControlPlaneRefuses() {
+        SecurityFilter filter = switchFilter(remoteDirectory(s -> {
+            throw new jakarta.ws.rs.WebApplicationException(jakarta.ws.rs.core.Response.status(403).build());
+        }));
+        assertEquals(List.of("ANONYMOUS"), List.of(filter.delegatedRolesAfterRealmSwitch(
+            SUB, USER, List.of("user"), "realm-b")));
+    }
+
+    @Test
+    void remoteModeRealmSwitchIgnoresUnknownSubjectOtherUserAndDisabledCredential() {
+        SecurityFilter unknown = switchFilter(remoteDirectory(s -> {
+            throw new jakarta.ws.rs.WebApplicationException(jakarta.ws.rs.core.Response.status(404).build());
+        }), roles("realm-b", "viewer"));
+        assertEquals(List.of("viewer"), List.of(unknown.delegatedRolesAfterRealmSwitch(
+            SUB, USER, List.of("user"), "realm-b")));
+
+        SecurityFilter otherUser = switchFilter(remoteDirectory(s -> flatEntry(s, "someone-else", true, "admin")),
+            roles("realm-b", "viewer"));
+        assertEquals(List.of("viewer"), List.of(otherUser.delegatedRolesAfterRealmSwitch(
+            SUB, USER, List.of("admin"), "realm-b")));
+
+        SecurityFilter disabled = switchFilter(remoteDirectory(s -> flatEntry(s, USER, false)),
+            roles("realm-b", "viewer"));
+        assertEquals(List.of("viewer"), List.of(disabled.delegatedRolesAfterRealmSwitch(
+            SUB, USER, List.of("user"), "realm-b")));
+    }
+
     @Test
     void assignmentPartitionRefinesTheSameTenantOnly() {
         Realm realm = realm("pooled", RealmTenancyMode.MULTI_TENANT, "realm-default");

@@ -184,6 +184,49 @@ role claims (`CustomTokenAuthProvider.login`), with role provenance exposed
 in the login response (`RoleSource.REALM`). The tenant plane validates via
 JWKS and routes by claims — no per-request callback to the control plane.
 
+=== Flat roles across a delegated realm switch (contract 1.1.0)
+
+Flat credential roles apply in every realm; `UserRealmRole` roles apply only
+in their realm. A token's role claims mix both, so when a delegated
+(`quantum.auth.trust-token-claims`) user switches realm with `X-Realm`, the
+`SecurityFilter` keeps a token role only if it is also a flat role of the
+credential bound to the token's stable subject, with a matching userId
+(`SystemDirectory.flatRolesForSubject`). The target realm's own assignment
+then supplies the realm roles.
+
+Locally that reads the credential store. In remote mode it calls the
+identity authority over the generated control-plane contract
+(`GET /control/identity/flat-roles?subject=...`, operation
+`flatRolesForSubject`, generated `IdentityEndpoint`, added in contract
+1.1.0). The answer carries flat role names, the userId and an `active` flag,
+never credential material or realm roles.
+
+[cols="1,3"]
+|===
+|Property |Meaning
+
+|`quantum.system-service.token`
+|Required. The call is service-to-service: it is sent with this service
+token and never with the forwarded end-user bearer. The identity authority
+accepts only an active credential with `accountType=SERVICE`.
+
+|`quantum.system-service.identity-base-url`
+|Identity authority (quantum-auth-service). Defaults to
+`quantum.system-service.base-url`. Set it when the base URL points at
+quantum-system-service, which holds no credentials and answers
+`501 IDENTITY_NOT_HOSTED`.
+
+|`quantum.system-service.flat-roles.cache-ttl`
+|Per-subject cache TTL, default `30s`; `0` disables caching. Revoking a
+flat role or disabling a credential takes effect on realm switches within
+this TTL. Failures are never cached.
+|===
+
+Fail closed: an unknown subject (`404 SUBJECT_NOT_FOUND`), a disabled
+credential (`active=false`, no roles), a userId mismatch, a missing service
+token, a refusal, or an unreachable control plane all carry no token role
+across the switch.
+
 == Field-level and relationship policy (one policy source, every egress)
 
 The same rules that scope rows (`andFilterString`/`orFilterString`,

@@ -1,15 +1,18 @@
 openapi: 3.0.3
 info:
   title: Quantum Control-Plane API (tenant -> system seam)
-  version: 1.0.0
+  version: 1.1.0
   description: >
     The queries a tier-2 (quantum.mode=remote) deployment makes against the
     control plane (quantum-system): realm catalog resolution and membership/
-    role resolution for routing. Identity is NOT here by design — the tenant
-    plane validates platform JWTs against the control plane's JWKS
-    (/oauth/jwks); credential material never crosses this seam. Java
-    consumers: RemoteSystemDirectory / remote RealmMembershipService in
-    quantum-system implement their contracts over this API.
+    role resolution for routing. Authentication is NOT here by design — the
+    tenant plane validates platform JWTs against the control plane's JWKS
+    (/oauth/jwks); credential material never crosses this seam. The one
+    identity read (1.1.0, tag identity) returns only a credential's flat
+    (global) role names and userId for a stable subject, to trusted service
+    principals. Java consumers: RemoteSystemDirectory / remote
+    RealmMembershipService in quantum-system implement their contracts over
+    this API.
 servers:
   - url: http://quantum-system:8080
 security:
@@ -117,10 +120,74 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/UserRealmRoleEntry' }
+  /control/identity/flat-roles:
+    get:
+      tags: [identity]
+      operationId: flatRolesForSubject
+      summary: Flat (global) roles of the credential bound to a stable subject
+      description: >
+        Added in 1.1.0. Service-to-service only: the caller must be a trusted
+        service principal (a SERVICE account credential on the identity
+        authority); end-user tokens are refused with 403. Returns the flat
+        credential roles, which apply in every realm, and the credential's
+        userId so the caller can confirm the token's userId matches. Realm-
+        scoped (UserRealmRole) roles are never included. Credential material
+        (password hashes, secrets, IdP configuration) is never returned. A
+        disabled credential (activeStatus INACTIVE or DELETED) returns 200
+        with active=false and an empty role list, so a caller can never carry
+        a role for it. Every call is audited by the identity authority.
+      parameters:
+        - name: subject
+          in: query
+          required: true
+          description: the token's stable subject (sub claim), not the userId
+          schema: { type: string, minLength: 1 }
+      responses:
+        '200':
+          description: the credential's flat roles
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SubjectFlatRolesEntry' }
+        '400':
+          description: subject missing or blank
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ControlPlaneProblem' }
+        '401': { description: missing or invalid bearer token }
+        '403':
+          description: caller is not a trusted service principal
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ControlPlaneProblem' }
+        '404':
+          description: no credential is bound to that subject (code SUBJECT_NOT_FOUND)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ControlPlaneProblem' }
+        '501':
+          description: this control plane is not the identity authority (code IDENTITY_NOT_HOSTED)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ControlPlaneProblem' }
 components:
   securitySchemes:
     bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
   schemas:
+    SubjectFlatRolesEntry:
+      type: object
+      description: flat (global) roles of one credential; never realm-scoped roles, never credential material
+      required: [subject, userId, active, roles]
+      properties:
+        subject: { type: string, description: "the stable subject the credential is bound to" }
+        userId: { type: string, description: "the credential's userId; callers must check it matches the token's userId" }
+        active: { type: boolean, description: "false when the credential is disabled (activeStatus INACTIVE or DELETED); roles is then empty" }
+        roles: { type: array, items: { type: string }, description: "flat credential roles; apply in every realm the user can reach" }
+    ControlPlaneProblem:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string, description: "stable machine-readable refusal code" }
+        message: { type: string }
     RealmCatalogEntry:
       type: object
       required: [refName]
