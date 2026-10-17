@@ -6,11 +6,13 @@ import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.Realm;
 import com.e2eq.framework.controlplane.api.DefaultEndpoint;
 import com.e2eq.framework.controlplane.api.IdentityEndpoint;
+import com.e2eq.framework.controlplane.model.ControlPlaneProblem;
 import com.e2eq.framework.controlplane.model.RealmCatalogEntry;
 import com.e2eq.framework.controlplane.model.SubjectFlatRolesEntry;
 import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.ProcessingException;
 import jakarta.ws.rs.WebApplicationException;
+import jakarta.ws.rs.core.Response;
 
 import java.time.Duration;
 import java.util.LinkedHashSet;
@@ -69,6 +71,11 @@ public class RemoteSystemDirectory implements SystemDirectory {
     // Bounded so a stream of distinct subjects cannot grow the cache without limit.
     static final int FLAT_ROLES_CACHE_MAX = 10_000;
     private final Map<String, CachedFlatRoles> flatRolesBySubject = new ConcurrentHashMap<>();
+    // One identity client per service token (rebuilt only when the token rotates).
+    private volatile IdentityClient builtIdentityClient;
+
+    private record IdentityClient(String token, IdentityEndpoint endpoint) {
+    }
 
     private record CachedFlatRoles(Optional<SubjectFlatRoles> value, long expiresAtNanos) {
         boolean fresh(long nowNanos) {
@@ -222,8 +229,10 @@ public class RemoteSystemDirectory implements SystemDirectory {
 
     /**
      * Flat roles of the credential bound to {@code subject}, from the identity authority.
-     * Unknown subject (typed 404) is {@code Optional.empty()}; every other failure throws a
-     * {@link ControlPlaneException} (an {@link IllegalStateException}) and is never cached.
+     * Unknown subject is {@code Optional.empty()} only on the TYPED 404 ({@code SUBJECT_NOT_FOUND});
+     * an untyped 404 (an identity authority still on contract 1.0, a proxy route miss) is a
+     * configuration failure, not an answer. Every failure throws a {@link ControlPlaneException}
+     * (an {@link IllegalStateException}) and is never cached.
      */
     @Override
     public Optional<SubjectFlatRoles> flatRolesForSubject(String subject) {
@@ -241,7 +250,7 @@ public class RemoteSystemDirectory implements SystemDirectory {
             resolved = Optional.of(toFlatRoles(subject, identityClient().flatRolesForSubject(subject), what));
         } catch (WebApplicationException e) {
             int status = e.getResponse() == null ? 0 : e.getResponse().getStatus();
-            if (status != 404) {
+            if (status != 404 || !SUBJECT_NOT_FOUND.equals(problemCode(e.getResponse()))) {
                 throw ControlPlaneException.rejected(what, status, e);
             }
             resolved = Optional.empty();
@@ -255,6 +264,31 @@ public class RemoteSystemDirectory implements SystemDirectory {
             flatRolesBySubject.put(subject, new CachedFlatRoles(resolved, nanoClock.getAsLong() + flatRolesTtlNanos));
         }
         return resolved;
+    }
+
+    static final String SUBJECT_NOT_FOUND = "SUBJECT_NOT_FOUND";
+
+    /** The typed refusal code of a control-plane error response, or null when it has none. */
+    private static String problemCode(Response response) {
+        if (response == null) {
+            return null;
+        }
+        try {
+            if (response.getEntity() instanceof ControlPlaneProblem problem) {
+                return problem.getCode();
+            }
+        } catch (RuntimeException notBuffered) {
+            // Inbound client responses expose the body through readEntity only.
+        }
+        try {
+            if (response.hasEntity()) {
+                ControlPlaneProblem problem = response.readEntity(ControlPlaneProblem.class);
+                return problem == null ? null : problem.getCode();
+            }
+        } catch (RuntimeException unreadable) {
+            // Not a ControlPlaneProblem body: no typed code.
+        }
+        return null;
     }
 
     private static SubjectFlatRoles toFlatRoles(String subject, SubjectFlatRolesEntry entry, String what) {
@@ -294,7 +328,13 @@ public class RemoteSystemDirectory implements SystemDirectory {
         if (serviceToken.isEmpty()) {
             throw ControlPlaneException.notConfigured("flat roles for subject", "quantum.system-service.token");
         }
-        return ControlPlaneClientFactory.build(IdentityEndpoint.class, identityBaseUrl, serviceToken);
+        IdentityClient current = builtIdentityClient;
+        if (current == null || !current.token().equals(serviceToken.get())) {
+            current = new IdentityClient(serviceToken.get(),
+                ControlPlaneClientFactory.build(IdentityEndpoint.class, identityBaseUrl, serviceToken));
+            builtIdentityClient = current;
+        }
+        return current.endpoint();
     }
 
     private Optional<Realm> getRealm(Supplier<RealmCatalogEntry> call, String what) {

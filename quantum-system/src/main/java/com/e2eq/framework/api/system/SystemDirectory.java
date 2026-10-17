@@ -74,6 +74,9 @@ public interface SystemDirectory {
         if (subject == null || subject.isBlank()) {
             return Optional.empty();
         }
-        return findCredentialBySubject(subject).map(SubjectFlatRoles::fromCredential);
+        // A credential without a subject or userId cannot be confirmed: no flat roles.
+        return findCredentialBySubject(subject)
+            .filter(c -> c.getSubject() != null && c.getUserId() != null)
+            .map(SubjectFlatRoles::fromCredential);
     }
 }

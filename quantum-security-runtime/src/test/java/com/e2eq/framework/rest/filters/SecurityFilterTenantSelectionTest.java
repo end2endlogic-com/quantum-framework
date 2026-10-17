@@ -382,8 +382,12 @@ class SecurityFilterTenantSelectionTest {
 
     @Test
     void remoteModeRealmSwitchIgnoresUnknownSubjectOtherUserAndDisabledCredential() {
+        var notFound = new com.e2eq.framework.controlplane.model.ControlPlaneProblem();
+        notFound.setCode("SUBJECT_NOT_FOUND");
+        notFound.setMessage("no credential is bound to that subject");
         SecurityFilter unknown = switchFilter(remoteDirectory(s -> {
-            throw new jakarta.ws.rs.WebApplicationException(jakarta.ws.rs.core.Response.status(404).build());
+            throw new jakarta.ws.rs.WebApplicationException(
+                jakarta.ws.rs.core.Response.status(404).entity(notFound).build());
         }), roles("realm-b", "viewer"));
         assertEquals(List.of("viewer"), List.of(unknown.delegatedRolesAfterRealmSwitch(
             SUB, USER, List.of("user"), "realm-b")));
@@ -397,6 +401,20 @@ class SecurityFilterTenantSelectionTest {
             roles("realm-b", "viewer"));
         assertEquals(List.of("viewer"), List.of(disabled.delegatedRolesAfterRealmSwitch(
             SUB, USER, List.of("user"), "realm-b")));
+    }
+
+    @Test
+    void anyDirectoryFailureFailsClosedInsteadOfFailingTheRequest() {
+        // e.g. a malformed identity URL or a store failure: not an IllegalStateException.
+        SystemDirectory broken = new StubDirectory(Map.of()) {
+            @Override
+            public Optional<CredentialUserIdPassword> findCredentialBySubject(String s) {
+                throw new IllegalArgumentException("bad identity-base-url\r\nforged log line");
+            }
+        };
+        SecurityFilter filter = switchFilter(broken, roles("realm-b", "viewer"));
+        assertEquals(List.of("viewer"), List.of(filter.delegatedRolesAfterRealmSwitch(
+            SUB, USER, List.of("user", "admin"), "realm-b")));
     }
 
     @Test

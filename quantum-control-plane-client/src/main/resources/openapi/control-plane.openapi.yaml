@@ -126,9 +126,11 @@ paths:
       operationId: flatRolesForSubject
       summary: Flat (global) roles of the credential bound to a stable subject
       description: >
-        Added in 1.1.0. Service-to-service only: the caller must be a trusted
-        service principal (a SERVICE account credential on the identity
-        authority); end-user tokens are refused with 403. Returns the flat
+        Added in 1.1.0. Service-to-service only: the caller must be an
+        authorized service principal on the identity authority (an active
+        SERVICE account credential holding the flat role
+        control-plane-identity, minted by a holder of the flat system role);
+        end-user and other tokens are refused with 403. Returns the flat
         credential roles, which apply in every realm, and the credential's
         userId so the caller can confirm the token's userId matches. Realm-
         scoped (UserRealmRole) roles are never included. Credential material
@@ -160,7 +162,9 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ControlPlaneProblem' }
         '404':
-          description: no credential is bound to that subject (code SUBJECT_NOT_FOUND)
+          description: >
+            no credential is bound to that subject (code SUBJECT_NOT_FOUND);
+            a 404 without that code is not an answer
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ControlPlaneProblem' }

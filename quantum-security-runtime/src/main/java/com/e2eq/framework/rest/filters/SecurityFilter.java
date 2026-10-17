@@ -1294,11 +1294,12 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         Optional<com.e2eq.framework.api.system.SubjectFlatRoles> flat;
         try {
             flat = systemDirectory.flatRolesForSubject(subject);
-        } catch (IllegalStateException e) {
-            // No authoritative answer (e.g. control plane unreachable, refusing, or no service
-            // token configured): fail closed, carry no token role.
-            Log.warnf("Delegated realm switch: no authoritative flat roles for sub=%s (%s); "
-                    + "token roles are not carried", subject, e.getMessage());
+        } catch (RuntimeException e) {
+            // No authoritative answer (control plane unreachable or refusing, no service token,
+            // misconfigured client, store failure): fail closed, carry no token role.
+            Log.warnf("Delegated realm switch: no authoritative flat roles for sub=%s (%s: %s); "
+                    + "token roles are not carried", logSafe(subject), e.getClass().getSimpleName(),
+                    logSafe(e.getMessage()));
             return java.util.Set.of();
         }
         if (flat.isEmpty() || !flat.get().active() || flat.get().userId() == null
@@ -1312,6 +1313,14 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
             }
         }
         return roles;
+    }
+
+    private static String logSafe(String value) {
+        if (value == null) {
+            return "<none>";
+        }
+        String cleaned = value.replaceAll("\\p{Cntrl}", "_");
+        return cleaned.length() > 254 ? cleaned.substring(0, 254) : cleaned;
     }
 
     private PrincipalContext buildImpersonatedContext(CredentialUserIdPassword targetCreds, CredentialUserIdPassword originalCreds,

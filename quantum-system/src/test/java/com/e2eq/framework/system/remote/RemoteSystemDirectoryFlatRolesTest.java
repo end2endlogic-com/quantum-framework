@@ -82,12 +82,35 @@ class RemoteSystemDirectoryFlatRolesTest {
         assertEquals(2, calls.get());
     }
 
+    private static WebApplicationException typed404() {
+        com.e2eq.framework.controlplane.model.ControlPlaneProblem problem =
+            new com.e2eq.framework.controlplane.model.ControlPlaneProblem();
+        problem.setCode("SUBJECT_NOT_FOUND");
+        problem.setMessage("no credential is bound to that subject");
+        return new WebApplicationException(Response.status(404).entity(problem).build());
+    }
+
     @Test
-    void unknownSubjectIsEmpty() {
+    void unknownSubjectIsEmptyOnlyOnTheTypedNotFound() {
         RemoteSystemDirectory directory = directory(subject -> {
-            throw new WebApplicationException(Response.status(404).build());
+            throw typed404();
         }, Duration.ofSeconds(30), new AtomicLong());
         assertEquals(Optional.empty(), directory.flatRolesForSubject(SUB));
+    }
+
+    @Test
+    void untypedNotFoundIsAConfigurationFailureAndIsNotCached() {
+        // e.g. an identity authority still on contract 1.0, or a proxy route miss.
+        AtomicInteger calls = new AtomicInteger();
+        RemoteSystemDirectory directory = directory(subject -> {
+            calls.incrementAndGet();
+            throw new WebApplicationException(Response.status(404).build());
+        }, Duration.ofSeconds(30), new AtomicLong());
+        ControlPlaneException e = assertThrows(ControlPlaneException.class,
+            () -> directory.flatRolesForSubject(SUB));
+        assertEquals(ControlPlaneException.Kind.REJECTED, e.kind());
+        assertThrows(ControlPlaneException.class, () -> directory.flatRolesForSubject(SUB));
+        assertEquals(2, calls.get());
     }
 
     @Test

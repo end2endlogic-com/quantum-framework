@@ -208,7 +208,9 @@ never credential material or realm roles.
 |`quantum.system-service.token`
 |Required. The call is service-to-service: it is sent with this service
 token and never with the forwarded end-user bearer. The identity authority
-accepts only an active credential with `accountType=SERVICE`.
+accepts only an active `accountType=SERVICE` credential that holds the flat
+role `control-plane-identity` and was minted by a holder of the flat
+`system` role.
 
 |`quantum.system-service.identity-base-url`
 |Identity authority (quantum-auth-service). Defaults to
@@ -222,7 +224,9 @@ flat role or disabling a credential takes effect on realm switches within
 this TTL. Failures are never cached.
 |===
 
-Fail closed: an unknown subject (`404 SUBJECT_NOT_FOUND`), a disabled
+Fail closed: an unknown subject (only the typed `404 SUBJECT_NOT_FOUND`; an
+untyped 404, such as an authority still on contract 1.0 or a proxy route miss,
+is a configuration failure and is not cached), a disabled
 credential (`active=false`, no roles), a userId mismatch, a missing service
 token, a refusal, or an unreachable control plane all carry no token role
 across the switch.
