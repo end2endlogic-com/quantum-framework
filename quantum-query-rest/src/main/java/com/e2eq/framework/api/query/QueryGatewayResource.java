@@ -27,6 +27,7 @@ import com.e2eq.framework.model.security.DataDomainResolver;
 import com.e2eq.framework.rest.exceptions.DataDomainGovernanceException;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
+import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import com.e2eq.framework.model.securityrules.SecurityContext;
 import com.e2eq.framework.model.securityrules.FieldPolicyEnforcer;
 import com.e2eq.framework.security.runtime.RuleContext;
@@ -269,11 +270,20 @@ public class QueryGatewayResource {
                 Class<? extends UnversionedBaseModel> targetModel = (Class<? extends UnversionedBaseModel>) js.targetType;
                 MongoAggregationCompiler.StagePolicy policy;
                 try {
-                    Filter[] targetSecured = securedFilterArray(Collections.emptyList(), targetModel);
-                    Filter rowFilter = null;
-                    if (targetSecured != null && targetSecured.length > 0) {
-                        rowFilter = (targetSecured.length == 1) ? targetSecured[0] : Filters.and(targetSecured);
+                    // The target's rows answer to both the gateway's rules (as the root does) and
+                    // the rules of the target's own functional area (as the repository aggregation
+                    // path resolves them), so the lookup is never wider than either.
+                    List<Filter> targetRows = new ArrayList<>(
+                            java.util.Arrays.asList(securedFilterArray(Collections.emptyList(), targetModel)));
+                    if (!SecurityContext.isIgnoringRules()) {
+                        try (SecurityCallScope.Scope ignored = SecurityCallScope.openResourceOnly(
+                                targetResourceContext(targetModel))) {
+                            targetRows.addAll(java.util.Arrays.asList(
+                                    securedFilterArray(Collections.emptyList(), targetModel)));
+                        }
                     }
+                    Filter[] targetSecured = com.e2eq.framework.security.runtime.RuleFilterComposition.conjoin(targetRows);
+                    Filter rowFilter = targetSecured.length == 0 ? null : targetSecured[0];
                     policy = new MongoAggregationCompiler.StagePolicy(rowFilter, excludedFieldPaths(targetModel));
                 } catch (WebApplicationException typed) {
                     throw typed; // already a sanitized, typed refusal (e.g. SecurityContextMissing, 403)
@@ -1112,6 +1122,20 @@ public class QueryGatewayResource {
             error.put("message", "Failed to export: " + e.getMessage());
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(error).build();
         }
+    }
+
+    /** The request's ResourceContext re-targeted at {@code model}'s functional area and domain. */
+    private ResourceContext targetResourceContext(Class<? extends UnversionedBaseModel> model) {
+        ResourceContext current = SecurityContext.getResourceContext()
+                .orElseThrow(() -> new IllegalStateException("expand requires a ResourceContext"));
+        String[] areaDomain = functionalAreaAndDomain(model);
+        return new ResourceContext.Builder()
+                .withRealm(current.getRealm())
+                .withApplicationId(current.getApplicationId())
+                .withArea(areaDomain[0])
+                .withFunctionalDomain(areaDomain[1])
+                .withAction(current.getAction())
+                .build();
     }
 
     /** Filter has no value equality; compare policies by their encoded form. */

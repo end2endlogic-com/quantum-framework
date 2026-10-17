@@ -110,6 +110,9 @@ public class SecurityGatesFollowupTest extends BaseRepoTest {
     RepoUtils repoUtils;
 
     @Inject
+    com.e2eq.framework.model.persistent.morphia.EmailTemplateRepo emailTemplateRepo;
+
+    @Inject
     com.e2eq.framework.model.persistent.morphia.UserProfileRepo userProfileRepo;
 
     @Inject
@@ -401,7 +404,11 @@ public class SecurityGatesFollowupTest extends BaseRepoTest {
                 "refName:" + f + ") || (refName:sgf-none",
                 "refName:sgf-none) || refName:" + f + " && (refName:sgf-none",
                 "refName:sgf-none) && (refName:sgf-none) || (refName:" + f,
-                "refName:sgf-none || refName:" + f)) {
+                "refName:sgf-none || refName:" + f,
+                // A stray ')' ends the lenient parse early, so the governed clause after it is
+                // never read: these must be refused, not composed.
+                "refName:" + f + ")",
+                "refName:" + f + ") sgf-junk")) {
             governedLeak(leaks, caller, injected, foreign.getId());
         }
         assertEquals(List.of(), leaks, "caller query escaped the governed conjunction");
@@ -428,6 +435,21 @@ public class SecurityGatesFollowupTest extends BaseRepoTest {
         List<String> leaks = new ArrayList<>();
         governedLeak(leaks, caller, null, foreign.getId());
         governedLeak(leaks, caller, "refName:" + foreign.getRefName(), foreign.getId());
+
+        // A value that is a query keyword changes the clause's meaning: ownerId:null matches
+        // rows with no owner.
+        BookModel ownerless = seedBook("ownerless", Partition.OWNER.foreign(testUtils.getTestDataDomain()));
+        dataStoreWrapper.getDataStore(realm).getDatabase().getCollection("bookModel").updateOne(
+                new Document("_id", ownerless.getId()), new Document("$unset", new Document("dataDomain.ownerId", "")));
+        DataDomain nullWord = copy(testUtils.getTestDataDomain());
+        nullWord.setOwnerId("null");
+        PrincipalContext nullCaller = new PrincipalContext.Builder()
+                .withDataDomain(nullWord)
+                .withDefaultRealm(realm)
+                .withUserId(role + "-null@test.local")
+                .withScope("Authentication")
+                .withRoles(new String[]{role}).build();
+        governedLeak(leaks, nullCaller, null, ownerless.getId());
         assertEquals(List.of(), leaks, "a variable value escaped the governed clause");
     }
 
@@ -474,6 +496,76 @@ public class SecurityGatesFollowupTest extends BaseRepoTest {
                 () -> menuHierarchyRepo.getAllChildren(ownRoot.getId()).stream()
                         .anyMatch(c -> foreignChild.getId().equals(c.getId())));
         assertEquals(List.of(), leaks, "these system/tree paths ignored the caller's rules");
+    }
+
+    @Test
+    void emailTemplateDeleteCannotReachForeignTemplate() {
+        String role = PREFIX + "email";
+        addRule(role, Partition.TENANT.ruleFilter, null, true);
+        com.e2eq.framework.model.persistent.email.EmailTemplate foreign = system(() -> {
+            com.e2eq.framework.model.persistent.email.EmailTemplate t =
+                    new com.e2eq.framework.model.persistent.email.EmailTemplate();
+            t.setRefName(PREFIX + "email-" + new ObjectId().toHexString());
+            t.setTemplateKey(t.getRefName());
+            t.setSubjectTemplate("s");
+            t.setDataDomain(copy(Partition.TENANT.foreign(testUtils.getTestDataDomain())));
+            return dataStoreWrapper.getDataStore(realm).save(t);
+        });
+        PrincipalContext caller = principal(role);
+
+        List<String> leaks = new ArrayList<>();
+        probe(leaks, caller, "delete", "EmailTemplateRepo.deleteByRefName(foreign)",
+                () -> emailTemplateRepo.deleteByRefName(realm, foreign.getRefName()));
+        long remaining = dataStoreWrapper.getDataStore(realm).getDatabase().getCollection("email_templates")
+                .countDocuments(new Document("_id", foreign.getId()));
+        if (remaining == 0) {
+            leaks.add("foreign template deleted");
+        }
+        assertEquals(List.of(), leaks, "email template delete ignored the caller's rules");
+    }
+
+    /**
+     * The $lookup's row filter must include the rules of the target's own functional area, not
+     * only the gateway's: here the target area scopes by owner and the root area only by tenant.
+     */
+    @Test
+    void expandAppliesTheTargetAreasRowRules() {
+        String role = PREFIX + "target-area";
+        addRule(role, Partition.TENANT.ruleFilter, null, true);
+        addRuleIn(role, "SGFSEAL", "SEALED", Partition.OWNER.ruleFilter, null);
+        DataDomain ownDd = testUtils.getTestDataDomain();
+        SgfSealedTarget otherOwners = system(() -> {
+            SgfSealedTarget t = SgfSealedTarget.create();
+            t.setRefName(PREFIX + "sealed-" + new ObjectId().toHexString());
+            t.setSecret("secret-other-owner");
+            t.setDataDomain(copy(Partition.OWNER.foreign(ownDd)));
+            return dataStoreWrapper.getDataStore(realm).save(t);
+        });
+        SgfExpandRoot root = system(() -> {
+            SgfExpandRoot r = new SgfExpandRoot();
+            r.setRefName(PREFIX + "area-root-" + new ObjectId().toHexString());
+            r.setDataDomain(copy(ownDd));
+            EntityReference ref = new EntityReference();
+            ref.setEntityId(otherOwners.getId());
+            ref.setEntityRefName(otherOwners.getRefName());
+            ref.setEntityDisplayName(otherOwners.getRefName());
+            r.setSealedRef(ref);
+            return dataStoreWrapper.getDataStore(realm).save(r);
+        });
+        PrincipalContext caller = principal(role);
+
+        List<Document> repoRows = as(caller, "list", () -> expandRootRepo.getSecuredAggregationDocuments(
+                realm, 0, 100, "expand(sealedRef)", null, null));
+        assertTrue(repoRows.stream().noneMatch(d -> String.valueOf(d.get("sealedRef")).contains("secret-other-owner")),
+                "repo expand hydrated a target outside the target area's rules: " + repoRows);
+
+        Response r = as(caller, "find", () -> gateway.find(expandRequest("expand(sealedRef)")));
+        String outcome = r.getStatus() + " " + r.getEntity();
+        assertEquals(200, r.getStatus(), outcome);
+        boolean leaked = documentRows(r).stream()
+                .filter(d -> root.getRefName().equals(d.getString("refName")))
+                .anyMatch(d -> String.valueOf(d.get("sealedRef")).contains("secret-other-owner"));
+        assertTrue(!leaked, "gateway expand hydrated a target outside the target area's rules: " + outcome);
     }
 
     @Test
@@ -744,7 +836,7 @@ public class SecurityGatesFollowupTest extends BaseRepoTest {
         var db = dataStoreWrapper.getDataStore(testUtils.getTestRealm()).getDatabase();
         Document byPrefix = new Document("refName", new Document("$regex", "^" + PREFIX));
         for (String c : List.of("bookModel", "sgfExpandRoot", "sgfExpandTarget", "sgfSealedTarget", "menuHierarchyModel",
-                "completionTask", "completionTaskGroup", "userProfile")) {
+                "completionTask", "completionTaskGroup", "userProfile", "email_templates")) {
             db.getCollection(c).deleteMany(byPrefix);
         }
     }

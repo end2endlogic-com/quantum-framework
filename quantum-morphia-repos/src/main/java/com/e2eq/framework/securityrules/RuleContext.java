@@ -2203,7 +2203,7 @@ public class RuleContext {
         // parentheses and conjoined with the governed clauses.
         if (userQuery != null && !userQuery.isBlank()) {
             try {
-                MorphiaUtils.validateQueryString(userQuery.trim());
+                MorphiaUtils.validateCompleteQueryString(userQuery.trim());
             } catch (RuntimeException invalid) {
                 throw new SecurityException("Federated query rejected: the caller query is not a self-contained "
                         + "BIAPIQuery expression", invalid);
@@ -2259,8 +2259,13 @@ public class RuleContext {
         }
         String governed = String.join(" && ", all);
 
-        // Fail closed: the composed governed string must be a valid BIAPIQuery.
-        MorphiaUtils.validateQueryString(governed);
+        // Fail closed: the composed governed string must be one complete BIAPIQuery expression.
+        try {
+            MorphiaUtils.validateCompleteQueryString(governed);
+        } catch (RuntimeException invalid) {
+            throw new SecurityException("Federated query rejected: the governed filter is not one complete "
+                    + "BIAPIQuery expression", invalid);
+        }
         return com.e2eq.framework.model.securityrules.GovernedFilterProjection.of(
                 governed, response.getFinalEffect(), ruleTrims, excludedFields);
     }
@@ -2277,7 +2282,7 @@ public class RuleContext {
                     + "\". Federated queries fail closed rather than drop a security filter.");
         }
         try {
-            MorphiaUtils.validateQueryString(resolved);
+            MorphiaUtils.validateCompleteQueryString(resolved);
         } catch (RuntimeException invalid) {
             throw new SecurityException("Cannot lower security rule '" + ruleName
                     + "' into a federated filter: the resolved clause is not a self-contained BIAPIQuery expression",
@@ -2289,9 +2294,16 @@ public class RuleContext {
     /**
      * True when {@code value} can be substituted into a BIAPIQuery rule string without changing its
      * structure: no grouping, operator, wildcard, quoting, escaping or substitution characters and
-     * no control characters. Commas (list values) and spaces are allowed.
+     * no control characters, and not a {@code null}/{@code true}/{@code false} keyword or an
+     * {@code @@} reference. Commas (list values) and spaces are allowed.
      */
     static boolean isSafeGovernedLiteral(String value) {
+        String trimmed = value.trim();
+        // Keywords and reference markers that would change the value's type or meaning.
+        if (trimmed.equalsIgnoreCase("null") || trimmed.equalsIgnoreCase("true")
+                || trimmed.equalsIgnoreCase("false") || trimmed.contains("@@")) {
+            return false;
+        }
         for (int i = 0; i < value.length(); i++) {
             char c = value.charAt(i);
             if (Character.isISOControl(c) || "()[]{}&|!:^\"*~<>=\\$#%;`".indexOf(c) >= 0) {

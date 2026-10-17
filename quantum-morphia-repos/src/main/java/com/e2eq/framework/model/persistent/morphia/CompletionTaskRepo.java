@@ -568,8 +568,9 @@ public class CompletionTaskRepo extends MorphiaRepo<CompletionTask> {
 
     /**
      * Tasks of a group, read without row rules: group bookkeeping and run views list every task of
-     * a run. Callers gate the group first (the onboarding run view reads it with
-     * {@code findByRefName} under the caller's rules); this method is not exposed over REST.
+     * a run. It is not exposed over REST. Callers own the group check: task writes reach it only
+     * after a gated task or group read; the onboarding run view looks the group up through
+     * {@code CompletionTaskGroupRepo.findByRefName(realm, refName)}, which is realm-scoped only.
      */
     public List<CompletionTask> listByGroup(String realm, String groupId) {
         Optional<CompletionTaskGroup> group = groupRepo.findById(new ObjectId(groupId), realm, true);

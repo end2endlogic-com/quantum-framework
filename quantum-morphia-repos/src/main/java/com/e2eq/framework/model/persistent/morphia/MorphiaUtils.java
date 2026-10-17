@@ -425,6 +425,43 @@ public class MorphiaUtils {
    }
 
 
+   /**
+    * Strict form of {@link #validateQueryString}: the whole string must be one BIAPIQuery
+    * expression. {@code query} has no EOF anchor, so the lenient parse stops quietly at the first
+    * token that does not fit (for example a stray {@code ')'}) and ignores the rest; lexer errors
+    * are not reported either. Use this wherever a query string is composed from parts, so a part
+    * cannot close a group early and leave a governed clause unparsed.
+    *
+    * @throws IllegalArgumentException when the string is empty, does not lex, does not parse, or
+    *                                  has input left after the expression
+    */
+   public static void validateCompleteQueryString(String queryString) {
+      if (queryString == null || queryString.isBlank()) {
+         throw new IllegalArgumentException("Null or empty query string is not valid");
+      }
+      String normalized = normalizeOperators(queryString);
+      BaseErrorListener failing = new BaseErrorListener() {
+         @Override
+         public void syntaxError(Recognizer<?, ?> recognizer, Object offendingSymbol, int line,
+                                 int charPositionInLine, String msg, RecognitionException e) {
+            throw new IllegalArgumentException("syntax error in query string at position "
+                    + charPositionInLine + ": " + msg, e);
+         }
+      };
+      BIAPIQueryLexer lexer = new BIAPIQueryLexer(CharStreams.fromString(normalized));
+      lexer.removeErrorListeners();
+      lexer.addErrorListener(failing);
+      CommonTokenStream tokens = new CommonTokenStream(lexer);
+      BIAPIQueryParser parser = new BIAPIQueryParser(tokens);
+      parser.removeErrorListeners();
+      parser.addErrorListener(failing);
+      parser.query();
+      if (tokens.LA(1) != org.antlr.v4.runtime.Token.EOF) {
+         throw new IllegalArgumentException("query string has unparsed input after the expression at '"
+                 + tokens.LT(1).getText() + "'");
+      }
+   }
+
    public static Filter convertToFilterWContext(String queryString, PrincipalContext pcontext, ResourceContext rcontext, Class<? extends UnversionedBaseModel> modelClass)  {
       Objects.requireNonNull(modelClass, "Model class cannot be null");
 

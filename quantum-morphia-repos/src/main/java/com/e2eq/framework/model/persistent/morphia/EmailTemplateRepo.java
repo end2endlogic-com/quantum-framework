@@ -33,14 +33,23 @@ public class EmailTemplateRepo extends MorphiaRepo<EmailTemplate> {
             .first());
     }
 
+    /**
+     * Deletes by refName through the same governed read as GET/PUT ({@link #findByRefName(String, String)}
+     * under the caller's rule filters), then the gated by-id delete; a template outside the
+     * caller's scope is not found.
+     */
     public boolean deleteByRefName(String realm, String refName) {
         if (realm == null || realm.isBlank() || refName == null || refName.isBlank()) {
             return false;
         }
-        Datastore ds = morphiaDataStoreWrapper.getDataStore(realm);
-        var result = ds.find(EmailTemplate.class)
-            .filter(Filters.eq("refName", refName))
-            .delete();
-        return result.getDeletedCount() > 0;
+        Optional<EmailTemplate> template = findByRefName(refName, realm);
+        if (template.isEmpty()) {
+            return false;
+        }
+        try {
+            return delete(realm, template.get()) > 0;
+        } catch (com.e2eq.framework.exceptions.ReferentialIntegrityViolationException e) {
+            throw new IllegalStateException(e.getMessage(), e);
+        }
     }
 }
