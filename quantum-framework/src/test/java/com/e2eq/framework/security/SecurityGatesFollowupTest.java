@@ -453,6 +453,25 @@ public class SecurityGatesFollowupTest extends BaseRepoTest {
         assertEquals(List.of(), leaks, "a variable value escaped the governed clause");
     }
 
+    /** A scalar value with a comma must not widen a rule's {@code ^[${v}]} list. */
+    @Test
+    void governedFilterProjectionCannotWidenAListThroughAScalarValue() {
+        String role = PREFIX + "governed-list";
+        addRule(role, "dataDomain.ownerId:^[${ownerId}]", null, true);
+        BookModel foreign = seedBook("foreign", Partition.OWNER.foreign(testUtils.getTestDataDomain()));
+        DataDomain crafted = copy(testUtils.getTestDataDomain());
+        crafted.setOwnerId(testUtils.getTestDataDomain().getOwnerId() + "," + Partition.OWNER.foreignValue);
+        PrincipalContext caller = new PrincipalContext.Builder()
+                .withDataDomain(crafted)
+                .withDefaultRealm(realm)
+                .withUserId(role + "@test.local")
+                .withScope("Authentication")
+                .withRoles(new String[]{role}).build();
+        List<String> leaks = new ArrayList<>();
+        governedLeak(leaks, caller, null, foreign.getId());
+        assertEquals(List.of(), leaks, "a comma in a scalar value widened the governed list");
+    }
+
     private void governedLeak(List<String> leaks, PrincipalContext caller, String userQuery, ObjectId foreignId) {
         String governed;
         try {

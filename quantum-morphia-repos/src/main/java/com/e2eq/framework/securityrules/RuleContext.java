@@ -2295,7 +2295,10 @@ public class RuleContext {
      * True when {@code value} can be substituted into a BIAPIQuery rule string without changing its
      * structure: no grouping, operator, wildcard, quoting, escaping or substitution characters and
      * no control characters, and not a {@code null}/{@code true}/{@code false} keyword or an
-     * {@code @@} reference. Commas (list values) and spaces are allowed.
+     * {@code @@} reference. Commas are refused too: inside a rule's {@code ^[${v}]} list a scalar
+     * value {@code own,foreign} would widen the list. These variables are scalars (the bundle's
+     * string values), so a list-valued variable cannot be lowered here and fails closed. Spaces
+     * are allowed.
      */
     static boolean isSafeGovernedLiteral(String value) {
         String trimmed = value.trim();
@@ -2306,7 +2309,7 @@ public class RuleContext {
         }
         for (int i = 0; i < value.length(); i++) {
             char c = value.charAt(i);
-            if (Character.isISOControl(c) || "()[]{}&|!:^\"*~<>=\\$#%;`".indexOf(c) >= 0) {
+            if (Character.isISOControl(c) || "()[]{}&|!:^\"*~<>=\\$#%;`,".indexOf(c) >= 0) {
                 return false;
             }
         }
