@@ -24,13 +24,26 @@ public class RepoUtils {
     @Inject
     RuleContext ruleContext;
 
+    /**
+     * Loads a row by class name and id under the caller's rule filters, as
+     * {@code MorphiaRepo.findById} does. An explicit ignore-rules scope reads by id only; with no
+     * security context the read is refused.
+     */
     public BaseModel resolve(String className, ObjectId id) {
         try {
             Class<? extends BaseModel> clazz = (Class<? extends BaseModel>) Class.forName(className);
             List<Filter> filters = new ArrayList<>();
             filters.add(Filters.eq("_id", id));
-            Filter[] qfilters = filters.toArray(new Filter[0]);
-            return dataStore.getDataStore(getSecurityContextRealmId()).find(clazz).filter(qfilters).first();
+            if (!SecurityContext.isIgnoringRules()) {
+                if (SecurityContext.getPrincipalContext().isEmpty() || SecurityContext.getResourceContext().isEmpty()) {
+                    throw new IllegalStateException("RepoUtils.resolve requires a security context or an explicit "
+                            + "ignore-rules scope (SecurityCallScope.openIgnoringRules())");
+                }
+                filters = ruleContext.getFilters(filters, SecurityContext.getPrincipalContext().get(),
+                        SecurityContext.getResourceContext().get(), clazz);
+            }
+            return dataStore.getDataStore(getSecurityContextRealmId()).find(clazz)
+                    .filter(com.e2eq.framework.security.runtime.RuleFilterComposition.conjoin(filters)).first();
         } catch (ClassNotFoundException e) {
             throw new RuntimeException(e);
         }
@@ -51,7 +64,15 @@ public class RepoUtils {
         return realmId;
     }
 
+    /**
+     * System-only maintenance: scans and rewrites every row of {@code clazz} in the realm, across
+     * all data domains, so it runs only inside an explicit ignore-rules scope.
+     */
     public void cleanUpReferences(Class clazz) {
+        if (!SecurityContext.isIgnoringRules()) {
+            throw new IllegalStateException("RepoUtils.cleanUpReferences is system-only; call it inside "
+                    + "SecurityCallScope.openIgnoringRules()");
+        }
         List<ReferenceEntry> removeEntries = new ArrayList<>();
         dataStore.getDataStore(getSecurityContextRealmId()).find(clazz).forEach(object -> {
                 BaseModel baseModel = (BaseModel) object;

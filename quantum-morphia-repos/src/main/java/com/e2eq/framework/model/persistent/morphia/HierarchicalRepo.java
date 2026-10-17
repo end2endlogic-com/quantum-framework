@@ -13,7 +13,6 @@ import io.quarkus.logging.Log;
 import jakarta.inject.Inject;
 import jakarta.validation.Valid;
 import jakarta.ws.rs.NotFoundException;
-import org.bson.Document;
 import org.bson.types.ObjectId;
 import org.jetbrains.annotations.NotNull;
 
@@ -170,6 +169,11 @@ public abstract class HierarchicalRepo<
         }
     }
 
+    /** The given filters conjoined with the caller's rule filters (one {@code $and}). */
+    private dev.morphia.query.filters.Filter[] governed(dev.morphia.query.filters.Filter... base) {
+        return getFilterArray(new ArrayList<>(Arrays.asList(base)), getPersistentClass());
+    }
+
     public List<T> getAllChildrenByRefName(String refName) {
         Optional<T> oHierarchyNode = findByRefName(refName);
         if (!oHierarchyNode.isPresent()) {
@@ -197,12 +201,13 @@ public abstract class HierarchicalRepo<
     public List<TreeNode> getTrees(Set<ObjectId> allowedIds) {
         List<TreeNode> nodes = new ArrayList<>();
         if (allowedIds == null) {
-            Document query = new Document("parent", new Document("$exists", false));
-            try (MongoCursor<T> cursor = getMorphiaDataStore().getCollection(getPersistentClass()).find(query).iterator()) {
-                while (cursor.hasNext()) {
-                    T root = cursor.next();
-                    nodes.add(resolveToHierarchy(root, null));
-                }
+            // Tree reads are governed like every other read: only nodes the caller's rule filters
+            // admit are returned, and a hidden node hides its subtree.
+            List<T> roots = getMorphiaDataStore().find(getPersistentClass())
+                    .filter(governed(dev.morphia.query.filters.Filters.exists("parent").not()))
+                    .iterator().toList();
+            for (T root : roots) {
+                nodes.add(resolveToHierarchy(root, null));
             }
             return nodes;
         }
@@ -211,7 +216,7 @@ public abstract class HierarchicalRepo<
         }
         // Bulk-load all allowed nodes in one IN query to avoid N+1 (and reuse for tree building)
         List<T> allowedNodesList = getMorphiaDataStore().find(getPersistentClass())
-                .filter(in("_id", allowedIds))
+                .filter(governed(in("_id", allowedIds)))
                 .iterator().toList();
         Map<ObjectId, T> allowedNodesById = new HashMap<>();
         for (T n : allowedNodesList) {
@@ -300,7 +305,7 @@ public abstract class HierarchicalRepo<
                 byId = allowedNodesById;
             } else {
                 List<T> children = getMorphiaDataStore().find(getPersistentClass())
-                        .filter(in("_id", ids))
+                        .filter(governed(in("_id", ids)))
                         .iterator().toList();
                 byId = new java.util.HashMap<>();
                 for (T c : children) {
@@ -328,16 +333,23 @@ public abstract class HierarchicalRepo<
         // Chained .match().graphLookup() can produce a single stage with multiple fields and
         // trigger MongoDB error 40323: "A pipeline stage specification object must contain exactly one field."
         Class<T> entityClass = getPersistentClass();
+        // The start node and every node the traversal visits must pass the caller's rule filters;
+        // a hidden node is neither returned nor traversed through.
+        dev.morphia.aggregation.stages.GraphLookup lookup = graphLookup(entityClass)
+                .startWith("$descendants")
+                .connectFromField("descendants")
+                .connectToField("_id")
+                .as("children");
+                // No .maxDepth() => unlimited depth
+        dev.morphia.query.filters.Filter[] restriction = governed();
+        if (restriction.length > 0) {
+            lookup.restrict(restriction);
+        }
         Aggregation<T> pipeline = getMorphiaDataStore()
                 .aggregate(entityClass)
                 .pipeline(
-                        match(eq("_id", nodeId)),
-                        graphLookup(entityClass)
-                                .startWith("$descendants")
-                                .connectFromField("descendants")
-                                .connectToField("_id")
-                                .as("children")
-                                // No .maxDepth() => unlimited depth
+                        match(governed(eq("_id", nodeId))),
+                        lookup
                 );
 
         // Execute and return the list of child documents

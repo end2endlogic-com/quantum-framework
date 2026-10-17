@@ -550,7 +550,9 @@ public class CompletionTaskRepo extends MorphiaRepo<CompletionTask> {
 
     /** Legacy completion path retained for existing clients. */
     public Optional<CompletionTask> completeTask(String realm, String id, CompletionTask.Status status, String result) {
-        Optional<CompletionTask> opt = findById(new ObjectId(id), realm, true);
+        // Reached from REST (PUT completionTask/complete/{id}): the row is read under the caller's
+        // rule filters, so a task outside the caller's scope is not found.
+        Optional<CompletionTask> opt = findById(new ObjectId(id), realm, false);
         if (opt.isPresent()) {
             CompletionTask task = opt.get();
             task.setStatus(status);
@@ -564,6 +566,11 @@ public class CompletionTaskRepo extends MorphiaRepo<CompletionTask> {
         return Optional.empty();
     }
 
+    /**
+     * Tasks of a group, read without row rules: group bookkeeping and run views list every task of
+     * a run. Callers gate the group first (the onboarding run view reads it with
+     * {@code findByRefName} under the caller's rules); this method is not exposed over REST.
+     */
     public List<CompletionTask> listByGroup(String realm, String groupId) {
         Optional<CompletionTaskGroup> group = groupRepo.findById(new ObjectId(groupId), realm, true);
         if (group.isEmpty()) {
@@ -633,11 +640,14 @@ public class CompletionTaskRepo extends MorphiaRepo<CompletionTask> {
         List<UpdateOperator> allUpdates = new ArrayList<>();
         allUpdates.add(UpdateOperators.inc("version", 1L));
         allUpdates.addAll(Arrays.asList(updates));
+        List<Filter> filters = new ArrayList<>();
+        filters.add(Filters.eq("_id", current.getId()));
+        filters.add(Filters.eq("version", expectedVersion));
+        filters.add(Filters.eq("kind", WorkItemKind.TODO));
         CompletionTask updated = getMorphiaDataStoreWrapper().getDataStore(getSecurityContextRealmId())
                 .find(CompletionTask.class)
-                .filter(Filters.eq("_id", current.getId()),
-                        Filters.eq("version", expectedVersion),
-                        Filters.eq("kind", WorkItemKind.TODO))
+                // The compare-and-set write repeats the caller's rule filters from the read.
+                .filter(getFilterArray(filters, getPersistentClass()))
                 .modify(new ModifyOptions().returnDocument(ReturnDocument.AFTER),
                         allUpdates.get(0), allUpdates.subList(1, allUpdates.size()).toArray(new UpdateOperator[0]));
         if (updated == null) {
@@ -700,7 +710,8 @@ public class CompletionTaskRepo extends MorphiaRepo<CompletionTask> {
 
         CompletionTask updated = getMorphiaDataStoreWrapper().getDataStore(realm)
                 .find(CompletionTask.class)
-                .filter(filters.toArray(new Filter[0]))
+                // The compare-and-set write repeats the caller's rule filters from the read.
+                .filter(getFilterArray(filters, getPersistentClass()))
                 .modify(new ModifyOptions().returnDocument(ReturnDocument.AFTER),
                         updates.get(0), updates.subList(1, updates.size()).toArray(new UpdateOperator[0]));
         if (updated == null) {
@@ -911,13 +922,27 @@ public class CompletionTaskRepo extends MorphiaRepo<CompletionTask> {
         return new WorkItemOperationException(code, message);
     }
 
+    /**
+     * The caller names the group (REST {@code create/{groupId}}), so it must be a group the caller
+     * can read; a group outside the caller's scope is not found and nothing is created.
+     */
     private void attachGroup(String realm, CompletionTask task, String groupId) {
         if (groupId != null && !groupId.isBlank()) {
-            Optional<CompletionTaskGroup> group = groupRepo.findById(new ObjectId(groupId), realm, true);
-            group.ifPresent(task::setGroup);
+            if (!ObjectId.isValid(groupId)) {
+                throw failure(WorkItemOperationException.Code.INVALID_REQUEST, "Invalid group id");
+            }
+            CompletionTaskGroup group = groupRepo.findById(new ObjectId(groupId), realm, false)
+                    .orElseThrow(() -> failure(WorkItemOperationException.Code.NOT_FOUND,
+                            "Group " + groupId + " was not found"));
+            task.setGroup(group);
         }
     }
 
+    /**
+     * Group status is bookkeeping derived from task writes the caller was already allowed to make
+     * (the group was read under the caller's rules in {@link #attachGroup}); it runs without row
+     * rules on purpose, through the explicit {@code ignoreRules} lookup in the group repo.
+     */
     private void markGroupRunning(String realm, String groupId) {
         if (groupId != null && !groupId.isBlank()) {
             groupRepo.updateStatus(realm, groupId, CompletionTaskGroup.Status.RUNNING);

@@ -134,6 +134,12 @@ public class MongoAggregationCompiler {
                 if (policy == null) {
                     policy = stagePolicies.get(from);
                 }
+                if (policy == null) {
+                    // A caller that governs expansions supplies a policy for every hop; a hop
+                    // without one would run its $lookup with no row policy.
+                    throw new IllegalArgumentException(
+                            "Expand path '" + path + "' has no resolved target policy; aggregation denied");
+                }
             }
             if (policy != null) {
                 if (policy.rowFilter() != null) {
