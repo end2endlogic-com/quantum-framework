@@ -128,9 +128,8 @@ paths:
       description: >
         Added in 1.1.0. Service-to-service only: the caller must be an
         authorized service principal on the identity authority (an active
-        SERVICE account credential holding the flat role
-        control-plane-identity, minted by a holder of the flat system role);
-        end-user and other tokens are refused with 403. Returns the flat
+        SERVICE account whose subject the authority's operators allow-list in
+        deployment config); end-user and other tokens are refused with 403. Returns the flat
         credential roles, which apply in every realm, and the credential's
         userId so the caller can confirm the token's userId matches. Realm-
         scoped (UserRealmRole) roles are never included. Credential material

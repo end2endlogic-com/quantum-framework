@@ -208,9 +208,9 @@ never credential material or realm roles.
 |`quantum.system-service.token`
 |Required. The call is service-to-service: it is sent with this service
 token and never with the forwarded end-user bearer. The identity authority
-accepts only an active `accountType=SERVICE` credential that holds the flat
-role `control-plane-identity` and was minted by a holder of the flat
-`system` role.
+accepts only an active `accountType=SERVICE` credential whose subject its
+operators list in `quantum.control-plane.identity.authorized-service-subjects`
+(deployment config, never credential data).
 
 |`quantum.system-service.identity-base-url`
 |Identity authority (quantum-auth-service). Defaults to
