@@ -144,7 +144,7 @@ public class AccessInviteResource {
     @POST
     @Path("{refName}/resend")
     @Operation(summary = "Resend access invite",
-        description = "Only the inviter or a realm administrator may resend a pending invite. Rotates the token (the previous token stops working), renews the expiry, and notifies the invitee. The new token is returned only when no delivery channel is configured.")
+        description = "Only the inviter or a realm administrator may resend a pending invite. Issues a new token, renews the expiry, and notifies the invitee; the previous token stops working only after the notification succeeds. If delivery fails nothing is re-issued and the previous token still works. The new token is returned only when no delivery channel is configured.")
     @SecurityRequirement(name = "bearerAuth")
     @APIResponses({
         @APIResponse(responseCode = "200", description = "Invite re-issued; inviteToken is present only when no delivery channel is configured",
@@ -153,7 +153,9 @@ public class AccessInviteResource {
             content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class))),
         @APIResponse(responseCode = "404", description = "INVITE_NOT_FOUND",
             content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class))),
-        @APIResponse(responseCode = "409", description = "INVITE_NOT_PENDING",
+        @APIResponse(responseCode = "409", description = "INVITE_NOT_PENDING (including an invite that changed while it was being resent)",
+            content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class))),
+        @APIResponse(responseCode = "502", description = "INVITE_NOTIFICATION_FAILED: the new token could not be delivered; nothing was re-issued and the previous token still works",
             content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
     })
     public Response resend(@PathParam("refName") String refName, @QueryParam("expiresInDays") Integer expiresInDays) {

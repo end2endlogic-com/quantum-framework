@@ -60,6 +60,26 @@ public class AccessInvite extends BaseModel {
 
     protected String tokenHint;
 
+    /**
+     * Hash of a replacement token staged by a resend while its notification is being delivered.
+     * It never authenticates an acceptance; it becomes {@link #tokenHash} only after delivery
+     * succeeds, so a failed delivery leaves the previously delivered token working.
+     */
+    protected String pendingTokenHash;
+
+    /** Hint of {@link #pendingTokenHash}; promoted with it. */
+    protected String pendingTokenHint;
+
+    /** Expiry that applies once {@link #pendingTokenHash} is promoted. */
+    protected Date pendingExpiresAt;
+
+    /**
+     * When {@link #pendingTokenHash} was staged. A staged token is a short lease: a second resend
+     * is refused while it is held, and may take it over once it is older than the lease (for
+     * example after a resend crashed mid-delivery).
+     */
+    protected Date pendingStagedAt;
+
     @Valid
     @Builder.Default
     protected List<EntityReference> scopeRefs = new ArrayList<>();

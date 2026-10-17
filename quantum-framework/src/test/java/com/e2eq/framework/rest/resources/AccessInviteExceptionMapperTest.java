@@ -31,6 +31,7 @@ class AccessInviteExceptionMapperTest {
         assertMapped(Code.INVITE_ACCOUNT_REALM_CONFLICT, 409);
         assertMapped(Code.INVITE_EXPIRED, 410);
         assertMapped(Code.INVITE_PROVISIONING_FAILED, 500);
+        assertMapped(Code.INVITE_NOTIFICATION_FAILED, 502);
     }
 
     private void assertMapped(Code code, int status) {

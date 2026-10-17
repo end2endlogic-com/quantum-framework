@@ -500,7 +500,8 @@ Important invite behavior:
 - invite an existing user by `targetUserId`: an email invite is bound to the email as the user ID, so an existing user whose user ID differs from that email cannot accept it
 - invites expire automatically based on `expiresAt`
 - invites can be revoked before acceptance
-- `resend` rotates the token (the previous token stops working) and renews the expiry
+- `resend` rotates the token and renews the expiry. The new token is staged first and the invitee notified; only after delivery succeeds does it replace the previous token, which then stops working. If the notification service fails, nothing is re-issued, the previous token still works, and the call fails with `502 INVITE_NOTIFICATION_FAILED`
+- every change to an invite after creation (accept, release after a failed acceptance, expire, revoke, resend) is a conditional atomic update that increments the record's `version` and stamps `auditInfo.lastUpdateTs`/`lastUpdateIdentity`, so a stale copy of an invite can never be saved over a newer state
 
 Representative accept request:
 

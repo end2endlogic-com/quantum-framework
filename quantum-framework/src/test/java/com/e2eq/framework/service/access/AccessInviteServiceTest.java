@@ -91,6 +91,9 @@ class AccessInviteServiceTest extends BaseRepoTest {
     @Inject
     UserProfileRepo userProfileRepo;
 
+    @Inject
+    ScriptableTestInviteNotificationService notifications;
+
     private String realm;
     /** A second, non-system realm the test inviters can be granted access to. */
     private String otherRealm;
@@ -115,6 +118,7 @@ class AccessInviteServiceTest extends BaseRepoTest {
 
     @AfterEach
     void tearDown() {
+        notifications.reset();
         String systemRealm = envConfigUtils.getSystemRealm();
         for (String userId : userIds) {
             morphiaDataStoreWrapper.getDataStore(systemRealm).find(CredentialUserIdPassword.class)
@@ -418,6 +422,267 @@ class AccessInviteServiceTest extends BaseRepoTest {
         AccessInviteAcceptRequest fresh = accept(resent.getInviteToken());
         fresh.setPassword(PASSWORD);
         assertEquals(invitee, anonymous(() -> inviteService.acceptInvite(fresh)).getUserId());
+    }
+
+    // ---- resend: delivery-safe rotation -----------------------------------------------------
+
+    @Test
+    void failedResendDeliveryLeavesThePreviousTokenWorking() {
+        String inviter = user("inviter");
+        String invitee = user("rs-fail");
+        AccessInviteResponse invite = createInvite(inviter, invitee, null);
+        AccessInvite before = reload(invite);
+
+        notifications.onDelivery((sent, token) -> {
+            throw new IllegalStateException("simulated mail outage");
+        });
+        assertRefused(Code.INVITE_NOTIFICATION_FAILED,
+            () -> as(principal(inviter, "user"), () -> inviteService.resendInvite(realm, invite.getRefName(), null)));
+        notifications.reset();
+
+        AccessInvite after = reload(invite);
+        assertEquals(before.getTokenHash(), after.getTokenHash(), "a failed delivery must not rotate the token");
+        assertEquals(before.getExpiresAt(), after.getExpiresAt());
+        assertNull(after.getPendingTokenHash(), "the undelivered token is discarded");
+        assertEquals(AccessInvite.Status.PENDING, after.getStatus());
+
+        AccessInviteAcceptRequest original = accept(invite.getInviteToken());
+        original.setPassword(PASSWORD);
+        assertEquals(invitee, anonymous(() -> inviteService.acceptInvite(original)).getUserId());
+    }
+
+    @Test
+    void resendActivatesTheNewTokenOnlyAfterDelivery() {
+        String inviter = user("inviter");
+        String invitee = user("rs-two-phase");
+        AccessInviteResponse invite = createInvite(inviter, invitee, null);
+        java.util.concurrent.atomic.AtomicReference<String> delivered = new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.atomic.AtomicReference<Code> newTokenDuringDelivery = new java.util.concurrent.atomic.AtomicReference<>();
+
+        notifications.onDelivery((sent, token) -> {
+            delivered.set(token);
+            // While delivery is in flight the old token is still the invite's token and the new
+            // one does not authenticate yet.
+            assertEquals(invite.getRefName(), sent.getRefName());
+            AccessInvite stored = reload(invite);
+            assertNotEquals(stored.getTokenHash(), stored.getPendingTokenHash());
+            AccessInviteAcceptRequest early = accept(token);
+            early.setPassword(PASSWORD);
+            AccessInviteException refused = assertThrows(AccessInviteException.class, () -> anonymous(() -> inviteService.acceptInvite(early)));
+            newTokenDuringDelivery.set(refused.getCode());
+        });
+        AccessInviteResponse resent = as(principal(inviter, "user"), () -> inviteService.resendInvite(realm, invite.getRefName(), null));
+        notifications.reset();
+
+        assertEquals(Code.INVITE_TOKEN_INVALID, newTokenDuringDelivery.get());
+        assertEquals(delivered.get(), resent.getInviteToken(), "the delivered token is the one activated");
+        assertNull(reload(invite).getPendingTokenHash());
+
+        AccessInviteAcceptRequest stale = accept(invite.getInviteToken());
+        stale.setPassword(PASSWORD);
+        assertRefused(Code.INVITE_TOKEN_INVALID, () -> anonymous(() -> inviteService.acceptInvite(stale)));
+        AccessInviteAcceptRequest fresh = accept(resent.getInviteToken());
+        fresh.setPassword(PASSWORD);
+        assertEquals(invitee, anonymous(() -> inviteService.acceptInvite(fresh)).getUserId());
+    }
+
+    @Test
+    void acceptanceDuringResendDeliveryWinsAndTheNewTokenIsNeverActivated() {
+        String inviter = user("inviter");
+        String invitee = user("rs-race");
+        AccessInviteResponse invite = createInvite(inviter, invitee, null);
+        java.util.concurrent.atomic.AtomicReference<String> delivered = new java.util.concurrent.atomic.AtomicReference<>();
+
+        notifications.onDelivery((sent, token) -> {
+            delivered.set(token);
+            AccessInviteAcceptRequest original = accept(invite.getInviteToken());
+            original.setPassword(PASSWORD);
+            anonymous(() -> inviteService.acceptInvite(original));
+        });
+        assertRefused(Code.INVITE_NOT_PENDING,
+            () -> as(principal(inviter, "user"), () -> inviteService.resendInvite(realm, invite.getRefName(), null)));
+        notifications.reset();
+
+        AccessInvite stored = reload(invite);
+        assertEquals(AccessInvite.Status.ACCEPTED, stored.getStatus());
+        assertEquals(invitee, stored.getAcceptedUserId());
+        assertNull(stored.getPendingTokenHash(), "the claim discards the staged token");
+        AccessInviteAcceptRequest late = accept(delivered.get());
+        late.setPassword(PASSWORD);
+        assertRefused(Code.INVITE_TOKEN_INVALID, () -> anonymous(() -> inviteService.acceptInvite(late)));
+    }
+
+    @Test
+    void secondResendIsRefusedWhileTheFirstIsDelivering() {
+        String inviter = user("inviter");
+        String invitee = user("rs-concurrent");
+        AccessInviteResponse invite = createInvite(inviter, invitee, null);
+        java.util.concurrent.atomic.AtomicReference<Code> second = new java.util.concurrent.atomic.AtomicReference<>();
+
+        notifications.onDelivery((sent, token) -> {
+            notifications.reset();
+            AccessInviteException refused = assertThrows(AccessInviteException.class,
+                () -> as(principal(inviter, "user"), () -> inviteService.resendInvite(realm, invite.getRefName(), null)));
+            second.set(refused.getCode());
+        });
+        AccessInviteResponse first = as(principal(inviter, "user"), () -> inviteService.resendInvite(realm, invite.getRefName(), null));
+
+        assertEquals(Code.INVITE_NOT_PENDING, second.get(), "the second resend must not stage over the first");
+        AccessInviteAcceptRequest fresh = accept(first.getInviteToken());
+        fresh.setPassword(PASSWORD);
+        assertEquals(invitee, anonymous(() -> inviteService.acceptInvite(fresh)).getUserId());
+    }
+
+    @Test
+    void anAbandonedStagingLeaseIsTakenOver() {
+        String inviter = user("inviter");
+        String invitee = user("rs-abandoned");
+        AccessInviteResponse invite = createInvite(inviter, invitee, null);
+        AccessInvite current = reload(invite);
+        Date longAgo = new Date(System.currentTimeMillis() - AccessInviteService.RESEND_STAGING_LEASE.toMillis() - 60_000);
+        // A resend that crashed after staging: its lease is older than the lease length.
+        assertTrue(as(pContext, () -> inviteRepo.stagePendingToken(realm, current.getId(), current.getTokenHash(),
+            "abandoned-hash-" + suffix, "hint", current.getExpiresAt(), longAgo, longAgo)).isPresent());
+
+        AccessInviteResponse resent = as(principal(inviter, "user"), () -> inviteService.resendInvite(realm, invite.getRefName(), null));
+        assertNull(reload(invite).getPendingTokenHash());
+        AccessInviteAcceptRequest fresh = accept(resent.getInviteToken());
+        fresh.setPassword(PASSWORD);
+        assertEquals(invitee, anonymous(() -> inviteService.acceptInvite(fresh)).getUserId());
+    }
+
+    @Test
+    void expiredTokenPresentedDuringResendDeliveryDoesNotStrandTheResend() {
+        String inviter = user("inviter");
+        String invitee = user("rs-expiring");
+        AccessInviteResponse invite = createInvite(inviter, invitee, null);
+        morphiaDataStoreWrapper.getDataStore(realm).find(AccessInvite.class)
+            .filter(Filters.eq("refName", invite.getRefName()))
+            .update(UpdateOperators.set("expiresAt", new Date(System.currentTimeMillis() - 60_000)));
+        java.util.concurrent.atomic.AtomicReference<Code> oldTokenDuringDelivery = new java.util.concurrent.atomic.AtomicReference<>();
+
+        notifications.onDelivery((sent, token) -> {
+            AccessInviteAcceptRequest old = accept(invite.getInviteToken());
+            old.setPassword(PASSWORD);
+            oldTokenDuringDelivery.set(assertThrows(AccessInviteException.class, () -> anonymous(() -> inviteService.acceptInvite(old))).getCode());
+        });
+        AccessInviteResponse resent = as(principal(inviter, "user"), () -> inviteService.resendInvite(realm, invite.getRefName(), null));
+        notifications.reset();
+
+        assertEquals(Code.INVITE_EXPIRED, oldTokenDuringDelivery.get(), "the expired token is still refused");
+        assertEquals(AccessInvite.Status.PENDING, reload(invite).getStatus(), "the resend renewed the invite");
+        AccessInviteAcceptRequest fresh = accept(resent.getInviteToken());
+        fresh.setPassword(PASSWORD);
+        assertEquals(invitee, anonymous(() -> inviteService.acceptInvite(fresh)).getUserId());
+    }
+
+    @Test
+    void aNotifierThatSavesTheInviteCannotActivateTheNewToken() {
+        String inviter = user("inviter");
+        String invitee = user("rs-saving-notifier");
+        AccessInviteResponse invite = createInvite(inviter, invitee, null);
+        String hashBefore = reload(invite).getTokenHash();
+
+        notifications.onDelivery((sent, token) -> fullSave(sent));
+        assertRefused(Code.INVITE_NOTIFICATION_FAILED,
+            () -> as(principal(inviter, "user"), () -> inviteService.resendInvite(realm, invite.getRefName(), null)));
+        notifications.reset();
+
+        assertEquals(hashBefore, reload(invite).getTokenHash(), "the new token was not activated");
+        AccessInviteAcceptRequest original = accept(invite.getInviteToken());
+        original.setPassword(PASSWORD);
+        assertEquals(invitee, anonymous(() -> inviteService.acceptInvite(original)).getUserId());
+    }
+
+    // ---- atomic transitions: version and audit ---------------------------------------------
+
+    @Test
+    void everyTransitionIncrementsTheVersionAndStampsTheAudit() {
+        String inviter = user("inviter");
+        AccessInviteResponse invite = createInvite(inviter, user("versioned"), null);
+        AccessInvite created = reload(invite);
+
+        as(principal(inviter, "user"), () -> inviteService.resendInvite(realm, invite.getRefName(), null));
+        AccessInvite resent = reload(invite);
+        assertEquals(created.getVersion() + 2, resent.getVersion(), "stage + promote each increment the version");
+        assertEquals(inviter, resent.getAuditInfo().getLastUpdateIdentity());
+        assertNotNull(resent.getAuditInfo().getLastUpdateTs());
+        assertNotNull(resent.getAuditInfo().getCreationTs(), "the creation stamp is kept");
+
+        as(principal(inviter, "user"), () -> inviteService.revokeInvite(realm, invite.getRefName()));
+        AccessInvite revoked = reload(invite);
+        assertEquals(resent.getVersion() + 1, revoked.getVersion());
+        assertFalse(revoked.getAuditInfo().getLastUpdateTs().before(resent.getAuditInfo().getLastUpdateTs()));
+    }
+
+    @Test
+    void staleCopyCannotOverwriteAnAcceptedInvite() {
+        String invitee = user("stale-accept");
+        AccessInviteResponse invite = createInvite(user("inviter"), invitee, null);
+        AccessInvite stale = reload(invite);
+
+        AccessInviteAcceptRequest request = accept(invite.getInviteToken());
+        request.setPassword(PASSWORD);
+        anonymous(() -> inviteService.acceptInvite(request));
+
+        // A second acceptance holding the old PENDING copy reaches the expiry path...
+        assertFalse(as(pContext, () -> inviteRepo.expirePending(realm, stale.getId(), stale.getTokenHash(), new Date(Long.MAX_VALUE))));
+        // ...or saves the stale copy in full: both leave the accepted state alone.
+        stale.setStatus(AccessInvite.Status.EXPIRED);
+        assertVersionConflict(() -> fullSave(stale));
+        AccessInvite stored = reload(invite);
+        assertEquals(AccessInvite.Status.ACCEPTED, stored.getStatus());
+        assertEquals(invitee, stored.getAcceptedUserId());
+        assertEquals(stale.getVersion() + 1, stored.getVersion());
+        // Control: the same save of a current copy is permitted, so the refusal above is the version check.
+        fullSave(stored);
+        assertEquals(AccessInvite.Status.ACCEPTED, reload(invite).getStatus());
+    }
+
+    @Test
+    void staleCopyCannotOverwriteARevokedInvite() {
+        String inviter = user("inviter");
+        AccessInviteResponse invite = createInvite(inviter, user("stale-revoke"), null);
+        AccessInvite stale = reload(invite);
+        as(principal(inviter, "user"), () -> inviteService.revokeInvite(realm, invite.getRefName()));
+
+        assertVersionConflict(() -> fullSave(stale));
+        assertEquals(AccessInvite.Status.REVOKED, reload(invite).getStatus());
+        AccessInviteAcceptRequest request = accept(invite.getInviteToken());
+        request.setPassword(PASSWORD);
+        assertRefused(Code.INVITE_NOT_PENDING, () -> anonymous(() -> inviteService.acceptInvite(request)));
+    }
+
+    @Test
+    void staleCopyCannotRestoreARotatedToken() {
+        String inviter = user("inviter");
+        String invitee = user("stale-rotate");
+        AccessInviteResponse invite = createInvite(inviter, invitee, null);
+        AccessInvite stale = reload(invite);
+        AccessInviteResponse resent = as(principal(inviter, "user"), () -> inviteService.resendInvite(realm, invite.getRefName(), null));
+
+        assertVersionConflict(() -> fullSave(stale));
+        assertNotEquals(stale.getTokenHash(), reload(invite).getTokenHash(), "the rotated token stays in place");
+        AccessInviteAcceptRequest old = accept(invite.getInviteToken());
+        old.setPassword(PASSWORD);
+        assertRefused(Code.INVITE_TOKEN_INVALID, () -> anonymous(() -> inviteService.acceptInvite(old)));
+        AccessInviteAcceptRequest fresh = accept(resent.getInviteToken());
+        fresh.setPassword(PASSWORD);
+        assertEquals(invitee, anonymous(() -> inviteService.acceptInvite(fresh)).getUserId());
+    }
+
+    @Test
+    void releaseAfterAFailedAcceptanceOnlyRevertsTheExactClaim() {
+        String invitee = user("release");
+        AccessInviteResponse invite = createInvite(user("inviter"), invitee, null);
+        AccessInviteAcceptRequest request = accept(invite.getInviteToken());
+        request.setPassword(PASSWORD);
+        anonymous(() -> inviteService.acceptInvite(request));
+        AccessInvite accepted = reload(invite);
+
+        // A release naming an older version (a claim that has since been superseded) is a no-op.
+        assertFalse(as(pContext, () -> inviteRepo.releaseClaim(realm, accepted.getId(), accepted.getVersion() - 1, accepted.getTokenHash(), invitee)));
+        assertEquals(AccessInvite.Status.ACCEPTED, reload(invite).getStatus());
     }
 
     @Test
@@ -980,6 +1245,27 @@ class AccessInviteServiceTest extends BaseRepoTest {
 
     private AccessInvite reload(AccessInviteResponse invite) {
         return as(pContext, () -> inviteRepo.findByRefNameIgnoreRules(realm, invite.getRefName()).orElseThrow());
+    }
+
+    /**
+     * A full-document repository save, standing in for any code that saves a loaded invite. It runs
+     * as the principal that created the invite (the one the write rules permit), so a refusal can
+     * only come from Morphia's optimistic-lock check.
+     */
+    private AccessInvite fullSave(AccessInvite invite) {
+        PrincipalContext saver = testUtils.getDefaultPrincipalContext(invite.getInvitedByUserId(), new String[]{"admin", "user"});
+        return as(saver, () -> inviteRepo.save(realm, invite));
+    }
+
+    /** The stale save must fail on Morphia's optimistic-lock check, not for any other reason. */
+    private static void assertVersionConflict(Executable action) {
+        Throwable failure = assertThrows(RuntimeException.class, action);
+        for (Throwable t = failure; t != null; t = t.getCause()) {
+            if (t instanceof dev.morphia.VersionMismatchException) {
+                return;
+            }
+        }
+        throw new AssertionError("expected a version mismatch, got " + failure, failure);
     }
 
     private static void assertRefused(Code expected, Executable action) {

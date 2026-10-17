@@ -60,7 +60,12 @@ public class AccessInviteException extends RuntimeException {
         /** Invite does not exist in this realm (404). */
         INVITE_NOT_FOUND,
         /** Provisioning failed after the token was verified; the invite stays pending (500). Details are logged only. */
-        INVITE_PROVISIONING_FAILED
+        INVITE_PROVISIONING_FAILED,
+        /**
+         * A resend could not deliver the new token through the configured notification service.
+         * Nothing was re-issued: the previously delivered token still works (502).
+         */
+        INVITE_NOTIFICATION_FAILED
     }
 
     private final Code code;

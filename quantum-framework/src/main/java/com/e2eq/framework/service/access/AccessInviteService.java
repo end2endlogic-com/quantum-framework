@@ -37,6 +37,7 @@ import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.WebApplicationException;
+import org.bson.types.ObjectId;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.nio.charset.StandardCharsets;
@@ -99,6 +100,12 @@ public class AccessInviteService {
 
     @Inject
     com.e2eq.framework.model.persistent.morphia.interceptors.ddpolicy.DataDomainResolver dataDomainResolver;
+
+    /**
+     * How long a resend holds its staged token while delivering it. A second resend inside the lease
+     * is refused; after it, the lease is treated as abandoned (a crashed resend) and taken over.
+     */
+    static final java.time.Duration RESEND_STAGING_LEASE = java.time.Duration.ofMinutes(5);
 
     /** Set once the unique (realmRefName, userId) assignment index is known to exist. */
     private final java.util.concurrent.atomic.AtomicBoolean uniqueAssignmentIndexReady = new java.util.concurrent.atomic.AtomicBoolean();
@@ -286,8 +293,17 @@ public class AccessInviteService {
     }
 
     /**
-     * Re-issues a pending invite: rotates its token (the previous token stops working), renews the
-     * expiry, and notifies the invitee again. The new raw token is returned only to the caller.
+     * Re-issues a pending invite: issues a new token, renews the expiry, and notifies the invitee
+     * again. The rotation is two-phase so a failed delivery never strands the invitee:
+     * <ol>
+     *   <li>the new token is staged next to the current one (the current token keeps working);</li>
+     *   <li>the invitee is notified with the new token;</li>
+     *   <li>only then is the staged token promoted, version-checked, and the previous token stops
+     *       working.</li>
+     * </ol>
+     * If delivery fails the staged token is discarded, the previous token still works, and the
+     * call fails with {@code INVITE_NOTIFICATION_FAILED}. The new raw token is returned to the
+     * caller only under the same rule as creation ({@link #tokenForInviter}).
      */
     public AccessInviteResponse resendInvite(String realm, String refName, Integer expiresInDays) {
         AccessInvite invite = requireManageableInvite(realm, refName, "resend");
@@ -296,12 +312,38 @@ public class AccessInviteService {
         }
         String rawToken = generateToken();
         String newHash = hashToken(rawToken);
+        String newHint = tokenHint(newHash);
         Date newExpiry = Date.from(Instant.now().plus(defaultExpiryDays(expiresInDays), ChronoUnit.DAYS));
-        AccessInvite rotated = inviteRepo.rotatePendingToken(realm, invite.getId(), invite.getTokenHash(), newHash, tokenHint(newHash), newExpiry)
-            .orElseThrow(() -> failure(Code.INVITE_NOT_PENDING, "Invite changed before it could be resent; refresh and retry."));
-        for (AccessInviteNotificationService notificationService : notificationServices) {
-            notificationService.sendInviteNotification(realm, rotated, rawToken);
+        Date stagedAt = new Date();
+        AccessInvite staged = inviteRepo.stagePendingToken(realm, invite.getId(), invite.getTokenHash(), newHash, newHint, newExpiry,
+                stagedAt, new Date(stagedAt.getTime() - RESEND_STAGING_LEASE.toMillis()))
+            .orElseThrow(() -> failure(Code.INVITE_NOT_PENDING,
+                "Invite changed, or another resend is in progress, before it could be resent; refresh and retry."));
+        ObjectId inviteId = staged.getId();
+        Long stagedVersion = staged.getVersion();
+
+        // Notifiers get a read-only view: the invite as the delivered token will find it once
+        // promoted, with no version, so any attempt to save it fails (and fails the delivery)
+        // instead of activating the new token before delivery is confirmed.
+        staged.setTokenHash(newHash);
+        staged.setTokenHint(newHint);
+        staged.setExpiresAt(newExpiry);
+        staged.setVersion(null);
+        try {
+            for (AccessInviteNotificationService notificationService : notificationServices) {
+                notificationService.sendInviteNotification(realm, staged, rawToken);
+            }
         }
+        catch (RuntimeException e) {
+            boolean discarded = inviteRepo.discardStagedToken(realm, inviteId, newHash);
+            Log.errorf(e, "access-invite.resend.notification-failed realm=%s invite=%s stagedTokenDiscarded=%s",
+                realm, staged.getRefName(), discarded);
+            throw failure(Code.INVITE_NOTIFICATION_FAILED,
+                "The invite could not be delivered, so it was not re-issued; the previous invite link still works. Try again later.");
+        }
+        AccessInvite rotated = inviteRepo.promoteStagedToken(realm, inviteId, stagedVersion, newHash, newHint, newExpiry)
+            .orElseThrow(() -> failure(Code.INVITE_NOT_PENDING,
+                "Invite changed while it was being resent, so the new link was not activated; refresh and retry."));
         return toResponse(rotated, tokenForInviter(rawToken));
     }
 
@@ -395,6 +437,11 @@ public class AccessInviteService {
 
         AccessInvite claimed = inviteRepo.claimPending(realm, invite.getId(), invite.getTokenHash(), new Date(), accountUserId)
             .orElseThrow(() -> failure(Code.INVITE_NOT_PENDING, "Invite is no longer pending."));
+        // Captured before provisioning sees the object: the release must name the exact claim.
+        final ObjectId claimedId = claimed.getId();
+        final Long claimedVersion = claimed.getVersion();
+        final String claimedTokenHash = claimed.getTokenHash();
+        final String claimedRefName = claimed.getRefName();
 
         final String firstName = request.getFirstName();
         final String lastName = request.getLastName();
@@ -417,12 +464,12 @@ public class AccessInviteService {
             );
         }
         catch (RuntimeException e) {
-            inviteRepo.releaseClaim(finalRealm, claimed.getId(), claimed.getTokenHash(), accountUserId);
+            inviteRepo.releaseClaim(finalRealm, claimedId, claimedVersion, claimedTokenHash, accountUserId);
             if (e instanceof AccessInviteException || e instanceof WebApplicationException) {
                 // Typed refusals (including provisioner validation errors) keep their status.
                 throw e;
             }
-            Log.errorf(e, "access-invite.accept.failed realm=%s invite=%s", finalRealm, claimed.getRefName());
+            Log.errorf(e, "access-invite.accept.failed realm=%s invite=%s", finalRealm, claimedRefName);
             throw failure(Code.INVITE_PROVISIONING_FAILED, "The invite could not be accepted. Try again or contact the inviter.");
         }
     }

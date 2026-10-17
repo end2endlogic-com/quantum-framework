@@ -36,6 +36,7 @@ public class AccessInviteExceptionMapper implements ExceptionMapper<AccessInvite
             case INVITE_SIGN_IN_REQUIRED -> Response.Status.UNAUTHORIZED;
             case INVITE_NOT_FOUND -> Response.Status.NOT_FOUND;
             case INVITE_PROVISIONING_FAILED -> Response.Status.INTERNAL_SERVER_ERROR;
+            case INVITE_NOTIFICATION_FAILED -> Response.Status.BAD_GATEWAY;
         };
     }
 }
