@@ -13,6 +13,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import com.e2eq.framework.model.persistent.base.EntityReference;
+import com.e2eq.framework.model.security.DomainContext;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -71,7 +73,7 @@ class LocalSystemDirectoryTest {
         Realm recorded = new Realm();
         recorded.setRefName("helixor-code-D1");
         recorded.setApplicationRef(application("helixor-code"));
-        when(realmRepo.findByRefName("helixor-code-D1", true, "quantum-system")).thenReturn(Optional.of(recorded));
+        when(realmRepo.findAllByRefNameWithIgnoreRules("helixor-code-D1", "quantum-system")).thenReturn(List.of(recorded));
         Realm incoming = new Realm();
         incoming.setRefName("helixor-code-D1");
         when(realmRepo.save(eq("quantum-system"), any(Realm.class))).thenAnswer(invocation -> invocation.getArgument(1));
@@ -96,7 +98,7 @@ class LocalSystemDirectoryTest {
         recorded.setDefaultPerspective("operator");
         recorded.setApplySeedsOnStartup(true);
         recorded.setSetupStatus(RealmSetupStatus.READY);
-        when(realmRepo.findByRefName("helixor-code-D1", true, "quantum-system")).thenReturn(Optional.of(recorded));
+        when(realmRepo.findAllByRefNameWithIgnoreRules("helixor-code-D1", "quantum-system")).thenReturn(List.of(recorded));
         when(realmRepo.save(eq("quantum-system"), any(Realm.class))).thenAnswer(invocation -> invocation.getArgument(1));
         Realm incoming = new Realm();          // as ControlPlaneRealmMapper.fromEntry builds it
         incoming.setRefName("helixor-code-D1");
@@ -126,7 +128,7 @@ class LocalSystemDirectoryTest {
         recorded.setRefName("helixor-code-D1");
         recorded.setId(new ObjectId());
         recorded.setApplicationRef(application("helixor-code"));
-        when(realmRepo.findByRefName("helixor-code-D1", true, "quantum-system")).thenReturn(Optional.of(recorded));
+        when(realmRepo.findAllByRefNameWithIgnoreRules("helixor-code-D1", "quantum-system")).thenReturn(List.of(recorded));
         Realm incoming = new Realm();
         incoming.setRefName("helixor-code-D1");
         incoming.setApplicationRef(application("helixor-di"));
@@ -150,5 +152,67 @@ class LocalSystemDirectoryTest {
         new LocalSystemDirectory(realmRepo, mock(CredentialRepo.class), env).registerRealm(incoming);
 
         assertEquals("helixor-code", incoming.getApplicationRef().getEntityRefName());
+    }
+
+    @Test
+    void registerRealmKeepsTheRecordedAdminAndDomainContextFieldsTheWriteDoesNotCarry() {
+        RealmRepo realmRepo = mock(RealmRepo.class);
+        EnvConfigUtils env = mock(EnvConfigUtils.class);
+        when(env.getSystemRealm()).thenReturn("quantum-system");
+        Realm recorded = new Realm();
+        recorded.setId(new ObjectId());
+        recorded.setRefName("helixor-di-D1");
+        recorded.setEmailDomain("helixor-di-D1");
+        recorded.setDefaultAdminUserId("owner@helixor.dev");
+        recorded.setDomainContext(DomainContext.builder().tenantId("old-tenant").orgRefName("old-org")
+            .accountId("0000000009").defaultRealm("helixor-di-D1-home").dataSegment(3).build());
+        when(realmRepo.findAllByRefNameWithIgnoreRules("helixor-di-D1", "quantum-system")).thenReturn(List.of(recorded));
+        when(realmRepo.save(eq("quantum-system"), any(Realm.class))).thenAnswer(invocation -> invocation.getArgument(1));
+        Realm incoming = new Realm();          // a reconcile PUT: no admin, a domain context
+        incoming.setRefName("helixor-di-D1");
+        incoming.setEmailDomain("helixor-di-D1");
+        incoming.setDomainContext(DomainContext.builder().tenantId("helixor-di-D1").orgRefName("helixor-di-D1")
+            .accountId("0000000001").defaultRealm("helixor-di-D1").dataSegment(0).build());
+
+        Realm saved = new LocalSystemDirectory(realmRepo, mock(CredentialRepo.class), env).registerRealm(incoming);
+
+        assertEquals("owner@helixor.dev", saved.getDefaultAdminUserId(),
+            "an omitted admin must not be replaced by the admin@<emailDomain> fallback");
+        assertEquals("helixor-di-D1", saved.getDomainContext().getTenantId());
+        assertEquals("helixor-di-D1", saved.getDomainContext().getOrgRefName());
+        assertEquals("0000000001", saved.getDomainContext().getAccountId());
+        assertEquals("helixor-di-D1-home", saved.getDomainContext().getDefaultRealm());
+        assertEquals(3, saved.getDomainContext().getDataSegment());
+    }
+
+    @Test
+    void registerRealmWithDuplicatesUpdatesTheOldestAndDeletesNothing() throws Exception {
+        RealmRepo realmRepo = mock(RealmRepo.class);
+        EnvConfigUtils env = mock(EnvConfigUtils.class);
+        when(env.getSystemRealm()).thenReturn("quantum-system");
+        Realm oldest = new Realm();
+        oldest.setId(new ObjectId("6ad1440ca6e53a647f9f8509"));
+        oldest.setRefName("helixor-di-D1");
+        oldest.setTenancyMode(RealmTenancyMode.MULTI_TENANT);
+        oldest.setDeploymentType(RealmDeploymentType.SHARED);
+        Realm duplicate = new Realm();
+        duplicate.setId(new ObjectId("6ad1440ca6e53a647f9f8510"));
+        duplicate.setRefName("helixor-di-D1");
+        when(realmRepo.findAllByRefNameWithIgnoreRules("helixor-di-D1", "quantum-system"))
+            .thenReturn(List.of(oldest, duplicate));
+        when(realmRepo.save(eq("quantum-system"), any(Realm.class))).thenAnswer(invocation -> invocation.getArgument(1));
+        Realm incoming = new Realm();
+        incoming.setRefName("helixor-di-D1");
+        incoming.setDisplayName("Helixor Di D1");
+
+        Realm saved = new LocalSystemDirectory(realmRepo, mock(CredentialRepo.class), env).registerRealm(incoming);
+
+        assertSame(oldest, saved);
+        assertEquals("Helixor Di D1", saved.getDisplayName());
+        assertEquals(RealmTenancyMode.MULTI_TENANT, saved.getTenancyMode());
+        assertEquals(RealmDeploymentType.SHARED, saved.getDeploymentType());
+        verify(realmRepo).save("quantum-system", oldest);
+        verify(realmRepo, never()).save("quantum-system", duplicate);
+        verify(realmRepo, never()).delete(anyString(), any(Realm.class));
     }
 }

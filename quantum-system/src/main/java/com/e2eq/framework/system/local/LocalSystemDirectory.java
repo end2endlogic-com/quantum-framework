@@ -4,11 +4,15 @@ import com.e2eq.framework.api.system.SystemDirectory;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.model.persistent.morphia.RealmRepo;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
+import com.e2eq.framework.model.security.DomainContext;
 import com.e2eq.framework.model.security.Realm;
 import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import com.e2eq.framework.util.EnvConfigUtils;
+import org.jboss.logging.Logger;
 
+import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 /**
  * {@link SystemDirectory} backed by the local system-realm database via the
@@ -27,6 +31,8 @@ import java.util.Optional;
  * to {@code quantum.system.directory.mode}.
  */
 public class LocalSystemDirectory implements SystemDirectory {
+
+    private static final Logger LOG = Logger.getLogger(LocalSystemDirectory.class);
 
     private final RealmRepo realmRepo;
     private final CredentialRepo credentialRepo;
@@ -69,28 +75,46 @@ public class LocalSystemDirectory implements SystemDirectory {
     }
 
     /**
-     * Registering a realm is keyed by refName. A write that arrives without an id
-     * (every control-plane PUT: the catalog contract carries no id) is applied to
-     * the recorded realm instead of inserting a second document with the same
-     * refName, which {@code findByRefName} would then shadow.
+     * Registering a realm is an idempotent upsert keyed by refName. A write that
+     * arrives without an id (every control-plane PUT: the catalog contract carries
+     * no id) is applied to the recorded realm, keeping its id, version and audit
+     * fields, instead of inserting a second document with the same refName that
+     * {@code findByRefName} would then shadow. Only when no realm is recorded under
+     * the refName is the write inserted.
      *
-     * Only the fields the catalog contract carries are copied onto the recorded
-     * document, so state the contract does not carry (setup progress, seeding
-     * flags, perspective, tags, audit) survives, and so do deploymentType and
-     * tenancyMode, which a write cannot change. A field the write leaves empty
-     * keeps its recorded value; in particular a caller built before
-     * {@code applicationRefName} existed cannot erase the owner. Moving a realm to a
-     * different owner is refused: a realm belongs to exactly one application.
+     * Only the fields the write carries are copied onto the recorded document, so
+     * state the contract does not carry (setup progress, seeding flags,
+     * perspective, tags, audit) survives. A field the write leaves empty keeps its
+     * recorded value: a caller built before {@code applicationRefName} existed
+     * cannot erase the owner, an omitted admin user id is not replaced by the
+     * {@code admin@<emailDomain>} fallback, and a domain context is merged field by
+     * field (tenant, organization and account from the write; default realm and
+     * data segment as recorded). deploymentType and tenancyMode are not changed by
+     * a catalog write. Moving a realm to a different owner is refused: a realm
+     * belongs to exactly one application.
+     *
+     * Where earlier non-idempotent writes already left several documents under one
+     * refName, the oldest ({@code _id} ascending, the one every lookup returns) is
+     * updated, and the others are named in a warning. They are not deleted here:
+     * removing them is a reviewed cleanup, not a side effect of a registration.
      */
     Realm mergeIntoRecordedRealm(Realm incoming) {
         if (incoming.getId() != null || incoming.getRefName() == null || incoming.getRefName().isBlank()) {
             return incoming;
         }
-        Optional<Realm> found = realmRepo.findByRefName(incoming.getRefName(), true, systemRealmId());
-        if (found.isEmpty()) {
+        List<Realm> found = realmRepo.findAllByRefNameWithIgnoreRules(incoming.getRefName(), systemRealmId());
+        if (found == null || found.isEmpty()) {
             return incoming;
         }
-        Realm recorded = found.get();
+        Realm recorded = found.get(0);
+        if (found.size() > 1) {
+            LOG.warnf("REALM_DUPLICATE_RECORDS: realm '%s' has %d documents in %s; updating the oldest %s"
+                    + " and leaving the duplicates %s untouched (remove them with the control-plane dedupe)",
+                incoming.getRefName(), found.size(), systemRealmId(), recorded.getId(),
+                found.subList(1, found.size()).stream()
+                    .map(realm -> String.valueOf(realm.getId()))
+                    .collect(Collectors.joining(", ", "[", "]")));
+        }
         String recordedOwner = ownerOf(recorded);
         String incomingOwner = ownerOf(incoming);
         if (recordedOwner != null && incomingOwner != null && !recordedOwner.equals(incomingOwner)) {
@@ -101,13 +125,37 @@ public class LocalSystemDirectory implements SystemDirectory {
         if (hasText(incoming.getDisplayName())) recorded.setDisplayName(incoming.getDisplayName());
         if (hasText(incoming.getDatabaseName())) recorded.setDatabaseName(incoming.getDatabaseName());
         if (hasText(incoming.getEmailDomain())) recorded.setEmailDomain(incoming.getEmailDomain());
-        if (hasText(incoming.getDefaultAdminUserId())) recorded.setDefaultAdminUserId(incoming.getDefaultAdminUserId());
+        if (hasText(incoming.explicitDefaultAdminUserId())) {
+            recorded.setDefaultAdminUserId(incoming.explicitDefaultAdminUserId());
+        }
         if (hasText(incoming.getConnectionString())) recorded.setConnectionString(incoming.getConnectionString());
-        if (incoming.getDomainContext() != null) recorded.setDomainContext(incoming.getDomainContext());
+        if (incoming.getDomainContext() != null) {
+            recorded.setDomainContext(mergeDomainContext(recorded.getDomainContext(), incoming.getDomainContext()));
+        }
         // Topology and tenancy are not changed by a catalog write: the contract maps
         // an absent value to DEDICATED / SINGLE_TENANT, so a caller that omits them
         // would otherwise turn a pooled realm into a dedicated one.
         return recorded;
+    }
+
+    /**
+     * The catalog contract carries a domain context's tenant, organization and
+     * account; the default realm and data segment it fills with defaults when they
+     * are absent. A recorded context therefore keeps those two.
+     */
+    private static DomainContext mergeDomainContext(DomainContext recorded, DomainContext incoming) {
+        if (recorded == null) {
+            return incoming;
+        }
+        // Built field by field: DomainContext's fields are @NonNull, so each takes
+        // the write's value when it has one and the recorded value otherwise.
+        return DomainContext.builder()
+            .tenantId(hasText(incoming.getTenantId()) ? incoming.getTenantId() : recorded.getTenantId())
+            .orgRefName(hasText(incoming.getOrgRefName()) ? incoming.getOrgRefName() : recorded.getOrgRefName())
+            .accountId(hasText(incoming.getAccountId()) ? incoming.getAccountId() : recorded.getAccountId())
+            .defaultRealm(hasText(recorded.getDefaultRealm()) ? recorded.getDefaultRealm() : incoming.getDefaultRealm())
+            .dataSegment(recorded.getDataSegment())
+            .build();
     }
 
     private static String ownerOf(Realm realm) {
