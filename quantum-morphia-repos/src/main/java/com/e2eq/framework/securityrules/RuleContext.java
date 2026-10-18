@@ -358,6 +358,9 @@ public class RuleContext {
         }
     }
 
+    /** Functional domain of the system service's control-plane directory resource. */
+    public static final String CONTROL_PLANE_DIRECTORY_DOMAIN = "control_plane_directory";
+
     public RuleContext(SecurityUtils securityUtils, EnvConfigUtils envConfigUtils) {
         this.securityUtils = securityUtils;
         this.envConfigUtils = envConfigUtils;
@@ -760,6 +763,36 @@ public class RuleContext {
                 .withFinalRule(true)
                 .build();
         this.addRule(migrationHeader, systemMigrationRule);
+
+        // Tier-2 services in remote mode (quantum-auth provisioning a tenant, ontology)
+        // write the global realm catalog and realm memberships through the system
+        // service's control-plane directory with the configured system service token,
+        // whose only role is "system". Those writes carry the target tenant's data
+        // domain, so no tenant-scoped rule can admit them; without this rule every
+        // remote-mode provisioning stops at the realm membership step.
+        SecurityURIHeader controlPlaneDirectoryHeader = new SecurityURIHeader.Builder()
+                .withIdentity("system")
+                .withArea("system")
+                .withFunctionalDomain(CONTROL_PLANE_DIRECTORY_DOMAIN)
+                .withAction("*")
+                .build();
+        SecurityURIBody controlPlaneDirectoryBody = new SecurityURIBody.Builder()
+                .withOrgRefName("*")
+                .withAccountNumber("*")
+                .withRealm("*")
+                .withTenantId("*")
+                .withOwnerId("*")
+                .withDataSegment("*")
+                .build();
+        Rule systemControlPlaneDirectoryRule = new Rule.Builder()
+                .withName("SysRoleControlPlaneDirectory")
+                .withDescription("system role can maintain the control-plane realm catalog and memberships for any tenant")
+                .withSecurityURI(new SecurityURI(controlPlaneDirectoryHeader, controlPlaneDirectoryBody))
+                .withEffect(RuleEffect.ALLOW)
+                .withPriority(-100)
+                .withFinalRule(true)
+                .build();
+        this.addRule(controlPlaneDirectoryHeader, systemControlPlaneDirectoryRule);
 
         //-----------------------
        // Now lets add a tenant admin id
