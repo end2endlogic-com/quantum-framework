@@ -72,6 +72,28 @@ class LocalSystemDirectoryTest {
     }
 
     @Test
+    void registerRealmWithoutAnIdUpdatesTheRecordedRealmInPlace() {
+        RealmRepo realmRepo = mock(RealmRepo.class);
+        EnvConfigUtils env = mock(EnvConfigUtils.class);
+        when(env.getSystemRealm()).thenReturn("quantum-system");
+        Realm recorded = new Realm();
+        recorded.setRefName("helixor-code-D1");
+        recorded.setId(new org.bson.types.ObjectId());
+        recorded.setVersion(4L);
+        when(realmRepo.findByRefName("helixor-code-D1", true, "quantum-system")).thenReturn(Optional.of(recorded));
+        Realm incoming = new Realm();
+        incoming.setRefName("helixor-code-D1");
+        incoming.setApplicationRef(application("helixor-code"));
+        when(realmRepo.save(eq("quantum-system"), eq(incoming))).thenReturn(incoming);
+
+        new LocalSystemDirectory(realmRepo, mock(CredentialRepo.class), env).registerRealm(incoming);
+
+        org.junit.jupiter.api.Assertions.assertEquals(recorded.getId(), incoming.getId());
+        org.junit.jupiter.api.Assertions.assertEquals(4L, incoming.getVersion());
+        org.junit.jupiter.api.Assertions.assertEquals("helixor-code", incoming.getApplicationRef().getEntityRefName());
+    }
+
+    @Test
     void registerRealmNamingAnOwnerWritesThatOwner() {
         RealmRepo realmRepo = mock(RealmRepo.class);
         EnvConfigUtils env = mock(EnvConfigUtils.class);
@@ -84,8 +106,5 @@ class LocalSystemDirectoryTest {
         new LocalSystemDirectory(realmRepo, mock(CredentialRepo.class), env).registerRealm(incoming);
 
         org.junit.jupiter.api.Assertions.assertEquals("helixor-code", incoming.getApplicationRef().getEntityRefName());
-        org.mockito.Mockito.verify(realmRepo, org.mockito.Mockito.never())
-            .findByRefName(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyBoolean(),
-                org.mockito.ArgumentMatchers.anyString());
     }
 }

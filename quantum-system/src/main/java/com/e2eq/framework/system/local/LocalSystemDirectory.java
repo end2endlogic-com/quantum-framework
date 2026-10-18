@@ -64,24 +64,32 @@ public class LocalSystemDirectory implements SystemDirectory {
         // times out, registerRealm returns 500, bootstrap swallows it, and every
         // later X-Realm mint fails with "Realm is not registered".
         try (SecurityCallScope.Scope ignored = SecurityCallScope.openIgnoringRules()) {
-            preserveOwningApplication(realm);
+            bindToRecordedRealm(realm);
             return realmRepo.save(systemRealmId(), realm);
         }
     }
 
     /**
-     * A catalog write that names no owning application (a caller built against the
-     * contract before {@code applicationRefName} existed) must not erase the owner
-     * already recorded for that realm. Naming a different owner is the caller's
-     * explicit change and is kept as sent.
+     * Registering a realm is keyed by refName. A write that arrives without an id
+     * (every control-plane PUT: the catalog contract carries no id) updates the
+     * recorded realm in place instead of inserting a second document with the same
+     * refName, which {@code findByRefName} would then shadow.
+     *
+     * A write that names no owning application (a caller built against the contract
+     * before {@code applicationRefName} existed) keeps the owner already recorded.
+     * Naming a different owner is the caller's explicit change and is kept as sent.
      */
-    private void preserveOwningApplication(Realm realm) {
-        if (realm.getApplicationRef() != null || realm.getRefName() == null || realm.getRefName().isBlank()) {
+    private void bindToRecordedRealm(Realm realm) {
+        if (realm.getId() != null || realm.getRefName() == null || realm.getRefName().isBlank()) {
             return;
         }
-        realmRepo.findByRefName(realm.getRefName(), true, systemRealmId())
-            .map(Realm::getApplicationRef)
-            .ifPresent(realm::setApplicationRef);
+        realmRepo.findByRefName(realm.getRefName(), true, systemRealmId()).ifPresent(recorded -> {
+            realm.setId(recorded.getId());
+            realm.setVersion(recorded.getVersion());
+            if (realm.getApplicationRef() == null) {
+                realm.setApplicationRef(recorded.getApplicationRef());
+            }
+        });
     }
 
     @Override
