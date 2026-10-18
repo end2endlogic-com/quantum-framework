@@ -13,7 +13,6 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -78,11 +77,31 @@ class RuleContextSystemRulesTest {
     }
 
     @Test
+    void matchesTheUppercaseAreaSystemWriteScopeFallsBackTo() {
+        var response = withSystemRules().checkRules(systemServiceToken(),
+            directoryWrite("SYSTEM", RuleContext.CONTROL_PLANE_DIRECTORY_DOMAIN));
+        assertEquals(RuleEffect.ALLOW, response.getFinalEffect());
+    }
+
+    @Test
     void theRuleDoesNotReachOutsideTheDirectory() {
         RuleContext context = withSystemRules();
-        assertNotEquals(RuleEffect.ALLOW,
+        assertEquals(RuleEffect.DENY,
             context.checkRules(systemServiceToken(), directoryWrite("system", "install")).getFinalEffect());
-        assertNotEquals(RuleEffect.ALLOW,
+        assertEquals(RuleEffect.DENY,
             context.checkRules(systemServiceToken(), directoryWrite("billing", RuleContext.CONTROL_PLANE_DIRECTORY_DOMAIN)).getFinalEffect());
+    }
+
+    @Test
+    void otherRolesGainNothingInTheDirectory() {
+        PrincipalContext tenantUser = new PrincipalContext.Builder()
+            .withDefaultRealm("quantum-system")
+            .withDataDomain(new DataDomain("other.com", "0000000009", "other-tenant", 0, "someone@other.com"))
+            .withUserId("someone@other.com")
+            .withRoles(new String[]{"user"})
+            .withScope("AUTHENTICATED")
+            .build();
+        assertEquals(RuleEffect.DENY, withSystemRules().checkRules(tenantUser,
+            directoryWrite("system", RuleContext.CONTROL_PLANE_DIRECTORY_DOMAIN)).getFinalEffect());
     }
 }
