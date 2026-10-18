@@ -20,6 +20,7 @@ public class RealmCatalogEntry {
     private String accountNumber;
     private String connectionString;
     private Boolean active;
+    private String applicationRefName;
 
     @JsonProperty("refName")
     public String getRefName() { return refName; }
@@ -98,4 +99,10 @@ public class RealmCatalogEntry {
 
     @JsonProperty("active")
     public void setActive(Boolean active) { this.active = active; }
+
+    @JsonProperty("applicationRefName")
+    public String getApplicationRefName() { return applicationRefName; }
+
+    @JsonProperty("applicationRefName")
+    public void setApplicationRefName(String applicationRefName) { this.applicationRefName = applicationRefName; }
 }

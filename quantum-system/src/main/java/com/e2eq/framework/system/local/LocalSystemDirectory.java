@@ -64,8 +64,24 @@ public class LocalSystemDirectory implements SystemDirectory {
         // times out, registerRealm returns 500, bootstrap swallows it, and every
         // later X-Realm mint fails with "Realm is not registered".
         try (SecurityCallScope.Scope ignored = SecurityCallScope.openIgnoringRules()) {
+            preserveOwningApplication(realm);
             return realmRepo.save(systemRealmId(), realm);
         }
+    }
+
+    /**
+     * A catalog write that names no owning application (a caller built against the
+     * contract before {@code applicationRefName} existed) must not erase the owner
+     * already recorded for that realm. Naming a different owner is the caller's
+     * explicit change and is kept as sent.
+     */
+    private void preserveOwningApplication(Realm realm) {
+        if (realm.getApplicationRef() != null || realm.getRefName() == null || realm.getRefName().isBlank()) {
+            return;
+        }
+        realmRepo.findByRefName(realm.getRefName(), true, systemRealmId())
+            .map(Realm::getApplicationRef)
+            .ifPresent(realm::setApplicationRef);
     }
 
     @Override
