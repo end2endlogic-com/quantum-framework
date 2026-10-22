@@ -90,9 +90,14 @@ public class LocalSystemDirectory implements SystemDirectory {
      * always compared, because the contract maps an absent value to
      * DEDICATED / SINGLE_TENANT and cannot express "unchanged". The string
      * fields and the domain context are compared only when the write carries
-     * them; the default admin is compared only when the write also carries the
-     * email domain, since {@link Realm#getDefaultAdminUserId()} derives it from
-     * that domain. Moving a realm to a different owner (compared ignoring case,
+     * them. The default admin is compared unless it is only the value
+     * {@link Realm#getDefaultAdminUserId()} derives from a missing email domain
+     * ("admin@null"), so an explicit admin without an email domain is still
+     * refused when it differs. Because the getter derives a value, a write that
+     * carries the email domain but no admin is compared as "admin@domain" and is
+     * refused when the recorded admin is explicit and different; full
+     * round-trip writers ({@code ControlPlaneRealmMapper.toEntry}) always send
+     * the recorded admin. Moving a realm to a different owner (compared ignoring case,
      * as provisioning does) is refused too: a realm belongs to exactly one
      * application.
      *
@@ -138,8 +143,11 @@ public class LocalSystemDirectory implements SystemDirectory {
         differs(fields, "databaseName", recorded.getDatabaseName(), incoming.getDatabaseName());
         differs(fields, "connectionString", recorded.getConnectionString(), incoming.getConnectionString());
         differs(fields, "emailDomain", recorded.getEmailDomain(), incoming.getEmailDomain());
-        if (hasText(incoming.getEmailDomain())) {
-            differs(fields, "defaultAdminUserId", recorded.getDefaultAdminUserId(), incoming.getDefaultAdminUserId());
+        String incomingAdmin = incoming.getDefaultAdminUserId();
+        boolean adminDerivedFromMissingDomain = !hasText(incoming.getEmailDomain())
+            && ("admin@" + incoming.getEmailDomain()).equals(incomingAdmin);
+        if (!adminDerivedFromMissingDomain) {
+            differs(fields, "defaultAdminUserId", recorded.getDefaultAdminUserId(), incomingAdmin);
         }
         if (incoming.getDeploymentType() != recorded.getDeploymentType()) {
             fields.add("deploymentType");

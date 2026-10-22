@@ -328,4 +328,19 @@ class LocalSystemDirectoryTest {
         verify(realmRepo, never()).findByRefName(anyString(), anyBoolean(), anyString());
         verify(realmRepo).save(eq("quantum-system"), same(incoming));
     }
+
+    @Test
+    void registerRealmRefusesAnExplicitAdminChangeEvenWithoutAnEmailDomain() {
+        Realm recorded = recordedDedicatedRealm();
+        RealmRepo realmRepo = repoRecording(recorded);
+        Realm incoming = new Realm();
+        incoming.setRefName("acme-com");
+        incoming.setDefaultAdminUserId("someone@else.com");
+
+        RealmRegistrationConflictException error = assertThrows(RealmRegistrationConflictException.class,
+            () -> new LocalSystemDirectory(realmRepo, mock(CredentialRepo.class), systemRealm()).registerRealm(incoming));
+
+        assertEquals(List.of("defaultAdminUserId"), error.fields());
+        verify(realmRepo, never()).save(anyString(), any(Realm.class));
+    }
 }
