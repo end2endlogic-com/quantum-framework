@@ -9,49 +9,32 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Any;
 import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
-import org.eclipse.microprofile.config.Config;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 
 /**
- * Selects the {@link InviteAcceptancePolicy} for a realm. Fails closed: an unknown or ambiguous id,
- * a pooled realm without a configured policy, or a request/invite naming a policy other than the
- * realm's is refused with {@code INVITE_POLICY_UNAVAILABLE}.
- *
- * <p>The realm's policy id comes from {@code Realm.inviteAcceptancePolicy}; when that is unset, from
- * the application property {@code quantum.access-invites.realm-policy."<realm>"} (useful when the
- * realm catalog is owned by a remote control plane). When both are set they must agree.</p>
+ * Selects the {@link InviteAcceptancePolicy} for a realm from the realm's recorded topology: a pooled
+ * realm ({@code tenancyMode = MULTI_TENANT} or {@code deploymentType = SHARED}) uses
+ * {@code pooled-realm-tenant}, any other realm uses {@code dedicated-realm}. There is no per-realm
+ * override. Fails closed: a missing or ambiguous policy bean, or a request/invite naming a policy
+ * other than the realm's, is refused with {@code INVITE_POLICY_UNAVAILABLE}.
  */
 @ApplicationScoped
 public class InviteAcceptancePolicies {
 
-    static final String REALM_POLICY_PROPERTY = "quantum.access-invites.realm-policy";
-
     @Inject
     @Any
     Instance<InviteAcceptancePolicy> policies;
-
-    @Inject
-    Config config;
 
     /** True when the realm holds several tenants separated by DataDomain (MULTI_TENANT or SHARED). */
     public static boolean pooled(Realm realm) {
         return AccessibleTenantResolver.sharedMultiTenant(realm);
     }
 
-    /** The policy configured for {@code realm}. */
+    /** The policy for {@code realm}, decided by its tenancy mode and deployment type. */
     public InviteAcceptancePolicy forRealm(Realm realm) {
-        String configured = configuredPolicyId(realm);
-        if (configured == null) {
-            if (pooled(realm)) {
-                Log.warnf("access-invite.policy.unavailable reason=pooled-realm-without-policy realm=%s", realm.getRefName());
-                throw unavailable("Invites are not configured for this realm.");
-            }
-            configured = DedicatedRealmInvitePolicy.ID;
-        }
-        return byId(configured);
+        return byId(pooled(realm) ? PooledRealmTenantInvitePolicy.ID : DedicatedRealmInvitePolicy.ID);
     }
 
     /** The realm's policy for a new invite; a requested id may only repeat it. */
@@ -88,35 +71,9 @@ public class InviteAcceptancePolicies {
         if (matches.size() != 1) {
             Log.errorf("access-invite.policy.unavailable reason=%s policy=%s",
                 matches.isEmpty() ? "unknown-policy" : "ambiguous-policy", sanitize(id));
-            throw unavailable("The invite policy configured for this realm is not available.");
+            throw unavailable("The invite policy for this realm is not available.");
         }
         return matches.get(0);
-    }
-
-    private String configuredPolicyId(Realm realm) {
-        String fromRealm = trimToNull(realm.getInviteAcceptancePolicy());
-        String fromConfig = configuredForRealmName(realm.getRefName());
-        if (fromRealm != null && fromConfig != null && !fromRealm.equals(fromConfig)) {
-            Log.errorf("access-invite.policy.unavailable reason=conflicting-configuration realm=%s realmRecord=%s property=%s",
-                realm.getRefName(), sanitize(fromRealm), sanitize(fromConfig));
-            throw unavailable("The invite policy configured for this realm is not available.");
-        }
-        return fromRealm != null ? fromRealm : fromConfig;
-    }
-
-    private String configuredForRealmName(String realmRefName) {
-        if (realmRefName == null || config == null) {
-            return null;
-        }
-        Optional<String> quoted = config.getOptionalValue(REALM_POLICY_PROPERTY + ".\"" + realmRefName + "\"", String.class);
-        if (quoted.isPresent()) {
-            return trimToNull(quoted.get());
-        }
-        if (realmRefName.indexOf('.') < 0) {
-            return config.getOptionalValue(REALM_POLICY_PROPERTY + "." + realmRefName, String.class)
-                .map(InviteAcceptancePolicies::trimToNull).orElse(null);
-        }
-        return null;
     }
 
     private static AccessInviteException unavailable(String message) {

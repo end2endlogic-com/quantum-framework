@@ -63,16 +63,10 @@ class AccessInvitePooledRealmTest extends BaseRepoTest {
 
     private static final String PASSWORD = "Inv1te-Pooled-P@ssw0rd!";
 
-    /** Pooled realm whose Realm record names the pooled policy. */
+    /** Pooled (MULTI_TENANT) realm: its tenancy mode selects the pooled policy. */
     private static final String POOLED = "invite-pooled-test";
-    /** Pooled realm without any configured policy. */
-    private static final String POOLED_NO_POLICY = "invite-pooled-nopolicy";
-    /** Pooled realm naming a policy no bean provides. */
-    private static final String POOLED_UNKNOWN = "invite-pooled-unknown";
-    /** Pooled realm whose policy throws while resolving the grant. */
-    private static final String POOLED_THROWING = "invite-pooled-throwing";
-    /** Pooled realm whose policy comes from the application property, not the Realm record. */
-    private static final String POOLED_BY_CONFIG = "invite-pooled-cfg";
+    /** A second pooled realm, for cross-realm refusals. */
+    private static final String POOLED_OTHER = "invite-pooled-other";
 
     /** SHARED deployment but SINGLE_TENANT: request tenant selection does not run there. */
     private static final String SHARED_SINGLE = "invite-shared-single";
@@ -109,16 +103,13 @@ class AccessInvitePooledRealmTest extends BaseRepoTest {
 
     private String suffix;
     private final List<String> userIds = new ArrayList<>();
-    private static final List<String> REALMS = List.of(POOLED, POOLED_NO_POLICY, POOLED_UNKNOWN, POOLED_THROWING, POOLED_BY_CONFIG, SHARED_SINGLE);
+    private static final List<String> REALMS = List.of(POOLED, POOLED_OTHER, SHARED_SINGLE);
 
     @BeforeEach
     void setUp() {
         suffix = UUID.randomUUID().toString().substring(0, 8);
-        registerPooledRealm(POOLED, PooledRealmTenantInvitePolicy.ID);
-        registerPooledRealm(POOLED_NO_POLICY, null);
-        registerPooledRealm(POOLED_UNKNOWN, "no-such-policy");
-        registerPooledRealm(POOLED_THROWING, ThrowingTestInvitePolicy.ID);
-        registerPooledRealm(POOLED_BY_CONFIG, null);
+        registerPooledRealm(POOLED);
+        registerPooledRealm(POOLED_OTHER);
     }
 
     @AfterEach
@@ -259,7 +250,7 @@ class AccessInvitePooledRealmTest extends BaseRepoTest {
         String inviter = member("inviter-elsewhere", TENANT_A, List.of("viewer"));
         // The inviter's verified context is another realm; its partition there says nothing about this one.
         assertRefused(Code.INVITE_SCOPE_UNRESOLVABLE,
-            () -> create(POOLED, inviterIn(POOLED_BY_CONFIG, inviter, partition(TENANT_A, 0)), request(user("x"), "viewer")));
+            () -> create(POOLED, inviterIn(POOLED_OTHER, inviter, partition(TENANT_A, 0)), request(user("x"), "viewer")));
     }
 
     // ---- entitlement ----------------------------------------------------------------------
@@ -535,7 +526,6 @@ class AccessInvitePooledRealmTest extends BaseRepoTest {
             .emailDomain(SHARED_SINGLE + ".invite-test.example")
             .tenancyMode(RealmTenancyMode.SINGLE_TENANT)
             .deploymentType(com.e2eq.framework.model.security.RealmDeploymentType.SHARED)
-            .inviteAcceptancePolicy(PooledRealmTenantInvitePolicy.ID)
             .domainContext(DomainContext.builder().tenantId(TENANT_A).orgRefName("org-a").accountId("acct-a").defaultRealm(SHARED_SINGLE).build())
             .build();
         Realm registered = asSystem(() -> systemDirectory.findRealmByRefName(SHARED_SINGLE).orElseGet(() -> systemDirectory.registerRealm(shared)));
@@ -546,17 +536,13 @@ class AccessInvitePooledRealmTest extends BaseRepoTest {
 
 
     @Test
-    void pooledRealmWithoutPolicyRefusesInvites() {
-        String inviter = member("inviter-np", TENANT_A, List.of("viewer"), POOLED_NO_POLICY);
-        assertRefused(Code.INVITE_POLICY_UNAVAILABLE,
-            () -> create(POOLED_NO_POLICY, inviterIn(POOLED_NO_POLICY, inviter, partition(TENANT_A, 0)), request(user("x"))));
-    }
-
-    @Test
-    void unknownPolicyRefusesInvites() {
-        String inviter = member("inviter-unk", TENANT_A, List.of("viewer"), POOLED_UNKNOWN);
-        assertRefused(Code.INVITE_POLICY_UNAVAILABLE,
-            () -> create(POOLED_UNKNOWN, inviterIn(POOLED_UNKNOWN, inviter, partition(TENANT_A, 0)), request(user("x"))));
+    void pooledRealmUsesThePooledPolicyFromItsTenancyMode() {
+        String inviter = member("inviter-mode", TENANT_A, List.of("viewer"));
+        String invitee = user("invitee-mode");
+        AccessInviteResponse invite = create(POOLED, inviterIn(POOLED, inviter, partition(TENANT_A, 0)), request(invitee));
+        assertEquals(PooledRealmTenantInvitePolicy.ID, invite.getAcceptancePolicy());
+        acceptAnonymously(POOLED, invite, invitee);
+        assertEquals(List.of(TENANT_A), assignment(invitee, POOLED).getAuthorizedTenantIds());
     }
 
     @Test
@@ -569,29 +555,6 @@ class AccessInvitePooledRealmTest extends BaseRepoTest {
     }
 
     @Test
-    void policyConfiguredByApplicationPropertyIsUsed() {
-        String inviter = member("inviter-cfg", TENANT_A, List.of("viewer"), POOLED_BY_CONFIG);
-        String invitee = user("invitee-cfg");
-        AccessInviteResponse invite = create(POOLED_BY_CONFIG, inviterIn(POOLED_BY_CONFIG, inviter, partition(TENANT_A, 0)), request(invitee));
-        assertEquals(PooledRealmTenantInvitePolicy.ID, invite.getAcceptancePolicy());
-        acceptAnonymously(POOLED_BY_CONFIG, invite, invitee);
-        assertEquals(List.of(TENANT_A), assignment(invitee, POOLED_BY_CONFIG).getAuthorizedTenantIds());
-    }
-
-    @Test
-    void policyThatThrowsRollsBackEverything() {
-        String inviter = member("inviter-throw", TENANT_A, List.of("viewer"), POOLED_THROWING);
-        String invitee = user("invitee-throw");
-        AccessInviteResponse invite = create(POOLED_THROWING, inviterIn(POOLED_THROWING, inviter, partition(TENANT_A, 0)), request(invitee, "viewer"));
-        assertEquals(ThrowingTestInvitePolicy.ID, invite.getAcceptancePolicy());
-
-        assertRefused(Code.INVITE_PROVISIONING_FAILED, () -> acceptAnonymously(POOLED_THROWING, invite, invitee));
-        assertEquals(AccessInvite.Status.PENDING, storedInvite(POOLED_THROWING, invite).getStatus());
-        assertTrue(findCredential(invitee).isEmpty());
-        assertTrue(assignments(invitee).isEmpty());
-    }
-
-    @Test
     void dedicatedPolicyRefusesAPooledRealm() {
         DedicatedRealmInvitePolicy dedicated = new DedicatedRealmInvitePolicy();
         Realm pooled = systemDirectory.findRealmByRefName(POOLED).orElseThrow();
@@ -601,7 +564,7 @@ class AccessInvitePooledRealmTest extends BaseRepoTest {
 
     // ---- helpers ---------------------------------------------------------------------------
 
-    private void registerPooledRealm(String refName, String policyId) {
+    private void registerPooledRealm(String refName) {
         asSystem(() -> {
             Realm realm = systemDirectory.findRealmByRefName(refName).orElseGet(() -> systemDirectory.registerRealm(Realm.builder()
                 .refName(refName)
@@ -609,7 +572,6 @@ class AccessInvitePooledRealmTest extends BaseRepoTest {
                 .databaseName(refName)
                 .emailDomain(refName + ".invite-test.example")
                 .tenancyMode(RealmTenancyMode.MULTI_TENANT)
-                .inviteAcceptancePolicy(policyId)
                 .domainContext(DomainContext.builder()
                     .tenantId(TENANT_A).orgRefName("org-a").accountId("acct-a").defaultRealm(refName).build())
                 .build()));

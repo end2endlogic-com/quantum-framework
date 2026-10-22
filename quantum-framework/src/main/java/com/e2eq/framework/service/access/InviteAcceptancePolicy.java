@@ -5,12 +5,10 @@ import com.e2eq.framework.model.persistent.base.DataDomain;
 /**
  * Decides who an access invite may place where, and what accepting it grants.
  *
- * <p>Implementations are CDI beans identified by {@link #id()}. The policy for an invite is the
- * one configured for its realm ({@code Realm.inviteAcceptancePolicy}, else the application property
- * {@code quantum.access-invites.realm-policy."<realm>"}); a dedicated realm without configuration
- * uses {@code dedicated-realm}, and a pooled realm without configuration refuses invites
- * ({@code INVITE_POLICY_UNAVAILABLE}). The policy id is recorded on the invite and must still be
- * the realm's policy when the invite is accepted.</p>
+ * <p>Implementations are CDI beans identified by {@link #id()}. The policy for an invite follows
+ * from its realm's topology ({@link InviteAcceptancePolicies#forRealm}): {@code pooled-realm-tenant}
+ * for a pooled realm (MULTI_TENANT or SHARED), {@code dedicated-realm} otherwise. The policy id is
+ * recorded on the invite and must still be the realm's policy when the invite is accepted.</p>
  *
  * <p>Order of operations:</p>
  * <ol>
