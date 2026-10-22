@@ -1,6 +1,8 @@
 package com.e2eq.framework.system.local;
 
+import com.e2eq.framework.api.system.RealmRegistrationConflictException;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
+import com.e2eq.framework.model.security.DomainContext;
 import com.e2eq.framework.model.persistent.morphia.RealmRepo;
 import com.e2eq.framework.model.security.Realm;
 import com.e2eq.framework.model.security.RealmDeploymentType;
@@ -13,6 +15,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import com.e2eq.framework.model.persistent.base.EntityReference;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -24,6 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.mock;
@@ -101,6 +105,8 @@ class LocalSystemDirectoryTest {
         Realm incoming = new Realm();          // as ControlPlaneRealmMapper.fromEntry builds it
         incoming.setRefName("helixor-code-D1");
         incoming.setDisplayName("Helixor Code D1");
+        incoming.setDeploymentType(RealmDeploymentType.SHARED);
+        incoming.setTenancyMode(RealmTenancyMode.MULTI_TENANT);
         incoming.setApplicationRef(application("helixor-code"));
 
         Realm saved = new LocalSystemDirectory(realmRepo, mock(CredentialRepo.class), env).registerRealm(incoming);
@@ -131,8 +137,9 @@ class LocalSystemDirectoryTest {
         incoming.setRefName("helixor-code-D1");
         incoming.setApplicationRef(application("helixor-di"));
 
-        IllegalStateException error = assertThrows(IllegalStateException.class,
+        RealmRegistrationConflictException error = assertThrows(RealmRegistrationConflictException.class,
             () -> new LocalSystemDirectory(realmRepo, mock(CredentialRepo.class), env).registerRealm(incoming));
+        assertEquals(RealmRegistrationConflictException.Kind.REALM_OWNER_CONFLICT, error.kind());
         assertTrue(error.getMessage().startsWith("REALM_OWNER_CONFLICT"));
         verify(realmRepo, never()).save(anyString(), any(Realm.class));
     }
@@ -150,5 +157,129 @@ class LocalSystemDirectoryTest {
         new LocalSystemDirectory(realmRepo, mock(CredentialRepo.class), env).registerRealm(incoming);
 
         assertEquals("helixor-code", incoming.getApplicationRef().getEntityRefName());
+    }
+
+    private static Realm recordedDedicatedRealm() {
+        Realm recorded = new Realm();
+        recorded.setId(new ObjectId());
+        recorded.setRefName("acme-com");
+        recorded.setDisplayName("Acme");
+        recorded.setEmailDomain("acme.com");
+        recorded.setDatabaseName("acme-com");
+        recorded.setConnectionString("mongodb://tenant-db:27017");
+        recorded.setDefaultAdminUserId("admin@acme.com");
+        recorded.setDomainContext(DomainContext.builder().tenantId("acme.com").orgRefName("acme")
+            .accountId("0000000042").defaultRealm("acme-com").build());
+        return recorded;
+    }
+
+    /** What a remote PUT for the recorded realm carries: the catalog fields, no id. */
+    private static Realm catalogWriteOf(Realm recorded) {
+        Realm incoming = new Realm();
+        incoming.setRefName(recorded.getRefName());
+        incoming.setDisplayName(recorded.getDisplayName());
+        incoming.setEmailDomain(recorded.getEmailDomain());
+        incoming.setDatabaseName(recorded.getDatabaseName());
+        incoming.setConnectionString(recorded.getConnectionString());
+        incoming.setDefaultAdminUserId(recorded.getDefaultAdminUserId());
+        incoming.setDeploymentType(recorded.getDeploymentType());
+        incoming.setTenancyMode(recorded.getTenancyMode());
+        incoming.setDomainContext(DomainContext.builder().tenantId("acme.com").orgRefName("acme")
+            .accountId("0000000042").defaultRealm("acme-com").build());
+        return incoming;
+    }
+
+    private static RealmRepo repoRecording(Realm recorded) {
+        RealmRepo realmRepo = mock(RealmRepo.class);
+        when(realmRepo.findByRefName(recorded.getRefName(), true, "quantum-system")).thenReturn(Optional.of(recorded));
+        when(realmRepo.save(eq("quantum-system"), any(Realm.class))).thenAnswer(invocation -> invocation.getArgument(1));
+        return realmRepo;
+    }
+
+    private static EnvConfigUtils systemRealm() {
+        EnvConfigUtils env = mock(EnvConfigUtils.class);
+        when(env.getSystemRealm()).thenReturn("quantum-system");
+        return env;
+    }
+
+    @Test
+    void registerRealmRefusesToChangeTheDatabaseConnectionDomainOrAdminOfARecordedRealm() {
+        Realm recorded = recordedDedicatedRealm();
+        RealmRepo realmRepo = repoRecording(recorded);
+        Realm incoming = catalogWriteOf(recorded);
+        incoming.setDatabaseName("attacker-db");
+        incoming.setConnectionString("mongodb://elsewhere:27017");
+        incoming.setDefaultAdminUserId("someone@else.com");
+        incoming.setDomainContext(DomainContext.builder().tenantId("other.com").orgRefName("acme")
+            .accountId("0000000042").defaultRealm("acme-com").build());
+
+        RealmRegistrationConflictException error = assertThrows(RealmRegistrationConflictException.class,
+            () -> new LocalSystemDirectory(realmRepo, mock(CredentialRepo.class), systemRealm()).registerRealm(incoming));
+
+        assertEquals(RealmRegistrationConflictException.Kind.REALM_RESTRICTED_FIELD_CHANGE, error.kind());
+        assertEquals(List.of("databaseName", "connectionString", "defaultAdminUserId", "domainContext"), error.fields());
+        verify(realmRepo, never()).save(anyString(), any(Realm.class));
+        assertEquals("mongodb://tenant-db:27017", recorded.getConnectionString());
+        assertEquals("acme-com", recorded.getDatabaseName());
+    }
+
+    @Test
+    void registerRealmRefusesToChangeTopologyTenancyOrEmailDomainOfARecordedRealm() {
+        Realm recorded = recordedDedicatedRealm();
+        RealmRepo realmRepo = repoRecording(recorded);
+        Realm incoming = catalogWriteOf(recorded);
+        incoming.setDeploymentType(RealmDeploymentType.SHARED);
+        incoming.setTenancyMode(RealmTenancyMode.MULTI_TENANT);
+        incoming.setEmailDomain("other.com");
+
+        RealmRegistrationConflictException error = assertThrows(RealmRegistrationConflictException.class,
+            () -> new LocalSystemDirectory(realmRepo, mock(CredentialRepo.class), systemRealm()).registerRealm(incoming));
+
+        assertEquals(List.of("emailDomain", "deploymentType", "tenancyMode"), error.fields());
+        verify(realmRepo, never()).save(anyString(), any(Realm.class));
+    }
+
+    @Test
+    void registerRealmBackfillsAnOwnerOntoARecordedRealmWithoutOne() {
+        Realm recorded = recordedDedicatedRealm();
+        RealmRepo realmRepo = repoRecording(recorded);
+        Realm incoming = catalogWriteOf(recorded);
+        incoming.setDisplayName("Acme Inc");
+        incoming.setApplicationRef(application("helixor-code"));
+
+        Realm saved = new LocalSystemDirectory(realmRepo, mock(CredentialRepo.class), systemRealm()).registerRealm(incoming);
+
+        assertSame(recorded, saved);
+        assertEquals("helixor-code", saved.getApplicationRef().getEntityRefName());
+        assertEquals("Acme Inc", saved.getDisplayName());
+        assertEquals("mongodb://tenant-db:27017", saved.getConnectionString());
+    }
+
+    @Test
+    void registerRealmCannotChangeAnExistingOwner() {
+        Realm recorded = recordedDedicatedRealm();
+        recorded.setApplicationRef(application("helixor-code"));
+        RealmRepo realmRepo = repoRecording(recorded);
+        Realm incoming = catalogWriteOf(recorded);
+        incoming.setApplicationRef(application("helixor-di"));
+
+        RealmRegistrationConflictException error = assertThrows(RealmRegistrationConflictException.class,
+            () -> new LocalSystemDirectory(realmRepo, mock(CredentialRepo.class), systemRealm()).registerRealm(incoming));
+
+        assertEquals(RealmRegistrationConflictException.Kind.REALM_OWNER_CONFLICT, error.kind());
+        assertEquals("helixor-code", recorded.getApplicationRef().getEntityRefName());
+        verify(realmRepo, never()).save(anyString(), any(Realm.class));
+    }
+
+    @Test
+    void registerRealmForARecordedRefNameNeverInsertsASecondDocument() {
+        Realm recorded = recordedDedicatedRealm();
+        RealmRepo realmRepo = repoRecording(recorded);
+        Realm incoming = catalogWriteOf(recorded);
+
+        new LocalSystemDirectory(realmRepo, mock(CredentialRepo.class), systemRealm()).registerRealm(incoming);
+
+        verify(realmRepo).save(eq("quantum-system"), same(recorded));
+        verify(realmRepo, never()).save(anyString(), same(incoming));
     }
 }

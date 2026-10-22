@@ -1,13 +1,18 @@
 package com.e2eq.framework.system.local;
 
+import com.e2eq.framework.api.system.RealmRegistrationConflictException;
 import com.e2eq.framework.api.system.SystemDirectory;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.model.persistent.morphia.RealmRepo;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
+import com.e2eq.framework.model.security.DomainContext;
 import com.e2eq.framework.model.security.Realm;
 import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import com.e2eq.framework.util.EnvConfigUtils;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -70,17 +75,22 @@ public class LocalSystemDirectory implements SystemDirectory {
 
     /**
      * Registering a realm is keyed by refName. A write that arrives without an id
-     * (every control-plane PUT: the catalog contract carries no id) is applied to
-     * the recorded realm instead of inserting a second document with the same
-     * refName, which {@code findByRefName} would then shadow.
+     * (every control-plane PUT: the catalog contract carries no id) and names a
+     * realm that is already recorded is applied to that record instead of
+     * inserting a second document with the same refName.
      *
-     * Only the fields the catalog contract carries are copied onto the recorded
-     * document, so state the contract does not carry (setup progress, seeding
-     * flags, perspective, tags, audit) survives, and so do deploymentType and
-     * tenancyMode, which a write cannot change. A field the write leaves empty
-     * keeps its recorded value; in particular a caller built before
-     * {@code applicationRefName} existed cannot erase the owner. Moving a realm to a
-     * different owner is refused: a realm belongs to exactly one application.
+     * That upsert is deliberately narrow. It may set the display name, and the
+     * owning application only while the recorded realm has none (backfill). It
+     * never changes the fields that decide where and how the realm's data lives:
+     * database name, connection string, deployment type, tenancy mode, email
+     * domain, domain context and default admin. A write that asks for a
+     * different value in any of them is refused with
+     * {@link RealmRegistrationConflictException}; a value the write leaves empty
+     * keeps the recorded one. Moving a realm to a different owner is refused too:
+     * a realm belongs to exactly one application.
+     *
+     * A write with no recorded realm is an insert, and the unique refName index
+     * makes a racing duplicate insert fail loudly rather than be merged.
      */
     Realm mergeIntoRecordedRealm(Realm incoming) {
         if (incoming.getId() != null || incoming.getRefName() == null || incoming.getRefName().isBlank()) {
@@ -94,20 +104,60 @@ public class LocalSystemDirectory implements SystemDirectory {
         String recordedOwner = ownerOf(recorded);
         String incomingOwner = ownerOf(incoming);
         if (recordedOwner != null && incomingOwner != null && !recordedOwner.equals(incomingOwner)) {
-            throw new IllegalStateException("REALM_OWNER_CONFLICT: realm '" + incoming.getRefName()
-                + "' belongs to '" + recordedOwner + "', not '" + incomingOwner + "'");
+            throw new RealmRegistrationConflictException(
+                RealmRegistrationConflictException.Kind.REALM_OWNER_CONFLICT, incoming.getRefName(),
+                List.of("applicationRef"),
+                "belongs to '" + recordedOwner + "', not '" + incomingOwner + "'");
         }
-        if (incomingOwner != null) recorded.setApplicationRef(incoming.getApplicationRef());
-        if (hasText(incoming.getDisplayName())) recorded.setDisplayName(incoming.getDisplayName());
-        if (hasText(incoming.getDatabaseName())) recorded.setDatabaseName(incoming.getDatabaseName());
-        if (hasText(incoming.getEmailDomain())) recorded.setEmailDomain(incoming.getEmailDomain());
-        if (hasText(incoming.getDefaultAdminUserId())) recorded.setDefaultAdminUserId(incoming.getDefaultAdminUserId());
-        if (hasText(incoming.getConnectionString())) recorded.setConnectionString(incoming.getConnectionString());
-        if (incoming.getDomainContext() != null) recorded.setDomainContext(incoming.getDomainContext());
-        // Topology and tenancy are not changed by a catalog write: the contract maps
-        // an absent value to DEDICATED / SINGLE_TENANT, so a caller that omits them
-        // would otherwise turn a pooled realm into a dedicated one.
+        List<String> refused = restrictedChanges(recorded, incoming);
+        if (!refused.isEmpty()) {
+            throw new RealmRegistrationConflictException(
+                RealmRegistrationConflictException.Kind.REALM_RESTRICTED_FIELD_CHANGE, incoming.getRefName(),
+                refused,
+                "is already recorded; a catalog write may not change " + String.join(", ", refused));
+        }
+        if (recordedOwner == null && incomingOwner != null) {
+            recorded.setApplicationRef(incoming.getApplicationRef());
+        }
+        if (hasText(incoming.getDisplayName())) {
+            recorded.setDisplayName(incoming.getDisplayName());
+        }
         return recorded;
+    }
+
+    private static List<String> restrictedChanges(Realm recorded, Realm incoming) {
+        List<String> fields = new ArrayList<>();
+        differs(fields, "databaseName", recorded.getDatabaseName(), incoming.getDatabaseName());
+        differs(fields, "connectionString", recorded.getConnectionString(), incoming.getConnectionString());
+        differs(fields, "emailDomain", recorded.getEmailDomain(), incoming.getEmailDomain());
+        differs(fields, "defaultAdminUserId", recorded.getDefaultAdminUserId(), incoming.getDefaultAdminUserId());
+        if (incoming.getDeploymentType() != recorded.getDeploymentType()) {
+            fields.add("deploymentType");
+        }
+        if (incoming.getTenancyMode() != recorded.getTenancyMode()) {
+            fields.add("tenancyMode");
+        }
+        if (incoming.getDomainContext() != null
+                && !sameCatalogDomain(recorded.getDomainContext(), incoming.getDomainContext())) {
+            fields.add("domainContext");
+        }
+        return fields;
+    }
+
+    /** A value the write leaves empty is not a change; a different non-empty value is. */
+    private static void differs(List<String> fields, String name, String recorded, String incoming) {
+        if (hasText(incoming) && !incoming.equals(recorded)) {
+            fields.add(name);
+        }
+    }
+
+    /** Compares the domain-context fields the catalog contract carries. */
+    private static boolean sameCatalogDomain(DomainContext recorded, DomainContext incoming) {
+        return recorded != null
+            && Objects.equals(recorded.getTenantId(), incoming.getTenantId())
+            && Objects.equals(recorded.getOrgRefName(), incoming.getOrgRefName())
+            && Objects.equals(recorded.getAccountId(), incoming.getAccountId())
+            && recorded.getDataSegment() == incoming.getDataSegment();
     }
 
     private static String ownerOf(Realm realm) {
