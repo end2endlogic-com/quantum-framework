@@ -403,15 +403,9 @@ The system realm is never accessible this way; only the framework system user ca
 [[invite-acceptance-policy]]
 ===== Pooled realms: invite acceptance policy
 
-An invite records only one realm, but a pooled realm (`Realm.tenancyMode = MULTI_TENANT` or `Realm.deploymentType = SHARED`, as set by `POOLED_REALM` provisioning) holds many tenants separated by DataDomain. Where the invitee lands inside the realm is decided by an *invite acceptance policy*, a CDI bean implementing `InviteAcceptancePolicy` and selected by id.
+An invite records only one realm, but a pooled realm (`Realm.tenancyMode = MULTI_TENANT` or `Realm.deploymentType = SHARED`, as set by `POOLED_REALM` provisioning) holds many tenants separated by DataDomain. Where the invitee lands inside the realm is decided by an *invite acceptance policy*, a CDI bean implementing `InviteAcceptancePolicy`, selected by the realm's topology.
 
 *Which policy.* The realm's topology decides: a pooled realm uses `pooled-realm-tenant`, any other realm uses `dedicated-realm`. There is no per-realm override. A `SHARED` realm that is not `MULTI_TENANT` is refused by `pooled-realm-tenant` with `409 INVITE_POLICY_UNAVAILABLE`, because request tenant selection does not run there. A missing or ambiguous policy bean is refused the same way. A request may send `acceptancePolicy` only to repeat the realm's policy. The id is recorded on the invite, and acceptance is refused (`409 INVITE_POLICY_UNAVAILABLE`, invite stays pending) if the realm's policy has changed since (for example, the realm's tenancy mode changed).
-
-[source,properties]
-----
-# b2bi: one shared realm for every tenant
-quantum.access-invites.realm-policy."b2bi-com"=pooled-realm-tenant
-----
 
 *Scope snapshot.* When an invite is created the service resolves the inviter's data partition with the framework's `DataDomainResolver` (`resolveForQuery` for `SECURITY:ACCESS_INVITE`): the principal's `DataDomainPolicy`, then the global policy, then the principal's own DataDomain. The principal is the verified, signed-in context (after pooled-realm tenant selection), never request fields. The result is stored as `AccessInvite.scope` (`InviteScope`): the realm it was resolved in, every DataDomain field it yields (tenant, org, account, data segment, owner, location, business transaction), and any policy filter or facet filters. A partition that cannot be resolved is refused with `403 INVITE_SCOPE_UNRESOLVABLE`; nothing falls back to default fields. A request `scope` may only echo the snapshot: any field that differs is refused with `403 INVITE_SCOPE_NOT_AUTHORIZED`.
 
@@ -420,10 +414,10 @@ quantum.access-invites.realm-policy."b2bi-com"=pooled-realm-tenant
 [cols="1,3,3",options="header"]
 |===
 |Policy |At creation |At acceptance
-|`dedicated-realm` (default)
+|`dedicated-realm` (every realm that is not pooled)
 |Refuses a pooled realm.
 |Today's placement: a new account's home context is the realm; a new `UserRealmRole` takes the realm's registered data domain and tenant.
-|`pooled-realm-tenant`
+|`pooled-realm-tenant` (every pooled realm)
 |Serves only `MULTI_TENANT` realms (where request tenant selection enforces the tenant grant); a `SHARED` realm that is not `MULTI_TENANT` is refused with `409 INVITE_POLICY_UNAVAILABLE`. The scope must be resolved in this realm, its tenant must be an active `RealmTenantMembership` of the realm, its org/account must be that membership's, and it must carry no policy filter or facet filters (else `403 INVITE_SCOPE_UNRESOLVABLE`). The inviter must be entitled to the tenant: its `UserRealmRole` for the realm authorizes it (`authorizedTenantIds` / `authorizedTenantRegEx`), or it is a realm administrator or the system principal (else `403 INVITE_SCOPE_NOT_AUTHORIZED`). The invite record itself is stored in the inviter's partition.
 |Re-runs the creation checks against the inviter's current assignment; if the inviter has lost the tenant, `403 INVITE_SCOPE_NOT_AUTHORIZED` and the invite stays pending. The invitee's partition is the snapshot with `ownerId` set to the invitee. A new account's home context is that tenant/org/account/data segment; a new `UserRealmRole` takes the partition as its data domain; the tenant is unioned into `authorizedTenantIds` (an existing member keeps its other tenants and its default partition, so one user can belong to several tenants); the `UserProfile` is created in the partition. Roles stay realm-scoped: one role list per (user, realm). Two refusals protect existing members: if the member's default partition would give it a different data segment, location, or business transaction in the invited tenant than the snapshot, `403 INVITE_SCOPE_UNRESOLVABLE`; and because roles apply in every tenant the member already has, an invite that adds a role is accepted only when the inviter is entitled to all of those tenants (or is a realm administrator or the system principal), else `403 INVITE_ROLE_NOT_GRANTABLE`.
 |===
@@ -436,7 +430,7 @@ Pooled-realm tenant selection (`SecurityFilter`) builds a request's DataDomain f
 
 *Order.* Creation: realm access, grantable roles and applications, then `InviteAcceptancePolicy.validateCreate`, then `AccessInviteProvisioner.validateInviteCreation` and `validateScopes`. Acceptance: identity binding and the inviter's realm/role re-check, the claim, `InviteAcceptancePolicy.resolveGrant`, the grant (credential, `UserRealmRole`, `UserProfile`), then `AccessInviteProvisioner.onInviteAccepted`. Provisioners therefore see the invitee already placed.
 
-*Custom policies.* An application whose pooled realm needs other rules (for example partner and operator tenants) adds an `@ApplicationScoped` `InviteAcceptancePolicy` with its own id and configures the realm to use it. It receives the realm, the invite (with its scope snapshot), the invitee, and the inviter's current assignment and administrator status, and returns an `InviteGrant`.
+*Custom policies.* Not supported: the policy follows from the realm's topology only, and a second bean that reuses a built-in id makes selection ambiguous and is refused (`409 INVITE_POLICY_UNAVAILABLE`). A pooled realm that needs other rules (for example partner and operator tenants) needs a design change to the selection, not configuration.
 
 The persisted `AccessInvite` model includes:
 
