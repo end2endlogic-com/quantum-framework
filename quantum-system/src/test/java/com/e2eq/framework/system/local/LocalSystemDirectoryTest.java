@@ -25,6 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.same;
@@ -281,5 +282,50 @@ class LocalSystemDirectoryTest {
 
         verify(realmRepo).save(eq("quantum-system"), same(recorded));
         verify(realmRepo, never()).save(anyString(), same(incoming));
+    }
+
+    @Test
+    void registerRealmCarryingOnlyADisplayNameRenamesTheRecordedRealm() {
+        Realm recorded = recordedDedicatedRealm();
+        recorded.setDefaultAdminUserId("ops@acme.com");
+        RealmRepo realmRepo = repoRecording(recorded);
+        Realm incoming = new Realm();
+        incoming.setRefName("acme-com");
+        incoming.setDisplayName("Acme Renamed");
+
+        Realm saved = new LocalSystemDirectory(realmRepo, mock(CredentialRepo.class), systemRealm()).registerRealm(incoming);
+
+        assertSame(recorded, saved);
+        assertEquals("Acme Renamed", saved.getDisplayName());
+        assertEquals("ops@acme.com", saved.getDefaultAdminUserId());
+    }
+
+    @Test
+    void registerRealmThatOmitsTopologyCannotTurnASharedRealmDedicated() {
+        Realm recorded = recordedDedicatedRealm();
+        recorded.setDeploymentType(RealmDeploymentType.SHARED);
+        recorded.setTenancyMode(RealmTenancyMode.MULTI_TENANT);
+        RealmRepo realmRepo = repoRecording(recorded);
+        Realm incoming = new Realm();          // fromEntry maps absent topology to DEDICATED / SINGLE_TENANT
+        incoming.setRefName("acme-com");
+        incoming.setDisplayName("Acme");
+
+        RealmRegistrationConflictException error = assertThrows(RealmRegistrationConflictException.class,
+            () -> new LocalSystemDirectory(realmRepo, mock(CredentialRepo.class), systemRealm()).registerRealm(incoming));
+
+        assertEquals(List.of("deploymentType", "tenancyMode"), error.fields());
+        assertEquals(RealmDeploymentType.SHARED, recorded.getDeploymentType());
+    }
+
+    @Test
+    void registerRealmWithAnIdIsSavedAsGivenWithoutALookup() {
+        RealmRepo realmRepo = mock(RealmRepo.class);
+        Realm incoming = recordedDedicatedRealm();
+        when(realmRepo.save(eq("quantum-system"), same(incoming))).thenReturn(incoming);
+
+        new LocalSystemDirectory(realmRepo, mock(CredentialRepo.class), systemRealm()).registerRealm(incoming);
+
+        verify(realmRepo, never()).findByRefName(anyString(), anyBoolean(), anyString());
+        verify(realmRepo).save(eq("quantum-system"), same(incoming));
     }
 }

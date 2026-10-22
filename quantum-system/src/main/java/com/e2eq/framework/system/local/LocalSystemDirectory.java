@@ -85,12 +85,20 @@ public class LocalSystemDirectory implements SystemDirectory {
      * database name, connection string, deployment type, tenancy mode, email
      * domain, domain context and default admin. A write that asks for a
      * different value in any of them is refused with
-     * {@link RealmRegistrationConflictException}; a value the write leaves empty
-     * keeps the recorded one. Moving a realm to a different owner is refused too:
-     * a realm belongs to exactly one application.
+     * {@link RealmRegistrationConflictException}. Writers round-trip the full
+     * catalog entry (read, modify, write): deployment type and tenancy mode are
+     * always compared, because the contract maps an absent value to
+     * DEDICATED / SINGLE_TENANT and cannot express "unchanged". The string
+     * fields and the domain context are compared only when the write carries
+     * them; the default admin is compared only when the write also carries the
+     * email domain, since {@link Realm#getDefaultAdminUserId()} derives it from
+     * that domain. Moving a realm to a different owner (compared ignoring case,
+     * as provisioning does) is refused too: a realm belongs to exactly one
+     * application.
      *
-     * A write with no recorded realm is an insert, and the unique refName index
-     * makes a racing duplicate insert fail loudly rather than be merged.
+     * A write with no recorded realm is an insert. A racing duplicate insert in
+     * the same data domain is refused by the {@code idx_refIdUniqueInDomain}
+     * unique index rather than merged.
      */
     Realm mergeIntoRecordedRealm(Realm incoming) {
         if (incoming.getId() != null || incoming.getRefName() == null || incoming.getRefName().isBlank()) {
@@ -103,7 +111,7 @@ public class LocalSystemDirectory implements SystemDirectory {
         Realm recorded = found.get();
         String recordedOwner = ownerOf(recorded);
         String incomingOwner = ownerOf(incoming);
-        if (recordedOwner != null && incomingOwner != null && !recordedOwner.equals(incomingOwner)) {
+        if (recordedOwner != null && incomingOwner != null && !recordedOwner.equalsIgnoreCase(incomingOwner)) {
             throw new RealmRegistrationConflictException(
                 RealmRegistrationConflictException.Kind.REALM_OWNER_CONFLICT, incoming.getRefName(),
                 List.of("applicationRef"),
@@ -130,7 +138,9 @@ public class LocalSystemDirectory implements SystemDirectory {
         differs(fields, "databaseName", recorded.getDatabaseName(), incoming.getDatabaseName());
         differs(fields, "connectionString", recorded.getConnectionString(), incoming.getConnectionString());
         differs(fields, "emailDomain", recorded.getEmailDomain(), incoming.getEmailDomain());
-        differs(fields, "defaultAdminUserId", recorded.getDefaultAdminUserId(), incoming.getDefaultAdminUserId());
+        if (hasText(incoming.getEmailDomain())) {
+            differs(fields, "defaultAdminUserId", recorded.getDefaultAdminUserId(), incoming.getDefaultAdminUserId());
+        }
         if (incoming.getDeploymentType() != recorded.getDeploymentType()) {
             fields.add("deploymentType");
         }
