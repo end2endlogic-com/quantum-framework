@@ -795,7 +795,9 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
             contextRealm = realmOverride;
             realmSwitched = true;
         }
-        String[] roles = claims.getTokenRoles().toArray(String[]::new);
+        String[] roles = realmSwitched
+                ? delegatedRolesAfterRealmSwitch(sub, userId, claims.getTokenRoles(), contextRealm)
+                : claims.getTokenRoles().toArray(String[]::new);
 
         Log.infof("Delegated identity: principal from trusted-issuer token claims (iss=%s, sub=%s, userId=%s, realm=%s, roles=%s)",
                 claims.getIssuer(), sub, userId, contextRealm, java.util.Arrays.toString(roles));
@@ -1241,11 +1243,81 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         throw new IllegalStateException("Neither impersonateSubject nor impersonateUserId provided");
     }
 
+    /**
+     * Roles for a delegated (trust-token-claims) principal after an X-Realm switch.
+     *
+     * <p>A token's role claims mix the issuing realm's {@code UserRealmRole} roles, which apply
+     * only in that realm, with flat credential roles, which apply in every realm. The token
+     * itself cannot say which is which, and subtracting the issuing realm's local assignment is
+     * not enough: an external IdP may assert realm-specific groups the local assignment never
+     * lists, and that assignment may be absent or stale. So a token role is carried into the
+     * target realm only when it is authoritatively global, i.e. it is also one of the flat roles
+     * on the credential found by the token's stable subject (not the userId string). When no
+     * credential can be consulted (remote control-plane mode, where credential lookups are
+     * control-plane-internal, or no local credential for the subject, or one bound to a different
+     * userId) no token role is carried: fail closed. The target realm's own active assignment
+     * then supplies the realm roles; with nothing left the principal is {@code ANONYMOUS}.
+     */
+    String[] delegatedRolesAfterRealmSwitch(String subject, String userId,
+                                            java.util.Collection<String> tokenRoles,
+                                            String targetRealm) {
+        java.util.Set<String> flatRoles = authoritativeFlatRoles(subject, userId);
+        java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>();
+        if (tokenRoles != null) {
+            for (String role : tokenRoles) {
+                if (role != null && flatRoles.contains(role.trim().toLowerCase(Locale.ROOT))) {
+                    out.add(role);
+                }
+            }
+        }
+        realmMembershipService.assignmentForUser(userId, targetRealm)
+                .map(com.e2eq.framework.model.security.UserRealmRole::getRoles)
+                .ifPresent(list -> list.stream().filter(java.util.Objects::nonNull).forEach(out::add));
+        if (out.isEmpty()) {
+            return new String[]{"ANONYMOUS"};
+        }
+        return out.toArray(String[]::new);
+    }
+
+    /**
+     * The flat (realm-independent) roles on the credential bound to {@code subject}, lower-cased;
+     * empty when no authoritative credential is available for this subject and userId.
+     */
+    private java.util.Set<String> authoritativeFlatRoles(String subject, String userId) {
+        if (subject == null || subject.isBlank() || systemDirectory == null) {
+            return java.util.Set.of();
+        }
+        // The lookup is not issuer-scoped. That adds no exposure: only a trusted issuer can mint
+        // these claims, and it can already assert any role in its signed realm without a switch.
+        Optional<CredentialUserIdPassword> credential;
+        try {
+            credential = systemDirectory.findCredentialBySubject(subject);
+        } catch (IllegalStateException e) {
+            // Remote control-plane mode: credential material never crosses the seam.
+            Log.debugf("Delegated realm switch: no authoritative flat roles for sub=%s (%s); "
+                    + "token roles are not carried", subject, e.getMessage());
+            return java.util.Set.of();
+        }
+        if (credential.isEmpty() || credential.get().getUserId() == null
+                || !credential.get().getUserId().equalsIgnoreCase(userId)
+                || credential.get().getRoles() == null) {
+            return java.util.Set.of();
+        }
+        java.util.Set<String> roles = new java.util.HashSet<>();
+        for (String role : credential.get().getRoles()) {
+            if (role != null && !role.isBlank()) {
+                roles.add(role.trim().toLowerCase(Locale.ROOT));
+            }
+        }
+        return roles;
+    }
+
     private PrincipalContext buildImpersonatedContext(CredentialUserIdPassword targetCreds, CredentialUserIdPassword originalCreds,
                                                      String actingOnBehalfOfSubject, String actingOnBehalfOfUserId) {
         // Use the target credential's realm for UserProfile/UserGroup lookups during impersonation
         String targetRealm = targetCreds.getDomainContext().getDefaultRealm();
-        String[] roles = resolveEffectiveRoles(securityIdentity, targetCreds, targetRealm);
+        // The token is the impersonator's: its role claims are never the target's roles.
+        String[] roles = resolveEffectiveRoles(null, targetCreds, targetRealm);
         DataDomain dataDomain = targetCreds.getDomainContext().toDataDomain(targetCreds.getUserId());
 
         return new PrincipalContext.Builder()
@@ -1506,7 +1578,23 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                 .accountId(membership.getAccountId())
                 .dataSegment(0)
                 .build();
+        // The user's default partition in the realm (its assignment's data domain) refines the
+        // membership coordinate when it is for this same tenant/org/account: its data segment and
+        // location carry over (an invite into a partition with a data segment lands there).
+        // Tenant, org and account always come from the membership.
+        DataDomain partition = assignment.getDataDomain();
+        boolean partitionApplies = partition != null
+            && tenantId.equals(partition.getTenantId() == null ? null : partition.getTenantId().trim())
+            && java.util.Objects.equals(membership.getOrganizationRefName(), partition.getOrgRefName())
+            && java.util.Objects.equals(membership.getAccountId(), partition.getAccountNum());
+        if (partitionApplies) {
+            tenantContext.setDataSegment(partition.getDataSegment());
+        }
         DataDomain effectiveDataDomain = tenantContext.toDataDomain(context.getUserId());
+        if (partitionApplies) {
+            effectiveDataDomain.setLocationId(partition.getLocationId());
+            effectiveDataDomain.setBusinessTransactionId(partition.getBusinessTransactionId());
+        }
 
         return new PrincipalContext.Builder()
             .withDefaultRealm(effectiveRealm)
