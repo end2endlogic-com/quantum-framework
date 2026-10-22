@@ -1252,13 +1252,11 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
      * not enough: an external IdP may assert realm-specific groups the local assignment never
      * lists, and that assignment may be absent or stale. So a token role is carried into the
      * target realm only when it is authoritatively global, i.e. it is also one of the flat roles
-     * on the credential found by the token's stable subject (not the userId string), read through
-     * {@link SystemDirectory#flatRolesForSubject}: the local credential store, or in remote mode
-     * the identity authority over the control-plane contract. When no authoritative answer is
-     * available (control plane unreachable or refusing, no service token, no credential for the
-     * subject, a disabled credential, or one bound to a different userId) no token role is
-     * carried: fail closed. The target realm's own active assignment then supplies the realm
-     * roles; with nothing left the principal is {@code ANONYMOUS}.
+     * on the credential found by the token's stable subject (not the userId string). When no
+     * credential can be consulted (remote control-plane mode, where credential lookups are
+     * control-plane-internal, or no local credential for the subject, or one bound to a different
+     * userId) no token role is carried: fail closed. The target realm's own active assignment
+     * then supplies the realm roles; with nothing left the principal is {@code ANONYMOUS}.
      */
     String[] delegatedRolesAfterRealmSwitch(String subject, String userId,
                                             java.util.Collection<String> tokenRoles,
@@ -1291,36 +1289,27 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         }
         // The lookup is not issuer-scoped. That adds no exposure: only a trusted issuer can mint
         // these claims, and it can already assert any role in its signed realm without a switch.
-        Optional<com.e2eq.framework.api.system.SubjectFlatRoles> flat;
+        Optional<CredentialUserIdPassword> credential;
         try {
-            flat = systemDirectory.flatRolesForSubject(subject);
-        } catch (RuntimeException e) {
-            // No authoritative answer (control plane unreachable or refusing, no service token,
-            // misconfigured client, store failure): fail closed, carry no token role.
-            Log.warnf("Delegated realm switch: no authoritative flat roles for sub=%s (%s: %s); "
-                    + "token roles are not carried", logSafe(subject), e.getClass().getSimpleName(),
-                    logSafe(e.getMessage()));
+            credential = systemDirectory.findCredentialBySubject(subject);
+        } catch (IllegalStateException e) {
+            // Remote control-plane mode: credential material never crosses the seam.
+            Log.debugf("Delegated realm switch: no authoritative flat roles for sub=%s (%s); "
+                    + "token roles are not carried", subject, e.getMessage());
             return java.util.Set.of();
         }
-        if (flat.isEmpty() || !flat.get().active() || flat.get().userId() == null
-                || !flat.get().userId().equalsIgnoreCase(userId)) {
+        if (credential.isEmpty() || credential.get().getUserId() == null
+                || !credential.get().getUserId().equalsIgnoreCase(userId)
+                || credential.get().getRoles() == null) {
             return java.util.Set.of();
         }
         java.util.Set<String> roles = new java.util.HashSet<>();
-        for (String role : flat.get().roles()) {
+        for (String role : credential.get().getRoles()) {
             if (role != null && !role.isBlank()) {
                 roles.add(role.trim().toLowerCase(Locale.ROOT));
             }
         }
         return roles;
-    }
-
-    private static String logSafe(String value) {
-        if (value == null) {
-            return "<none>";
-        }
-        String cleaned = value.replaceAll("\\p{Cntrl}", "_");
-        return cleaned.length() > 254 ? cleaned.substring(0, 254) : cleaned;
     }
 
     private PrincipalContext buildImpersonatedContext(CredentialUserIdPassword targetCreds, CredentialUserIdPassword originalCreds,

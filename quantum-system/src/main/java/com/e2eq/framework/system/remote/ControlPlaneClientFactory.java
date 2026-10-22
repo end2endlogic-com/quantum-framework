@@ -19,11 +19,6 @@ public final class ControlPlaneClientFactory {
     }
 
     public static DefaultEndpoint build(String baseUrl, Optional<String> bearerToken) {
-        return build(DefaultEndpoint.class, baseUrl, bearerToken);
-    }
-
-    /** Any generated control-plane endpoint interface (e.g. {@code IdentityEndpoint}). */
-    public static <T> T build(Class<T> endpoint, String baseUrl, Optional<String> bearerToken) {
         RestClientBuilder builder = RestClientBuilder.newBuilder()
             .baseUri(URI.create(baseUrl.replaceAll("/+$", "")));
         builder.register((ClientRequestFilter) ctx ->
@@ -31,6 +26,6 @@ public final class ControlPlaneClientFactory {
                 .filter(token -> !token.isBlank())
                 .ifPresent(token -> ctx.getHeaders().putSingle(
                     "Authorization", "Bearer " + token)));
-        return builder.build(endpoint);
+        return builder.build(DefaultEndpoint.class);
     }
 }
