@@ -27,6 +27,7 @@ class MigrationEndpointContractTest {
         assertEquals(Set.of(
                 "GET /system/migration/dbversion/{realm}",
                 "GET /system/migration/refnames/{realm}",
+                "POST /system/migration/refnames/{realm}/apply",
                 "POST /system/migration/indexes/applyIndexes/{realm}",
                 "POST /system/migration/indexes/applyIndexes/{realm}/{collection}",
                 "POST /system/migration/indexes/applyAllIndexes/{realm}",

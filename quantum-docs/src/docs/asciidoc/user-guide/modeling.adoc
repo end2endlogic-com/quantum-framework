@@ -376,39 +376,43 @@ not a convenience.
 === Migrating stored refNames
 
 The rule is checked on create only, so records written before it keep their old spelling, and a seed pack that now
-uses the canonical name creates a second record beside the old one instead of updating it. The
-`Canonicalize RefNames` change set (`00010`, database version 1.0.9) fixes the stored records of every
-`@CanonicalRefName` type in each realm it migrates. The canonical form replaces each run of characters outside
-`[A-Za-z0-9]` with `_` and upper-cases the result (`digital-worker-operator` becomes `DIGITAL_WORKER_OPERATOR`).
+uses the canonical name creates a second record beside the old one instead of updating it.
+`CanonicalRefNameMigrator` plans, per realm and for every `@CanonicalRefName` type, one action per stored record whose
+refName breaks the rule. The canonical form replaces each run of characters outside `[A-Za-z0-9]` with `_` and
+upper-cases the result (`digital-worker-operator` becomes `DIGITAL_WORKER_OPERATOR`).
 
 [cols="1,4"]
 |===
 | Action | When and what
 
-| `RENAME` | No record holds the canonical name. The record is renamed in place and keeps its id, members and rules;
-grants do not move, because policies match on `principalId` and membership is read from the group's `userProfiles`.
-| `MERGE` | An equivalent canonical record exists: a group with the same `applicationId` and roles, or a policy with the
-same principal, `applicationId`, `realmRefName` and rules. A group's members are added to the canonical group; the old
-record is then deleted through its repository.
-| `CONFLICT` | The canonical record differs, or several stored names map to one. Reported, never changed: folding it
-would grant or revoke access.
+| `RENAME` | Nothing in the record's data domain holds the canonical name. The record is renamed in place and keeps its
+id, members and rules; grants do not move, because policies match on `principalId` and membership is read from the
+group's `userProfiles`.
+| `MERGE` | An equivalent canonical record exists in the same data domain: a group with the same `applicationId`,
+`activeStatus` and roles, or a policy with the same principal, `applicationId`, `realmRefName`, `activeStatus` and
+rules. A group's members are added to the canonical group; the old record is deleted.
+| `CONFLICT` | The canonical record differs, several stored names map to one, or a declared legacy name holds it.
+Reported, never changed: folding it would grant or revoke access.
 | `UNRESOLVABLE` | No valid canonical spelling exists (too short or long, leading digit, generated-looking). Reported.
 |===
 
-Declared legacy names (annotation or `quantum.refname.legacy-allowed.*`) are skipped.
+Names are compared as the refName index compares them: within a data domain (org, tenant, owner) and without regard
+to case, so a record is never merged into another tenant's. Declared legacy names (annotation or
+`quantum.refname.legacy-allowed.*`) are never renamed, but they occupy their name. Planning reads the collections
+directly, so tenant realms that leave security types unmapped are covered too.
 
-The change set only reports until it is told to apply:
+Rollout:
 
-[source,properties]
-----
-# report (default): log the plan per realm and change nothing
-# apply: perform RENAME and MERGE, log what is left for an operator
-quantum.refname.migration.mode=report
-----
+. The `Report Non-Canonical RefNames` change set (`00010`, database version 1.0.9) logs the plan for each realm it
+  migrates and changes nothing.
+. `GET /system/migration/refnames/{realm}` (role `system`, realms in the realm catalog only) returns the plan as JSON.
+. Resolve conflicts, or declare names that must stay as legacy.
+. `POST /system/migration/refnames/{realm}/apply` (role `system`) performs the renames and merges in one transaction
+  and returns the plan it applied. Re-running it changes nothing new.
+. Then apply seed packs that use the canonical names, so they update the renamed records.
 
-`GET /system/migration/refnames/{realm}` (admin) returns the same plan as JSON at any time. The mode is part of the
-change set's checksum, so switching to `apply` runs it again on every realm. Apply seed packs that use the canonical
-names after the migration, so they update the renamed records instead of creating new ones.
+Applying uses Morphia operations, not the repositories: ontology edges derived from a merged group are not
+re-materialized for its new members, and the removed record's edges are left in place.
 
 == Functional Area/Domain in RuleContext Permission Language
 

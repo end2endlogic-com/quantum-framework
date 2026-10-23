@@ -203,6 +203,14 @@ public class MorphiaDataStoreWrapper {
     * Returns the entity types already mapped on the base datastore, so realm datastores can register
     * the same types by class without repeating package scanning.
     */
+   /**
+    * The collection {@code type} is stored in, from the base mapper (mapping it there if needed). Works for
+    * system-plane types that a tenant realm's datastore deliberately leaves unmapped.
+    */
+   public String collectionNameOf(Class<?> type) {
+      return dataStore.getMapper().getEntityModel(type).collectionName();
+   }
+
    private List<Class<?>> getMappedEntityTypesFromBase() {
       if (cachedMappedEntityTypes == null) {
          synchronized (this) {

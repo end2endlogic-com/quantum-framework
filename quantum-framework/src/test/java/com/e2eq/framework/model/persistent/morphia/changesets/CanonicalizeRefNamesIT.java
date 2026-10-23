@@ -23,7 +23,6 @@ import com.mongodb.client.MongoCollection;
 import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.Updates;
 import dev.morphia.transactions.MorphiaSession;
-import io.quarkus.arc.ClientProxy;
 import io.quarkus.test.common.QuarkusTestResource;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.security.TestSecurity;
@@ -41,18 +40,20 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import static io.restassured.RestAssured.given;
+import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The canonical-refName change set against replica-set Mongo and the real repositories. Pre-rule records are
- * planted the way they exist in the field: saved under a canonical name, then renamed in the collection to the old
- * spelling (the repositories refuse to create or rename to one).
+ * The canonical-refName migration against replica-set Mongo. Pre-rule records are planted the way they exist in the
+ * field: saved under a canonical name, then renamed in the collection to the old spelling (the repositories refuse to
+ * create or rename to one).
  */
 @QuarkusTest
 @QuarkusTestResource(MongoDbInitResource.class)
-@TestSecurity(user = "system@system.com", roles = {"admin"})
+@TestSecurity(user = "system@system.com", roles = {"admin", "system"})
 public class CanonicalizeRefNamesIT extends BaseRepoTest {
 
    private static final String REALM = "test-quantum-com";
@@ -78,20 +79,21 @@ public class CanonicalizeRefNamesIT extends BaseRepoTest {
    private final String run = String.valueOf(System.nanoTime());
    private final List<ObjectId> groups = new ArrayList<>();
    private final List<ObjectId> policies = new ArrayList<>();
+   private final List<String> scratchRealms = new ArrayList<>();
 
    @AfterEach
    void cleanUp() {
-      collection("userGroup").deleteMany(Filters.in("_id", groups));
-      collection("policy").deleteMany(Filters.in("_id", policies));
-      unwrap().mode = CanonicalizeRefNames.REPORT;
+      collection(REALM, "userGroup").deleteMany(Filters.in("_id", groups));
+      collection(REALM, "policy").deleteMany(Filters.in("_id", policies));
+      scratchRealms.forEach(realm -> mongoClient.getDatabase(realm).drop());
    }
 
    @Test
-   void renamesMergesAndReportsConflictsWithoutChangingGrants() throws Exception {
+   void reportsThenAppliesRenamesAndMergesWithoutChangingGrants() {
       // RENAME: no canonical record yet; members stay where they are.
       ObjectId renamed = legacyGroup("it-ops-" + run, List.of("ops"), "ann@it.com");
       ObjectId renamedPolicy = legacyPolicy("it-ops-policy-" + run, "ops", RuleEffect.ALLOW);
-      // MERGE: an equivalent canonical group and policy exist.
+      // MERGE: an equivalent canonical group and policy exist in the same data domain.
       ObjectId canonicalGroup = group("IT_DUP_" + run, List.of("dup"), "bob@it.com");
       ObjectId duplicateGroup = legacyGroup("it-dup-" + run, List.of("dup"), "cid@it.com");
       ObjectId canonicalPolicy = policy("IT_DUP_POLICY_" + run, "dup", RuleEffect.ALLOW);
@@ -106,8 +108,13 @@ public class CanonicalizeRefNamesIT extends BaseRepoTest {
       ObjectId ambiguousB = legacyGroup("it.amb." + run, List.of("amb"), null);
       // UNRESOLVABLE: no canonical spelling exists.
       ObjectId leadingDigit = legacyGroup("9-it-" + run, List.of("x"), null);
+      // A same-named group in another data domain is not this record's twin: RENAME, never MERGE across tenants.
+      ObjectId otherTenantGroup = group("IT_XD_" + run, List.of("xd"), "fay@it.com");
+      collection(REALM, "userGroup").updateOne(Filters.eq("_id", otherTenantGroup),
+            Updates.set("dataDomain.tenantId", "other-tenant-" + run));
+      ObjectId crossDomain = legacyGroup("it-xd-" + run, List.of("xd"), "gus@it.com");
 
-      Map<ObjectId, Action> plan = plan();
+      Map<ObjectId, Action> plan = plan(REALM);
       assertAction(plan, renamed, Kind.RENAME, "IT_OPS_" + run);
       assertAction(plan, renamedPolicy, Kind.RENAME, "IT_OPS_POLICY_" + run);
       assertAction(plan, duplicateGroup, Kind.MERGE, "IT_DUP_" + run);
@@ -120,74 +127,102 @@ public class CanonicalizeRefNamesIT extends BaseRepoTest {
       assertAction(plan, ambiguousA, Kind.CONFLICT, "IT_AMB_" + run);
       assertAction(plan, ambiguousB, Kind.CONFLICT, "IT_AMB_" + run);
       assertAction(plan, leadingDigit, Kind.UNRESOLVABLE, null);
-      assertTrue(plan.values().stream().noneMatch(action -> "tenant-admin-users".equals(action.from())
-            || "defaultAnonymousPolicy".equals(action.from())), "declared legacy names are left alone");
+      assertAction(plan, crossDomain, Kind.RENAME, "IT_XD_" + run);
 
-      // Report mode (the default) changes nothing.
-      execute();
-      assertEquals("it-ops-" + run, refName("userGroup", renamed));
-      assertEquals(plan.keySet(), plan().keySet());
+      // The change set only reports.
+      try (MorphiaSession session = morphiaDataStoreWrapper.getDataStore(REALM).startSession()) {
+         changeSet.execute(session, mongoClient, emitter());
+      }
+      assertEquals("it-ops-" + run, refName(REALM, "userGroup", renamed));
+      assertEquals(plan.keySet(), plan(REALM).keySet());
 
-      // Apply.
-      unwrap().mode = CanonicalizeRefNames.APPLY;
-      execute();
-      assertEquals("IT_OPS_" + run, refName("userGroup", renamed));
-      assertEquals("IT_OPS_POLICY_" + run, refName("policy", renamedPolicy));
+      // GET reports the same plan without changing anything.
+      given().when().get("/system/migration/refnames/" + REALM)
+            .then().statusCode(200)
+            .body("realm", is(REALM))
+            .body("actions.find { it.id == '" + renamed.toHexString() + "' }.kind", is("RENAME"))
+            .body("actions.find { it.id == '" + duplicatePolicy.toHexString() + "' }.kind", is("MERGE"));
+      assertEquals("it-ops-" + run, refName(REALM, "userGroup", renamed));
+
+      // POST applies it.
+      given().when().post("/system/migration/refnames/" + REALM + "/apply").then().statusCode(200);
+      assertEquals("IT_OPS_" + run, refName(REALM, "userGroup", renamed));
+      assertEquals("IT_OPS_POLICY_" + run, refName(REALM, "policy", renamedPolicy));
       assertTrue(memberOf("ann@it.com").contains("IT_OPS_" + run), "membership survives the rename");
-      assertNull(refName("userGroup", duplicateGroup));
-      assertNull(refName("policy", duplicatePolicy));
-      assertEquals("IT_DUP_POLICY_" + run, refName("policy", canonicalPolicy));
+      assertNull(refName(REALM, "userGroup", duplicateGroup));
+      assertNull(refName(REALM, "policy", duplicatePolicy));
+      assertEquals("IT_DUP_POLICY_" + run, refName(REALM, "policy", canonicalPolicy));
       assertTrue(memberOf("cid@it.com").contains("IT_DUP_" + run), "merged members join the canonical group");
       assertTrue(memberOf("bob@it.com").contains("IT_DUP_" + run));
-      assertEquals("it-diff-" + run, refName("userGroup", differingGroup));
-      assertEquals("it-diff-policy-" + run, refName("policy", differingPolicy));
-      assertEquals("it-amb-" + run, refName("userGroup", ambiguousA));
-      assertEquals("9-it-" + run, refName("userGroup", leadingDigit));
+      assertEquals("it-diff-" + run, refName(REALM, "userGroup", differingGroup));
+      assertEquals("it-diff-policy-" + run, refName(REALM, "policy", differingPolicy));
+      assertEquals("it-amb-" + run, refName(REALM, "userGroup", ambiguousA));
+      assertEquals("9-it-" + run, refName(REALM, "userGroup", leadingDigit));
+      assertEquals("IT_XD_" + run, refName(REALM, "userGroup", crossDomain));
+      assertEquals(List.of("IT_XD_" + run), memberOf("gus@it.com"));
+      assertEquals(List.of("IT_XD_" + run), memberOf("fay@it.com"), "the other tenant's group keeps its members");
+      assertTrue(memberOf("gus@it.com").size() == 1 && refName(REALM, "userGroup", otherTenantGroup) != null);
 
-      // Re-running only reports what an operator must still decide.
-      Map<ObjectId, Action> remaining = plan();
-      assertEquals(List.of(Kind.CONFLICT, Kind.CONFLICT, Kind.CONFLICT, Kind.CONFLICT, Kind.UNRESOLVABLE),
-            List.of(remaining.get(differingGroup).kind(), remaining.get(differingPolicy).kind(),
-                  remaining.get(ambiguousA).kind(), remaining.get(ambiguousB).kind(),
-                  remaining.get(leadingDigit).kind()));
-      assertEquals(5, remaining.size());
-      execute();
-      assertEquals("IT_OPS_" + run, refName("userGroup", renamed));
+      // Applying again changes nothing and leaves only what an operator must decide.
+      given().when().post("/system/migration/refnames/" + REALM + "/apply").then().statusCode(200);
+      Map<ObjectId, Action> remaining = plan(REALM);
+      assertEquals(5, remaining.size(), remaining.toString());
+      assertTrue(remaining.values().stream().allMatch(action ->
+            action.kind() == Kind.CONFLICT || action.kind() == Kind.UNRESOLVABLE), remaining.toString());
    }
 
    @Test
-   void reportEndpointReturnsThePlanWithoutChangingAnything() {
-      ObjectId planted = legacyGroup("it-rest-" + run, List.of("rest"), null);
-      io.restassured.RestAssured.given()
-            .when().get("/system/migration/refnames/" + REALM)
-            .then().statusCode(200)
-            .body("realm", org.hamcrest.Matchers.is(REALM))
-            .body("actions.find { it.id == '" + planted.toHexString() + "' }.kind", org.hamcrest.Matchers.is("RENAME"))
-            .body("actions.find { it.id == '" + planted.toHexString() + "' }.to",
-                  org.hamcrest.Matchers.is("IT_REST_" + run));
-      assertEquals("it-rest-" + run, refName("userGroup", planted));
-      io.restassured.RestAssured.given()
-            .when().get("/system/migration/refnames/no-such-realm-" + run)
-            .then().statusCode(404);
+   void aDeclaredLegacyNameIsKeptAndHoldsItsName() {
+      // quantum.refname.legacy-allowed.UserGroup includes refname_it_legacy (test configuration).
+      ObjectId legacy = legacyGroup("refname_it_legacy", List.of("legacy"), null);
+      ObjectId shadow = legacyGroup("Refname-It-Legacy", List.of("legacy"), null);
+      // Same data domain, so both names fall in one slot of the refName index.
+      Document domain = collection(REALM, "userGroup").find(Filters.eq("_id", shadow)).first().get("dataDomain", Document.class);
+      collection(REALM, "userGroup").updateOne(Filters.eq("_id", legacy), Updates.set("dataDomain", domain));
+      Map<ObjectId, Action> plan = migrator.plan(REALM).actions().stream()
+            .filter(action -> List.of(legacy.toHexString(), shadow.toHexString()).contains(action.id()))
+            .collect(Collectors.toMap(action -> new ObjectId(action.id()), Function.identity()));
+      assertNull(plan.get(legacy), "a declared legacy name is never renamed");
+      assertAction(plan, shadow, Kind.CONFLICT, "REFNAME_IT_LEGACY");
+      assertTrue(plan.get(shadow).reason().contains("declared legacy"), plan.get(shadow).reason());
    }
 
-   private CanonicalizeRefNames unwrap() {
-      return ClientProxy.unwrap(changeSet);
-   }
+   @Test
+   void plansAndAppliesInARealmWhoseDatastoreNeverMappedTheTypes() {
+      // A tenant realm leaves system-plane types unmapped; planning reads its collections anyway.
+      String realm = "test-refname-tenant-" + run;
+      scratchRealms.add(realm);
+      ObjectId id = new ObjectId();
+      mongoClient.getDatabase(realm).getCollection("policy").insertOne(new Document("_id", id)
+            .append("refName", "tenant-only-policy").append("principalId", "user").append("principalType", "ROLE")
+            .append("applicationId", "*").append("realmRefName", "*").append("rules", List.of())
+            .append("dataDomain", new Document("orgRefName", "t.com").append("tenantId", "t.com")
+                  .append("ownerId", "owner").append("accountNum", "0000000001").append("dataSegment", 0)));
+      RefNameMigrationPlan plan = migrator.plan(realm);
+      assertEquals(1, plan.actions().size(), plan.actions().toString());
+      assertEquals(Kind.RENAME, plan.actions().get(0).kind());
 
-   /** Runs the change set the way MigrationService does: in a transaction on the realm's session. */
-   private void execute() throws Exception {
-      try (MorphiaSession session = morphiaDataStoreWrapper.getDataStore(REALM).startSession()) {
+      try (MorphiaSession session = morphiaDataStoreWrapper.getDataStore(realm).startSession()) {
          session.startTransaction();
-         changeSet.execute(session, mongoClient, emitter());
+         migrator.apply(session, plan, message -> { });
          session.commitTransaction();
       }
+      assertEquals("TENANT_ONLY_POLICY", refName(realm, "policy", id));
+      // The REST surface accepts only realms in the catalog, never an arbitrary database.
+      given().when().get("/system/migration/refnames/" + realm).then().statusCode(404);
+      given().when().get("/system/migration/refnames/admin").then().statusCode(404);
+   }
+
+   @Test
+   @TestSecurity(user = "tenant-admin@it.com", roles = {"admin"})
+   void onlyTheSystemRoleMayReadOrApply() {
+      given().when().get("/system/migration/refnames/" + REALM).then().statusCode(403);
+      given().when().post("/system/migration/refnames/" + REALM + "/apply").then().statusCode(403);
    }
 
    /** This run's actions, keyed by record id. */
-   private Map<ObjectId, Action> plan() {
-      RefNameMigrationPlan plan = migrator.plan(morphiaDataStoreWrapper.getDataStore(REALM));
-      return plan.actions().stream()
+   private Map<ObjectId, Action> plan(String realm) {
+      return migrator.plan(realm).actions().stream()
             .filter(action -> action.from().contains(run))
             .collect(Collectors.toMap(action -> new ObjectId(action.id()), Function.identity()));
    }
@@ -220,7 +255,7 @@ public class CanonicalizeRefNamesIT extends BaseRepoTest {
 
    private ObjectId legacyGroup(String legacyName, List<String> roles, String member) {
       ObjectId id = group("IT_PLANT_" + System.nanoTime(), roles, member);
-      collection("userGroup").updateOne(Filters.eq("_id", id), Updates.set("refName", legacyName));
+      collection(REALM, "userGroup").updateOne(Filters.eq("_id", id), Updates.set("refName", legacyName));
       return id;
    }
 
@@ -252,12 +287,12 @@ public class CanonicalizeRefNamesIT extends BaseRepoTest {
 
    private ObjectId legacyPolicy(String legacyName, String role, RuleEffect effect) {
       ObjectId id = policy("IT_PLANT_" + System.nanoTime(), role, effect);
-      collection("policy").updateOne(Filters.eq("_id", id), Updates.set("refName", legacyName));
+      collection(REALM, "policy").updateOne(Filters.eq("_id", id), Updates.set("refName", legacyName));
       return id;
    }
 
-   private String refName(String collection, ObjectId id) {
-      Document row = collection(collection).find(Filters.eq("_id", id)).first();
+   private String refName(String realm, String collection, ObjectId id) {
+      Document row = collection(realm, collection).find(Filters.eq("_id", id)).first();
       return row == null ? null : row.getString("refName");
    }
 
@@ -269,8 +304,8 @@ public class CanonicalizeRefNamesIT extends BaseRepoTest {
             .map(UserGroup::getRefName).toList();
    }
 
-   private MongoCollection<Document> collection(String name) {
-      return mongoClient.getDatabase(REALM).getCollection(name);
+   private MongoCollection<Document> collection(String realm, String name) {
+      return mongoClient.getDatabase(realm).getCollection(name);
    }
 
    @SuppressWarnings("unchecked")
