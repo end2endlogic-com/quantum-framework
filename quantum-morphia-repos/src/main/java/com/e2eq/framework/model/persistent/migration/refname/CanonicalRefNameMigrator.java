@@ -64,7 +64,8 @@ import java.util.function.Consumer;
  * <p>Planning reads the realm's collections directly, so it sees system-plane types that a tenant realm's datastore
  * leaves unmapped and creates nothing in the database. Applying uses Morphia operations in the caller's session and
  * runs no repository hooks: ontology edges derived from a merged group are not re-materialized for its new members,
- * and the removed record's edges are not cleaned up.</p>
+ * and the removed record's edges are not cleaned up. Each write is guarded by the refName it was planned against, but
+ * a MERGE does not re-compare the canonical twin, so apply a fresh plan.</p>
  */
 @ApplicationScoped
 public class CanonicalRefNameMigrator {
@@ -104,18 +105,21 @@ public class CanonicalRefNameMigrator {
       return new RefNameMigrationPlan(realm, List.copyOf(actions));
    }
 
-   /** {@code @CanonicalRefName} types by collection, found through their repository beans. */
+   /**
+    * {@code @CanonicalRefName} types by collection, found through their repository beans. Fails rather than plan
+    * without one: a type that silently dropped out would report and apply nothing for it.
+    */
    private Map<String, Class<?>> canonicalTypes() {
       Map<String, Class<?>> types = new LinkedHashMap<>();
       for (BaseMorphiaRepo<?> repo : repositories) {
-         Class<?> type;
-         try {
-            type = repo.getPersistentClass();
-         } catch (RuntimeException e) {
-            continue;
-         }
+         Class<?> type = repo.getPersistentClass();
          if (type != null && RefNameContract.applies(type)) {
             types.putIfAbsent(morphiaDataStoreWrapper.collectionNameOf(type), type);
+         }
+      }
+      for (Class<?> required : List.of(Policy.class, UserGroup.class)) {
+         if (!types.containsValue(required)) {
+            throw new IllegalStateException("refName migration: no repository for " + required.getSimpleName());
          }
       }
       return types;
@@ -226,14 +230,15 @@ public class CanonicalRefNameMigrator {
          throw new IllegalArgumentException("plan for " + plan.realm() + " cannot be applied to "
                + session.getDatabase().getName());
       }
+      Map<String, Class<?>> types = canonicalTypes();
       for (Action action : plan.actions()) {
          switch (action.kind()) {
             case RENAME -> {
-               rename(session, action);
+               rename(session, type(types, action), action);
                log.accept("Applied: " + describe(action));
             }
             case MERGE -> {
-               merge(session, action);
+               merge(session, type(types, action), action);
                log.accept("Applied: " + describe(action));
             }
             case CONFLICT, UNRESOLVABLE -> log.accept("Left for an operator: " + describe(action));
@@ -245,8 +250,8 @@ public class CanonicalRefNameMigrator {
       return new RefNameMigrationPlan(null, List.of(action)).describe().get(0);
    }
 
-   private Class<?> type(Action action) {
-      Class<?> type = canonicalTypes().get(action.collection());
+   private static Class<?> type(Map<String, Class<?>> types, Action action) {
+      Class<?> type = types.get(action.collection());
       if (type == null) {
          throw new IllegalStateException("refName migration: no @CanonicalRefName type for collection "
                + action.collection());
@@ -254,8 +259,8 @@ public class CanonicalRefNameMigrator {
       return type;
    }
 
-   private void rename(MorphiaSession session, Action action) {
-      UpdateResult result = byId(session, type(action), action.id())
+   private void rename(MorphiaSession session, Class<?> type, Action action) {
+      UpdateResult result = byId(session, type, action.id())
             .filter(Filters.eq("refName", action.from()))
             .update(new UpdateOptions(),
                   UpdateOperators.set("refName", action.to()),
@@ -264,8 +269,7 @@ public class CanonicalRefNameMigrator {
       requireOne(result.getMatchedCount(), action, "holds '" + action.from() + "'");
    }
 
-   private void merge(MorphiaSession session, Action action) {
-      Class<?> type = type(action);
+   private void merge(MorphiaSession session, Class<?> type, Action action) {
       if (UserGroup.class.isAssignableFrom(type)) {
          UserGroup old = byId(session, UserGroup.class, action.id()).first();
          UserGroup target = byId(session, UserGroup.class, action.targetId()).first();

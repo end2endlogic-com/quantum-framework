@@ -114,16 +114,22 @@ public class MigrationResource {
    @FunctionalAction(value = "APPLY", bypassDataScoping = true)
    public RefNameMigrationPlan applyRefNameMigration (@PathParam("realm") String realm) {
       requireRegisteredRealm(realm);
+      try {
+         migrationService.requireRealmOwned(realm, "apply the refName migration");
+      } catch (IllegalStateException e) {
+         throw new ForbiddenException(e.getMessage());
+      }
       RefNameMigrationPlan plan = refNameMigrator.plan(realm);
       try (MorphiaSession session = morphiaDataStoreWrapper.getDataStore(realm).startSession()) {
          session.startTransaction();
          try {
             refNameMigrator.apply(session, plan, message -> Log.infof("refName migration %s: %s", realm, message));
-            session.commitTransaction();
          } catch (RuntimeException e) {
             session.abortTransaction();
             throw e;
          }
+         // Outside the catch: a failed commit must surface as itself, not as a failed abort.
+         session.commitTransaction();
       }
       ruleContext.invalidateAllCaches();
       return plan;
