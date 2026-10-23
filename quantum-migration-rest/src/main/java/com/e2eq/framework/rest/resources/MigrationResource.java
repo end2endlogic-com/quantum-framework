@@ -4,6 +4,10 @@ import com.e2eq.framework.annotations.FunctionalAction;
 import com.e2eq.framework.annotations.FunctionalMapping;
 import com.e2eq.framework.model.persistent.migration.base.DatabaseVersion;
 import com.e2eq.framework.model.persistent.migration.base.MigrationService;
+import com.e2eq.framework.model.persistent.migration.refname.CanonicalRefNameMigrator;
+import com.e2eq.framework.model.persistent.migration.refname.RefNameMigrationPlan;
+import com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper;
+import com.mongodb.client.MongoClient;
 import com.e2eq.framework.model.persistent.morphia.DatabaseVersionRepo;
 import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.model.securityrules.SecurityCallScope;
@@ -61,6 +65,15 @@ public class MigrationResource {
    @Inject
    SecurityIdentity identity;
 
+   @Inject
+   CanonicalRefNameMigrator refNameMigrator;
+
+   @Inject
+   MorphiaDataStoreWrapper morphiaDataStoreWrapper;
+
+   @Inject
+   MongoClient mongoClient;
+
    @GET
    @Path("/dbversion/{realm}")
    @Produces(MediaType.APPLICATION_JSON)
@@ -71,6 +84,25 @@ public class MigrationResource {
          return oversion.get();
       } else
          throw new NotFoundException(String.format("realm:%s not found", realm));
+   }
+
+   /**
+    * Dry run of the canonical-refName change set for one realm: the renames, merges and conflicts it would
+    * produce. Changes nothing; set {@code quantum.refname.migration.mode=apply} to perform them.
+    */
+   @GET
+   @Path("/refnames/{realm}")
+   @Produces(MediaType.APPLICATION_JSON)
+   @RolesAllowed({"admin", "system"})
+   @FunctionalMapping(area="MIGRATION", domain="REFNAMES")
+   @FunctionalAction(value = "REPORT", bypassDataScoping = true)
+   public RefNameMigrationPlan refNameMigrationPlan (@PathParam("realm") String realm) {
+      if (!mongoClient.listDatabaseNames().into(new java.util.ArrayList<>()).contains(realm)) {
+         throw new NotFoundException(String.format("realm:%s not found", realm));
+      }
+      try (SecurityCallScope.Scope ignored = SecurityCallScope.openIgnoringRules()) {
+         return refNameMigrator.plan(morphiaDataStoreWrapper.getDataStore(realm));
+      }
    }
 
    @POST
