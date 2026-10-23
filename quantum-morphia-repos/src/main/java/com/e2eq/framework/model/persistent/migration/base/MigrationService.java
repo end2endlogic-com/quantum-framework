@@ -784,6 +784,14 @@ public class MigrationService {
         return record;
     }
 
+   /**
+    * Fails unless this service manages {@code realm}'s data: always, unless quantum.realm.seed-system-only is set, in
+    * which case only the system realm and realms listed in quantum.migration.apply.realms.
+    */
+   public void requireRealmOwned(String realm, String operation) {
+      requireRealmOwnedByThisMigrationService(realm, operation);
+   }
+
    private void requireRealmOwnedByThisMigrationService(String realm, String operation) {
       if (!seedSystemOnly || isSystemRealm(realm) || isExplicitlyConfiguredMigrationRealm(realm)) {
          return;

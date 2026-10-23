@@ -4,6 +4,11 @@ import com.e2eq.framework.annotations.FunctionalAction;
 import com.e2eq.framework.annotations.FunctionalMapping;
 import com.e2eq.framework.model.persistent.migration.base.DatabaseVersion;
 import com.e2eq.framework.model.persistent.migration.base.MigrationService;
+import com.e2eq.framework.model.persistent.migration.refname.CanonicalRefNameMigrator;
+import com.e2eq.framework.model.persistent.migration.refname.RefNameMigrationPlan;
+import com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper;
+import com.e2eq.framework.model.persistent.morphia.RealmRepo;
+import dev.morphia.transactions.MorphiaSession;
 import com.e2eq.framework.model.persistent.morphia.DatabaseVersionRepo;
 import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.model.securityrules.SecurityCallScope;
@@ -61,6 +66,15 @@ public class MigrationResource {
    @Inject
    SecurityIdentity identity;
 
+   @Inject
+   CanonicalRefNameMigrator refNameMigrator;
+
+   @Inject
+   MorphiaDataStoreWrapper morphiaDataStoreWrapper;
+
+   @Inject
+   RealmRepo realmRepo;
+
    @GET
    @Path("/dbversion/{realm}")
    @Produces(MediaType.APPLICATION_JSON)
@@ -71,6 +85,67 @@ public class MigrationResource {
          return oversion.get();
       } else
          throw new NotFoundException(String.format("realm:%s not found", realm));
+   }
+
+   /**
+    * The canonical-refName plan for one realm: what {@code POST /refnames/{realm}/apply} would rename, merge or leave
+    * for an operator. Reads only.
+    */
+   @GET
+   @Path("/refnames/{realm}")
+   @Produces(MediaType.APPLICATION_JSON)
+   @RolesAllowed({"system"})
+   @FunctionalMapping(area="MIGRATION", domain="REFNAMES")
+   @FunctionalAction(value = "REPORT", bypassDataScoping = true)
+   public RefNameMigrationPlan refNameMigrationPlan (@PathParam("realm") String realm) {
+      requireRegisteredRealm(realm);
+      return refNameMigrator.plan(realm);
+   }
+
+   /**
+    * Applies the realm's canonical-refName plan in one transaction: renames and merges; conflicts and unresolvable
+    * names are left as they are and returned in the plan. Review {@code GET /refnames/{realm}} first.
+    */
+   @POST
+   @Path("/refnames/{realm}/apply")
+   @Produces(MediaType.APPLICATION_JSON)
+   @RolesAllowed({"system"})
+   @FunctionalMapping(area="MIGRATION", domain="REFNAMES")
+   @FunctionalAction(value = "APPLY", bypassDataScoping = true)
+   public RefNameMigrationPlan applyRefNameMigration (@PathParam("realm") String realm) {
+      requireRegisteredRealm(realm);
+      try {
+         migrationService.requireRealmOwned(realm, "apply the refName migration");
+      } catch (IllegalStateException e) {
+         throw new ForbiddenException(e.getMessage());
+      }
+      RefNameMigrationPlan plan = refNameMigrator.plan(realm);
+      try (MorphiaSession session = morphiaDataStoreWrapper.getDataStore(realm).startSession()) {
+         session.startTransaction();
+         try {
+            refNameMigrator.apply(session, plan, message -> Log.infof("refName migration %s: %s", realm, message));
+         } catch (RuntimeException e) {
+            session.abortTransaction();
+            throw e;
+         }
+         // Outside the catch: a failed commit must surface as itself, not as a failed abort.
+         session.commitTransaction();
+      }
+      ruleContext.invalidateAllCaches();
+      return plan;
+   }
+
+   /** Only realms in the realm catalog (or the system realm): never an arbitrary database on the cluster. */
+   private void requireRegisteredRealm(String realm) {
+      String systemRealm = envConfigUtils.getSystemRealm();
+      boolean registered;
+      try (SecurityCallScope.Scope ignored = SecurityCallScope.openIgnoringRules()) {
+         registered = Objects.equals(realm, systemRealm)
+               || realmRepo.findByDatabaseName(realm, true, systemRealm).isPresent();
+      }
+      if (!registered) {
+         throw new NotFoundException(String.format("realm:%s not found", realm));
+      }
    }
 
    @POST
