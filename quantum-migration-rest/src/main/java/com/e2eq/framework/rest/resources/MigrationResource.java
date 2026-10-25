@@ -132,7 +132,7 @@ public class MigrationResource {
          } catch (IllegalStateException e) {
             // The realm no longer matches the reviewed plan: nothing was written.
             abort(session, e);
-            throw new ClientErrorException(e.getMessage(), 409);
+            throw new ClientErrorException(e.getMessage(), 409, e);
          } catch (MongoException e) {
             abort(session, e);
             throw refNameWriteFailure(e);
@@ -159,7 +159,7 @@ public class MigrationResource {
    private static WebApplicationException refNameWriteFailure(MongoException e) {
       if (e.hasErrorLabel(MongoException.TRANSIENT_TRANSACTION_ERROR_LABEL) || e.getCode() == 112 || e.getCode() == 11000) {
          return new ClientErrorException("the realm changed while the reviewed plan was applied; nothing was written. "
-               + "Review the plan again: " + e.getMessage(), 409);
+               + "Review the plan again: " + e.getMessage(), 409, e);
       }
       return new WebApplicationException("refName migration failed; nothing was written: " + e.getMessage(), e, 500);
    }

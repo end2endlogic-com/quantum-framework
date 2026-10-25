@@ -422,6 +422,11 @@ Rollout:
 Applying writes directly in the migration transaction, not through the repositories, so no repository hooks run;
 the write bumps each record's `version` and audit fields.
 
+Apply each realm in a maintenance window, with writers to that realm's groups, policies and ontology edges paused.
+The transaction aborts on a concurrent change to any record or edge it writes, but it cannot see a new edge inserted
+meanwhile that names a migrated record by refName. No framework model references a group or policy by refName
+today, so none should exist; the report flags any that do.
+
 == Functional Area/Domain in RuleContext Permission Language
 
 [plantuml]
