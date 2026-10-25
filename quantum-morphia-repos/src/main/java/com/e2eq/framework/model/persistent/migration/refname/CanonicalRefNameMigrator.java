@@ -54,7 +54,8 @@ import java.util.stream.Collectors;
  *    added to it, every {@link RefNameMergeParticipant} moves what references the old record onto it, and the old
  *    record is removed.</li>
  *    <li>{@link Kind#CONFLICT} and {@link Kind#UNRESOLVABLE}: reported, never changed. Folding a differing record
- *    would silently grant or revoke access, so that stays an operator decision.</li>
+ *    would silently grant or revoke access, so that stays an operator decision. A record that a participant reports
+ *    as referenced by refName (rather than id) is a conflict too.</li>
  * </ul>
  * <p>Names are compared the way the refName index compares them: within one data domain (org, tenant, owner, each
  * compared without case, null distinct from empty) and without regard to case. Declared legacy names
@@ -196,6 +197,17 @@ public class CanonicalRefNameMigrator {
                   references += participant.references(database, id);
                }
                reason = references == 0 ? null : references + " derived reference(s) move to the canonical record";
+            }
+         }
+         if (kind == Kind.RENAME || kind == Kind.MERGE) {
+            long byName = 0;
+            for (RefNameMergeParticipant participant : participants) {
+               byName += participant.referencesByName(database, entity, from);
+            }
+            if (byName > 0) {
+               kind = Kind.CONFLICT;
+               reason = byName + " derived reference(s) name '" + from + "' instead of its id; the migration does "
+                     + "not rewrite them";
             }
          }
          actions.add(new Action(entity, collection, id, from, to, target, kind, reason));

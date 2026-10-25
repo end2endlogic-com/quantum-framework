@@ -209,6 +209,45 @@ public class CanonicalizeRefNamesIT extends BaseRepoTest {
    }
 
    @Test
+   void aRecordNamedByAnEdgeIsAConflict() {
+      // An EntityReference without an id materializes the edge with the record's refName; it would not follow a rename.
+      ObjectId named = legacyGroup("it-named-" + run, List.of("named"), null);
+      ObjectId edgeId = new ObjectId();
+      collection(REALM, "edges").insertOne(new Document("_id", edgeId).append("src", "someone@it.com")
+            .append("srcType", "UserProfile").append("p", "memberOf").append("dst", "it-named-" + run)
+            .append("dstType", "UserGroup").append("refName", "someone@it.com|memberOf|it-named-" + run));
+      plantedEdges.add(edgeId);
+      Action action = plan(REALM).get(named);
+      assertAction(plan(REALM), named, Kind.CONFLICT, "IT_NAMED_" + run);
+      assertTrue(action.reason().contains("instead of its id"), action.reason());
+   }
+
+   @Test
+   void anEdgeThatCannotTakeItsNewRefNameRefusesTheApply() {
+      ObjectId canonicalGroup = group("IT_EDGE_" + run, List.of("edge"), "zed@it.com");
+      ObjectId duplicateGroup = legacyGroup("it-edge-" + run, List.of("edge"), "zed@it.com");
+      // The canonical group's edge to the same member lives in another account, so it is not a duplicate of the moved
+      // edge, but it already holds the refName the moved edge would take.
+      Document domain = collection(REALM, "userGroup").find(Filters.eq("_id", duplicateGroup)).first()
+            .get("dataDomain", Document.class);
+      collection(REALM, "userGroup").updateOne(Filters.eq("_id", canonicalGroup), Updates.set("dataDomain", domain));
+      ObjectId other = new ObjectId();
+      String refName = canonicalGroup.toHexString() + "|hasMember|zed@it.com";
+      collection(REALM, "edges").insertOne(new Document("_id", other).append("src", canonicalGroup.toHexString())
+            .append("p", "hasMember").append("dst", "zed@it.com").append("refName", refName)
+            .append("dataDomain", new Document(domain).append("accountNum", "other-account")));
+      plantedEdges.add(other);
+      edge(duplicateGroup, "zed@it.com");
+      assertEquals(Kind.MERGE, plan(REALM).get(duplicateGroup).kind());
+
+      String reviewed = given().when().get("/system/migration/refnames/" + REALM).then().statusCode(200)
+            .extract().asString();
+      apply(reviewed).then().statusCode(409);
+      assertEquals("it-edge-" + run, refName(REALM, "userGroup", duplicateGroup), "the merge was rolled back");
+      assertEquals(1, edges(duplicateGroup.toHexString()));
+   }
+
+   @Test
    void aDeclaredLegacyNameIsKeptAndHoldsItsName() {
       // quantum.refname.legacy-allowed.UserGroup includes refname_it_legacy (test configuration).
       ObjectId legacy = legacyGroup("refname_it_legacy", List.of("legacy"), null);

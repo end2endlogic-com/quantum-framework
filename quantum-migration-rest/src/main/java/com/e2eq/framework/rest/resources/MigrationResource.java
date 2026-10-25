@@ -9,6 +9,7 @@ import com.e2eq.framework.model.persistent.migration.refname.RefNameMigrationPla
 import com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper;
 import com.e2eq.framework.model.persistent.morphia.RealmRepo;
 import dev.morphia.transactions.MorphiaSession;
+import com.mongodb.MongoException;
 import com.e2eq.framework.model.persistent.morphia.DatabaseVersionRepo;
 import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.model.securityrules.SecurityCallScope;
@@ -130,17 +131,47 @@ public class MigrationResource {
             refNameMigrator.apply(session, reviewed, message -> Log.infof("refName migration %s: %s", realm, message));
          } catch (IllegalStateException e) {
             // The realm no longer matches the reviewed plan: nothing was written.
-            session.abortTransaction();
+            abort(session, e);
             throw new ClientErrorException(e.getMessage(), 409);
+         } catch (MongoException e) {
+            abort(session, e);
+            throw refNameWriteFailure(e);
          } catch (RuntimeException e) {
-            session.abortTransaction();
+            abort(session, e);
             throw e;
          }
-         // Outside the catch: a failed commit must surface as itself, not as a failed abort.
-         session.commitTransaction();
+         // Outside the catch above: a failed commit must surface as itself, not as a failed abort.
+         try {
+            session.commitTransaction();
+         } catch (MongoException e) {
+            if (e.hasErrorLabel(MongoException.UNKNOWN_TRANSACTION_COMMIT_RESULT_LABEL)) {
+               throw new WebApplicationException("refName migration for " + realm + ": the commit outcome is unknown; "
+                     + "read the plan again before retrying", e, 503);
+            }
+            throw refNameWriteFailure(e);
+         }
       }
       ruleContext.invalidateAllCaches();
       return reviewed;
+   }
+
+   /** A concurrent change (write conflict, duplicate key) means the reviewed plan no longer holds: 409. */
+   private static WebApplicationException refNameWriteFailure(MongoException e) {
+      if (e.hasErrorLabel(MongoException.TRANSIENT_TRANSACTION_ERROR_LABEL) || e.getCode() == 112 || e.getCode() == 11000) {
+         return new ClientErrorException("the realm changed while the reviewed plan was applied; nothing was written. "
+               + "Review the plan again: " + e.getMessage(), 409);
+      }
+      return new WebApplicationException("refName migration failed; nothing was written: " + e.getMessage(), e, 500);
+   }
+
+   private static void abort(MorphiaSession session, RuntimeException cause) {
+      try {
+         if (session.hasActiveTransaction()) {
+            session.abortTransaction();
+         }
+      } catch (RuntimeException abortFailure) {
+         cause.addSuppressed(abortFailure);
+      }
    }
 
    /** Only realms in the realm catalog (or the system realm): never an arbitrary database on the cluster. */

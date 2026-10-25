@@ -394,8 +394,9 @@ rules. A group's members are added to the canonical group, materialized ontology
 to the canonical one (an edge it already has is dropped), and the old record is deleted. A group merge with members
 is reported as a conflict when no merge participant (`RefNameMergeParticipant`, provided by quantum-ontology-mongo)
 is registered.
-| `CONFLICT` | The canonical record differs, several stored names map to one, or a declared legacy name holds it.
-Reported, never changed: folding it would grant or revoke access.
+| `CONFLICT` | The canonical record differs, several stored names map to one, a declared legacy name holds it, or an
+ontology edge names the record by refName instead of its id (the migration does not rewrite those). Reported, never
+changed: folding it would grant or revoke access.
 | `UNRESOLVABLE` | No valid canonical spelling exists (too short or long, leading digit, generated-looking), or the
 record has no refName. Reported.
 |===
@@ -413,8 +414,9 @@ Rollout:
 . Resolve conflicts, or declare names that must stay as legacy.
 . `POST /system/migration/refnames/{realm}/apply` (role `system`) with the reviewed plan as its body performs those
   renames and merges in one transaction. Inside the transaction each action is planned again; if any no longer
-  matches the reviewed plan (the twin changed or vanished, another record took the name), nothing is written and the
-  call answers 409: review the plan again.
+  matches the reviewed plan (the twin changed or vanished, another record took the name), or a concurrent write
+  conflicts with it, nothing is written and the call answers 409: review the plan again. If the commit outcome is
+  unknown it answers 503; read the plan again before retrying.
 . Then apply seed packs that use the canonical names, so they update the renamed records.
 
 Applying writes directly in the migration transaction, not through the repositories, so no repository hooks run;
