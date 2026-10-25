@@ -315,12 +315,149 @@ public class RuleFilterSameFieldOverrideTest extends BaseRepoTest {
         assertEquals(List.of(), leaks, "fail-closed _id $in [] was merged away on these paths");
     }
 
+    // ------------------------------------- caller filters chained after the secured array
+
+    /** Caller filter shapes a repository might chain onto a query after the secured filters. */
+    private static java.util.Map<String, Filter> chainedCallerFilters(Partition p, BookModel foreign) {
+        java.util.Map<String, Filter> chains = new java.util.LinkedHashMap<>();
+        chains.put("and(callerA, callerB)", Filters.and(
+                Filters.eq(p.field, p.foreignValue), Filters.eq("refName", foreign.getRefName())));
+        chains.put("and(sameField)", Filters.and(Filters.eq(p.field, p.foreignValue)));
+        chains.put("and(in sameField)", Filters.and(Filters.in(p.field, List.of(p.foreignValue))));
+        chains.put("or(sameField, refName)", Filters.or(
+                Filters.eq(p.field, p.foreignValue), Filters.eq("refName", foreign.getRefName())));
+        chains.put("eq(sameField)", Filters.eq(p.field, p.foreignValue));
+        return chains;
+    }
+
+    /**
+     * Review of #119: a repository or subclass that chains caller filters onto the query AFTER the
+     * secured filter array ({@code .filter(getFilterArray(...)).filter(Filters.and(...))}) puts a
+     * second top-level {@code $and} (or an {@code $or}, or the rule's own field) beside the secured
+     * {@code $and}. A simple equality rule on {@code dataDomain.ownerId} must still keep the foreign
+     * row out of every chained shape, on find and count.
+     */
+    @Test
+    void legacyChainingAfterTheSecuredArrayCannotReplaceTheRule() {
+        Partition p = Partition.OWNER;
+        String role = PREFIX + "chain";
+        addRule(role, p.ruleFilter);
+        seed("own", testUtils.getTestDataDomain());
+        BookModel foreign = seed("foreign", p.foreign(testUtils.getTestDataDomain()));
+        PrincipalContext caller = principal(role);
+        var ds = dataStoreWrapper.getDataStore(realm);
+
+        List<String> leaks = new ArrayList<>();
+        for (var chain : chainedCallerFilters(p, foreign).entrySet()) {
+            String name = chain.getKey();
+            Filter chained = chain.getValue();
+            check(leaks, "find " + name, foreign, as(caller, "list", () -> ds.find(BookModel.class)
+                    .filter(bookRepo.getFilterArray(new ArrayList<>(), BookModel.class))
+                    .filter(chained)
+                    .iterator().toList()));
+            long count = as(caller, "list", () -> ds.find(BookModel.class)
+                    .filter(bookRepo.getFilterArray(new ArrayList<>(), BookModel.class))
+                    .filter(chained)
+                    .count());
+            if (count > 0) {
+                leaks.add("count " + name + "=" + count);
+            }
+        }
+        assertEquals(List.of(), leaks, "a caller filter chained after getFilterArray replaced rule "
+                + p.ruleFilter + " on these shapes");
+    }
+
+    /**
+     * The supported API: {@code securedQuery(ds, callerFilters)} and any filter chained onto it
+     * afterwards, on find, count, update and delete.
+     */
+    @Test
+    void securedQueryKeepsTheRuleWhateverTheCallerPassesOrChains() {
+        Partition p = Partition.OWNER;
+        String role = PREFIX + "secured";
+        addRule(role, p.ruleFilter);
+        BookModel own = seed("own", testUtils.getTestDataDomain());
+        BookModel foreign = seed("foreign", p.foreign(testUtils.getTestDataDomain()));
+        PrincipalContext caller = principal(role);
+        var ds = dataStoreWrapper.getDataStore(realm);
+
+        // Precondition: the secured query alone returns the caller's own row and not the foreign one.
+        assertEquals(Set.of(own.getRefName()), asRefs(as(caller, "list", () -> bookRepo.securedQuery(ds,
+                        List.of(Filters.in("refName", List.of(own.getRefName(), foreign.getRefName()))))
+                .iterator().toList())), "precondition: rule " + p.ruleFilter + " scopes the secured query");
+
+        List<String> leaks = new ArrayList<>();
+        for (var chain : chainedCallerFilters(p, foreign).entrySet()) {
+            String name = chain.getKey();
+            Filter chained = chain.getValue();
+            check(leaks, "securedQuery([" + name + "])", foreign, as(caller, "list",
+                    () -> bookRepo.securedQuery(ds, List.of(chained)).iterator().toList()));
+            check(leaks, "securedQuery([]).filter(" + name + ")", foreign, as(caller, "list",
+                    () -> bookRepo.securedQuery(ds, List.of()).filter(chained).iterator().toList()));
+            check(leaks, "securedQuery(realm,[]).filter(eq).filter(" + name + ")", foreign, as(caller, "list",
+                    () -> bookRepo.securedQuery(realm, List.of())
+                            .filter(Filters.exists("refName"))
+                            .filter(chained).iterator().toList()));
+            long count = as(caller, "list", () -> bookRepo.securedQuery(ds, List.of()).filter(chained).count());
+            if (count > 0) {
+                leaks.add("count " + name + "=" + count);
+            }
+            long modified = as(caller, "update", () -> bookRepo.securedQuery(ds, List.of()).filter(chained)
+                    .update(new dev.morphia.UpdateOptions().multi(true),
+                            dev.morphia.query.updates.UpdateOperators.set("title", "rfso-pwned"))
+                    .getModifiedCount());
+            if (modified > 0 || !foreign.getTitle().equals(storedTitle(foreign.getId()))) {
+                leaks.add("update " + name + " modified=" + modified);
+            }
+            long deleted = as(caller, "delete", () -> bookRepo.securedQuery(ds, List.of()).filter(chained)
+                    .delete(new dev.morphia.DeleteOptions().multi(true)).getDeletedCount());
+            if (deleted > 0 || storedTitle(foreign.getId()) == null) {
+                leaks.add("delete " + name + " deleted=" + deleted);
+            }
+        }
+        assertEquals(List.of(), leaks, "securedQuery let a caller filter replace rule " + p.ruleFilter);
+        assertEquals("rfso-own", storedTitle(own.getId()), "own row untouched: chained filters never matched it");
+    }
+
+    /**
+     * {@code securedQuery} does not rely on how Morphia merges repeated top-level keys: every
+     * chained filter is rebuilt into ONE {@code $and} beside the secured clause, so the encoded
+     * document has no top-level field, {@code $or} or second {@code $and} for a merge to touch.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void securedQueryEncodesEveryChainedFilterInsideOneAnd() {
+        String role = PREFIX + "secured-doc";
+        addRule(role, Partition.OWNER.ruleFilter);
+        PrincipalContext caller = principal(role);
+        var ds = dataStoreWrapper.getDataStore(realm);
+        String ownOwner = testUtils.getTestDataDomain().getOwnerId();
+
+        org.bson.Document doc = as(caller, "list", () -> bookRepo.securedQuery(ds, List.of(Filters.eq("title", "t")))
+                .filter(Filters.and(Filters.eq("dataDomain.ownerId", "x"), Filters.eq("refName", "r")))
+                .filter(Filters.or(Filters.eq("dataDomain.ownerId", "y")))
+                .filter(Filters.eq("dataDomain.ownerId", "z")))
+                .toDocument();
+
+        java.util.Set<String> topLevel = new java.util.TreeSet<>(doc.keySet());
+        topLevel.remove("_t");
+        assertEquals(Set.of("$and"), topLevel, "exactly one top-level $and: " + doc.toJson());
+        List<org.bson.Document> clauses = (List<org.bson.Document>) doc.get("$and");
+        assertEquals(4, clauses.size(), "secured clause + three chained clauses: " + doc.toJson());
+        assertTrue(clauses.get(0).containsKey("$and") && clauses.get(0).toJson().contains(ownOwner),
+                "the secured clause (rule ownerId=" + ownOwner + ") is the first clause: " + doc.toJson());
+        assertEquals(Set.of("$and"), clauses.get(1).keySet());
+        assertEquals(Set.of("$or"), clauses.get(2).keySet());
+        assertEquals("z", clauses.get(3).get("dataDomain.ownerId"));
+    }
+
     // ------------------------------------------------- encoded query document
 
     /**
      * Pins the encoding the fix relies on, independent of HashMap ordering: Morphia merges
      * same-field varargs filters (last wins), while {@link RuleFilterComposition#conjoin} keeps
-     * every clause as its own $and document, also beside an _id filter and a chained filter.
+     * every clause as its own $and document, also beside an _id filter. Filters chained after the
+     * conjoined array are not covered by this guarantee; see the securedQuery tests.
      */
     @Test
     @SuppressWarnings("unchecked")
@@ -350,12 +487,6 @@ public class RuleFilterSameFieldOverrideTest extends BaseRepoTest {
         assertEquals(List.of(), ((java.util.Map<String, Object>) idClauses.get(1).get("_id")).get("$in"),
                 "fail-closed _id $in [] stays its own clause: " + byId);
 
-        org.bson.Document chained = ((dev.morphia.query.MorphiaQuery<BookModel>) ds.find(BookModel.class)
-                .filter(RuleFilterComposition.conjoin(rule))
-                .filter(caller)).toDocument();
-        assertEquals("tenant-b", chained.get("dataDomain.tenantId"));
-        assertEquals("tenant-a", ((List<org.bson.Document>) chained.get("$and")).get(0).get("dataDomain.tenantId"),
-                "a filter chained after the governed $and cannot replace the rule: " + chained);
     }
 
     // ------------------------------------------------------------------ helpers

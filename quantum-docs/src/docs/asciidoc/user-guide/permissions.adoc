@@ -275,7 +275,26 @@ access lists.
 . A `BaseResource` list/query calls `MorphiaRepo.getFilterArray(userFilters, modelClass)`. The caller's own query filters are the starting set; security filters are **AND-ed on top** of them.
 . `RepoSecurityFilterBuilder` short-circuits when `SecurityContext.isIgnoringRules()` is set — returning the filters **unscoped**. This `ignoreRules` path is reserved for system-internal/unauthenticated lookups (e.g. credential resolution at login, infrastructure reads). Otherwise it requires both a `PrincipalContext` and a `ResourceContext` and **fails closed** (throws) if either is missing.
 . `RuleContext.getFilters(filters, pcontext, rcontext, modelClass)` runs `checkRules`; if the final effect is not `ALLOW` the base filters are returned unchanged. Otherwise it resolves a variable bundle and, for each matched `ALLOW` rule, interpolates the rule's `andFilterString`/`orFilterString` via `MorphiaUtils.convertToFilter(...)`, combining them with the rule's `joinOp` (AND/OR) and de-duplicating.
-. The resulting `Filter[]` is AND-ed into the Morphia query.
+. The resulting `Filter[]` is a single explicit `$and` of the rule filters and every caller filter (`RuleFilterComposition.conjoin`), applied with one `Query.filter(...)` call. Morphia merges top-level filters that share a key, so rule and caller filters are never passed to it as separate varargs.
+
+.Composing caller filters with rule filters
+[IMPORTANT]
+====
+Pass *every* caller filter into `getFilterArray(...)`; do not chain another `.filter(...)` onto a query after applying the secured array. How Morphia merges a later filter that repeats a top-level key (`$and`, `$or`, or a field the rule also constrains) is an implementation detail of its document writer, not a security guarantee.
+
+When a repository needs to add filters after the secured filters are known, open the query with `MorphiaRepo.securedQuery(datastore | realm, callerFilters)`. It returns a `SecuredQuery`, whose `filter(...)` re-conjoins every added filter with the secured clause, so the query always encodes as one top-level `$and` with the rule filters as one of its clauses:
+
+[source,java]
+----
+// supported
+List<Task> rows = repo.securedQuery(realm, List.of(Filters.eq("status", "OPEN")))
+        .filter(Filters.or(Filters.eq("ownerRef", me), Filters.eq("assigneeRef", me)))
+        .iterator(options).toList();
+
+// unsupported: a filter chained after the secured array is outside the policy's $and
+ds.find(Task.class).filter(repo.getFilterArray(filters, Task.class)).filter(Filters.and(a, b));
+----
+====
 
 NOTE: The *realm* is not a row filter — `getRealmId(principal)` returns the
 principal's `defaultRealm`, which selects **which database** the query runs

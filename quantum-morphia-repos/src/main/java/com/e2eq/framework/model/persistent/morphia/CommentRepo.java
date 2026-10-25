@@ -176,13 +176,10 @@ public class CommentRepo extends MorphiaRepo<Comment> {
     }
 
     private List<Comment> findGoverned(List<Filter> requestedFilters, int limit) {
-        Filter[] governed = getFilterArray(new ArrayList<>(requestedFilters), getPersistentClass());
         FindOptions options = new FindOptions()
                 .sort(Sort.ascending("createdAt"), Sort.ascending("_id"))
                 .limit(limit);
-        return getMorphiaDataStore()
-                .find(Comment.class)
-                .filter(governed)
+        return securedQuery(getMorphiaDataStore(), requestedFilters)
                 .iterator(options)
                 .toList();
     }

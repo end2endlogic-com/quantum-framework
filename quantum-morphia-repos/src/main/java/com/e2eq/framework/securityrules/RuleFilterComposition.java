@@ -23,9 +23,16 @@ import java.util.List;
  * query that applies rule filters must pass its filters through here instead of handing a
  * {@code Filter[]} built from rule and caller filters to {@code Query.filter(...)}.</p>
  *
- * <p>The result is always wrapped (even a single filter becomes {@code $and:[f]}), so a filter a
- * caller chains onto the query afterwards with another {@code .filter(...)} call lands beside the
- * {@code $and}, never on top of a rule filter's field.</p>
+ * <p>The result is always wrapped (even a single filter becomes {@code $and:[f]}).</p>
+ *
+ * <p>Contract: {@code conjoin} protects only the filters passed to it. Every caller filter must be
+ * included BEFORE conjoining. A filter chained onto the query afterwards with another
+ * {@code .filter(...)} call becomes a second top-level entry beside this {@code $and}; whether a
+ * repeated top-level key ({@code $and}, {@code $or}, a field) is then and-ed, merged or replaced is
+ * decided by Morphia's internal document writer and is not something security may rely on. Queries
+ * that need to add filters after the secured filters are known must use {@link SecuredQuery}
+ * (via {@code MorphiaRepo.securedQuery(...)}), which re-conjoins every added filter with the secured
+ * clause.</p>
  */
 public final class RuleFilterComposition {
 

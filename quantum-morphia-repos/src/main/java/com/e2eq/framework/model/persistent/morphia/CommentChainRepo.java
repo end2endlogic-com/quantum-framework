@@ -27,10 +27,7 @@ public class CommentChainRepo extends MorphiaRepo<CommentChain> {
 
     private List<CommentChain> findGoverned(Filter... requestedFilters) {
         List<Filter> filters = new ArrayList<>(List.of(requestedFilters));
-        Filter[] governed = getFilterArray(filters, getPersistentClass());
-        return getMorphiaDataStore()
-                .find(CommentChain.class)
-                .filter(governed)
+        return securedQuery(getMorphiaDataStore(), filters)
                 .iterator()
                 .toList();
     }

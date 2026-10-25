@@ -1,6 +1,7 @@
 package com.e2eq.framework.model.persistent.morphia;
 
 import com.e2eq.framework.security.runtime.RuleFilterComposition;
+import com.e2eq.framework.security.runtime.SecuredQuery;
 import com.e2eq.framework.annotations.StateGraph;
 import com.e2eq.framework.annotations.Stateful;
 import com.e2eq.framework.annotations.TrackReferences;
@@ -176,8 +177,40 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
        return morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId()).getDatabase().getName();
     }
 
+    /**
+     * Returns the security rule filters for {@code modelClass} conjoined with {@code filters} as ONE
+     * explicit {@code $and} (see {@link RuleFilterComposition}).
+     *
+     * <p>Contract: every caller filter must be in {@code filters}. Apply the result with a single
+     * {@code Query.filter(...)} call and do not chain further {@code .filter(...)} calls onto that
+     * query: how Morphia merges a later filter that shares a top-level key with the secured
+     * {@code $and} is a Morphia implementation detail, not a security guarantee. To add filters
+     * after the query is opened, use {@link #securedQuery(Datastore, List)}, whose
+     * {@code filter(...)} always conjoins with the secured clause.</p>
+     */
     public Filter[] getFilterArray(@NotNull List<Filter> filters, Class<? extends UnversionedBaseModel> modelClass) {
         return securityFilterBuilder().getFilterArray(filters, modelClass);
+    }
+
+    /**
+     * Opens a query on this repository's entity that applies the security rule filters and
+     * {@code callerFilters} as one {@code $and}. Filters chained onto the returned query with
+     * {@code .filter(...)} are added as further clauses of that same {@code $and}, so neither a
+     * caller {@code $and}, an {@code $or} nor a filter on a rule's own field can replace or merge
+     * into the rule filters.
+     *
+     * @param datastore     the realm's datastore
+     * @param callerFilters caller filters; may be empty, never modified
+     * @return the secured query; rule evaluation happens now, against the current security context
+     */
+    public SecuredQuery<T> securedQuery(@NotNull Datastore datastore, @NotNull List<Filter> callerFilters) {
+        Filter[] secured = getFilterArray(new ArrayList<>(callerFilters), getPersistentClass());
+        return new SecuredQuery<>(() -> datastore.find(getPersistentClass()), secured);
+    }
+
+    /** {@link #securedQuery(Datastore, List)} on the datastore of {@code realm}. */
+    public SecuredQuery<T> securedQuery(@NotNull String realm, @NotNull List<Filter> callerFilters) {
+        return securedQuery(morphiaDataStoreWrapper.getDataStore(realm), callerFilters);
     }
 
     private RepoLifecycleHooks lifecycleHooks() {

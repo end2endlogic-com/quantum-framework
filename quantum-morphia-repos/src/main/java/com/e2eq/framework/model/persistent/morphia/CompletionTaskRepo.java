@@ -158,11 +158,8 @@ public class CompletionTaskRepo extends MorphiaRepo<CompletionTask> {
                 Filters.eq("access.ownerRef", actorRef),
                 Filters.eq("assignment.assigneeRef", actorRef),
                 Filters.eq("access.grants.principalRef", actorRef)));
-        Filter[] securedFilters = getFilterArray(filters, CompletionTask.class);
         List<CompletionTask> result = new ArrayList<>();
-        getMorphiaDataStoreWrapper().getDataStore(getSecurityContextRealmId())
-                .find(CompletionTask.class)
-                .filter(securedFilters)
+        securedQuery(getSecurityContextRealmId(), filters)
                 .iterator(new FindOptions().sort(Sort.descending("updatedDate")).limit(safeLimit))
                 .forEachRemaining(task -> {
                     if (canViewParticipant(task, actorRef)) result.add(task);
@@ -338,10 +335,7 @@ public class CompletionTaskRepo extends MorphiaRepo<CompletionTask> {
             filters.add(Filters.eq("assignment.queueRef", queueRef));
         }
 
-        Filter[] securedFilters = getFilterArray(filters, CompletionTask.class);
-        Query<CompletionTask> query = getMorphiaDataStoreWrapper().getDataStore(realm)
-                .find(CompletionTask.class)
-                .filter(securedFilters);
+        Query<CompletionTask> query = securedQuery(realm, filters);
         FindOptions options = new FindOptions()
                 .sort(Sort.descending("priority"), Sort.ascending("createdDate"))
                 .limit(MAX_QUEUE_PAGE_SIZE);
@@ -362,12 +356,8 @@ public class CompletionTaskRepo extends MorphiaRepo<CompletionTask> {
         filters.add(Filters.in("status", List.of(
                 CompletionTask.Status.CLAIMED,
                 CompletionTask.Status.IN_PROGRESS)));
-        Filter[] securedFilters = getFilterArray(filters, CompletionTask.class);
-
         List<CompletionTask> tasks = new ArrayList<>();
-        getMorphiaDataStoreWrapper().getDataStore(getSecurityContextRealmId())
-                .find(CompletionTask.class)
-                .filter(securedFilters)
+        securedQuery(getSecurityContextRealmId(), filters)
                 .iterator(new FindOptions().sort(Sort.descending("priority")).limit(safeLimit))
                 .forEachRemaining(tasks::add);
         return tasks;
