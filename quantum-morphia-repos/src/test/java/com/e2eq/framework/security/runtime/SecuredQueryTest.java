@@ -13,6 +13,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * {@link SecuredQuery} keeps the clause list itself: every {@code filter(...)} rebuilds a fresh
@@ -31,6 +32,7 @@ class SecuredQueryTest {
         Query<Object> newQuery() {
             created++;
             List<Filter> calls = new ArrayList<>();
+            int id = created;
             filterCalls.add(calls);
             Object[] self = new Object[1];
             self[0] = Proxy.newProxyInstance(Query.class.getClassLoader(), new Class<?>[]{Query.class},
@@ -44,6 +46,8 @@ class SecuredQueryTest {
                             yield proxy;
                         }
                         case "count" -> 0L;
+                        case "first" -> null;
+                        case "getLoggedQuery" -> "query-" + id;
                         case "toString" -> "stub";
                         case "hashCode" -> System.identityHashCode(proxy);
                         case "equals" -> proxy == args[0];
@@ -84,18 +88,30 @@ class SecuredQueryTest {
         LogicalFilter and = (LogicalFilter) r.lastFilters().get(0);
         assertEquals("$and", and.getName());
         assertEquals(List.of(secured, callerAnd, callerOr, callerEq), and.filters());
-        assertEquals(List.of(secured, callerAnd, callerOr, callerEq), q.clauses());
+        assertEquals(4, q.clauseCount());
     }
 
     @Test
-    void validationSettingSurvivesRebuilds() {
+    void validationCannotBeToggledBecauseItWouldReachTheSecuredClause() {
         Recorder r = new Recorder();
         SecuredQuery<Object> q = new SecuredQuery<>(r::newQuery, new Filter[]{Filters.eq("a", 1)});
 
-        q.disableValidation();
+        assertThrows(UnsupportedOperationException.class, q::disableValidation);
+        assertThrows(UnsupportedOperationException.class, q::enableValidation);
+        assertEquals(List.of(), r.validationCalls);
+    }
+
+    @Test
+    void loggedQueryIsTheLastExecutedOneEvenAfterMoreFilters() {
+        Recorder r = new Recorder();
+        SecuredQuery<Object> q = new SecuredQuery<>(r::newQuery, new Filter[]{Filters.eq("a", 1)});
+
+        q.first();
         q.filter(Filters.eq("b", 2));
 
-        assertEquals(List.of("1:disableValidation", "2:disableValidation"), r.validationCalls);
+        assertEquals("query-1", q.getLoggedQuery(), "the query that ran, not the rebuilt one");
+        q.count();
+        assertEquals("query-2", q.getLoggedQuery());
     }
 
     @Test
