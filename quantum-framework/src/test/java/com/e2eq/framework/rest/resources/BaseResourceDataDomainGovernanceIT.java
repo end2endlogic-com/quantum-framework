@@ -1,6 +1,7 @@
 package com.e2eq.framework.rest.resources;
 
 import com.e2eq.framework.model.persistent.base.CodeList;
+import com.e2eq.framework.model.securityrules.SecurityCheckException;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper;
 import com.e2eq.framework.persistent.BaseRepoTest;
@@ -141,6 +142,49 @@ public class BaseResourceDataDomainGovernanceIT extends BaseRepoTest {
     }
 
     /**
+     * The write-side rule filter check: a tenant admin cannot place a row in another tenant's data domain
+     * (here the system domain), even programmatically; the system principal can.
+     */
+    @Test
+    public void tenant_admin_cannot_write_into_the_system_domain_but_the_system_principal_can() {
+        String category = "ddgov-sysdomain-" + System.nanoTime();
+        try {
+            try (SecuritySession ignored = new SecuritySession(pContext, rContext)) {
+                CodeList row = systemDomainRow(category);
+                SecurityCheckException denied = assertThrows(SecurityCheckException.class,
+                        () -> morphiaDataStoreWrapper.getDataStore(realm).save(row));
+                assertTrue(denied.getMessage().contains("does not satisfy the rule filter"), denied.getMessage());
+            }
+            assertEquals(0, countStored(category), "a denied cross-tenant write must not be persisted");
+
+            try (SecuritySession ignored = asSystem()) {
+                morphiaDataStoreWrapper.getDataStore(realm).save(systemDomainRow(category));
+            }
+            assertEquals(baseSystemTenant(), findStored(category, "k").getDataDomain().getTenantId());
+        } finally {
+            deleteStored(category);
+        }
+    }
+
+    private CodeList systemDomainRow(String category) {
+        CodeList row = new CodeList();
+        row.setCategory(category);
+        row.setKey("k");
+        row.setRefName(category + ":k");
+        row.setDescription("system");
+        row.setValueType("STRING");
+        DataDomain system = testUtils.getSystemDataDomain();
+        row.setDataDomain(DataDomain.builder()
+                .orgRefName(system.getOrgRefName()).accountNum(system.getAccountNum())
+                .tenantId(system.getTenantId()).ownerId(system.getOwnerId()).dataSegment(system.getDataSegment()).build());
+        return row;
+    }
+
+    private String baseSystemTenant() {
+        return testUtils.getSystemDataDomain().getTenantId();
+    }
+
+    /**
      * A row that already lives in another domain is outside the caller's governed scope. Saving with
      * its id must not overwrite it (Morphia save is a replace-by-id) or pull it into the caller's domain.
      */
@@ -149,8 +193,9 @@ public class BaseResourceDataDomainGovernanceIT extends BaseRepoTest {
         String category = "ddgov-foreign-" + System.nanoTime();
         try {
             ObjectId foreignId;
-            // Programmatic placement into another domain is legitimate (seeders, provisioning).
-            try (SecuritySession ignored = new SecuritySession(pContext, rContext)) {
+            // Programmatic placement into another domain is legitimate for the system principal (seeders,
+            // provisioning); the test-tenant admin in pContext may not write outside its own tenant.
+            try (SecuritySession ignored = asSystem()) {
                 CodeList foreign = new CodeList();
                 foreign.setCategory(category);
                 foreign.setKey("k");
