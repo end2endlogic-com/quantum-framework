@@ -184,6 +184,25 @@ public class CredentialRepo extends MorphiaRepo<CredentialUserIdPassword> {
       return findByUserId( userId, realmId,false);
    }
 
+   /**
+    * Finds a credential by userId using the same case-insensitive collation as the unique
+    * {@code userId} index (locale en, strength SECONDARY), bypassing security rules. Use this
+    * wherever an identity must be matched the way uniqueness is enforced, e.g. before deciding
+    * whether to create a new account for an identity.
+    */
+   public Optional<CredentialUserIdPassword> findByUserIdIgnoreCaseIgnoreRules(@NotNull String userId, @NotNull String realmId) {
+      if (userId == null || realmId == null) {
+         throw new IllegalArgumentException("userId and realmId are required");
+      }
+      return Optional.ofNullable(morphiaDataStoreWrapper.getDataStore(realmId)
+         .find(CredentialUserIdPassword.class)
+         .filter(Filters.eq("userId", userId))
+         .first(new dev.morphia.query.FindOptions().collation(com.mongodb.client.model.Collation.builder()
+            .locale("en")
+            .collationStrength(com.mongodb.client.model.CollationStrength.SECONDARY)
+            .build())));
+   }
+
    public Optional<CredentialUserIdPassword> findByUserId( @NotNull String userId, @NotNull String realmId, boolean ignoreRules) {
       if (userId == null) {
          throw new IllegalArgumentException("parameter refId can not be null");

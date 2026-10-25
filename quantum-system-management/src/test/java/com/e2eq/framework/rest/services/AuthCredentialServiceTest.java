@@ -86,6 +86,45 @@ class AuthCredentialServiceTest {
     }
 
     @Test
+    void providerOverrideCannotGiveAServiceTokenCredentialAPassword() {
+        TestAuthProviderFactory factory = new TestAuthProviderFactory();
+        factory.defaultManager = new TestUserManager("custom", "https://custom.example.com");
+        factory.managers.put("custom", factory.defaultManager);
+
+        CredentialUserIdPassword credential = credential("svc-1");
+        credential.setCredentialType(CredentialType.SERVICE_TOKEN);
+        AuthCredentialService service = service(factory, Optional.of(credential));
+
+        assertThrows(IllegalArgumentException.class,
+                () -> service.resolvePasswordManager("svc-1", "custom"));
+        ResetPasswordRequest request = resetPasswordRequest("svc-1", "newPassword123");
+        assertThrows(IllegalArgumentException.class, () -> service.resetPassword(request, "custom"));
+    }
+
+    @Test
+    void passwordCredentialWithProviderOverrideKeepsPasswordManagement() {
+        TestAuthProviderFactory factory = new TestAuthProviderFactory();
+        factory.defaultManager = new TestUserManager("custom", "https://custom.example.com");
+        TestUserManager custom = new TestUserManager("custom", "https://custom.example.com");
+        factory.managers.put("custom", custom);
+        AuthCredentialService service = service(factory, Optional.of(credential("alice")));
+
+        assertSame(custom, service.resolvePasswordManager("alice", "custom"));
+    }
+
+    @Test
+    void emailChangeIsNotAPasswordOperation() {
+        TestAuthProviderFactory factory = new TestAuthProviderFactory();
+        factory.defaultManager = new TestUserManager("custom", "https://custom.example.com");
+        CredentialUserIdPassword credential = credential("alice");
+        credential.setCredentialType(CredentialType.EMAIL);
+        AuthCredentialService service = service(factory, Optional.of(credential));
+
+        assertSame(factory.defaultManager, service.resolveUserManager("alice", null));
+        assertThrows(IllegalArgumentException.class, () -> service.resolvePasswordManager("alice", null));
+    }
+
+    @Test
     void resetPasswordUsesResolvedProviderAndValidatesRequest() {
         TestAuthProviderFactory factory = new TestAuthProviderFactory();
         TestUserManager defaultManager = new TestUserManager("custom", "https://custom.example.com");

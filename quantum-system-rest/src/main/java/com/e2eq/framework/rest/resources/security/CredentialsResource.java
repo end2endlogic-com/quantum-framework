@@ -92,7 +92,7 @@ public class CredentialsResource extends BaseResource<CredentialUserIdPassword, 
                 : provider;
 
         try {
-            UserManagement userManager = authCredentialService.resolveUserManager(changePasswordRequest.getUserId(), requestedProvider);
+            UserManagement userManager = authCredentialService.resolvePasswordManager(changePasswordRequest.getUserId(), requestedProvider);
             userManager.changePassword(
                     changePasswordRequest.getUserId(),
                     changePasswordRequest.getOldPassword(),
@@ -101,7 +101,7 @@ public class CredentialsResource extends BaseResource<CredentialUserIdPassword, 
             );
         } catch (IllegalArgumentException e) {
             return Response.status(Response.Status.BAD_REQUEST)
-                    .entity("Invalid auth provider configuration: " + e.getMessage())
+                    .entity("Password not changed: " + e.getMessage())
                     .build();
         }
 
@@ -189,8 +189,15 @@ public class CredentialsResource extends BaseResource<CredentialUserIdPassword, 
         }
 
         try {
-            UserManagement userManager = authCredentialService.resolveUserManager(userId, provider);
+            UserManagement userManager = authCredentialService.resolvePasswordManager(userId, provider);
             userManager.resendTemporaryPassword(userId);
+        } catch (IllegalArgumentException e) {
+            RestError error = RestError.builder()
+                    .status(Response.Status.BAD_REQUEST.getStatusCode())
+                    .statusMessage("Temporary password not sent")
+                    .reasonMessage(e.getMessage())
+                    .build();
+            return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
         } catch (UnsupportedOperationException e) {
             RestError error = RestError.builder()
                     .status(Response.Status.BAD_REQUEST.getStatusCode())
