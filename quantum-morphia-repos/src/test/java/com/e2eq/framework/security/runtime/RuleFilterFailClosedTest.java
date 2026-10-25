@@ -17,15 +17,26 @@ import jakarta.enterprise.inject.Instance;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.net.URISyntaxException;
+import java.net.URL;
+import java.net.URLClassLoader;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -37,6 +48,9 @@ import static org.mockito.Mockito.when;
  * rule not apply in in-memory evaluation, and denies writes. It is never dropped.
  */
 class RuleFilterFailClosedTest {
+
+    /** The in-memory predicate engine RuleWriteFilterGuard looks up by name (quantum-query-runtime). */
+    private static final String QUERY_PREDICATES = "com.e2eq.framework.query.runtime.QueryPredicates";
 
     static class Widget extends UnversionedBaseModel {
         @Override
@@ -185,18 +199,118 @@ class RuleFilterFailClosedTest {
     }
 
     @Test
-    void writeIsDeniedWhenFiltersCannotBeEvaluated() {
-        // quantum-morphia-repos has no in-memory predicate engine on its classpath; a write that a
-        // rule filter constrains must then be denied rather than allowed unchecked.
+    void inMemoryEvaluatorIsOnTheClasspath() {
+        // quantum-query-runtime is a dependency of quantum-morphia-repos (since #117), so the write
+        // filter tests below really evaluate the filter rather than hitting the "not available" path.
+        assertDoesNotThrow(() -> Class.forName(QUERY_PREDICATES));
+    }
+
+    @Test
+    void writeIntoAnotherTenantsDataDomainIsDenied() {
         addRule("write-tenant", "dataDomain.tenantId:${pTenantId}", RuleEffect.ALLOW);
-        ResourceContext save = new ResourceContext.Builder()
-                .withArea("widget_hub").withFunctionalDomain("widgets").withAction("save").build();
+        ResourceContext save = saveContext();
         SecurityCheckResponse response = ruleContext.checkRules(principal, save);
+        assertEquals(RuleEffect.ALLOW, response.getFinalEffect());
+        Widget widget = new Widget();
+        widget.setDataDomain(new DataDomain("test.com", "0000000001", "tenant-b", 0, "user@test.com"));
+
+        SecurityCheckException ex = assertThrows(SecurityCheckException.class,
+                () -> ruleContext.enforceWriteFilters(principal, save, response, widget));
+        assertTrue(ex.getMessage().contains("does not satisfy the rule filter"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("write-tenant"), "message names the rule: " + ex.getMessage());
+        assertTrue(ex.getMessage().contains("tenant-b"), "message names the data domain: " + ex.getMessage());
+        assertEquals(RuleEffect.DENY, response.getFinalEffect());
+    }
+
+    @Test
+    void writeIntoOwnDataDomainIsAllowed() {
+        addRule("write-tenant", "dataDomain.tenantId:${pTenantId}", RuleEffect.ALLOW);
+        ResourceContext save = saveContext();
+        SecurityCheckResponse response = ruleContext.checkRules(principal, save);
+        assertEquals(RuleEffect.ALLOW, response.getFinalEffect());
         Widget widget = new Widget();
         widget.setDataDomain(principal.getDataDomain());
 
-        assertThrows(SecurityCheckException.class,
-                () -> ruleContext.enforceWriteFilters(principal, save, response, widget));
+        assertDoesNotThrow(() -> ruleContext.enforceWriteFilters(principal, save, response, widget));
+        assertEquals(RuleEffect.ALLOW, response.getFinalEffect());
+    }
+
+    @Test
+    void writeIsDeniedWhenInMemoryEvaluatorIsAbsent() throws Exception {
+        // RuleWriteFilterGuard finds the evaluator with Class.forName on its own class loader and has
+        // no injectable seam, so its absence is simulated by loading this package in a class loader
+        // that hides com.e2eq.framework.query.runtime. A write the filter would otherwise allow (own
+        // tenant) must then be denied rather than allowed unchecked.
+        ResourceContext save = saveContext();
+        SecurityCheckResponse response = new SecurityCheckResponse();
+        response.setFinalEffect(RuleEffect.ALLOW);
+        List<SecurityCheckResponse.RuleFilterInfo> filterInfos = List.of(new SecurityCheckResponse.RuleFilterInfo(
+                "write-tenant", "dataDomain.tenantId:${pTenantId}", null, "AND"));
+        Widget widget = new Widget();
+        widget.setDataDomain(principal.getDataDomain());
+
+        try (EvaluatorHidingClassLoader loader = new EvaluatorHidingClassLoader()) {
+            assertThrows(ClassNotFoundException.class, () -> Class.forName(QUERY_PREDICATES, false, loader));
+            Class<?> resolverClass = loader.loadClass(RuleVariableBundleResolver.class.getName());
+            Class<?> guardClass = loader.loadClass(RuleWriteFilterGuard.class.getName());
+            assertNotSame(RuleWriteFilterGuard.class, guardClass, "the guard must come from the hiding loader");
+
+            Constructor<?> resolverCtor = resolverClass.getDeclaredConstructor(Instance.class, Instance.class);
+            resolverCtor.setAccessible(true);
+            Object variableResolver = resolverCtor.newInstance(null, null);
+            Constructor<?> guardCtor = guardClass.getDeclaredConstructor(resolverClass);
+            guardCtor.setAccessible(true);
+            Object guard = guardCtor.newInstance(variableResolver);
+            Method enforce = guardClass.getDeclaredMethod("enforce", PrincipalContext.class, ResourceContext.class,
+                    SecurityCheckResponse.class, List.class, UnversionedBaseModel.class);
+            enforce.setAccessible(true);
+
+            InvocationTargetException thrown = assertThrows(InvocationTargetException.class,
+                    () -> enforce.invoke(guard, principal, save, response, filterInfos, widget));
+            SecurityCheckException ex = assertInstanceOf(SecurityCheckException.class, thrown.getCause());
+            assertTrue(ex.getMessage().contains(QUERY_PREDICATES + ") is not available"), ex.getMessage());
+            assertTrue(ex.getMessage().contains("tenant-a"), "message names the data domain: " + ex.getMessage());
+            assertEquals(RuleEffect.DENY, response.getFinalEffect());
+        }
+    }
+
+    /**
+     * Loads com.e2eq.framework.security.runtime child-first from this module's main and test
+     * output, so package-private access between the guard and its collaborators still works, and
+     * refuses com.e2eq.framework.query.runtime. Everything else delegates to the test class loader.
+     */
+    static final class EvaluatorHidingClassLoader extends URLClassLoader {
+        private static final String ISOLATED_PACKAGE = "com.e2eq.framework.security.runtime.";
+        private static final String HIDDEN_PACKAGE = "com.e2eq.framework.query.runtime.";
+
+        EvaluatorHidingClassLoader() throws URISyntaxException, IOException {
+            super(new URL[]{location(RuleWriteFilterGuard.class), location(RuleFilterFailClosedTest.class)},
+                    RuleFilterFailClosedTest.class.getClassLoader());
+        }
+
+        private static URL location(Class<?> type) throws URISyntaxException, IOException {
+            return Path.of(type.getProtectionDomain().getCodeSource().getLocation().toURI()).toUri().toURL();
+        }
+
+        @Override
+        protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
+            if (name.startsWith(HIDDEN_PACKAGE)) {
+                throw new ClassNotFoundException(name + " is hidden by " + getClass().getSimpleName());
+            }
+            if (name.startsWith(ISOLATED_PACKAGE)) {
+                synchronized (getClassLoadingLock(name)) {
+                    Class<?> loaded = findLoadedClass(name);
+                    if (loaded == null) {
+                        loaded = findClass(name);
+                    }
+                    if (resolve) {
+                        resolveClass(loaded);
+                    }
+                    return loaded;
+                }
+            }
+            return super.loadClass(name, resolve);
+        }
     }
 
     @Test
@@ -209,6 +323,11 @@ class RuleFilterFailClosedTest {
         widget.setDataDomain(new DataDomain("other.com", "0000000009", "tenant-z", 0, "x@other.com"));
 
         ruleContext.enforceWriteFilters(principal, save, response, widget);
+    }
+
+    private static ResourceContext saveContext() {
+        return new ResourceContext.Builder()
+                .withArea("widget_hub").withFunctionalDomain("widgets").withAction("save").build();
     }
 
     private void assertMatchNothing(Filter filter) {

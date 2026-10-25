@@ -146,6 +146,7 @@ components:
         accountNumber: { type: string }
         connectionString: { type: string, description: "realm datastore address; control plane may withhold for non-owner callers" }
         active: { type: boolean, default: true }
+        applicationRefName: { type: string, description: "refName of the application that owns the realm; absent on legacy records (no owner recorded)" }
     RealmMembershipEntry:
       type: object
       required: [realmRefName, organizationRefName, membershipRole]

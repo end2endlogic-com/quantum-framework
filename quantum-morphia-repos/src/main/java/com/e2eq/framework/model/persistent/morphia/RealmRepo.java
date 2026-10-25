@@ -5,7 +5,9 @@ import com.e2eq.framework.model.security.Realm;
 import com.e2eq.framework.util.EnvConfigUtils;
 import com.e2eq.framework.util.SecurityUtils;
 import dev.morphia.MorphiaDatastore;
+import dev.morphia.query.FindOptions;
 import dev.morphia.query.Query;
+import dev.morphia.query.Sort;
 import dev.morphia.query.filters.Filter;
 import dev.morphia.query.filters.Filters;
 
@@ -85,7 +87,7 @@ public class RealmRepo extends MorphiaRepo<Realm> {
       }
 
       Query<Realm> query = morphiaDataStoreWrapper.getDataStore(realm).find(getPersistentClass()).filter(qfilters);
-      Realm obj = query.first();
+      Realm obj = query.first(lowestIdFirst());
       return Optional.ofNullable(obj);
    }
 
@@ -100,7 +102,7 @@ public class RealmRepo extends MorphiaRepo<Realm> {
       }
 
       Query<Realm> query = morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId()).find(getPersistentClass()).filter(qfilters);
-      Realm obj = query.first();
+      Realm obj = query.first(lowestIdFirst());
       return Optional.ofNullable(obj);
    }
 
@@ -135,8 +137,37 @@ public class RealmRepo extends MorphiaRepo<Realm> {
       }
 
       Query<Realm> query = morphiaDataStoreWrapper.getDataStore(realmId).find(getPersistentClass()).filter(qfilters);
-      Realm obj = query.first();
+      Realm obj = query.first(lowestIdFirst());
       return Optional.ofNullable(obj);
+   }
+
+   /**
+    * Every realm document recorded under {@code refName} in a specific realm
+    * database, lowest {@code _id} first, ignoring security rules.
+    *
+    * refName is the catalog key, so more than one document is a defect (written by
+    * control-plane registrations before they became upserts; the unique indexes that
+    * would refuse them are not created everywhere). The first element is the one
+    * {@link #findByRefName(String, boolean, String)} returns.
+    */
+   public List<Realm> findAllByRefNameWithIgnoreRules(String refName, String realmId) {
+      Query<Realm> query = morphiaDataStoreWrapper.getDataStore(realmId).find(getPersistentClass())
+         .filter(Filters.eq("refName", refName));
+      try (dev.morphia.query.MorphiaCursor<Realm> cursor = query.iterator(lowestIdFirst())) {
+         return cursor.toList();
+      }
+   }
+
+   /**
+    * Lookups by a catalog key resolve deterministically to the document with the lowest
+    * {@code _id}, so every lookup (and the refName upsert) picks the same one of several
+    * duplicates. This is a tie-break rule, not proof of insertion order: an ObjectId
+    * orders by its creation second and then by generating process, so two documents
+    * created in the same second by different processes, or one given an explicit id, can
+    * order either way. Duplicates are a defect that a reviewed cleanup resolves.
+    */
+   private static FindOptions lowestIdFirst() {
+      return new FindOptions().sort(Sort.ascending("_id"));
    }
 
    /**
@@ -158,7 +189,7 @@ public class RealmRepo extends MorphiaRepo<Realm> {
       }
 
       Query<Realm> query = morphiaDataStoreWrapper.getDataStore(realmId).find(getPersistentClass()).filter(qfilters);
-      Realm obj = query.first();
+      Realm obj = query.first(lowestIdFirst());
       return Optional.ofNullable(obj);
    }
 
