@@ -16,7 +16,6 @@ import org.junit.jupiter.api.Test;
 
 import com.e2eq.framework.model.persistent.base.EntityReference;
 import java.util.List;
-import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -25,7 +24,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.same;
@@ -76,7 +74,7 @@ class LocalSystemDirectoryTest {
         Realm recorded = new Realm();
         recorded.setRefName("helixor-code-D1");
         recorded.setApplicationRef(application("helixor-code"));
-        when(realmRepo.findByRefName("helixor-code-D1", true, "quantum-system")).thenReturn(Optional.of(recorded));
+        when(realmRepo.findAllByRefNameWithIgnoreRules("helixor-code-D1", "quantum-system")).thenReturn(List.of(recorded));
         Realm incoming = new Realm();
         incoming.setRefName("helixor-code-D1");
         when(realmRepo.save(eq("quantum-system"), any(Realm.class))).thenAnswer(invocation -> invocation.getArgument(1));
@@ -101,7 +99,7 @@ class LocalSystemDirectoryTest {
         recorded.setDefaultPerspective("operator");
         recorded.setApplySeedsOnStartup(true);
         recorded.setSetupStatus(RealmSetupStatus.READY);
-        when(realmRepo.findByRefName("helixor-code-D1", true, "quantum-system")).thenReturn(Optional.of(recorded));
+        when(realmRepo.findAllByRefNameWithIgnoreRules("helixor-code-D1", "quantum-system")).thenReturn(List.of(recorded));
         when(realmRepo.save(eq("quantum-system"), any(Realm.class))).thenAnswer(invocation -> invocation.getArgument(1));
         Realm incoming = new Realm();          // as ControlPlaneRealmMapper.fromEntry builds it
         incoming.setRefName("helixor-code-D1");
@@ -133,7 +131,7 @@ class LocalSystemDirectoryTest {
         recorded.setRefName("helixor-code-D1");
         recorded.setId(new ObjectId());
         recorded.setApplicationRef(application("helixor-code"));
-        when(realmRepo.findByRefName("helixor-code-D1", true, "quantum-system")).thenReturn(Optional.of(recorded));
+        when(realmRepo.findAllByRefNameWithIgnoreRules("helixor-code-D1", "quantum-system")).thenReturn(List.of(recorded));
         Realm incoming = new Realm();
         incoming.setRefName("helixor-code-D1");
         incoming.setApplicationRef(application("helixor-di"));
@@ -192,7 +190,7 @@ class LocalSystemDirectoryTest {
 
     private static RealmRepo repoRecording(Realm recorded) {
         RealmRepo realmRepo = mock(RealmRepo.class);
-        when(realmRepo.findByRefName(recorded.getRefName(), true, "quantum-system")).thenReturn(Optional.of(recorded));
+        when(realmRepo.findAllByRefNameWithIgnoreRules(recorded.getRefName(), "quantum-system")).thenReturn(List.of(recorded));
         when(realmRepo.save(eq("quantum-system"), any(Realm.class))).thenAnswer(invocation -> invocation.getArgument(1));
         return realmRepo;
     }
@@ -325,7 +323,7 @@ class LocalSystemDirectoryTest {
 
         new LocalSystemDirectory(realmRepo, mock(CredentialRepo.class), systemRealm()).registerRealm(incoming);
 
-        verify(realmRepo, never()).findByRefName(anyString(), anyBoolean(), anyString());
+        verify(realmRepo, never()).findAllByRefNameWithIgnoreRules(anyString(), anyString());
         verify(realmRepo).save(eq("quantum-system"), same(incoming));
     }
 
@@ -341,6 +339,49 @@ class LocalSystemDirectoryTest {
             () -> new LocalSystemDirectory(realmRepo, mock(CredentialRepo.class), systemRealm()).registerRealm(incoming));
 
         assertEquals(List.of("defaultAdminUserId"), error.fields());
+        verify(realmRepo, never()).save(anyString(), any(Realm.class));
+    }
+
+    @Test
+    void registerRealmWithDuplicatesUsesTheLowestIdAndDeletesNothing() throws Exception {
+        Realm lowestId = recordedDedicatedRealm();
+        lowestId.setId(new ObjectId("6ad1440ca6e53a647f9f8509"));
+        Realm duplicate = recordedDedicatedRealm();
+        duplicate.setId(new ObjectId("6ad1440ca6e53a647f9f8510"));
+        duplicate.setDisplayName("Duplicate");
+        RealmRepo realmRepo = mock(RealmRepo.class);
+        when(realmRepo.findAllByRefNameWithIgnoreRules("acme-com", "quantum-system"))
+            .thenReturn(List.of(lowestId, duplicate));
+        when(realmRepo.save(eq("quantum-system"), any(Realm.class))).thenAnswer(invocation -> invocation.getArgument(1));
+        Realm incoming = catalogWriteOf(lowestId);
+        incoming.setDisplayName("Acme Renamed");
+
+        Realm saved = new LocalSystemDirectory(realmRepo, mock(CredentialRepo.class), systemRealm()).registerRealm(incoming);
+
+        assertSame(lowestId, saved);
+        assertEquals("Acme Renamed", saved.getDisplayName());
+        assertEquals("Duplicate", duplicate.getDisplayName());
+        verify(realmRepo).save("quantum-system", lowestId);
+        verify(realmRepo, never()).save("quantum-system", duplicate);
+        verify(realmRepo, never()).delete(anyString(), any(Realm.class));
+    }
+
+    @Test
+    void registerRealmWithDuplicatesComparesAgainstTheLowestId() {
+        Realm lowestId = recordedDedicatedRealm();
+        lowestId.setId(new ObjectId("6ad1440ca6e53a647f9f8509"));
+        Realm duplicate = recordedDedicatedRealm();
+        duplicate.setId(new ObjectId("6ad1440ca6e53a647f9f8510"));
+        duplicate.setDatabaseName("duplicate-db");
+        RealmRepo realmRepo = mock(RealmRepo.class);
+        when(realmRepo.findAllByRefNameWithIgnoreRules("acme-com", "quantum-system"))
+            .thenReturn(List.of(lowestId, duplicate));
+        Realm incoming = catalogWriteOf(duplicate);
+
+        RealmRegistrationConflictException error = assertThrows(RealmRegistrationConflictException.class,
+            () -> new LocalSystemDirectory(realmRepo, mock(CredentialRepo.class), systemRealm()).registerRealm(incoming));
+
+        assertEquals(List.of("databaseName"), error.fields());
         verify(realmRepo, never()).save(anyString(), any(Realm.class));
     }
 }

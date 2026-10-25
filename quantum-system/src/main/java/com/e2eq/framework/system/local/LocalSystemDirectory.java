@@ -9,11 +9,13 @@ import com.e2eq.framework.model.security.DomainContext;
 import com.e2eq.framework.model.security.Realm;
 import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import com.e2eq.framework.util.EnvConfigUtils;
+import org.jboss.logging.Logger;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 /**
  * {@link SystemDirectory} backed by the local system-realm database via the
@@ -32,6 +34,8 @@ import java.util.Optional;
  * to {@code quantum.system.directory.mode}.
  */
 public class LocalSystemDirectory implements SystemDirectory {
+
+    private static final Logger LOG = Logger.getLogger(LocalSystemDirectory.class);
 
     private final RealmRepo realmRepo;
     private final CredentialRepo credentialRepo;
@@ -104,16 +108,32 @@ public class LocalSystemDirectory implements SystemDirectory {
      * A write with no recorded realm is an insert. A racing duplicate insert in
      * the same data domain is refused by the {@code idx_refIdUniqueInDomain}
      * unique index rather than merged.
+     *
+     * Where earlier non-idempotent writes (or a database the unique index was
+     * never built on) already left several documents under one refName, the one
+     * with the lowest {@code _id} (the one every {@link RealmRepo} key lookup
+     * returns; a deterministic tie-break, not proof it was inserted first) is the
+     * recorded realm, and the others are named in a {@code REALM_DUPLICATE_RECORDS}
+     * warning. They are not deleted here: removing them is a reviewed cleanup, not
+     * a side effect of a registration.
      */
     Realm mergeIntoRecordedRealm(Realm incoming) {
         if (incoming.getId() != null || incoming.getRefName() == null || incoming.getRefName().isBlank()) {
             return incoming;
         }
-        Optional<Realm> found = realmRepo.findByRefName(incoming.getRefName(), true, systemRealmId());
-        if (found.isEmpty()) {
+        List<Realm> found = realmRepo.findAllByRefNameWithIgnoreRules(incoming.getRefName(), systemRealmId());
+        if (found == null || found.isEmpty()) {
             return incoming;
         }
-        Realm recorded = found.get();
+        Realm recorded = found.get(0);
+        if (found.size() > 1) {
+            LOG.warnf("REALM_DUPLICATE_RECORDS: realm '%s' has %d documents in %s; using the lowest _id %s"
+                    + " and leaving the duplicates %s untouched (remove them with a reviewed cleanup)",
+                incoming.getRefName(), found.size(), systemRealmId(), recorded.getId(),
+                found.subList(1, found.size()).stream()
+                    .map(realm -> String.valueOf(realm.getId()))
+                    .collect(Collectors.joining(", ", "[", "]")));
+        }
         String recordedOwner = ownerOf(recorded);
         String incomingOwner = ownerOf(incoming);
         if (recordedOwner != null && incomingOwner != null && !recordedOwner.equalsIgnoreCase(incomingOwner)) {
