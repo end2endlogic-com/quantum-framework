@@ -411,7 +411,10 @@ public class RefNameContractIT extends BaseRepoTest {
                 .body("createdCount", is(1))
                 .body("errors[0].errorCode", is("REFNAME_INVALID_FORMAT"));
         try (var scope = SecurityCallScope.openIgnoringRules()) {
-            createdPolicies.add(policyRepo.findByRefName(refName, REALM).orElseThrow().getId());
+            Policy imported = policyRepo.findByRefName(refName, REALM).orElseThrow();
+            createdPolicies.add(imported.getId());
+            assertTrue(!securityUtils.getSystemDataDomain().equals(imported.getDataDomain()),
+                    "an imported policy takes the caller's data domain, not the system one");
         }
 
         // Re-importing the same refName must update the stored policy, not try to create it again.
@@ -430,6 +433,43 @@ public class RefNameContractIT extends BaseRepoTest {
                 .getCollection(ds.getMapper().getEntityModel(Policy.class).collectionName())
                 .countDocuments(new org.bson.Document("refName", refName));
         assertEquals(1, copies, "re-import must not duplicate the policy");
+    }
+
+    /**
+     * The import resolves new policies into the caller's own data domain, but it must not let a tenant admin
+     * rewrite a policy that lives in the system data domain: that row is refused and left untouched.
+     */
+    @Test
+    void policyImportCannotRewriteASystemDomainPolicy() {
+        String refName = unique("IT_SYSTEM_POLICY");
+        Policy seeded = policy(refName);
+        seeded.setDisplayName("seeded by the platform");
+        seeded.setDataDomain(securityUtils.getSystemDataDomain());
+        try (var scope = SecurityCallScope.openIgnoringRules()) {
+            createdPolicies.add(policyRepo.save(REALM, seeded).getId());
+        }
+
+        String yaml = "- refName: " + refName + "\n"
+                + "  displayName: rewritten by a tenant admin\n"
+                + "  principalId: admin\n"
+                + "  principalType: ROLE\n";
+
+        given().header("X-Realm", REALM)
+                .contentType("text/plain")
+                .body(yaml)
+        .when()
+                .post("/security/permission/policies/import")
+        .then()
+                .statusCode(200)
+                .body("createdCount", is(0))
+                .body("updatedCount", is(0))
+                .body("errorCount", is(1));
+
+        try (var scope = SecurityCallScope.openIgnoringRules()) {
+            Policy stored = policyRepo.findByRefName(refName, REALM).orElseThrow();
+            assertEquals("seeded by the platform", stored.getDisplayName());
+            assertEquals(securityUtils.getSystemDataDomain(), stored.getDataDomain());
+        }
     }
 
     private static Policy policy(String refName) {

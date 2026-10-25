@@ -79,10 +79,15 @@ public class XRealmDataDomainIT extends BaseRepoTest {
         try (final SecuritySession s = new SecuritySession(pContext, rContext)) {
             // Ensure the test user exists and has realm override capability
             ensureTestUserWithRealmOverride();
-            
-            // Ensure target realm exists
+        }
+
+        // The realm catalog entry lives in the system data domain: register it as the system principal,
+        // as the control plane does. The test-tenant admin in pContext may not write into that domain.
+        try (final SecuritySession s = asSystem()) {
             ensureTargetRealmExists();
-            
+        }
+
+        try (final SecuritySession s = new SecuritySession(pContext, rContext)) {
             // Get access token for the test user
             accessToken = loginAndGetToken();
         }
@@ -90,7 +95,7 @@ public class XRealmDataDomainIT extends BaseRepoTest {
 
     @AfterEach
     void tearDown() {
-        try (final SecuritySession s = new SecuritySession(pContext, rContext)) {
+        try (final SecuritySession s = asSystem()) {
             // Clean up target realm if it was created
             cleanupTargetRealm();
         } catch (Exception e) {

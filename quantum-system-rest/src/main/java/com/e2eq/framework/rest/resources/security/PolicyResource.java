@@ -10,7 +10,6 @@ import com.e2eq.framework.security.runtime.RuleContext;
 import com.e2eq.framework.securityrules.io.YamlPolicyItem;
 import com.e2eq.framework.securityrules.io.YamlPolicyLoader;
 import com.e2eq.framework.securityrules.io.YamlRuleMapper;
-import com.e2eq.framework.util.SecurityUtils;
 import jakarta.inject.Inject;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.ws.rs.HeaderParam;
@@ -47,9 +46,6 @@ import com.e2eq.framework.rest.models.CounterResponse;
 public class PolicyResource extends BaseResource<Policy, PolicyRepo> {
    @Inject
    RuleContext ruleContext;
-
-   @Inject
-   SecurityUtils securityUtils;
 
    protected PolicyResource (PolicyRepo repo) {
       super(repo);
@@ -349,8 +345,9 @@ public class PolicyResource extends BaseResource<Policy, PolicyRepo> {
          throw new IllegalArgumentException("principalId is required");
       }
 
-      // Imported policies are stamped with the system data domain, which the caller's row filters may hide, so
-      // look the refName up without them; otherwise every re-import takes the create path and duplicates the policy.
+      // Existing policies may sit in a data domain the caller's row filters hide (e.g. seeded or earlier imports
+      // stamped with the system data domain), so look the refName up without them; otherwise every re-import
+      // takes the create path and duplicates the policy. The save below is still checked against the caller's rules.
       Optional<Policy> existing = repo.findByRefName(
               repo.getMorphiaDataStoreWrapper().getDataStore(realm), item.refName, true);
       Policy policy = existing.orElseGet(Policy::new);
@@ -362,9 +359,10 @@ public class PolicyResource extends BaseResource<Policy, PolicyRepo> {
       policy.setPrincipalId(item.principalId);
       policy.setPrincipalType(resolvePrincipalType(item.principalType, existing.map(Policy::getPrincipalType).orElse(null)));
 
-      if (policy.getDataDomain() == null) {
-         policy.setDataDomain(securityUtils.getSystemDataDomain());
-      }
+      // A new policy takes the data domain the save path resolves for the caller, exactly as a policy created
+      // through the regular save endpoint does. Stamping the system data domain here made every import by a
+      // tenant admin a write outside the caller's tenant, which the write-side rule filter check refuses.
+      // An existing policy keeps its stored domain, so a caller still cannot rewrite a policy it does not own.
 
       List<Rule> rules;
       if (item.rules != null && !item.rules.isEmpty()) {
