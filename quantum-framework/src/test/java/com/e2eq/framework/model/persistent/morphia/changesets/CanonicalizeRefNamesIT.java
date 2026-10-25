@@ -80,11 +80,13 @@ public class CanonicalizeRefNamesIT extends BaseRepoTest {
    private final List<ObjectId> groups = new ArrayList<>();
    private final List<ObjectId> policies = new ArrayList<>();
    private final List<String> scratchRealms = new ArrayList<>();
+   private final List<ObjectId> plantedEdges = new ArrayList<>();
 
    @AfterEach
    void cleanUp() {
       collection(REALM, "userGroup").deleteMany(Filters.in("_id", groups));
       collection(REALM, "policy").deleteMany(Filters.in("_id", policies));
+      collection(REALM, "edges").deleteMany(Filters.in("_id", plantedEdges));
       scratchRealms.forEach(realm -> mongoClient.getDatabase(realm).drop());
    }
 
@@ -137,15 +139,20 @@ public class CanonicalizeRefNamesIT extends BaseRepoTest {
       assertEquals(plan.keySet(), plan(REALM).keySet());
 
       // GET reports the same plan without changing anything.
-      given().when().get("/system/migration/refnames/" + REALM)
+      String reviewed = given().when().get("/system/migration/refnames/" + REALM)
             .then().statusCode(200)
             .body("realm", is(REALM))
             .body("actions.find { it.id == '" + renamed.toHexString() + "' }.kind", is("RENAME"))
-            .body("actions.find { it.id == '" + duplicatePolicy.toHexString() + "' }.kind", is("MERGE"));
+            .body("actions.find { it.id == '" + duplicatePolicy.toHexString() + "' }.kind", is("MERGE"))
+            .extract().asString();
       assertEquals("it-ops-" + run, refName(REALM, "userGroup", renamed));
+      // Membership edges as the ontology materializes them; "bob" is a member of both groups.
+      edge(duplicateGroup, "cid@it.com");
+      edge(duplicateGroup, "bob@it.com");
+      edge(canonicalGroup, "bob@it.com");
 
-      // POST applies it.
-      given().when().post("/system/migration/refnames/" + REALM + "/apply").then().statusCode(200);
+      // POST applies the reviewed plan.
+      apply(reviewed).then().statusCode(200);
       assertEquals("IT_OPS_" + run, refName(REALM, "userGroup", renamed));
       assertEquals("IT_OPS_POLICY_" + run, refName(REALM, "policy", renamedPolicy));
       assertTrue(memberOf("ann@it.com").contains("IT_OPS_" + run), "membership survives the rename");
@@ -154,6 +161,9 @@ public class CanonicalizeRefNamesIT extends BaseRepoTest {
       assertEquals("IT_DUP_POLICY_" + run, refName(REALM, "policy", canonicalPolicy));
       assertTrue(memberOf("cid@it.com").contains("IT_DUP_" + run), "merged members join the canonical group");
       assertTrue(memberOf("bob@it.com").contains("IT_DUP_" + run));
+      assertEquals(0, edges(duplicateGroup.toHexString()), "no edge is left on the removed group");
+      assertEquals(1, memberEdges(canonicalGroup, "cid@it.com"), "the moved member's edge now starts at the canonical group");
+      assertEquals(1, memberEdges(canonicalGroup, "bob@it.com"), "an edge the canonical group already had is not duplicated");
       assertEquals("it-diff-" + run, refName(REALM, "userGroup", differingGroup));
       assertEquals("it-diff-policy-" + run, refName(REALM, "policy", differingPolicy));
       assertEquals("it-amb-" + run, refName(REALM, "userGroup", ambiguousA));
@@ -163,12 +173,39 @@ public class CanonicalizeRefNamesIT extends BaseRepoTest {
       assertEquals(List.of("IT_XD_" + run), memberOf("fay@it.com"), "the other tenant's group keeps its members");
       assertTrue(memberOf("gus@it.com").size() == 1 && refName(REALM, "userGroup", otherTenantGroup) != null);
 
-      // Applying again changes nothing and leaves only what an operator must decide.
-      given().when().post("/system/migration/refnames/" + REALM + "/apply").then().statusCode(200);
+      // Applying the same reviewed plan again is refused (it no longer matches) and changes nothing.
+      apply(reviewed).then().statusCode(409);
       Map<ObjectId, Action> remaining = plan(REALM);
       assertEquals(5, remaining.size(), remaining.toString());
       assertTrue(remaining.values().stream().allMatch(action ->
             action.kind() == Kind.CONFLICT || action.kind() == Kind.UNRESOLVABLE), remaining.toString());
+   }
+
+   @Test
+   void aChangeAfterReviewRefusesTheWholeApply() {
+      ObjectId renamed = legacyGroup("it-stale-ops-" + run, List.of("ops"), null);
+      ObjectId canonicalPolicy = policy("IT_STALE_POLICY_" + run, "stale", RuleEffect.ALLOW);
+      ObjectId duplicatePolicy = legacyPolicy("it-stale-policy-" + run, "stale", RuleEffect.ALLOW);
+      String reviewed = given().when().get("/system/migration/refnames/" + REALM).then().statusCode(200)
+            .extract().asString();
+
+      // The canonical twin goes away after review: the merge would now delete the only copy of the grant.
+      collection(REALM, "policy").deleteOne(Filters.eq("_id", canonicalPolicy));
+      apply(reviewed).then().statusCode(409);
+      assertEquals("it-stale-policy-" + run, refName(REALM, "policy", duplicatePolicy));
+      assertEquals("it-stale-ops-" + run, refName(REALM, "userGroup", renamed), "nothing else was applied either");
+   }
+
+   @Test
+   void dataDomainsAreComparedFieldByField() {
+      // Joined with a separator these two domains would look alike; the index tells them apart.
+      ObjectId other = group("IT_PIPE_" + run, List.of("pipe"), null);
+      collection(REALM, "userGroup").updateOne(Filters.eq("_id", other), Updates.combine(
+            Updates.set("dataDomain.tenantId", "east|west"), Updates.set("dataDomain.ownerId", "alice")));
+      ObjectId legacy = legacyGroup("it-pipe-" + run, List.of("pipe"), null);
+      collection(REALM, "userGroup").updateOne(Filters.eq("_id", legacy), Updates.combine(
+            Updates.set("dataDomain.tenantId", "east"), Updates.set("dataDomain.ownerId", "west|alice")));
+      assertAction(plan(REALM), legacy, Kind.RENAME, "IT_PIPE_" + run);
    }
 
    @Test
@@ -198,9 +235,14 @@ public class CanonicalizeRefNamesIT extends BaseRepoTest {
             .append("applicationId", "*").append("realmRefName", "*").append("rules", List.of())
             .append("dataDomain", new Document("orgRefName", "t.com").append("tenantId", "t.com")
                   .append("ownerId", "owner").append("accountNum", "0000000001").append("dataSegment", 0)));
+      ObjectId unnamed = new ObjectId();
+      mongoClient.getDatabase(realm).getCollection("policy").insertOne(new Document("_id", unnamed)
+            .append("principalId", "user").append("principalType", "ROLE"));
       RefNameMigrationPlan plan = migrator.plan(realm);
-      assertEquals(1, plan.actions().size(), plan.actions().toString());
-      assertEquals(Kind.RENAME, plan.actions().get(0).kind());
+      assertEquals(2, plan.actions().size(), plan.actions().toString());
+      Map<String, Action> byId = plan.actions().stream().collect(Collectors.toMap(Action::id, Function.identity()));
+      assertEquals(Kind.RENAME, byId.get(id.toHexString()).kind());
+      assertEquals(Kind.UNRESOLVABLE, byId.get(unnamed.toHexString()).kind(), "a record without a refName is reported");
 
       try (MorphiaSession session = morphiaDataStoreWrapper.getDataStore(realm).startSession()) {
          session.startTransaction();
@@ -217,13 +259,37 @@ public class CanonicalizeRefNamesIT extends BaseRepoTest {
    @TestSecurity(user = "tenant-admin@it.com", roles = {"admin"})
    void onlyTheSystemRoleMayReadOrApply() {
       given().when().get("/system/migration/refnames/" + REALM).then().statusCode(403);
-      given().when().post("/system/migration/refnames/" + REALM + "/apply").then().statusCode(403);
+      apply("{\"realm\":\"" + REALM + "\",\"actions\":[]}").then().statusCode(403);
+   }
+
+   private io.restassured.response.Response apply(String reviewedPlan) {
+      return given().contentType("application/json").body(reviewedPlan)
+            .when().post("/system/migration/refnames/" + REALM + "/apply");
+   }
+
+   private void edge(ObjectId group, String member) {
+      Document domain = collection(REALM, "userGroup").find(Filters.eq("_id", group)).first().get("dataDomain", Document.class);
+      String src = group.toHexString();
+      ObjectId id = new ObjectId();
+      collection(REALM, "edges").insertOne(new Document("_id", id).append("src", src).append("srcType", "UserGroup")
+            .append("p", "hasMember").append("dst", member).append("dstType", "UserProfile")
+            .append("refName", src + "|hasMember|" + member).append("dataDomain", domain));
+      plantedEdges.add(id);
+   }
+
+   private long memberEdges(ObjectId group, String member) {
+      return collection(REALM, "edges").countDocuments(Filters.and(Filters.eq("src", group.toHexString()),
+            Filters.eq("p", "hasMember"), Filters.eq("dst", member)));
+   }
+
+   private long edges(String groupId) {
+      return collection(REALM, "edges").countDocuments(Filters.or(Filters.eq("src", groupId), Filters.eq("dst", groupId)));
    }
 
    /** This run's actions, keyed by record id. */
    private Map<ObjectId, Action> plan(String realm) {
       return migrator.plan(realm).actions().stream()
-            .filter(action -> action.from().contains(run))
+            .filter(action -> action.from() != null && action.from().contains(run))
             .collect(Collectors.toMap(action -> new ObjectId(action.id()), Function.identity()));
    }
 

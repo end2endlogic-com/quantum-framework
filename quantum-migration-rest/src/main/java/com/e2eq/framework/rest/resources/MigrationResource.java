@@ -88,8 +88,8 @@ public class MigrationResource {
    }
 
    /**
-    * The canonical-refName plan for one realm: what {@code POST /refnames/{realm}/apply} would rename, merge or leave
-    * for an operator. Reads only.
+    * The canonical-refName plan for one realm: what it would rename, merge or leave for an operator. Reads only; send
+    * the body back to {@code POST /refnames/{realm}/apply} to apply it.
     */
    @GET
    @Path("/refnames/{realm}")
@@ -103,27 +103,35 @@ public class MigrationResource {
    }
 
    /**
-    * Applies the realm's canonical-refName plan in one transaction: renames and merges; conflicts and unresolvable
-    * names are left as they are and returned in the plan. Review {@code GET /refnames/{realm}} first.
+    * Applies a reviewed canonical-refName plan (the body returned by {@code GET /refnames/{realm}}) in one transaction:
+    * its renames and merges, each re-checked inside the transaction. If the realm no longer matches the reviewed plan
+    * for any of them, nothing is written and the call answers 409; review the plan again.
     */
    @POST
    @Path("/refnames/{realm}/apply")
+   @Consumes(MediaType.APPLICATION_JSON)
    @Produces(MediaType.APPLICATION_JSON)
    @RolesAllowed({"system"})
    @FunctionalMapping(area="MIGRATION", domain="REFNAMES")
    @FunctionalAction(value = "APPLY", bypassDataScoping = true)
-   public RefNameMigrationPlan applyRefNameMigration (@PathParam("realm") String realm) {
+   public RefNameMigrationPlan applyRefNameMigration (@PathParam("realm") String realm, RefNameMigrationPlan reviewed) {
       requireRegisteredRealm(realm);
+      if (reviewed == null || reviewed.actions() == null || !realm.equals(reviewed.realm())) {
+         throw new BadRequestException("send the plan reviewed with GET /system/migration/refnames/" + realm);
+      }
       try {
          migrationService.requireRealmOwned(realm, "apply the refName migration");
       } catch (IllegalStateException e) {
          throw new ForbiddenException(e.getMessage());
       }
-      RefNameMigrationPlan plan = refNameMigrator.plan(realm);
       try (MorphiaSession session = morphiaDataStoreWrapper.getDataStore(realm).startSession()) {
          session.startTransaction();
          try {
-            refNameMigrator.apply(session, plan, message -> Log.infof("refName migration %s: %s", realm, message));
+            refNameMigrator.apply(session, reviewed, message -> Log.infof("refName migration %s: %s", realm, message));
+         } catch (IllegalStateException e) {
+            // The realm no longer matches the reviewed plan: nothing was written.
+            session.abortTransaction();
+            throw new ClientErrorException(e.getMessage(), 409);
          } catch (RuntimeException e) {
             session.abortTransaction();
             throw e;
@@ -132,7 +140,7 @@ public class MigrationResource {
          session.commitTransaction();
       }
       ruleContext.invalidateAllCaches();
-      return plan;
+      return reviewed;
    }
 
    /** Only realms in the realm catalog (or the system realm): never an arbitrary database on the cluster. */
