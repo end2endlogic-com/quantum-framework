@@ -86,6 +86,34 @@ class AuthCredentialServiceTest {
     }
 
     @Test
+    void providerOverrideCannotGiveAServiceTokenCredentialAPassword() {
+        TestAuthProviderFactory factory = new TestAuthProviderFactory();
+        factory.defaultManager = new TestUserManager("custom", "https://custom.example.com");
+        factory.managers.put("custom", factory.defaultManager);
+
+        CredentialUserIdPassword credential = credential("svc-1");
+        credential.setCredentialType(CredentialType.SERVICE_TOKEN);
+        AuthCredentialService service = service(factory, Optional.of(credential));
+
+        assertThrows(IllegalArgumentException.class,
+                () -> service.resolveUserManager("svc-1", "custom"));
+        ResetPasswordRequest request = resetPasswordRequest("svc-1", "newPassword123");
+        assertThrows(IllegalArgumentException.class, () -> service.resetPassword(request, "custom"));
+    }
+
+    @Test
+    void serviceAccountCannotGetAPasswordEvenAsAPasswordCredential() {
+        TestAuthProviderFactory factory = new TestAuthProviderFactory();
+        factory.defaultManager = new TestUserManager("custom", "https://custom.example.com");
+
+        CredentialUserIdPassword credential = credential("svc-2");
+        credential.setAccountType(com.e2eq.framework.model.security.AccountType.SERVICE);
+        AuthCredentialService service = service(factory, Optional.of(credential));
+
+        assertThrows(IllegalArgumentException.class, () -> service.resolveUserManager("svc-2", null));
+    }
+
+    @Test
     void resetPasswordUsesResolvedProviderAndValidatesRequest() {
         TestAuthProviderFactory factory = new TestAuthProviderFactory();
         TestUserManager defaultManager = new TestUserManager("custom", "https://custom.example.com");
