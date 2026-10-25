@@ -343,39 +343,39 @@ class LocalSystemDirectoryTest {
     }
 
     @Test
-    void registerRealmWithDuplicatesUsesTheOldestAndDeletesNothing() throws Exception {
-        Realm oldest = recordedDedicatedRealm();
-        oldest.setId(new ObjectId("6ad1440ca6e53a647f9f8509"));
+    void registerRealmWithDuplicatesUsesTheLowestIdAndDeletesNothing() throws Exception {
+        Realm lowestId = recordedDedicatedRealm();
+        lowestId.setId(new ObjectId("6ad1440ca6e53a647f9f8509"));
         Realm duplicate = recordedDedicatedRealm();
         duplicate.setId(new ObjectId("6ad1440ca6e53a647f9f8510"));
         duplicate.setDisplayName("Duplicate");
         RealmRepo realmRepo = mock(RealmRepo.class);
         when(realmRepo.findAllByRefNameWithIgnoreRules("acme-com", "quantum-system"))
-            .thenReturn(List.of(oldest, duplicate));
+            .thenReturn(List.of(lowestId, duplicate));
         when(realmRepo.save(eq("quantum-system"), any(Realm.class))).thenAnswer(invocation -> invocation.getArgument(1));
-        Realm incoming = catalogWriteOf(oldest);
+        Realm incoming = catalogWriteOf(lowestId);
         incoming.setDisplayName("Acme Renamed");
 
         Realm saved = new LocalSystemDirectory(realmRepo, mock(CredentialRepo.class), systemRealm()).registerRealm(incoming);
 
-        assertSame(oldest, saved);
+        assertSame(lowestId, saved);
         assertEquals("Acme Renamed", saved.getDisplayName());
         assertEquals("Duplicate", duplicate.getDisplayName());
-        verify(realmRepo).save("quantum-system", oldest);
+        verify(realmRepo).save("quantum-system", lowestId);
         verify(realmRepo, never()).save("quantum-system", duplicate);
         verify(realmRepo, never()).delete(anyString(), any(Realm.class));
     }
 
     @Test
-    void registerRealmWithDuplicatesComparesAgainstTheOldest() {
-        Realm oldest = recordedDedicatedRealm();
-        oldest.setId(new ObjectId("6ad1440ca6e53a647f9f8509"));
+    void registerRealmWithDuplicatesComparesAgainstTheLowestId() {
+        Realm lowestId = recordedDedicatedRealm();
+        lowestId.setId(new ObjectId("6ad1440ca6e53a647f9f8509"));
         Realm duplicate = recordedDedicatedRealm();
         duplicate.setId(new ObjectId("6ad1440ca6e53a647f9f8510"));
         duplicate.setDatabaseName("duplicate-db");
         RealmRepo realmRepo = mock(RealmRepo.class);
         when(realmRepo.findAllByRefNameWithIgnoreRules("acme-com", "quantum-system"))
-            .thenReturn(List.of(oldest, duplicate));
+            .thenReturn(List.of(lowestId, duplicate));
         Realm incoming = catalogWriteOf(duplicate);
 
         RealmRegistrationConflictException error = assertThrows(RealmRegistrationConflictException.class,

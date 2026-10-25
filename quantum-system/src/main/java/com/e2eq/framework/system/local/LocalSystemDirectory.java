@@ -110,11 +110,12 @@ public class LocalSystemDirectory implements SystemDirectory {
      * unique index rather than merged.
      *
      * Where earlier non-idempotent writes (or a database the unique index was
-     * never built on) already left several documents under one refName, the
-     * oldest ({@code _id} ascending, the one every {@link RealmRepo} key lookup
-     * returns) is the recorded realm, and the others are named in a
-     * {@code REALM_DUPLICATE_RECORDS} warning. They are not deleted here:
-     * removing them is a reviewed cleanup, not a side effect of a registration.
+     * never built on) already left several documents under one refName, the one
+     * with the lowest {@code _id} (the one every {@link RealmRepo} key lookup
+     * returns; a deterministic tie-break, not proof it was inserted first) is the
+     * recorded realm, and the others are named in a {@code REALM_DUPLICATE_RECORDS}
+     * warning. They are not deleted here: removing them is a reviewed cleanup, not
+     * a side effect of a registration.
      */
     Realm mergeIntoRecordedRealm(Realm incoming) {
         if (incoming.getId() != null || incoming.getRefName() == null || incoming.getRefName().isBlank()) {
@@ -126,7 +127,7 @@ public class LocalSystemDirectory implements SystemDirectory {
         }
         Realm recorded = found.get(0);
         if (found.size() > 1) {
-            LOG.warnf("REALM_DUPLICATE_RECORDS: realm '%s' has %d documents in %s; using the oldest %s"
+            LOG.warnf("REALM_DUPLICATE_RECORDS: realm '%s' has %d documents in %s; using the lowest _id %s"
                     + " and leaving the duplicates %s untouched (remove them with a reviewed cleanup)",
                 incoming.getRefName(), found.size(), systemRealmId(), recorded.getId(),
                 found.subList(1, found.size()).stream()

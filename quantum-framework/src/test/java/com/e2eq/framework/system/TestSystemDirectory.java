@@ -10,15 +10,18 @@ import com.e2eq.framework.model.security.DomainContext;
 import com.e2eq.framework.model.security.Realm;
 import com.e2eq.framework.model.security.RealmDeploymentType;
 import com.e2eq.framework.model.security.RealmTenancyMode;
+import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import com.e2eq.framework.security.runtime.SecuritySession;
 import com.e2eq.framework.system.remote.ControlPlaneRealmMapper;
 import com.e2eq.framework.persistent.BaseRepoTest;
 import com.e2eq.framework.util.EnvConfigUtils;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
+import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -84,10 +87,10 @@ public class TestSystemDirectory extends BaseRepoTest {
      */
     @Test
     public void registeringARealmTwiceByRefNameUpdatesOneDocument() {
-        String refName = "test-realm-upsert-com";
+        String refName = uniqueRefName();
         String systemRealm = systemDirectory.systemRealmId();
+        List<ObjectId> created = new ArrayList<>();
         try (final SecuritySession ignored = new SecuritySession(pContext, rContext)) {
-            deleteRealms(refName);
             Realm provisioned = Realm.builder()
                 .refName(refName)
                 .displayName("Provisioned")
@@ -104,6 +107,7 @@ public class TestSystemDirectory extends BaseRepoTest {
                     .defaultRealm("provisioned-home").dataSegment(2).build())
                 .build();
             Realm inserted = systemDirectory.registerRealm(provisioned);
+            created.add(inserted.getId());
 
             systemDirectory.registerRealm(ControlPlaneRealmMapper.fromEntry(roundTrip(refName, "First PUT")));
             systemDirectory.registerRealm(ControlPlaneRealmMapper.fromEntry(roundTrip(refName, "Second PUT")));
@@ -134,10 +138,70 @@ public class TestSystemDirectory extends BaseRepoTest {
             Assertions.assertEquals("provisioned-home", stored.getDomainContext().getDefaultRealm());
             Assertions.assertEquals(2, stored.getDomainContext().getDataSegment());
         } finally {
-            try (final SecuritySession ignored = new SecuritySession(pContext, rContext)) {
-                deleteRealms(refName);
-            }
+            deleteCreated(refName, created);
         }
+    }
+
+    /**
+     * Duplicates already in the database (written before registration was an upsert, or
+     * where the unique index was never built): every lookup and the upsert use the
+     * document with the lowest _id, whatever order they were inserted in, the upsert
+     * updates only that one, and nothing is deleted.
+     */
+    @Test
+    public void duplicateRealmDocumentsResolveToTheLowestIdAndAreNotDeleted() {
+        String refName = uniqueRefName();
+        String systemRealm = systemDirectory.systemRealmId();
+        ObjectId lower = new ObjectId();
+        ObjectId higher = new ObjectId();
+        List<ObjectId> created = new ArrayList<>(List.of(lower, higher));
+        try (final SecuritySession ignored = new SecuritySession(pContext, rContext)) {
+            // Insert the higher id first, so insertion order and _id order disagree.
+            // Seeded as the framework seeds catalog records (rules ignored), since the
+            // fixtures stand for documents some other writer already left behind.
+            try (SecurityCallScope.Scope seeding = SecurityCallScope.openIgnoringRules()) {
+                realmRepo.save(systemRealm, duplicate(refName, higher, "Higher", "dup-tenant-higher"));
+                realmRepo.save(systemRealm, duplicate(refName, lower, "Lower", "dup-tenant-lower"));
+            }
+
+            List<Realm> documents = realmRepo.findAllByRefNameWithIgnoreRules(refName, systemRealm);
+            Assertions.assertEquals(List.of(lower, higher), documents.stream().map(Realm::getId).toList());
+            Assertions.assertEquals(lower, systemDirectory.findRealmByRefName(refName).orElseThrow().getId());
+
+            systemDirectory.registerRealm(ControlPlaneRealmMapper.fromEntry(roundTrip(refName, "Renamed")));
+
+            List<Realm> after = realmRepo.findAllByRefNameWithIgnoreRules(refName, systemRealm);
+            Assertions.assertEquals(2, after.size(), "registration must not delete or insert duplicates");
+            Assertions.assertEquals("Renamed", after.get(0).getDisplayName());
+            Assertions.assertEquals(lower, after.get(0).getId());
+            Assertions.assertEquals("Higher", after.get(1).getDisplayName());
+        } finally {
+            deleteCreated(refName, created);
+        }
+    }
+
+    private static Realm duplicate(String refName, ObjectId id, String displayName, String tenantId) {
+        Realm realm = Realm.builder()
+            .refName(refName)
+            .displayName(displayName)
+            // emailDomain and databaseName carry their own unique indexes.
+            .emailDomain(tenantId + "." + refName)
+            .databaseName(tenantId + "-" + refName)
+            .defaultAdminUserId("owner@" + refName)
+            .domainContext(DomainContext.builder().tenantId(tenantId)
+                .orgRefName(tenantId).accountId("0000000001").defaultRealm(refName).build())
+            .build();
+        realm.setId(id);
+        // A distinct data domain per document, as earlier duplicates had; the unique
+        // refName index is per data domain.
+        realm.setDataDomain(new com.e2eq.framework.model.persistent.base.DataDomain(
+            tenantId, "0000000001", tenantId, 0, "system@system.com"));
+        return realm;
+    }
+
+    /** A refName no other run or test uses, so cleanup can never touch another fixture. */
+    private static String uniqueRefName() {
+        return "test-realm-upsert-" + new ObjectId().toHexString().substring(12) + "-com";
     }
 
     /** What a round-tripping writer sends: the recorded catalog entry with a new display name. */
@@ -148,14 +212,24 @@ public class TestSystemDirectory extends BaseRepoTest {
         return entry;
     }
 
-    private void deleteRealms(String refName) {
+    /** Deletes exactly the documents this test created and checks they are gone. */
+    private void deleteCreated(String refName, List<ObjectId> created) {
         String systemRealm = systemDirectory.systemRealmId();
-        for (Realm realm : realmRepo.findAllByRefNameWithIgnoreRules(refName, systemRealm)) {
-            try {
-                realmRepo.delete(systemRealm, realm);
-            } catch (Exception error) {
-                throw new IllegalStateException("could not remove test realm " + realm.getId(), error);
+        try (final SecuritySession ignored = new SecuritySession(pContext, rContext);
+             SecurityCallScope.Scope cleanup = SecurityCallScope.openIgnoringRules()) {
+            for (Realm realm : realmRepo.findAllByRefNameWithIgnoreRules(refName, systemRealm)) {
+                if (!created.contains(realm.getId())) {
+                    continue;
+                }
+                try {
+                    realmRepo.delete(systemRealm, realm);
+                } catch (Exception error) {
+                    throw new IllegalStateException("could not remove test realm " + realm.getId(), error);
+                }
             }
+            List<ObjectId> left = realmRepo.findAllByRefNameWithIgnoreRules(refName, systemRealm).stream()
+                .map(Realm::getId).filter(created::contains).toList();
+            Assertions.assertTrue(left.isEmpty(), () -> "test realms left behind: " + left);
         }
     }
 }
