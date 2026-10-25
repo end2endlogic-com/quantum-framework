@@ -349,8 +349,9 @@ public class PolicyResource extends BaseResource<Policy, PolicyRepo> {
          throw new IllegalArgumentException("principalId is required");
       }
 
-      // Imported policies are stamped with the system data domain, which the caller's row filters may hide, so
-      // look the refName up without them; otherwise every re-import takes the create path and duplicates the policy.
+      // Existing policies may sit in a data domain the caller's row filters hide (e.g. seeded or earlier imports
+      // stamped with the system data domain), so look the refName up without them; otherwise every re-import
+      // takes the create path and duplicates the policy. The save below is still checked against the caller's rules.
       Optional<Policy> existing = repo.findByRefName(
               repo.getMorphiaDataStoreWrapper().getDataStore(realm), item.refName, true);
       Policy policy = existing.orElseGet(Policy::new);
@@ -362,7 +363,12 @@ public class PolicyResource extends BaseResource<Policy, PolicyRepo> {
       policy.setPrincipalId(item.principalId);
       policy.setPrincipalType(resolvePrincipalType(item.principalType, existing.map(Policy::getPrincipalType).orElse(null)));
 
-      if (policy.getDataDomain() == null) {
+      // A new policy takes the data domain the save path resolves for the caller, exactly as a policy created
+      // through the regular save endpoint does. Stamping the system data domain here made every import by a
+      // tenant admin a write outside the caller's tenant, which the write-side rule filter check refuses.
+      // An existing policy keeps its stored domain, so a caller still cannot rewrite a policy it does not own.
+      // A legacy row stored without a domain is treated as a system-plane policy rather than adopted by the caller.
+      if (!created && policy.getDataDomain() == null) {
          policy.setDataDomain(securityUtils.getSystemDataDomain());
       }
 

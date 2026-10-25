@@ -53,7 +53,8 @@ public class DefaultRealmPermissionFilterIT extends BaseRepoTest {
 
     @AfterEach
     void cleanUp() {
-        try (SecuritySession s = new SecuritySession(pContext, rContext)) {
+        // The test policy is stamped with the system data domain, so it is removed as the system principal.
+        try (SecuritySession s = asSystem()) {
             String realm = testUtils.getTestRealm();
             Optional<Policy> policy = policyRepo.findByRefName(TEST_POLICY_REF, realm);
             policy.ifPresent(p -> {
@@ -167,7 +168,8 @@ public class DefaultRealmPermissionFilterIT extends BaseRepoTest {
     void policyRuleWithDefaultRealmProducesFilter() throws ReferentialIntegrityViolationException {
         String realm = testUtils.getTestRealm();
         
-        try (SecuritySession s = new SecuritySession(pContext, rContext)) {
+        // Policies carry the system data domain; write them as the system principal, not the test-tenant admin.
+        try (SecuritySession s = asSystem()) {
             // Create the test policy
             Optional<Policy> existingPolicy = policyRepo.findByRefName(TEST_POLICY_REF, realm);
             if (existingPolicy.isPresent()) {
