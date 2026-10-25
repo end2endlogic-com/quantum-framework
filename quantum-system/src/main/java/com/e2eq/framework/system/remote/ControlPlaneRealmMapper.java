@@ -3,6 +3,7 @@ package com.e2eq.framework.system.remote;
 import com.e2eq.framework.controlplane.model.RealmCatalogEntry;
 import com.e2eq.framework.controlplane.model.RealmMembershipEntry;
 import com.e2eq.framework.controlplane.model.UserRealmRoleEntry;
+import com.e2eq.framework.model.persistent.base.EntityReference;
 import com.e2eq.framework.model.security.DomainContext;
 import com.e2eq.framework.model.security.Realm;
 import com.e2eq.framework.model.security.RealmDeploymentType;
@@ -40,6 +41,8 @@ public final class ControlPlaneRealmMapper {
         return new ObjectMapper().registerModule(module);
     }
 
+    private static final String APPLICATION_ENTITY_TYPE = "Application";
+
     private ControlPlaneRealmMapper() {
     }
 
@@ -53,6 +56,16 @@ public final class ControlPlaneRealmMapper {
         realm.setEmailDomain(entry.getEmailDomain());
         realm.setDefaultAdminUserId(entry.getDefaultAdminUserId());
         realm.setConnectionString(entry.getConnectionString());
+        // The owning application crosses the seam by refName. Legacy entries carry
+        // none, which stays "no owner recorded" (null), never a guessed default.
+        if (hasText(entry.getApplicationRefName())) {
+            String application = entry.getApplicationRefName().trim();
+            realm.setApplicationRef(EntityReference.builder()
+                .entityType(APPLICATION_ENTITY_TYPE)
+                .entityRefName(application)
+                .entityDisplayName(application)
+                .build());
+        }
         if (hasText(entry.getTenantId()) && hasText(entry.getOrgRefName())
                 && hasText(entry.getAccountNumber())) {
             realm.setDomainContext(DomainContext.builder()
@@ -76,6 +89,9 @@ public final class ControlPlaneRealmMapper {
         entry.setEmailDomain(realm.getEmailDomain());
         entry.setDefaultAdminUserId(realm.getDefaultAdminUserId());
         entry.setConnectionString(realm.getConnectionString());
+        if (realm.getApplicationRef() != null && hasText(realm.getApplicationRef().getEntityRefName())) {
+            entry.setApplicationRefName(realm.getApplicationRef().getEntityRefName());
+        }
         if (realm.getDomainContext() != null) {
             entry.setTenantId(realm.getDomainContext().getTenantId());
             entry.setOrgRefName(realm.getDomainContext().getOrgRefName());

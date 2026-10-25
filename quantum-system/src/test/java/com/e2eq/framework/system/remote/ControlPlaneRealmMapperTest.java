@@ -31,6 +31,38 @@ class ControlPlaneRealmMapperTest {
     }
 
     @Test
+    void owningApplicationSurvivesTheJsonSeamBothWays() throws Exception {
+        var original = com.e2eq.framework.model.security.Realm.builder()
+            .refName("helixor-code-D1").databaseName("helixor-code-D1").emailDomain("helixor-code-D1")
+            .domainContext(com.e2eq.framework.model.security.DomainContext.builder()
+                .tenantId("helixor-code-D1").orgRefName("helixor-code-D1").accountId("0000000001")
+                .defaultRealm("helixor-code-D1").build())
+            .applicationRef(com.e2eq.framework.model.persistent.base.EntityReference.builder()
+                .entityType("Application").entityRefName("helixor-code").entityDisplayName("Helixor Code").build())
+            .build();
+        var wire = new com.fasterxml.jackson.databind.ObjectMapper();
+        byte[] json = wire.writeValueAsBytes(ControlPlaneRealmMapper.toEntry(original));
+        assertEquals("helixor-code", wire.readTree(json).get("applicationRefName").asText());
+        var restored = ControlPlaneRealmMapper.fromEntry(wire.readValue(json, RealmCatalogEntry.class));
+        assertEquals("helixor-code", restored.getApplicationRef().getEntityRefName());
+        assertEquals("Application", restored.getApplicationRef().getEntityType());
+        assertEquals("helixor-code",
+            ControlPlaneRealmMapper.toEntry(restored).getApplicationRefName());
+    }
+
+    @Test
+    void legacyCatalogEntryWithoutAnOwnerStillReadsAndStaysUnowned() throws Exception {
+        var wire = new com.fasterxml.jackson.databind.ObjectMapper();
+        var entry = wire.readValue(
+            "{\"refName\":\"legacy\",\"databaseName\":\"legacy\",\"emailDomain\":\"legacy.example\","
+                + "\"deploymentType\":\"SHARED\",\"tenantId\":\"t\",\"orgRefName\":\"o\",\"accountNumber\":\"a\"}",
+            RealmCatalogEntry.class);
+        var realm = ControlPlaneRealmMapper.fromEntry(entry);
+        org.junit.jupiter.api.Assertions.assertNull(realm.getApplicationRef());
+        org.junit.jupiter.api.Assertions.assertNull(ControlPlaneRealmMapper.toEntry(realm).getApplicationRefName());
+    }
+
+    @Test
     void legacyCatalogDomainDefaultsOnlyTheAbsentSegment() {
         var entry = new RealmCatalogEntry();
         entry.setRefName("legacy");
