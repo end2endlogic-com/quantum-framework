@@ -30,8 +30,10 @@ import java.util.Map;
 import java.util.function.Supplier;
 
 import static io.restassured.RestAssured.given;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -413,7 +415,8 @@ public class RefNameContractIT extends BaseRepoTest {
         try (var scope = SecurityCallScope.openIgnoringRules()) {
             Policy imported = policyRepo.findByRefName(refName, REALM).orElseThrow();
             createdPolicies.add(imported.getId());
-            assertTrue(!securityUtils.getSystemDataDomain().equals(imported.getDataDomain()),
+            assertNotNull(imported.getDataDomain());
+            assertNotEquals(securityUtils.getSystemDataDomain().getTenantId(), imported.getDataDomain().getTenantId(),
                     "an imported policy takes the caller's data domain, not the system one");
         }
 
@@ -463,7 +466,8 @@ public class RefNameContractIT extends BaseRepoTest {
                 .statusCode(200)
                 .body("createdCount", is(0))
                 .body("updatedCount", is(0))
-                .body("errorCount", is(1));
+                .body("errorCount", is(1))
+                .body("errors[0].error", containsString("does not satisfy the rule filter"));
 
         try (var scope = SecurityCallScope.openIgnoringRules()) {
             Policy stored = policyRepo.findByRefName(refName, REALM).orElseThrow();

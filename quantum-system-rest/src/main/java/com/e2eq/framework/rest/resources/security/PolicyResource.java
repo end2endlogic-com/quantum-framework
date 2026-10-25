@@ -10,6 +10,7 @@ import com.e2eq.framework.security.runtime.RuleContext;
 import com.e2eq.framework.securityrules.io.YamlPolicyItem;
 import com.e2eq.framework.securityrules.io.YamlPolicyLoader;
 import com.e2eq.framework.securityrules.io.YamlRuleMapper;
+import com.e2eq.framework.util.SecurityUtils;
 import jakarta.inject.Inject;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.ws.rs.HeaderParam;
@@ -46,6 +47,9 @@ import com.e2eq.framework.rest.models.CounterResponse;
 public class PolicyResource extends BaseResource<Policy, PolicyRepo> {
    @Inject
    RuleContext ruleContext;
+
+   @Inject
+   SecurityUtils securityUtils;
 
    protected PolicyResource (PolicyRepo repo) {
       super(repo);
@@ -363,6 +367,10 @@ public class PolicyResource extends BaseResource<Policy, PolicyRepo> {
       // through the regular save endpoint does. Stamping the system data domain here made every import by a
       // tenant admin a write outside the caller's tenant, which the write-side rule filter check refuses.
       // An existing policy keeps its stored domain, so a caller still cannot rewrite a policy it does not own.
+      // A legacy row stored without a domain is treated as a system-plane policy rather than adopted by the caller.
+      if (!created && policy.getDataDomain() == null) {
+         policy.setDataDomain(securityUtils.getSystemDataDomain());
+      }
 
       List<Rule> rules;
       if (item.rules != null && !item.rules.isEmpty()) {
