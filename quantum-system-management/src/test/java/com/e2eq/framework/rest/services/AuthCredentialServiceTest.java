@@ -96,21 +96,32 @@ class AuthCredentialServiceTest {
         AuthCredentialService service = service(factory, Optional.of(credential));
 
         assertThrows(IllegalArgumentException.class,
-                () -> service.resolveUserManager("svc-1", "custom"));
+                () -> service.resolvePasswordManager("svc-1", "custom"));
         ResetPasswordRequest request = resetPasswordRequest("svc-1", "newPassword123");
         assertThrows(IllegalArgumentException.class, () -> service.resetPassword(request, "custom"));
     }
 
     @Test
-    void serviceAccountCannotGetAPasswordEvenAsAPasswordCredential() {
+    void passwordCredentialWithProviderOverrideKeepsPasswordManagement() {
         TestAuthProviderFactory factory = new TestAuthProviderFactory();
         factory.defaultManager = new TestUserManager("custom", "https://custom.example.com");
+        TestUserManager custom = new TestUserManager("custom", "https://custom.example.com");
+        factory.managers.put("custom", custom);
+        AuthCredentialService service = service(factory, Optional.of(credential("alice")));
 
-        CredentialUserIdPassword credential = credential("svc-2");
-        credential.setAccountType(com.e2eq.framework.model.security.AccountType.SERVICE);
+        assertSame(custom, service.resolvePasswordManager("alice", "custom"));
+    }
+
+    @Test
+    void emailChangeIsNotAPasswordOperation() {
+        TestAuthProviderFactory factory = new TestAuthProviderFactory();
+        factory.defaultManager = new TestUserManager("custom", "https://custom.example.com");
+        CredentialUserIdPassword credential = credential("alice");
+        credential.setCredentialType(CredentialType.EMAIL);
         AuthCredentialService service = service(factory, Optional.of(credential));
 
-        assertThrows(IllegalArgumentException.class, () -> service.resolveUserManager("svc-2", null));
+        assertSame(factory.defaultManager, service.resolveUserManager("alice", null));
+        assertThrows(IllegalArgumentException.class, () -> service.resolvePasswordManager("alice", null));
     }
 
     @Test
