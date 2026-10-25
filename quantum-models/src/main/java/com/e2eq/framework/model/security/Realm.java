@@ -91,16 +91,6 @@ public class Realm extends BaseModel {
          return defaultAdminUserId;
       }
    }
-
-   /**
-    * The admin user id as recorded, without the {@code admin@<emailDomain>}
-    * fallback {@link #getDefaultAdminUserId()} derives; null when none was set.
-    * A merge needs this to tell "the write named an admin" from "the write named
-    * an email domain".
-    */
-   public String explicitDefaultAdminUserId() {
-      return defaultAdminUserId;
-   }
    /**
     * The domain context to use by default for uses that authenticate with in this realm.
     */

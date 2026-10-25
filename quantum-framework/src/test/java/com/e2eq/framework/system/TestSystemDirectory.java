@@ -1,5 +1,6 @@
 package com.e2eq.framework.system;
 
+import com.e2eq.framework.api.system.RealmRegistrationConflictException;
 import com.e2eq.framework.api.system.SystemDirectory;
 import com.e2eq.framework.controlplane.model.RealmCatalogEntry;
 import com.e2eq.framework.model.persistent.base.EntityReference;
@@ -75,9 +76,11 @@ public class TestSystemDirectory extends BaseRepoTest {
 
     /**
      * PUT /control/realms/{refName} twice: the control-plane resource maps the
-     * catalog entry (no id) and calls registerRealm. Both writes must land on one
-     * document, the second write must be what a GET returns, and fields the catalog
-     * entry does not carry must survive.
+     * catalog entry (no id) and calls registerRealm. Writers round-trip the
+     * recorded entry (GET, modify, PUT). Both writes must land on one document,
+     * the second write must be what a GET returns, fields the catalog entry does
+     * not carry must survive, and a write that would move the realm's tenancy is
+     * refused without inserting or changing anything.
      */
     @Test
     public void registeringARealmTwiceByRefNameUpdatesOneDocument() {
@@ -102,8 +105,13 @@ public class TestSystemDirectory extends BaseRepoTest {
                 .build();
             Realm inserted = systemDirectory.registerRealm(provisioned);
 
-            systemDirectory.registerRealm(ControlPlaneRealmMapper.fromEntry(catalogEntry(refName, "First PUT")));
-            systemDirectory.registerRealm(ControlPlaneRealmMapper.fromEntry(catalogEntry(refName, "Second PUT")));
+            systemDirectory.registerRealm(ControlPlaneRealmMapper.fromEntry(roundTrip(refName, "First PUT")));
+            systemDirectory.registerRealm(ControlPlaneRealmMapper.fromEntry(roundTrip(refName, "Second PUT")));
+
+            RealmCatalogEntry moved = roundTrip(refName, "Moved");
+            moved.setTenantId("someone-else");
+            Assertions.assertThrows(RealmRegistrationConflictException.class,
+                () -> systemDirectory.registerRealm(ControlPlaneRealmMapper.fromEntry(moved)));
 
             List<Realm> documents = realmRepo.findAllByRefNameWithIgnoreRules(refName, systemRealm);
             Assertions.assertEquals(1, documents.size(), () -> "one realm document per refName, found "
@@ -113,9 +121,9 @@ public class TestSystemDirectory extends BaseRepoTest {
             RealmCatalogEntry got = ControlPlaneRealmMapper.toEntry(
                 systemDirectory.findRealmByRefName(refName).orElseThrow());
             Assertions.assertEquals("Second PUT", got.getDisplayName());
-            Assertions.assertEquals("put-tenant", got.getTenantId());
-            Assertions.assertEquals("put-org", got.getOrgRefName());
-            Assertions.assertEquals("0000000001", got.getAccountNumber());
+            Assertions.assertEquals("provisioned-tenant", got.getTenantId());
+            Assertions.assertEquals("provisioned-org", got.getOrgRefName());
+            Assertions.assertEquals("0000000007", got.getAccountNumber());
 
             Realm stored = documents.get(0);
             Assertions.assertEquals("owner@test-realm-upsert.com", stored.getDefaultAdminUserId());
@@ -132,16 +140,11 @@ public class TestSystemDirectory extends BaseRepoTest {
         }
     }
 
-    /** The body reconcile_development_control_plane.py sends: no admin, owner, tenancy or topology. */
-    private static RealmCatalogEntry catalogEntry(String refName, String displayName) {
-        RealmCatalogEntry entry = new RealmCatalogEntry();
-        entry.setRefName(refName);
+    /** What a round-tripping writer sends: the recorded catalog entry with a new display name. */
+    private RealmCatalogEntry roundTrip(String refName, String displayName) {
+        RealmCatalogEntry entry = ControlPlaneRealmMapper.toEntry(
+            systemDirectory.findRealmByRefName(refName).orElseThrow());
         entry.setDisplayName(displayName);
-        entry.setDatabaseName(refName);
-        entry.setEmailDomain(refName);
-        entry.setTenantId("put-tenant");
-        entry.setOrgRefName("put-org");
-        entry.setAccountNumber("0000000001");
         return entry;
     }
 
