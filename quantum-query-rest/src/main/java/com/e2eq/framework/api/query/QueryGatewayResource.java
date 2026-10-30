@@ -27,6 +27,7 @@ import com.e2eq.framework.model.security.DataDomainResolver;
 import com.e2eq.framework.rest.exceptions.DataDomainGovernanceException;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
+import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import com.e2eq.framework.model.securityrules.SecurityContext;
 import com.e2eq.framework.model.securityrules.FieldPolicyEnforcer;
 import com.e2eq.framework.security.runtime.RuleContext;
@@ -238,30 +239,64 @@ public class QueryGatewayResource {
         Integer limit = (req.page != null) ? req.page.limit : null;
         Integer skip = (req.page != null) ? req.page.skip : null;
         Map<String, String> variableMap = variableMapForQuery(req.realm, root);
-        // Derive stage policies for any expand hops
+        // Derive stage policies for any expand hops. Every expand target must resolve its row and
+        // field policy; one that cannot is refused here, never expanded without its policy.
         com.e2eq.framework.model.persistent.morphia.planner.QueryPlanner planner =
                 new com.e2eq.framework.model.persistent.morphia.planner.QueryPlanner();
-        com.e2eq.framework.model.persistent.morphia.planner.PlannerResult pr = planner.analyze(req.query);
+        com.e2eq.framework.model.persistent.morphia.planner.PlannerResult pr;
+        try {
+            pr = planner.analyze(req.query);
+        } catch (IllegalArgumentException invalidQuery) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(Map.of("error", "InvalidQuery", "message", String.valueOf(invalidQuery.getMessage()))).build();
+        }
         Map<String, MongoAggregationCompiler.StagePolicy> stagePolicies = new HashMap<>();
+        Map<String, MongoAggregationCompiler.StagePolicy> policiesByCollection = new HashMap<>();
         if (pr.getMode() == PlannerResult.Mode.AGGREGATION && pr.getExpandPaths() != null) {
             MetadataRegistry md = new DefaultMetadataRegistry();
             for (String path : pr.getExpandPaths()) {
+                JoinSpec js;
                 try {
-                    JoinSpec js = md.resolveJoin(root, path);
-                    if (js != null && js.targetType != null && UnversionedBaseModel.class.isAssignableFrom(js.targetType)) {
-                        @SuppressWarnings("unchecked")
-                        Class<? extends UnversionedBaseModel> targetModel = (Class<? extends UnversionedBaseModel>) js.targetType;
-                        Filter[] targetSecured = securedFilterArray(Collections.emptyList(), targetModel);
-                        Filter rowFilter = null;
-                        if (targetSecured != null && targetSecured.length > 0) {
-                            rowFilter = (targetSecured.length == 1) ? targetSecured[0] : Filters.and(targetSecured);
-                        }
-                        Set<String> targetExcluded = excludedFieldPaths(targetModel);
-                        stagePolicies.put(path, new MongoAggregationCompiler.StagePolicy(rowFilter, targetExcluded));
-                    }
-                } catch (Exception ex) {
-                    // QueryPlanner will report appropriate error if join metadata cannot be resolved
+                    js = md.resolveJoin(root, path);
+                } catch (RuntimeException invalidJoin) {
+                    return Response.status(Response.Status.BAD_REQUEST)
+                            .entity(Map.of("error", "InvalidQuery", "message", String.valueOf(invalidJoin.getMessage()))).build();
                 }
+                if (js == null || js.targetType == null || js.fromCollection == null || js.fromCollection.isBlank()
+                        || !UnversionedBaseModel.class.isAssignableFrom(js.targetType)) {
+                    return expandPolicyUnresolved(path, "the expand target is not a governable model collection");
+                }
+                @SuppressWarnings("unchecked")
+                Class<? extends UnversionedBaseModel> targetModel = (Class<? extends UnversionedBaseModel>) js.targetType;
+                MongoAggregationCompiler.StagePolicy policy;
+                try {
+                    // The target's rows answer to both the gateway's rules (as the root does) and
+                    // the rules of the target's own functional area (as the repository aggregation
+                    // path resolves them), so the lookup is never wider than either.
+                    List<Filter> targetRows = new ArrayList<>(
+                            java.util.Arrays.asList(securedFilterArray(Collections.emptyList(), targetModel)));
+                    if (!SecurityContext.isIgnoringRules()) {
+                        try (SecurityCallScope.Scope ignored = SecurityCallScope.openResourceOnly(
+                                targetResourceContext(targetModel))) {
+                            targetRows.addAll(java.util.Arrays.asList(
+                                    securedFilterArray(Collections.emptyList(), targetModel)));
+                        }
+                    }
+                    Filter[] targetSecured = com.e2eq.framework.security.runtime.RuleFilterComposition.conjoin(targetRows);
+                    Filter rowFilter = targetSecured.length == 0 ? null : targetSecured[0];
+                    policy = new MongoAggregationCompiler.StagePolicy(rowFilter, excludedFieldPaths(targetModel));
+                } catch (WebApplicationException typed) {
+                    throw typed; // already a sanitized, typed refusal (e.g. SecurityContextMissing, 403)
+                } catch (RuntimeException unresolved) {
+                    Log.warnf(unresolved, "QueryGateway refusing expand(%s) on %s: target policy for %s could not be resolved",
+                            path, root.getName(), targetModel.getName());
+                    return expandPolicyUnresolved(path, "the expand target's row or field policy could not be resolved");
+                }
+                MongoAggregationCompiler.StagePolicy previous = policiesByCollection.putIfAbsent(js.fromCollection, policy);
+                if (previous != null && !samePolicy(previous, policy)) {
+                    return expandPolicyUnresolved(path, "conflicting policies resolved for the same expand collection");
+                }
+                stagePolicies.put(path, policy);
             }
         }
 
@@ -297,6 +332,10 @@ public class QueryGatewayResource {
             // Execute aggregation pipeline against the root collection
             String realm = resolveRealm(req.realm);
             MorphiaDatastore ds = morphiaDataStoreWrapper.getDataStore(realm);
+            Response unpoliced = requireLookupPolicies(pipeline, policiesByCollection, new MongoAggregationCompiler());
+            if (unpoliced != null) {
+                return unpoliced;
+            }
             String rootCollection = resolveCollectionName(root, ds);
 
             // SECURITY: derive root row-level security filters (DataDomain scope + rule constraints)
@@ -1085,6 +1124,71 @@ public class QueryGatewayResource {
         }
     }
 
+    /** The request's ResourceContext re-targeted at {@code model}'s functional area and domain. */
+    private ResourceContext targetResourceContext(Class<? extends UnversionedBaseModel> model) {
+        ResourceContext current = SecurityContext.getResourceContext()
+                .orElseThrow(() -> new IllegalStateException("expand requires a ResourceContext"));
+        String[] areaDomain = functionalAreaAndDomain(model);
+        return new ResourceContext.Builder()
+                .withRealm(current.getRealm())
+                .withApplicationId(current.getApplicationId())
+                .withArea(areaDomain[0])
+                .withFunctionalDomain(areaDomain[1])
+                .withAction(current.getAction())
+                // Keep the concrete resource id: a target rule may reference ${resourceId}, and the
+                // builder's "*" default would widen it (mirrors MorphiaRepo.resolveLookupPolicies).
+                .withResourceId(current.getResourceId())
+                .build();
+    }
+
+    /** Filter has no value equality; compare policies by their encoded form. */
+    private static boolean samePolicy(MongoAggregationCompiler.StagePolicy a, MongoAggregationCompiler.StagePolicy b) {
+        return java.util.Objects.equals(String.valueOf(a.rowFilter()), String.valueOf(b.rowFilter()))
+                && java.util.Objects.equals(a.rowMatch(), b.rowMatch())
+                && java.util.Objects.equals(a.excludedFields(), b.excludedFields());
+    }
+
+    /** Typed 403 for an expand whose target policy cannot be resolved; no query has run. */
+    private Response expandPolicyUnresolved(String path, String reason) {
+        return Response.status(Response.Status.FORBIDDEN)
+                .entity(Map.of("error", "ExpandPolicyUnresolved",
+                        "message", "expand(" + path + ") refused: " + reason))
+                .build();
+    }
+
+    /**
+     * Fail-closed check on the compiled pipeline: every {@code $lookup} must target a collection
+     * whose policy was resolved above and must carry that policy's row filter inside its own
+     * pipeline. A lookup that does not is refused rather than run with no row policy.
+     */
+    @SuppressWarnings("unchecked")
+    private Response requireLookupPolicies(List<org.bson.conversions.Bson> pipeline,
+                                           Map<String, MongoAggregationCompiler.StagePolicy> policiesByCollection,
+                                           MongoAggregationCompiler compiler) {
+        for (org.bson.conversions.Bson stage : pipeline) {
+            if (!(stage instanceof Document doc) || !doc.containsKey("$lookup")) {
+                continue;
+            }
+            Document lookup = doc.get("$lookup", Document.class);
+            String from = lookup == null ? null : lookup.getString("from");
+            MongoAggregationCompiler.StagePolicy policy = from == null ? null : policiesByCollection.get(from);
+            if (policy == null) {
+                return expandPolicyUnresolved(String.valueOf(from), "no resolved policy for the lookup collection");
+            }
+            if (policy.rowFilter() != null) {
+                Document required = compiler.compileMatch(policy.rowFilter());
+                Object inner = lookup.get("pipeline");
+                boolean carried = required == null || required.isEmpty()
+                        || (inner instanceof List<?> stages && stages.stream().anyMatch(st ->
+                        st instanceof Document d && required.equals(d.get("$match"))));
+                if (!carried) {
+                    return expandPolicyUnresolved(from, "the lookup does not carry the target's row policy");
+                }
+            }
+        }
+        return null;
+    }
+
     private String resolveCollectionName(Class<? extends UnversionedBaseModel> root) {
         return resolveCollectionName(root, null);
     }
@@ -1211,21 +1315,48 @@ public class QueryGatewayResource {
             excluded.addAll(baseExcluded);
         }
         if (targetModel != null) {
-            try {
-                UnversionedBaseModel inst = targetModel.getDeclaredConstructor().newInstance();
-                ResourceContext targetRc = new ResourceContext.Builder()
-                        .withRealm(rc.get().getRealm())
-                        .withArea(inst.bmFunctionalArea())
-                        .withFunctionalDomain(inst.bmFunctionalDomain())
-                        .withAction("find")
-                        .build();
-                java.util.Set<String> targetExcluded = ruleContext.getExcludedFieldPaths(pc.get(), targetRc);
-                if (targetExcluded != null) {
-                    excluded.addAll(targetExcluded);
-                }
-            } catch (Exception ignored) {}
+            // Fail closed: if the model's functional area cannot be determined its exclusions
+            // cannot be known, so the read is refused rather than run without them.
+            String[] areaDomain = functionalAreaAndDomain(targetModel);
+            // Keep the request's scope (application and resource id) so the target's exclusions
+            // are evaluated for the same request the row policy is.
+            ResourceContext targetRc = new ResourceContext.Builder()
+                    .withRealm(rc.get().getRealm())
+                    .withApplicationId(rc.get().getApplicationId())
+                    .withArea(areaDomain[0])
+                    .withFunctionalDomain(areaDomain[1])
+                    .withAction("find")
+                    .withResourceId(rc.get().getResourceId())
+                    .build();
+            java.util.Set<String> targetExcluded = ruleContext.getExcludedFieldPaths(pc.get(), targetRc);
+            if (targetExcluded != null) {
+                excluded.addAll(targetExcluded);
+            }
         }
         return excluded;
+    }
+
+    /**
+     * The functional area and domain whose field policy governs {@code model}: its
+     * {@code bmFunctionalArea()/bmFunctionalDomain()} (the constructor may be non-public), or its
+     * {@code @FunctionalMapping} when it cannot be instantiated. Throws when neither can be read,
+     * so callers fail closed.
+     */
+    private static String[] functionalAreaAndDomain(Class<? extends UnversionedBaseModel> model) {
+        try {
+            java.lang.reflect.Constructor<? extends UnversionedBaseModel> ctor = model.getDeclaredConstructor();
+            ctor.setAccessible(true);
+            UnversionedBaseModel inst = ctor.newInstance();
+            return new String[]{inst.bmFunctionalArea(), inst.bmFunctionalDomain()};
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            com.e2eq.framework.annotations.FunctionalMapping mapping =
+                    model.getAnnotation(com.e2eq.framework.annotations.FunctionalMapping.class);
+            if (mapping != null) {
+                return new String[]{mapping.area(), mapping.domain()};
+            }
+            throw new IllegalStateException("Cannot determine the functional area of " + model.getName()
+                    + " to resolve its field policy; declare @FunctionalMapping", e);
+        }
     }
 
     /**

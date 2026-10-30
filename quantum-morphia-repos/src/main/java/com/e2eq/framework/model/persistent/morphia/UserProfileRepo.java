@@ -109,9 +109,14 @@ public class UserProfileRepo extends MorphiaRepo<UserProfile> {
    }
 
    public Optional<UserProfile> updateStatus(String realm, @NotNull String userId, @NotNull UserProfile.Status status) {
+     // Reached from REST (PUT userProfile/updateStatus): the write carries the caller's rule
+     // filters, so a profile outside the caller's scope is not modified.
+     List<Filter> filters = new ArrayList<>();
+     filters.add(Filters.eq("userId", userId));
      UserProfile p = this.morphiaDataStoreWrapper.getDataStore(resolveIdentityStoreRealm(realm))
              .find(UserProfile.class)
-             .filter(Filters.eq("userId", userId)).modify(new ModifyOptions().returnDocument(ReturnDocument.AFTER), UpdateOperators.set("status", status.value()));
+             .filter(getFilterArray(filters, getPersistentClass()))
+             .modify(new ModifyOptions().returnDocument(ReturnDocument.AFTER), UpdateOperators.set("status", status.value()));
 
      return Optional.ofNullable(p);
    }

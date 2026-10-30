@@ -1456,12 +1456,28 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
    @Override
    public long updateActiveStatus (Datastore datastore, @PathParam("id") ObjectId id, ActiveStatus activeStatus) {
+      Objects.requireNonNull(id, "id is required");
+      // Row gate: the caller must be able to read the row, and the write repeats the caller's
+      // rule filters so it cannot reach a row that left scope between the read and the update.
+      if (findById(datastore, id).isEmpty()) {
+         return 0;
+      }
       UpdateOperator updateOp = UpdateOperators.set("activeStatus", activeStatus);
-      UpdateResult update;
-      update = datastore.find(getPersistentClass()).filter(Filters.eq("_id", id))
+      UpdateResult update = datastore.find(getPersistentClass()).filter(governedIdFilter(id))
                      .update(updateOp);
 
      return update.getMatchedCount();
+   }
+
+   /**
+    * The by-id clause of a governed write: {@code _id} conjoined with the caller's rule filters
+    * into one explicit {@code $and}, exactly as {@link #findById(Datastore, ObjectId)} reads it.
+    * An explicit ignore-rules scope keeps only the id clause.
+    */
+   protected Filter[] governedIdFilter(@NotNull ObjectId id) {
+      List<Filter> filters = new ArrayList<>();
+      filters.add(Filters.eq("_id", id));
+      return getFilterArray(filters, getPersistentClass());
    }
 
    @Override
@@ -1512,53 +1528,16 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         throw new NoSuchFieldException("Field '" + fieldName + "' not found in class hierarchy of " + clazz.getName());
     }
 
+    /**
+     * Partial update inside the caller's session. The String id is parsed as the {@code ObjectId}
+     * it stands for (an {@code _id} String never matched before) and the write goes through the
+     * same row gate as {@link #update(MorphiaSession, ObjectId, Pair[])}.
+     */
     @SafeVarargs
     @Override
     public final long update(MorphiaSession session, @NotNull String id, @NotNull Pair<String, Object>... pairs) {
-        List<UpdateOperator> updateOperators = new ArrayList<>();
-        for (Pair<String, Object> pair : pairs) {
-            assertFieldUpdateAllowed(pair.getKey());
-            // check that the pair key corresponds to a field in the persistent class that is an enum
-            Field field = null;
-            try {
-                field = getFieldFromHierarchy(getPersistentClass(),pair.getKey());
-                Reference ref = field.getAnnotation(Reference.class);
-                if (ref != null) {
-                    Log.warn("Update to class that contains references");
-                    throw new NotSupportedException("Field:" + field + " is a managed reference, and not updatable via put. Use Post");
-                }
-                if (hasOntologyPropertyAnnotation(field)) {
-                    Log.warn("Update to class that contains ontology properties");
-                    throw new NotSupportedException("Field:" + field + " is an ontology property, and not updatable via put. Use save() to update relationships");
-                }
-
-                if (field.getType().isEnum()) {
-                    // check that the pair value is a valid enum value of te field
-                    if (!Arrays.stream(field.getType().getEnumConstants()).anyMatch(e -> e.toString().equals(pair.getValue().toString()))) {
-                        throw new IllegalArgumentException("Invalid value for enum field " + pair.getKey() + " can't set value:" + pair.getValue());
-                    }
-
-                }
-            } catch (NoSuchFieldException e) {
-                throw new RuntimeException(e);
-            }
-            updateOperators.add(UpdateOperators.set(pair.getKey(), pair.getValue()));
-        }
-        if (updateOperators.isEmpty()) {
-            return 0;
-        }
-
-        UpdateResult update;
-        if (updateOperators.size() == 1) {
-            update = session.find(getPersistentClass()).filter(Filters.eq("_id", id))
-                    .update(updateOperators.get(0));
-        } else {
-            UpdateOperator[] ops = updateOperators.toArray(new UpdateOperator[0]);
-            update = session.find(getPersistentClass()).filter(Filters.eq("_id", id))
-                    .update(ops[0], Arrays.copyOfRange(ops, 1, ops.length));
-        }
-
-        return update.getModifiedCount();
+        Objects.requireNonNull(id, "id is required");
+        return update(session, new ObjectId(id), pairs);
     }
 
     @Override
@@ -1650,13 +1629,16 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
        updateOperators.add(UpdateOperators.set("auditInfo.lastUpdateTs", new Date()));
        updateOperators.add(UpdateOperators.set("auditInfo.lastUpdateIdentity", securityIdentity.getPrincipal().getName()));
 
+       // The write repeats the read's rule filters (one $and with the id), so it cannot reach a
+       // row the caller could not read, even if the row changed after the read above.
+       Filter[] governed = governedIdFilter(id);
        UpdateResult update;
        if (updateOperators.size() == 1) {
-          update = datastore.find(getPersistentClass()).filter(Filters.eq("_id", id))
+          update = datastore.find(getPersistentClass()).filter(governed)
                       .update(updateOperators.get(0));
        } else {
           UpdateOperator[] ops = updateOperators.toArray(new UpdateOperator[0]);
-          update = datastore.find(getPersistentClass()).filter(Filters.eq("_id", id))
+          update = datastore.find(getPersistentClass()).filter(governed)
                       .update(ops[0], Arrays.copyOfRange(ops, 1, ops.length));
        }
 
@@ -1668,6 +1650,12 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
    @Override
    @SafeVarargs
     public final long update(MorphiaSession session, @NotNull ObjectId id, @NotNull Pair<String, Object>... pairs) {
+        Objects.requireNonNull(id, "id is required");
+        // Row gate, as on the Datastore overload: read inside the session with the caller's rule
+        // filters first; not readable means not found, and nothing is written.
+        if (findById(session, id).isEmpty()) {
+            return 0;
+        }
         List<UpdateOperator> updateOperators = new ArrayList<>();
         for (Pair<String, Object> pair : pairs) {
            assertFieldUpdateAllowed(pair.getKey());
@@ -1699,13 +1687,14 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
             return 0;
         }
 
+        Filter[] governed = governedIdFilter(id);
         UpdateResult update;
         if (updateOperators.size() == 1) {
-            update = session.find(getPersistentClass()).filter(Filters.eq("_id", id))
+            update = session.find(getPersistentClass()).filter(governed)
                     .update(updateOperators.get(0));
         } else {
             UpdateOperator[] ops = updateOperators.toArray(new UpdateOperator[0]);
-            update = session.find(getPersistentClass()).filter(Filters.eq("_id", id))
+            update = session.find(getPersistentClass()).filter(governed)
                     .update(ops[0], Arrays.copyOfRange(ops, 1, ops.length));
         }
 
