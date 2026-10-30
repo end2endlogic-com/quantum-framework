@@ -4,6 +4,12 @@ import com.e2eq.framework.annotations.FunctionalAction;
 import com.e2eq.framework.annotations.FunctionalMapping;
 import com.e2eq.framework.model.persistent.migration.base.DatabaseVersion;
 import com.e2eq.framework.model.persistent.migration.base.MigrationService;
+import com.e2eq.framework.model.persistent.migration.refname.CanonicalRefNameMigrator;
+import com.e2eq.framework.model.persistent.migration.refname.RefNameMigrationPlan;
+import com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper;
+import com.e2eq.framework.model.persistent.morphia.RealmRepo;
+import dev.morphia.transactions.MorphiaSession;
+import com.mongodb.MongoException;
 import com.e2eq.framework.model.persistent.morphia.DatabaseVersionRepo;
 import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.model.securityrules.SecurityCallScope;
@@ -61,6 +67,15 @@ public class MigrationResource {
    @Inject
    SecurityIdentity identity;
 
+   @Inject
+   CanonicalRefNameMigrator refNameMigrator;
+
+   @Inject
+   MorphiaDataStoreWrapper morphiaDataStoreWrapper;
+
+   @Inject
+   RealmRepo realmRepo;
+
    @GET
    @Path("/dbversion/{realm}")
    @Produces(MediaType.APPLICATION_JSON)
@@ -71,6 +86,105 @@ public class MigrationResource {
          return oversion.get();
       } else
          throw new NotFoundException(String.format("realm:%s not found", realm));
+   }
+
+   /**
+    * The canonical-refName plan for one realm: what it would rename, merge or leave for an operator. Reads only; send
+    * the body back to {@code POST /refnames/{realm}/apply} to apply it.
+    */
+   @GET
+   @Path("/refnames/{realm}")
+   @Produces(MediaType.APPLICATION_JSON)
+   @RolesAllowed({"system"})
+   @FunctionalMapping(area="MIGRATION", domain="REFNAMES")
+   @FunctionalAction(value = "REPORT", bypassDataScoping = true)
+   public RefNameMigrationPlan refNameMigrationPlan (@PathParam("realm") String realm) {
+      requireRegisteredRealm(realm);
+      return refNameMigrator.plan(realm);
+   }
+
+   /**
+    * Applies a reviewed canonical-refName plan (the body returned by {@code GET /refnames/{realm}}) in one transaction:
+    * its renames and merges, each re-checked inside the transaction. If the realm no longer matches the reviewed plan
+    * for any of them, nothing is written and the call answers 409; review the plan again.
+    */
+   @POST
+   @Path("/refnames/{realm}/apply")
+   @Consumes(MediaType.APPLICATION_JSON)
+   @Produces(MediaType.APPLICATION_JSON)
+   @RolesAllowed({"system"})
+   @FunctionalMapping(area="MIGRATION", domain="REFNAMES")
+   @FunctionalAction(value = "APPLY", bypassDataScoping = true)
+   public RefNameMigrationPlan applyRefNameMigration (@PathParam("realm") String realm, RefNameMigrationPlan reviewed) {
+      requireRegisteredRealm(realm);
+      if (reviewed == null || reviewed.actions() == null || !realm.equals(reviewed.realm())) {
+         throw new BadRequestException("send the plan reviewed with GET /system/migration/refnames/" + realm);
+      }
+      try {
+         migrationService.requireRealmOwned(realm, "apply the refName migration");
+      } catch (IllegalStateException e) {
+         throw new ForbiddenException(e.getMessage());
+      }
+      try (MorphiaSession session = morphiaDataStoreWrapper.getDataStore(realm).startSession()) {
+         session.startTransaction();
+         try {
+            refNameMigrator.apply(session, reviewed, message -> Log.infof("refName migration %s: %s", realm, message));
+         } catch (IllegalStateException e) {
+            // The realm no longer matches the reviewed plan: nothing was written.
+            abort(session, e);
+            throw new ClientErrorException(e.getMessage(), 409, e);
+         } catch (MongoException e) {
+            abort(session, e);
+            throw refNameWriteFailure(e);
+         } catch (RuntimeException e) {
+            abort(session, e);
+            throw e;
+         }
+         // Outside the catch above: a failed commit must surface as itself, not as a failed abort.
+         try {
+            session.commitTransaction();
+         } catch (MongoException e) {
+            if (e.hasErrorLabel(MongoException.UNKNOWN_TRANSACTION_COMMIT_RESULT_LABEL)) {
+               throw new WebApplicationException("refName migration for " + realm + ": the commit outcome is unknown; "
+                     + "read the plan again before retrying", e, 503);
+            }
+            throw refNameWriteFailure(e);
+         }
+      }
+      ruleContext.invalidateAllCaches();
+      return reviewed;
+   }
+
+   /** A concurrent change (write conflict, duplicate key) means the reviewed plan no longer holds: 409. */
+   private static WebApplicationException refNameWriteFailure(MongoException e) {
+      if (e.hasErrorLabel(MongoException.TRANSIENT_TRANSACTION_ERROR_LABEL) || e.getCode() == 112 || e.getCode() == 11000) {
+         return new ClientErrorException("the realm changed while the reviewed plan was applied; nothing was written. "
+               + "Review the plan again: " + e.getMessage(), 409, e);
+      }
+      return new WebApplicationException("refName migration failed; nothing was written: " + e.getMessage(), e, 500);
+   }
+
+   private static void abort(MorphiaSession session, RuntimeException cause) {
+      try {
+         if (session.hasActiveTransaction()) {
+            session.abortTransaction();
+         }
+      } catch (RuntimeException abortFailure) {
+         cause.addSuppressed(abortFailure);
+      }
+   }
+
+   /** Only realms in the realm catalog (or the system realm): never an arbitrary database on the cluster. */
+   private void requireRegisteredRealm(String realm) {
+      String systemRealm = envConfigUtils.getSystemRealm();
+      boolean registered;
+      try (SecurityCallScope.Scope ignored = SecurityCallScope.openIgnoringRules()) {
+         registered = Objects.equals(realm, systemRealm)
+               || realmRepo.findByDatabaseName(realm, true, systemRealm).isPresent();
+      }
+      if (!registered) {
+         throw new NotFoundException(String.format("realm:%s not found", realm));
+      }
    }
 
    @POST
