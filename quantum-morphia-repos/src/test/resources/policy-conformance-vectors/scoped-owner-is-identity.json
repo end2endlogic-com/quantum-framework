@@ -1,0 +1,54 @@
+{
+  "name": "scoped-owner-is-identity",
+  "description": "The request's owner position holds the identity being matched (here the role), not the resource's owner: a rule whose ownerId is the resource owner's userId does not apply to a role.",
+  "principal": {
+    "userId": "u1@acme.com",
+    "roles": [
+      "user"
+    ],
+    "defaultRealm": "acme",
+    "dataDomain": {
+      "orgRefName": "acme.com",
+      "accountNum": "0000000001",
+      "tenantId": "acme.com",
+      "dataSegment": 0,
+      "ownerId": "u1@acme.com"
+    }
+  },
+  "resource": {
+    "area": "sales",
+    "functionalDomain": "order",
+    "action": "view",
+    "resourceId": "o-1",
+    "ownerId": "u1@acme.com"
+  },
+  "rules": [
+    {
+      "name": "view-orders-scoped",
+      "header": {
+        "identity": "user",
+        "area": "sales",
+        "functionalDomain": "order",
+        "action": "view"
+      },
+      "body": {
+        "realm": "*",
+        "orgRefName": "*",
+        "accountNumber": "*",
+        "tenantId": "*",
+        "dataSegment": "*",
+        "ownerId": "u1@acme.com",
+        "resourceId": "*"
+      },
+      "effect": "ALLOW",
+      "priority": 10,
+      "finalRule": false
+    }
+  ],
+  "defaultEffect": "DENY",
+  "expected": {
+    "finalEffect": "DENY",
+    "filterConstraints": [],
+    "excludedFields": []
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "schema": "policy.conformance_vectors.v1",
+  "vectors": [
+    "default-deny-without-rules",
+    "exact-allow",
+    "other-identity-ignored",
+    "other-action-no-match",
+    "last-applicable-wins",
+    "last-applicable-wins-allow",
+    "final-rule-stops",
+    "wildcard-header",
+    "wildcard-domain-only",
+    "case-insensitive",
+    "user-identity-rule",
+    "excluded-fields-union",
+    "excluded-fields-none-on-deny",
+    "filter-constraints-without-resource",
+    "scoped-realm",
+    "scoped-realm-other",
+    "scoped-tenant-other",
+    "scoped-org-account",
+    "scoped-account-other",
+    "scoped-data-segment-other",
+    "scoped-org-prefix",
+    "scoped-owner-is-identity",
+    "scoped-resource-id",
+    "scoped-resource-id-other",
+    "scoped-resource-id-list"
+  ]
+}
