@@ -6,9 +6,13 @@ import com.e2eq.framework.model.security.DomainContext;
 import com.e2eq.framework.model.security.Realm;
 import com.e2eq.framework.model.security.RealmDeploymentType;
 import com.e2eq.framework.model.security.RealmTenantMembership;
+import com.e2eq.framework.model.securityrules.PrincipalContext;
+import com.e2eq.framework.model.securityrules.ResourceContext;
+import com.e2eq.framework.model.securityrules.SecurityContext;
 import com.e2eq.framework.system.catalog.RealmCatalogService;
 import com.e2eq.framework.system.membership.RealmMembershipService;
 import com.e2eq.framework.util.EnvConfigUtils;
+import com.e2eq.framework.util.SecurityUtils;
 import org.junit.jupiter.api.Test;
 
 import java.util.Optional;
@@ -19,6 +23,36 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TenantProvisioningServiceCatalogTest {
+
+    @Test
+    void controlPlaneStepRunsAsSystemUnderTheRequestedApplication() {
+        TenantProvisioningService service = new TenantProvisioningService();
+        service.realmCatalog = new RecordingRealmCatalog(null);
+        service.envConfigUtils = env();
+        service.securityUtils = systemScope();
+
+        TenantProvisioningService.ProvisioningContext context = service.initializeContext(
+            TenantProvisioningService.ProvisionTenantCommand.builder()
+                .tenantEmailDomain("acme.com")
+                .orgRefName("acme.com")
+                .accountId("4444555566")
+                .adminUserId("admin@acme.com")
+                .adminSubject("admin@acme.com")
+                .adminPassword("unused-in-context-test")
+                .applicationId("acme-app")
+                .build()
+        );
+
+        String[] seen = new String[2];
+        service.runControlPlaneStep(context, () -> {
+            seen[0] = SecurityContext.getPrincipalContext().orElseThrow().getUserId();
+            seen[1] = SecurityContext.getResourceContext().orElseThrow().getApplicationId();
+        });
+
+        assertEquals("system", seen[0]);
+        assertEquals("acme-app", seen[1]);
+        assertTrue(SecurityContext.getPrincipalContext().isEmpty());
+    }
 
     @Test
     void initializeContextKeepsEmailDomainSeparateFromDataDomainIdentifiers() {
@@ -347,5 +381,25 @@ class TenantProvisioningServiceCatalogTest {
             saved = membership;
             return membership;
         }
+    }
+
+    private static SecurityUtils systemScope() {
+        return new SecurityUtils() {
+            @Override
+            public PrincipalContext getSystemPrincipalContext() {
+                return new PrincipalContext.Builder()
+                    .withDefaultRealm("system-com")
+                    .withDataDomain(new DataDomain("system.com", "0000000000", "system-com", 0, "system"))
+                    .withUserId("system")
+                    .withRoles(new String[]{"system"})
+                    .withScope("test")
+                    .build();
+            }
+
+            @Override
+            public ResourceContext getSystemSecurityResourceContext() {
+                return ResourceContext.DEFAULT_ANONYMOUS_CONTEXT;
+            }
+        };
     }
 }
