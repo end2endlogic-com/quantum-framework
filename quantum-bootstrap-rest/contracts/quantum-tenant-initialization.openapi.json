@@ -1,0 +1,404 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Quantum Tenant Initialization",
+    "version": "1.4.2-SNAPSHOT"
+  },
+  "paths": {
+    "/internal/tenant-initializations": {
+      "post": {
+        "summary": "Apply a pinned application bootstrap to a centrally registered realm",
+        "operationId": "initializeTenantApplication",
+        "parameters": [
+          {
+            "description": "Must match the centrally registered realmRef in the request",
+            "required": true,
+            "name": "X-Realm",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InitializeTenantApplicationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Terminal receipt; inspect status and step outcomes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BootstrapPackRun"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Execution is already running; no effects repeated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BootstrapPackRun"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Service identity rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Pinned binding or execution key conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Realm or pack is not admitted for this request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Runtime binding is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not Authorized"
+          }
+        },
+        "tags": [
+          "Tenant Application Initialization Resource"
+        ],
+        "security": [
+          {
+            "SecurityScheme": [
+              "tenant-initializer"
+            ]
+          }
+        ]
+      }
+    },
+    "/internal/tenant-initializations/{executionRef}/recover": {
+      "post": {
+        "summary": "Reconcile committed effects at an exact checkpoint and resume unstarted steps",
+        "operationId": "recoverTenantApplication",
+        "parameters": [
+          {
+            "name": "executionRef",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "required": true,
+            "name": "X-Realm",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecoverTenantInitializationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Recovery receipt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BootstrapPackRun"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale checkpoint, runtime drift, unsupported or uncertain effects",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not Authorized"
+          },
+          "403": {
+            "description": "Not Allowed"
+          },
+          "400": {
+            "description": "Bad Request"
+          }
+        },
+        "tags": [
+          "Tenant Application Initialization Resource"
+        ],
+        "security": [
+          {
+            "SecurityScheme": [
+              "tenant-initializer"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Problem": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          }
+        }
+      },
+      "BootstrapPackRun": {
+        "type": "object",
+        "properties": {
+          "packRunRef": {
+            "type": "string"
+          },
+          "packRef": {
+            "type": "string"
+          },
+          "packVersion": {
+            "type": "string"
+          },
+          "productRef": {
+            "type": "string"
+          },
+          "profileRef": {
+            "type": "string"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/BootstrapPackApplyMode"
+          },
+          "status": {
+            "$ref": "#/components/schemas/BootstrapPackRunStatus"
+          },
+          "scope": {
+            "type": "object",
+            "additionalProperties": {}
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BootstrapPackStepRun"
+            }
+          },
+          "startedAt": {
+            "$ref": "#/components/schemas/Instant"
+          },
+          "completedAt": {
+            "$ref": "#/components/schemas/Instant"
+          },
+          "requestFingerprint": {
+            "type": "string"
+          },
+          "packDefinitionJson": {
+            "type": "string"
+          },
+          "runtimeArtifactSha256": {
+            "type": "string"
+          },
+          "checkpointRevision": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "Instant": {
+        "type": "string",
+        "format": "date-time",
+        "examples": [
+          "2022-03-10T16:15:50Z"
+        ]
+      },
+      "BootstrapPackStepRun": {
+        "type": "object",
+        "properties": {
+          "stepRef": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/BootstrapStepStatus"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/BootstrapStepOutcome"
+          },
+          "details": {
+            "type": "object",
+            "additionalProperties": {}
+          },
+          "startedAt": {
+            "$ref": "#/components/schemas/Instant"
+          },
+          "completedAt": {
+            "$ref": "#/components/schemas/Instant"
+          }
+        }
+      },
+      "BootstrapStepOutcome": {
+        "type": "string",
+        "enum": [
+          "CREATED",
+          "UPDATED",
+          "ALREADY_PRESENT",
+          "SKIPPED",
+          "FAILED"
+        ]
+      },
+      "BootstrapStepStatus": {
+        "type": "string",
+        "enum": [
+          "RUNNING",
+          "COMPLETED",
+          "FAILED",
+          "SKIPPED"
+        ]
+      },
+      "BootstrapPackRunStatus": {
+        "type": "string",
+        "enum": [
+          "RUNNING",
+          "COMPLETED",
+          "FAILED"
+        ]
+      },
+      "BootstrapPackApplyMode": {
+        "type": "string",
+        "enum": [
+          "APPLY_MISSING",
+          "REAPPLY",
+          "VALIDATE_ONLY"
+        ]
+      },
+      "RecoverTenantInitializationRequest": {
+        "type": "object",
+        "properties": {
+          "expectedRevision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "InitializeTenantApplicationRequest": {
+        "required": [
+          "executionRef",
+          "applicationId",
+          "environmentRef",
+          "realmRef",
+          "tenantRef",
+          "orgRefName",
+          "accountId",
+          "packRef",
+          "packVersion",
+          "packSha256",
+          "runtimeArtifactSha256"
+        ],
+        "type": "object",
+        "properties": {
+          "executionRef": {
+            "type": "string"
+          },
+          "applicationId": {
+            "type": "string"
+          },
+          "environmentRef": {
+            "type": "string"
+          },
+          "realmRef": {
+            "type": "string"
+          },
+          "tenantRef": {
+            "type": "string"
+          },
+          "orgRefName": {
+            "type": "string"
+          },
+          "accountId": {
+            "type": "string"
+          },
+          "packRef": {
+            "type": "string"
+          },
+          "packVersion": {
+            "type": "string"
+          },
+          "packSha256": {
+            "type": "string"
+          },
+          "runtimeArtifactSha256": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "SecurityScheme": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Authentication"
+      }
+    }
+  },
+  "x-producer-contract-sha256": "d6293493db57c5bcc4d711556585cf848da870b9ec4413d7156cd75bd917dd21"
+}

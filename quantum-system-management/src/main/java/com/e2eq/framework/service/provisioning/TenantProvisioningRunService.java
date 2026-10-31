@@ -296,7 +296,12 @@ public class TenantProvisioningRunService {
         }
     }
 
-    private boolean shouldSkip(TenantProvisioningRun.StepState step, TenantProvisioningService.ProvisioningContext context) {
+    boolean shouldSkip(TenantProvisioningRun.StepState step, TenantProvisioningService.ProvisioningContext context) {
+        if (context.getInitializationPlan() != null
+            && context.getInitializationPlan().initializationOwner() == TenantInitializationPlan.InitializationOwner.APPLICATION_RUNTIME
+            && java.util.Set.of(TenantProvisioningWorkflowDefaults.STEP_REALM_MIGRATIONS,
+                TenantProvisioningWorkflowDefaults.STEP_BASE_SEED_PACKS,
+                TenantProvisioningWorkflowDefaults.STEP_REQUESTED_ARCHETYPES).contains(step.getKey())) return true;
         if (TenantProvisioningWorkflowDefaults.STEP_REALM_MIGRATIONS.equals(step.getKey())
             && context.getDeploymentTopology() == TenantDeploymentTopology.POOLED_REALM) {
             return true;

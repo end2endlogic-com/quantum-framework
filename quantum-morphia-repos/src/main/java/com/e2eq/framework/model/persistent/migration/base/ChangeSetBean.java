@@ -11,6 +11,9 @@ import java.util.Set;
  * framework's change set mechanism.
  */
 public interface ChangeSetBean {
+   enum DataPlane { APPLICATION, SYSTEM_CATALOG }
+   /** Data ownership is independent of realm placement. */
+   default DataPlane getDataPlane() { return DataPlane.APPLICATION; }
    public String getId();
    /**
     * Optional semantic version of the changeSet definition itself.

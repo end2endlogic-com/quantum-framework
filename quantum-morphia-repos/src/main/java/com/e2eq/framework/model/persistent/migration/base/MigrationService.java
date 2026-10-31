@@ -87,6 +87,13 @@ public class MigrationService {
    @ConfigProperty(name = "quantum.realm.seed-system-only", defaultValue = "false")
    boolean seedSystemOnly;
 
+   @ConfigProperty(name = "quantum.mode", defaultValue = "embedded")
+   String systemMode;
+
+   static boolean ownsChangeSet(String mode, ChangeSetBean bean) {
+      return !"remote".equalsIgnoreCase(mode) || bean.getDataPlane() != ChangeSetBean.DataPlane.SYSTEM_CATALOG;
+   }
+
    @Inject
    DatabaseVersionRepo databaseVersionRepo;
 
@@ -500,7 +507,7 @@ public class MigrationService {
          ChangeSetBean chb = (ChangeSetBean) beanManager.getReference(bean, bean.getBeanClass(), creationalContext);
          if (Log.isDebugEnabled()) {}
             Log.debugf("Found ChangeSetBean: %s", chb.getName());
-         changeSetBeans.add(chb);
+         if (ownsChangeSet(systemMode,chb)) changeSetBeans.add(chb);
       }
 
       // sort the change set beans in order of from / to and priority
@@ -632,6 +639,17 @@ public class MigrationService {
    public void validatePlan(MigrationPlan plan) {
       requireRealmOwnedByThisMigrationService(plan.realm(), "validate migration plan");
       MigrationPlanSupport.validate(plan, targetDatabaseVersion, databaseScope, getAllChangeSetBeans());
+   }
+
+   /** Read-only proof for an interrupted caller; does not execute a changeset or write a version. */
+   public boolean isPlanApplied(MigrationPlan plan) {
+      validatePlan(plan);
+      var datastore=morphiaDataStoreWrapper.getDataStore(plan.realm());
+      var version=getCurrentDatabaseVersion(datastore);
+      if (version.isEmpty() || !version.get().getCurrentSemVersion().toString().equals(plan.targetVersion())) return false;
+      for (var entry:plan.entries())
+         if (!MigrationPlanSupport.alreadyApplied(entry,changesetRecordRepo.findLatestByChangeSetName(datastore,entry.name()))) return false;
+      return true;
    }
 
    /** Revalidate under the existing realm lock; each migration and its receipt commit together. */

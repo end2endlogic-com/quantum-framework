@@ -21,6 +21,10 @@
 
     <dependencies>
         <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-smallrye-jwt</artifactId>
+        </dependency>
+        <dependency>
             <groupId>com.end2endlogic</groupId>
             <artifactId>quantum-bootstrap-core</artifactId>
             <version>${quantum.version}</version>

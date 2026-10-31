@@ -121,6 +121,8 @@ public class UserProfileResource extends BaseResource<UserProfile, UserProfileRe
 
 
          up = UserProfile.builder()
+                 .userId(createUserRequest.getUserId())
+                 .refName(createUserRequest.getUserId())
                  .credentialUserIdPasswordRef(ocred.get().createEntityReference())
                  .email(createUserRequest.getEmail())
                  .phoneNumber(createUserRequest.getPhoneNumber())

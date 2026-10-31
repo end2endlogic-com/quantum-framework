@@ -20,16 +20,23 @@ public final class TenantRealmNaming {
     }
 
     public static String dedicatedRealm(String appRefName, String tenantId) {
-        return normalizeSegment(appRefName, "appRefName")
+        return requirePhysicalRealm(normalizeSegment(appRefName, "appRefName")
             + "-D-"
-            + normalizeSegment(tenantId, "tenantId");
+            + normalizeSegment(tenantId, "tenantId"));
     }
 
     public static String pooledRealm(String appRefName, int podNumber) {
         if (podNumber < 1) {
             throw new IllegalArgumentException("podNumber must be >= 1");
         }
-        return normalizeSegment(appRefName, "appRefName") + "-P" + podNumber;
+        return requirePhysicalRealm(normalizeSegment(appRefName, "appRefName") + "-P" + podNumber);
+    }
+
+    private static String requirePhysicalRealm(String realm) {
+        // Catalog admission must reject an unusable database name before creating identities.
+        if (realm.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 63)
+            throw new IllegalArgumentException("TENANT_REALM_NAME_TOO_LONG: generated physical realm exceeds the 63-byte database limit");
+        return realm;
     }
 
     public static String normalizeSegment(String value, String fieldName) {

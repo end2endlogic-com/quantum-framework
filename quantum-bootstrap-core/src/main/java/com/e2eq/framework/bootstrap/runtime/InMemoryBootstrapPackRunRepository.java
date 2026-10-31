@@ -22,6 +22,11 @@ public class InMemoryBootstrapPackRunRepository implements BootstrapPackRunRepos
         return new Creation(run,true);
     }
 
+    @Override public synchronized BootstrapPackRun compareAndSet(BootstrapPackRun expected,BootstrapPackRun updated) {
+        if (!java.util.Objects.equals(runs.get(expected.packRunRef()),expected))
+            throw new IllegalStateException("BOOTSTRAP_CHECKPOINT_CONFLICT");
+        return save(updated);
+    }
     @Override
     public synchronized BootstrapPackRun save(BootstrapPackRun run) {
         runs.put(run.packRunRef(), run);

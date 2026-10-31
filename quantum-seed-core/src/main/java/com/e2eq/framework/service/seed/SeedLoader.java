@@ -196,6 +196,11 @@ public final class SeedLoader {
         applyDatasets(descriptor, context, null);
     }
 
+    SeedRegistry registry() { return seedRegistry; }
+    public boolean isPlanApplied(SeedPlan plan,SeedContext context) {
+        return new SeedPlanSupport(this,objectMapper,conflictPolicy).isPlanApplied(plan,context);
+    }
+
     void applyDatasets(SeedPackDescriptor descriptor, SeedContext context,
                                Map<Dataset, DatasetPayload> prepared) {
         List<Dataset> datasets = orderDatasetsByDependencies(descriptor);

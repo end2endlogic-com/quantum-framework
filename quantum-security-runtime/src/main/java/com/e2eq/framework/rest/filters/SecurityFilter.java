@@ -71,6 +71,9 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
     @ConfigProperty(name = "auth.provider")
     String authProvider;
 
+    @ConfigProperty(name="quantum.auth.expected-audience") Optional<String> expectedAudience;
+    @ConfigProperty(name="quantum.auth.audience-required", defaultValue="false") boolean audienceRequired;
+
     @Inject
     AuthProviderFactory authProviderFactory;
 
@@ -647,9 +650,23 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                 "Authenticated identity is not mapped to a Quantum credential");
     }
 
+    /** Runs only after signature/issuer validation, before selecting a service or user context. */
+    static void admitAudience(Optional<String> expected, boolean required, String tokenType, Set<String> audience) {
+        if (com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.SERVICE_TOKEN_TYPE.equals(tokenType)) {
+            if (audience != null && !audience.isEmpty())
+                throw new jakarta.ws.rs.ForbiddenException("SERVICE_PASSPORT_RESOURCE_BINDING_UNSUPPORTED");
+            return; // Service scope is admitted by realm catalog, caller identity and policy on this request.
+        }
+        var decision = com.e2eq.framework.service.application.AudiencePolicy.evaluate(expected, required, audience);
+        if (decision != com.e2eq.framework.service.application.AudiencePolicy.Decision.ALLOW)
+            throw new jakarta.ws.rs.ForbiddenException("APPLICATION_AUDIENCE_REJECTED: " + decision);
+    }
+
     private ContextBuildResult buildJwtContextWithCredentials(String authHeader, String realmOverride) {
         String token = authHeader.substring(AUTHENTICATION_SCHEME.length()).trim();
         String sub = jwt.getClaim("sub");
+        admitAudience(expectedAudience, audienceRequired,
+            claimString(com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.TOKEN_TYPE_CLAIM), jwt.getAudience());
 
         Log.debugf("buildJwtContextWithCredentials: sub=%s, realmOverride=%s", sub, realmOverride);
 

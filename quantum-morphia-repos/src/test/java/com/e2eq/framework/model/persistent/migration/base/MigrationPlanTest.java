@@ -71,6 +71,13 @@ class MigrationPlanTest {
     @Test void migrationBeyondTargetIsNotSilentlyExecuted() {
         failure("MIGRATION_CATALOG_TARGET_CONFLICT", () -> MigrationPlanSupport.plan("tenant","1.0.0","LOCAL",List.of(new Bean("first"))));
     }
+    @Test void remoteApplicationRuntimeExcludesSystemCatalogMigrations() {
+        var application=new Bean("application");
+        var system=new Bean("system") { @Override public DataPlane getDataPlane() { return DataPlane.SYSTEM_CATALOG; } };
+        assertTrue(MigrationService.ownsChangeSet("remote",application));
+        assertFalse(MigrationService.ownsChangeSet("remote",system));
+        assertTrue(MigrationService.ownsChangeSet("embedded",system));
+    }
     private static void failure(String code, Runnable action) {
         assertTrue(assertThrows(IllegalStateException.class, action::run).getMessage().startsWith(code));
     }

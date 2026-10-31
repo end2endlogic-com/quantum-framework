@@ -64,6 +64,7 @@ final class MigrationPlanSupport {
 
     static MigrationPlan.Entry pin(ChangeSetBean bean) {
         var fields = new TreeMap<String, Object>();
+        fields.put("dataPlane",bean.getDataPlane().name());
         fields.put("id", bean.getId()); fields.put("name", bean.getName());
         fields.put("version", bean.getChangeSetVersion()); fields.put("checksum", bean.getChecksum());
         fields.put("from", bean.getDbFromVersion()); fields.put("fromInt", bean.getDbFromVersionInt());

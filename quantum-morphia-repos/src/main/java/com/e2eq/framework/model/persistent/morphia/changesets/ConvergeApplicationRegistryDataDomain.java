@@ -19,6 +19,10 @@ import static com.mongodb.client.model.Updates.set;
 @Startup
 @ApplicationScoped
 public class ConvergeApplicationRegistryDataDomain extends ChangeSetBase {
+    @Override public com.e2eq.framework.model.persistent.migration.base.ChangeSetBean.DataPlane getDataPlane() {
+        return com.e2eq.framework.model.persistent.migration.base.ChangeSetBean.DataPlane.SYSTEM_CATALOG;
+    }
+
 
     @ConfigProperty(name = "quantum.realmConfig.systemRealm", defaultValue = "system-com")
     String systemRealm;

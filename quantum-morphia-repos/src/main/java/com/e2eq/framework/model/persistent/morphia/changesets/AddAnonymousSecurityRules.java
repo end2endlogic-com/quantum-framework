@@ -23,6 +23,10 @@ import jakarta.inject.Inject;
 @Startup
 @ApplicationScoped
 public class AddAnonymousSecurityRules extends ChangeSetBase {
+    @Override public com.e2eq.framework.model.persistent.migration.base.ChangeSetBean.DataPlane getDataPlane() {
+        return com.e2eq.framework.model.persistent.migration.base.ChangeSetBean.DataPlane.SYSTEM_CATALOG;
+    }
+
 
     @Inject
     PolicyRepo policyRepo;

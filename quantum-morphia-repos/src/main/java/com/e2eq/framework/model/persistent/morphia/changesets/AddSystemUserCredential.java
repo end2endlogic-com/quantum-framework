@@ -29,6 +29,10 @@ import java.util.Collections;
 @Startup
 @ApplicationScoped
 public class AddSystemUserCredential extends ChangeSetBase {
+    @Override public com.e2eq.framework.model.persistent.migration.base.ChangeSetBean.DataPlane getDataPlane() {
+        return com.e2eq.framework.model.persistent.migration.base.ChangeSetBean.DataPlane.SYSTEM_CATALOG;
+    }
+
     private static final String SYSTEM_REALM_REGEX = "*";
 
 

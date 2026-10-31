@@ -2,6 +2,7 @@ package com.e2eq.framework.bootstrap.model;
 
 public enum BootstrapStepKind {
     SEED_PACK,
+    MIGRATIONS,
     APP_SERVICE,
     HTTP_CALL,
     ASSERTION,

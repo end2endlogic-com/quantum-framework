@@ -37,6 +37,18 @@ public class MongoBootstrapPackRunRepository implements BootstrapPackRunReposito
             return new Creation(find(run.packRunRef()).orElseThrow(() -> e),false);
         }
     }
+    @Override public BootstrapPackRun compareAndSet(BootstrapPackRun expected,BootstrapPackRun updated) {
+        var record=records.findByRefName(expected.packRunRef(),realm()).orElseThrow(() -> new IllegalStateException("BOOTSTRAP_RUN_NOT_FOUND"));
+        try {
+            if (!mapper.readTree(record.getRunJson()).equals(mapper.readTree(encode(expected))))
+                throw new IllegalStateException("BOOTSTRAP_CHECKPOINT_CONFLICT");
+        } catch(java.io.IOException e) { throw new IllegalStateException("BOOTSTRAP_RUN_STORAGE_INVALID",e); }
+        record.setRunJson(encode(updated));
+        // The governed save uses BaseModel @Version, so simultaneous claims cannot both commit.
+        try { records.save(realm(),record); }
+        catch (dev.morphia.VersionMismatchException conflict) { throw new IllegalStateException("BOOTSTRAP_CHECKPOINT_CONFLICT",conflict); }
+        return updated;
+    }
     @Override public BootstrapPackRun save(BootstrapPackRun run) {
         String realm=realm();
         var record=records.findByRefName(run.packRunRef(),realm).orElseThrow(() ->

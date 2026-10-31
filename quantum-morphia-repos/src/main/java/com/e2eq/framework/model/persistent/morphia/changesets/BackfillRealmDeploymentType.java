@@ -27,6 +27,10 @@ import static com.mongodb.client.model.Updates.set;
 @Startup
 @ApplicationScoped
 public class BackfillRealmDeploymentType extends ChangeSetBase {
+    @Override public com.e2eq.framework.model.persistent.migration.base.ChangeSetBean.DataPlane getDataPlane() {
+        return com.e2eq.framework.model.persistent.migration.base.ChangeSetBean.DataPlane.SYSTEM_CATALOG;
+    }
+
 
     static final String REALM_COLLECTION = "realm";
     static final String DEPLOYMENT_TYPE_FIELD = "deploymentType";

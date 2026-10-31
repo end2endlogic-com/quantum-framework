@@ -20,7 +20,8 @@ class BootstrapRunCheckpointTest {
         var service=service(repo,request -> {
             var stored=repo.find(KEY).orElseThrow();
             assertEquals(BootstrapPackRunStatus.RUNNING,stored.status());
-            assertEquals(calls.get(),stored.steps().size());
+            assertEquals(calls.get()+1,stored.steps().size());
+            assertEquals(BootstrapStepStatus.RUNNING,stored.steps().get(stored.steps().size()-1).status());
             assertNotNull(stored.packDefinitionJson());
             assertEquals("1".repeat(64),stored.runtimeArtifactSha256());
             calls.incrementAndGet();return success();
@@ -57,11 +58,12 @@ class BootstrapRunCheckpointTest {
         assertThrows(IllegalArgumentException.class,() -> new BootstrapStepResult(null,null,Map.of()));
     }
     @Test void lostCheckpointLeavesInterruptedRunObservableAndBlocksReplay() {
-        DurableFixture repo=new DurableFixture(){@Override public synchronized BootstrapPackRun save(BootstrapPackRun r){throw new IllegalStateException("storage unavailable");}};
+        DurableFixture repo=new DurableFixture(){@Override public synchronized BootstrapPackRun save(BootstrapPackRun r){if(!r.steps().isEmpty() && r.steps().get(r.steps().size()-1).status()==BootstrapStepStatus.COMPLETED) throw new IllegalStateException("storage unavailable"); return super.save(r);}};
         AtomicInteger calls=new AtomicInteger();var service=service(repo,r -> {calls.incrementAndGet();return success();});
         assertThrows(IllegalStateException.class,() -> service.apply(request("tenant"),KEY));
         var observed=service.apply(request("tenant"),KEY);
-        assertEquals(BootstrapPackRunStatus.RUNNING,observed.status());assertEquals(0,observed.steps().size());
+        assertEquals(BootstrapPackRunStatus.RUNNING,observed.status());assertEquals(1,observed.steps().size());
+        assertEquals(BootstrapStepStatus.RUNNING,observed.steps().get(0).status());
         assertEquals(1,calls.get());
     }
     @Test void initialPersistenceFailurePreventsEffects() {
@@ -89,6 +91,69 @@ class BootstrapRunCheckpointTest {
         System.clearProperty("quantum.provisioning.runtime-artifact-sha256");
         assertThrows(IllegalStateException.class,() -> service(new DurableFixture(),r -> {fail("must not execute");return success();}).apply(request("tenant"),KEY));
         assertThrows(IllegalStateException.class,() -> service(new InMemoryBootstrapPackRunRepository(),r -> {fail("must not execute");return success();}).apply(request("tenant"),KEY));
+    }
+    @Test void allPlansArePreparedBeforeEffectsAndPersistedInRunSnapshot() {
+        DurableFixture repo = new DurableFixture(); AtomicInteger prepared = new AtomicInteger(), effects = new AtomicInteger();
+        var pack = new BootstrapPackDefinition("pack","1","app","profile",List.of(step("first",List.of()),step("second",List.of("first"))));
+        var registry = new CdiBootstrapPackRegistry(List.of(() -> List.of(pack)));
+        BootstrapPackStepHandler handler = new BootstrapPackStepHandler() {
+            public boolean supports(BootstrapStepKind kind) { return true; }
+            public Map<String,Object> prepare(BootstrapStepRequest r) {
+                assertEquals(0,effects.get()); prepared.incrementAndGet(); return Map.of("pinnedPlan",r.stepRef());
+            }
+            public BootstrapStepResult execute(BootstrapStepRequest r) {
+                assertEquals(2,prepared.get()); assertTrue(repo.find(KEY).orElseThrow().packDefinitionJson().contains("pinnedPlan"));
+                assertEquals(r.stepRef(),r.config().get("pinnedPlan")); effects.incrementAndGet(); return success();
+            }
+        };
+        new BootstrapPackService(registry,List.of(handler),repo).apply(request("tenant"),KEY);
+        assertEquals(2,effects.get());
+    }
+    @Test void laterPreparationFailurePreventsAllEffectsAndRunCreation() {
+        DurableFixture repo = new DurableFixture();
+        var pack = new BootstrapPackDefinition("pack","1","app","profile",List.of(step("first",List.of()),step("second",List.of("first"))));
+        BootstrapPackStepHandler handler = new BootstrapPackStepHandler() {
+            public boolean supports(BootstrapStepKind kind) { return true; }
+            public Map<String,Object> prepare(BootstrapStepRequest r) {
+                if (r.stepRef().equals("second")) throw new IllegalStateException("artifact missing"); return r.config();
+            }
+            public BootstrapStepResult execute(BootstrapStepRequest r) { fail("must not execute"); return success(); }
+        };
+        var service = new BootstrapPackService(new CdiBootstrapPackRegistry(List.of(() -> List.of(pack))),List.of(handler),repo);
+        assertThrows(IllegalStateException.class,() -> service.apply(request("tenant"),KEY)); assertTrue(repo.list().isEmpty());
+    }
+    @Test void explicitRecoveryReconcilesLostCheckpointWithoutRepeatingCommittedEffects() {
+        var effects=new AtomicInteger();
+        var repo=new DurableFixture() {
+            boolean lose=true;
+            @Override public synchronized BootstrapPackRun save(BootstrapPackRun r) {
+                if (lose && !r.steps().isEmpty() && r.steps().get(0).status()==BootstrapStepStatus.COMPLETED) {
+                    lose=false; throw new IllegalStateException("checkpoint lost");
+                }
+                return super.save(r);
+            }
+        };
+        var pack=new BootstrapPackDefinition("pack","1","app","profile",List.of(step("first",List.of()),step("second",List.of("first"))));
+        var handler=new BootstrapPackStepHandler() {
+            public boolean supports(BootstrapStepKind k) { return true; }
+            public BootstrapStepResult execute(BootstrapStepRequest r) { effects.incrementAndGet(); return success(); }
+            public BootstrapStepResult reconcile(BootstrapStepRequest r) { assertEquals(1,effects.get()); return success(); }
+        };
+        var service=new BootstrapPackService(new CdiBootstrapPackRegistry(List.of(() -> List.of(pack))),List.of(handler),repo);
+        assertThrows(IllegalStateException.class,() -> service.apply(request("tenant"),KEY));
+        var interrupted=repo.find(KEY).orElseThrow();
+        assertEquals(BootstrapStepStatus.RUNNING,interrupted.steps().get(0).status());
+        assertEquals(BootstrapPackRunStatus.COMPLETED,service.recover(KEY,interrupted.checkpointRevision(),"operator repair").status());
+        assertEquals(2,effects.get());
+        assertThrows(IllegalStateException.class,() -> repo.compareAndSet(interrupted,interrupted));
+        assertThrows(IllegalStateException.class,() -> service.recover(KEY,interrupted.checkpointRevision(),"stale request"));
+    }
+    @Test void interruptedUnsupportedHandlerCannotBeReexecuted() {
+        var repo=new DurableFixture();var calls=new AtomicInteger();
+        var service=service(repo,r -> {calls.incrementAndGet();throw new IllegalStateException("partial effect");});
+        var failed=service.apply(request("tenant"),KEY);
+        assertThrows(IllegalStateException.class,() -> service.recover(KEY,failed.checkpointRevision(),"repair"));
+        assertEquals(1,calls.get());
     }
     static ApplyBootstrapPackRequest request(String tenant){return new ApplyBootstrapPackRequest("pack",BootstrapPackApplyMode.APPLY_MISSING,"app","test","realm",tenant,null,"operator");}
     static BootstrapStepResult success(){return new BootstrapStepResult(BootstrapStepStatus.COMPLETED,BootstrapStepOutcome.CREATED,Map.of());}

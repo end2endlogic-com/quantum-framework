@@ -666,6 +666,7 @@ public class TenantProvisioningService implements TenantLifecycle {
     }
 
     public void runRealmMigrations(ProvisioningContext context) {
+        if (applicationOwnsInitialization(context)) return;
         if (context.getDeploymentTopology() == TenantDeploymentTopology.POOLED_REALM) {
             Log.infof("Skipping realm migrations for pooled tenant %s in existing realm %s",
                 context.getTenantId(), context.getRealmId());
@@ -857,6 +858,7 @@ public class TenantProvisioningService implements TenantLifecycle {
     }
 
     public void applyBaseSeedPacks(ProvisioningContext context) {
+        if (applicationOwnsInitialization(context)) return;
         if (context.getDeploymentTopology() == TenantDeploymentTopology.POOLED_REALM) {
             Log.infof("Skipping realm bootstrap seed packs for pooled tenant %s in existing realm %s",
                 context.getTenantId(), context.getRealmId());
@@ -868,6 +870,7 @@ public class TenantProvisioningService implements TenantLifecycle {
     }
 
     public void applyRequestedArchetypes(ProvisioningContext context) {
+        if (applicationOwnsInitialization(context)) return;
         if (context.getArchetypes() == null || context.getArchetypes().isEmpty()) {
             Log.info("No Archetypes applicable");
             return;
@@ -888,13 +891,18 @@ public class TenantProvisioningService implements TenantLifecycle {
         }
     }
 
+    private boolean applicationOwnsInitialization(ProvisioningContext context) {
+        return context.getInitializationPlan() != null && context.getInitializationPlan().initializationOwner()
+            == com.e2eq.framework.service.provisioning.TenantInitializationPlan.InitializationOwner.APPLICATION_RUNTIME;
+    }
+
     private com.e2eq.framework.service.provisioning.TenantInitializationPlan requirePlan(ProvisioningContext context) {
         if (context.getInitializationPlan() == null) throw new IllegalStateException("PROVISIONING_PLAN_REQUIRED");
         return context.getInitializationPlan();
     }
 
     public void verifyRealmInitialization(ProvisioningContext context) {
-        if (context.getDeploymentTopology() == TenantDeploymentTopology.DEDICATED_REALM) {
+        if (!applicationOwnsInitialization(context) && context.getDeploymentTopology() == TenantDeploymentTopology.DEDICATED_REALM) {
             withDropPendingRetry(context.getRealmId(), "apply indexes and verify initialization", () ->
                 SecurityCallScope.runWithContexts(context.getTenantPrincipal(), context.getMigrationResource(), () -> {
                     migrationService.applyIndexes(context.getRealmId());

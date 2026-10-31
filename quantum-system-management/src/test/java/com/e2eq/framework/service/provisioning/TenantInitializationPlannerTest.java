@@ -42,6 +42,30 @@ class TenantInitializationPlannerTest {
         var planner=planner(); var context=context(); context.setArchetypes(List.of("unsafe"));
         failure("PROVISIONING_PLAN_POOL_BOOTSTRAP_FORBIDDEN", () -> planner.plan(context));
     }
+    @Test void applicationRuntimeOwnershipDoesNotPlanAuthorityMigrationsOrSeeds() {
+        var planner=planner(); planner.initializationOwner=TenantInitializationPlan.InitializationOwner.APPLICATION_RUNTIME;
+        var context=context(); context.setDeploymentTopology(TenantDeploymentTopology.DEDICATED_REALM);
+        var plan=planner.plan(context);
+        assertNull(plan.migrations()); assertNull(plan.baseSeeds());
+        planner.validate(plan,context);
+        planner.initializationOwner=TenantInitializationPlan.InitializationOwner.AUTHORITY;
+        failure("PROVISIONING_PLAN_OWNER_DRIFT", () -> planner.validate(plan,context));
+        planner.initializationOwner=TenantInitializationPlan.InitializationOwner.APPLICATION_RUNTIME;
+        context.setArchetypes(List.of("unsafe"));
+        failure("PROVISIONING_PLAN_APPLICATION_BOOTSTRAP_FORBIDDEN", () -> planner.plan(context));
+    }
+    @Test void authorityRunRecordsApplicationDataStepsAsSkipped() {
+        var planner=planner(); planner.initializationOwner=TenantInitializationPlan.InitializationOwner.APPLICATION_RUNTIME;
+        var context=context(); context.setDeploymentTopology(TenantDeploymentTopology.DEDICATED_REALM);
+        context.setInitializationPlan(planner.plan(context));
+        var runs=new TenantProvisioningRunService();
+        for (String key: List.of(TenantProvisioningWorkflowDefaults.STEP_REALM_MIGRATIONS,TenantProvisioningWorkflowDefaults.STEP_BASE_SEED_PACKS)) {
+            var step=new com.e2eq.framework.model.security.TenantProvisioningRun.StepState(); step.setKey(key);
+            assertTrue(runs.shouldSkip(step,context));
+        }
+        var identity=new com.e2eq.framework.model.security.TenantProvisioningRun.StepState(); identity.setKey(TenantProvisioningWorkflowDefaults.STEP_TENANT_IDENTITIES);
+        assertFalse(runs.shouldSkip(identity,context));
+    }
     static void failure(String code,Runnable action) {
         assertTrue(assertThrows(IllegalStateException.class,action::run).getMessage().startsWith(code));
     }

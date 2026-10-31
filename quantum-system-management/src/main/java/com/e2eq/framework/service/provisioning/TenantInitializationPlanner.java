@@ -24,8 +24,16 @@ public class TenantInitializationPlanner {
     @ConfigProperty(name = "quantum.provisioning.runtime-artifact-sha256")
     Optional<String> runtimeArtifactSha256;
 
+    @ConfigProperty(name = "quantum.tenant.provisioning.initialization-owner", defaultValue = "AUTHORITY")
+    TenantInitializationPlan.InitializationOwner initializationOwner = TenantInitializationPlan.InitializationOwner.AUTHORITY;
+
     public TenantInitializationPlan plan(ProvisioningContext context) {
         String runtime = runtimeIdentity();
+        if (initializationOwner == TenantInitializationPlan.InitializationOwner.APPLICATION_RUNTIME) {
+            if (!context.getArchetypes().isEmpty()) throw new IllegalStateException("PROVISIONING_PLAN_APPLICATION_BOOTSTRAP_FORBIDDEN");
+            return new TenantInitializationPlan(1,runtime,context.getApplicationId(),context.getRealmId(),context.getTenantId(),
+                context.getDeploymentTopology().name(),null,null,List.of(),initializationOwner);
+        }
         if (context.getDeploymentTopology() == TenantDeploymentTopology.POOLED_REALM) {
             if (!context.getArchetypes().isEmpty())
                 throw new IllegalStateException("PROVISIONING_PLAN_POOL_BOOTSTRAP_FORBIDDEN");
@@ -51,6 +59,8 @@ public class TenantInitializationPlanner {
                 || !plan.deploymentTopology().equals(context.getDeploymentTopology().name())
                 || !plan.archetypes().stream().map(TenantInitializationPlan.Archetype::name).toList().equals(context.getArchetypes()))
             throw new IllegalStateException("PROVISIONING_PLAN_SCOPE_DRIFT");
+        if (plan.initializationOwner() != initializationOwner)
+            throw new IllegalStateException("PROVISIONING_PLAN_OWNER_DRIFT");
         if (plan.migrations() != null) {
             migrations.validatePlan(plan.migrations());
             seeds.validatePlan(seedContext(context), plan.baseSeeds());

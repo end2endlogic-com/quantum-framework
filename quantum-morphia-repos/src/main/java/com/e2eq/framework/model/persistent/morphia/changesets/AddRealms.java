@@ -21,6 +21,10 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 @Startup
 @ApplicationScoped
 public class AddRealms extends ChangeSetBase {
+    @Override public com.e2eq.framework.model.persistent.migration.base.ChangeSetBean.DataPlane getDataPlane() {
+        return com.e2eq.framework.model.persistent.migration.base.ChangeSetBean.DataPlane.SYSTEM_CATALOG;
+    }
+
     @Inject
     RealmRepo realmRepo;
 

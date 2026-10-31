@@ -22,6 +22,11 @@
     <dependencies>
         <dependency>
             <groupId>com.end2endlogic</groupId>
+            <artifactId>quantum-seed-core</artifactId>
+            <version>${quantum.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.end2endlogic</groupId>
             <artifactId>quantum-models</artifactId>
             <version>${quantum.version}</version>
         </dependency>
@@ -46,6 +51,10 @@
 
     <build>
         <plugins>
+            <plugin><artifactId>maven-jar-plugin</artifactId><version>3.4.2</version><executions><execution>
+            <goals><goal>test-jar</goal></goals><configuration><classifier>journey-fixture</classifier>
+            <includes><include>com/e2eq/framework/bootstrap/fixture/**</include></includes></configuration>
+            </execution></executions></plugin>
             <plugin>
                 <groupId>io.smallrye</groupId>
                 <artifactId>jandex-maven-plugin</artifactId>

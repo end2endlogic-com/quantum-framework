@@ -26,4 +26,10 @@ class TenantRealmNamingTest {
         assertThrows(IllegalArgumentException.class,
             () -> TenantRealmNaming.pooledRealm("helixor-code", 0));
     }
+    @Test void physicalDatabaseLimitIsCheckedBeforeAdmission() {
+        assertEquals(63,TenantRealmNaming.dedicatedRealm("app","t".repeat(57)).length());
+        org.junit.jupiter.api.Assertions.assertTrue(assertThrows(IllegalArgumentException.class,
+            () -> TenantRealmNaming.dedicatedRealm("app","t".repeat(58))).getMessage().startsWith("TENANT_REALM_NAME_TOO_LONG"));
+    }
+
 }

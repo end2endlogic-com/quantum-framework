@@ -178,6 +178,10 @@ public class SeedLoaderService {
     }
 
     /** Execute a stored plan; artifact or context drift is an error, never an overwrite. */
+    public boolean isPlanApplied(SeedContext context,SeedPlan plan) {
+        return createLoader(context,SeedConflictPolicy.ERROR).isPlanApplied(plan,context);
+    }
+
     @Transactional
     public void applyPlan(SeedContext context, SeedPlan plan) {
         createLoader(context, SeedConflictPolicy.ERROR).applyPlan(plan, context);

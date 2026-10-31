@@ -16,8 +16,10 @@ import java.util.Date;
 @NoArgsConstructor
 @AllArgsConstructor
 public class AuditInfo {
+   @org.eclipse.microprofile.openapi.annotations.media.Schema(type = org.eclipse.microprofile.openapi.annotations.enums.SchemaType.STRING, format = "date-time")
    protected Date creationTs;
    protected String creationIdentity;
+   @org.eclipse.microprofile.openapi.annotations.media.Schema(type = org.eclipse.microprofile.openapi.annotations.enums.SchemaType.STRING, format = "date-time")
    protected Date lastUpdateTs;
    protected String lastUpdateIdentity;
    protected String impersonatorSubject;

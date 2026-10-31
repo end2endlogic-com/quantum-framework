@@ -15,6 +15,10 @@ public interface BootstrapPackRunRepository {
 
     default boolean isDurable() { return false; }
 
+    default BootstrapPackRun compareAndSet(BootstrapPackRun expected, BootstrapPackRun updated) {
+        throw new IllegalStateException("BOOTSTRAP_CHECKPOINT_CAS_UNSUPPORTED");
+    }
+
     BootstrapPackRun save(BootstrapPackRun run);
 
     Optional<BootstrapPackRun> find(String packRunRef);

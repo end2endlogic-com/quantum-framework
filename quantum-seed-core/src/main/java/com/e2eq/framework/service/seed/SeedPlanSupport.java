@@ -88,6 +88,15 @@ final class SeedPlanSupport {
         prepare(plan, context).forEach((descriptor, payloads) -> loader.applyDatasets(descriptor, context, payloads));
     }
 
+    public boolean isPlanApplied(SeedPlan plan,SeedContext context) {
+        var prepared=prepare(plan,context);
+        for (var entry:prepared.entrySet()) for (var payload:entry.getValue().entrySet()) {
+            var previous=loader.registry().getLastAppliedChecksum(context,entry.getKey().getManifest(),payload.getKey());
+            if (previous.isEmpty() || !previous.get().equals(payload.getValue().checksum())) return false;
+        }
+        return true;
+    }
+
     public void validatePlan(SeedPlan plan, SeedContext context) {
         prepare(plan, context);
     }

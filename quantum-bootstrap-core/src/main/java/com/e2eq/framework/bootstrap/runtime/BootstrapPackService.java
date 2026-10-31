@@ -87,26 +87,105 @@ public class BootstrapPackService {
         BootstrapPackDefinition pack = BootstrapRunIdentity.copy(registry.find(request.packRef())
             .orElseThrow(() -> new IllegalArgumentException("Unknown bootstrap pack: " + request.packRef())),
             BootstrapPackDefinition.class);
+        validatePinnedBinding(request, pack, runtime);
         Instant started = Instant.now();
         Map<String,Object> scope = buildScope(request, pack);
+        pack = preparePack(pack, request, scope);
         String definition = BootstrapRunIdentity.json(pack);
         BootstrapPackRun initial = new BootstrapPackRun(executionRef, pack.packRef(), pack.packVersion(),
             pack.productRef(), pack.profileRef(), request.mode(), BootstrapPackRunStatus.RUNNING,
             scope, List.of(), started, null, fingerprint, definition, runtime);
         var creation = runRepository.createIfAbsent(initial);
         if (!creation.created()) return matching(creation.run(),fingerprint);
-        List<BootstrapPackStepRun> steps = new ArrayList<>();
-        Map<String,BootstrapPackStepRun> completed = new LinkedHashMap<>();
-        for (BootstrapPackStepDefinition step : pack.steps()) {
-            BootstrapPackStepRun result = executeStep(pack,request,scope,step,completed);
-            steps.add(result); completed.put(step.stepRef(),result);
-            boolean failed = result.status() == BootstrapStepStatus.FAILED;
-            BootstrapPackRun checkpoint = checkpoint(initial,steps,
-                failed ? BootstrapPackRunStatus.FAILED : BootstrapPackRunStatus.RUNNING);
-            runRepository.save(checkpoint);
-            if (failed) return checkpoint;
+        return executeRemaining(initial,pack,request);
+    }
+
+    private BootstrapPackRun executeRemaining(BootstrapPackRun initial,BootstrapPackDefinition pack,ApplyBootstrapPackRequest request) {
+        BootstrapPackRun current=initial;
+        List<BootstrapPackStepRun> steps=new ArrayList<>(current.steps());
+        Map<String,BootstrapPackStepRun> completed=new LinkedHashMap<>();
+        steps.forEach(step -> completed.put(step.stepRef(),step));
+        for (BootstrapPackStepDefinition step:pack.steps()) {
+            if (completed.containsKey(step.stepRef())) continue;
+            steps.add(new BootstrapPackStepRun(step.stepRef(),BootstrapStepStatus.RUNNING,BootstrapStepOutcome.SKIPPED,
+                Map.of("reason","EFFECT_INTENT_PERSISTED"),Instant.now(),null));
+            current=runRepository.compareAndSet(current,checkpoint(current,steps,BootstrapPackRunStatus.RUNNING));
+            BootstrapPackStepRun result=executeStep(pack,request,current.scope(),step,completed);
+            steps.set(steps.size()-1,result); completed.put(step.stepRef(),result);
+            boolean failed=result.status()!=BootstrapStepStatus.COMPLETED;
+            current=runRepository.compareAndSet(current,checkpoint(current,steps,failed?BootstrapPackRunStatus.FAILED:BootstrapPackRunStatus.RUNNING));
+            if (failed) return current;
         }
-        return runRepository.save(checkpoint(initial,steps,BootstrapPackRunStatus.COMPLETED));
+        return runRepository.compareAndSet(current,checkpoint(current,steps,BootstrapPackRunStatus.COMPLETED));
+    }
+
+    /** Operator initiated reconciliation. No rediscovery, lease expiry, or automatic retries. */
+    public BootstrapPackRun recover(String key,long expectedRevision,String actor) {
+        if (!runRepository.isDurable()) throw new IllegalStateException("BOOTSTRAP_DURABLE_RUN_STORE_REQUIRED");
+        BootstrapPackRun run=runRepository.find(key).orElseThrow(() -> new IllegalStateException("BOOTSTRAP_RUN_NOT_FOUND"));
+        if (run.checkpointRevision()!=expectedRevision) throw new IllegalStateException("BOOTSTRAP_CHECKPOINT_CONFLICT");
+        if (run.status()==BootstrapPackRunStatus.COMPLETED) return run;
+        String runtime=org.eclipse.microprofile.config.ConfigProvider.getConfig().getOptionalValue("quantum.provisioning.runtime-artifact-sha256",String.class).orElse(null);
+        if (!java.util.Objects.equals(runtime,run.runtimeArtifactSha256())) throw new IllegalStateException("BOOTSTRAP_RECOVERY_RUNTIME_DRIFT");
+        if (!(run.scope().get("actorRef") instanceof String originalActor) || run.packDefinitionJson()==null)
+            throw new IllegalStateException("BOOTSTRAP_RECOVERY_UNPINNED");
+        BootstrapPackDefinition pack;
+        try { pack=new com.fasterxml.jackson.databind.ObjectMapper().readValue(run.packDefinitionJson(),BootstrapPackDefinition.class); }
+        catch(Exception e) { throw new IllegalStateException("BOOTSTRAP_RECOVERY_PLAN_INVALID",e); }
+        var scope=new LinkedHashMap<String,Object>(run.scope());
+        for (String field:List.of("packRef","packVersion","productRef","profileRef","environmentRef","realmRef","tenantRef","workspaceRef","actorRef")) scope.remove(field);
+        var request=new ApplyBootstrapPackRequest(run.packRef(),run.mode(),run.productRef(),(String)run.scope().get("environmentRef"),
+            (String)run.scope().get("realmRef"),(String)run.scope().get("tenantRef"),(String)run.scope().get("workspaceRef"),originalActor,scope);
+        matching(run,BootstrapRunIdentity.fingerprint(request));
+        List<BootstrapPackStepRun> reconciled=new ArrayList<>();
+        for (BootstrapPackStepRun prior:run.steps()) {
+            if (prior.status()==BootstrapStepStatus.COMPLETED) { reconciled.add(prior); continue; }
+            var step=pack.steps().stream().filter(s -> s.stepRef().equals(prior.stepRef())).findFirst().orElseThrow(() -> new IllegalStateException("BOOTSTRAP_RECOVERY_PLAN_INVALID"));
+            var handler=resolveHandler(step);
+            if (handler==null) throw new IllegalStateException("BOOTSTRAP_RECOVERY_UNSUPPORTED");
+            BootstrapStepResult proof;
+            try (var ignored=SecurityCallScope.openIgnoringRules()) {
+                proof=handler.reconcile(new BootstrapStepRequest(pack.packRef(),pack.packVersion(),pack.productRef(),pack.profileRef(),
+                    step.stepRef(),step.kind(),run.mode(),originalActor,run.scope(),step.config()));
+            }
+            if (proof==null || proof.status()!=BootstrapStepStatus.COMPLETED) throw new IllegalStateException("BOOTSTRAP_RECOVERY_EFFECT_UNCERTAIN");
+            var details=new LinkedHashMap<>(proof.details()); details.put("reconciledBy",actor);
+            reconciled.add(new BootstrapPackStepRun(step.stepRef(),proof.status(),proof.outcome(),details,prior.startedAt(),Instant.now()));
+        }
+        // This optimistic claim also fences any original executor's next intent/checkpoint.
+        BootstrapPackRun claimed=runRepository.compareAndSet(run,checkpoint(run,reconciled,BootstrapPackRunStatus.RUNNING));
+        return executeRemaining(claimed,pack,request);
+    }
+
+    private BootstrapPackDefinition preparePack(BootstrapPackDefinition pack, ApplyBootstrapPackRequest request,
+                                                Map<String, Object> scope) {
+        List<BootstrapPackStepDefinition> prepared = new ArrayList<>();
+        for (BootstrapPackStepDefinition step : pack.steps()) {
+            BootstrapPackStepHandler handler = resolveHandler(step);
+            // Existing generic packs retain their explicit NO_HANDLER failure receipt.
+            Map<String, Object> config = handler == null ? step.config() : handler.prepare(new BootstrapStepRequest(
+                pack.packRef(), pack.packVersion(), pack.productRef(), pack.profileRef(), step.stepRef(), step.kind(),
+                request.mode(), request.actorRef(), scope, step.config()));
+            if (config == null) throw new IllegalStateException("BOOTSTRAP_PREPARED_CONFIG_REQUIRED");
+            prepared.add(new BootstrapPackStepDefinition(step.stepRef(), step.description(), step.kind(),
+                step.applyPolicy(), step.dependsOn(), config));
+        }
+        return BootstrapRunIdentity.copy(new BootstrapPackDefinition(pack.packRef(), pack.packVersion(),
+            pack.productRef(), pack.profileRef(), prepared), BootstrapPackDefinition.class);
+    }
+
+    /** Validate the same frozen definition that will be persisted, before any effect. */
+    private void validatePinnedBinding(ApplyBootstrapPackRequest request, BootstrapPackDefinition pack, String runtime) {
+        Map<String, Object> pins = request.scopeAttributes();
+        if (pins.containsKey("expectedPackVersion") || pins.containsKey("expectedPackSha256")
+                || pins.containsKey("expectedRuntimeArtifactSha256")) {
+            if (!java.util.Objects.equals(runtime, pins.get("expectedRuntimeArtifactSha256")))
+                throw new IllegalStateException("BOOTSTRAP_RUNTIME_DRIFT");
+            if (!pack.packVersion().equals(pins.get("expectedPackVersion"))
+                    || !BootstrapRunIdentity.fingerprint(pack).equals(pins.get("expectedPackSha256"))
+                    || !java.util.Objects.equals(pack.productRef(), request.productRef()))
+                throw new IllegalStateException("BOOTSTRAP_PACK_DRIFT");
+        }
     }
 
     private BootstrapPackRun matching(BootstrapPackRun run,String fingerprint) {
@@ -121,7 +200,7 @@ public class BootstrapPackService {
         return new BootstrapPackRun(initial.packRunRef(),initial.packRef(),initial.packVersion(),
             initial.productRef(),initial.profileRef(),initial.mode(),status,initial.scope(),steps,
             initial.startedAt(),status == BootstrapPackRunStatus.RUNNING ? null : Instant.now(),
-            initial.requestFingerprint(),initial.packDefinitionJson(),initial.runtimeArtifactSha256());
+            initial.requestFingerprint(),initial.packDefinitionJson(),initial.runtimeArtifactSha256(),initial.checkpointRevision()+1);
     }
 
     private BootstrapPackStepRun executeStep(
@@ -230,6 +309,7 @@ public class BootstrapPackService {
         BootstrapPackDefinition pack
     ) {
         Map<String, Object> scope = new LinkedHashMap<>();
+        putIfPresent(scope, "actorRef", request.actorRef());
         putIfPresent(scope, "packRef", pack.packRef());
         putIfPresent(scope, "packVersion", pack.packVersion());
         putIfPresent(

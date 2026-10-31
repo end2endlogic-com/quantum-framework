@@ -1,0 +1,18 @@
+package_name: quantum-tenant-initialization
+package_version: 1.4.2-SNAPSHOT
+java_package: com.e2eq.framework.tenant.initialization.sdk
+languages:
+  - java
+  - typescript
+validation:
+  request: strict
+  response: strict
+  error_response: strict
+  unknown_fields: warn
+runtime:
+  retry:
+    enabled: false
+diagnostics:
+  fail_on_error: true
+  fail_on_warning: false
+  emit_coverage: true
