@@ -2064,7 +2064,7 @@ Only one of X-Impersonate-Subject or X-Impersonate-UserId may be supplied per re
 - With Acting-On-Behalf-Of:
   - The caller retains their own identity, roles, realm, and DataDomain.
   - The X-Acting-On-Behalf-Of-Subject or X-Acting-On-Behalf-Of-UserId is recorded in the PrincipalContext for audit purposes.
-  - This is useful for service-to-service calls or when a support agent needs to perform actions that should be attributed to a customer.
+  - This is useful for attributing background work or support actions to a customer. It does not propagate the user's identity: realm, tenant and permissions stay the caller's. When a service calls another service while a user is present, forward the user's access token instead (see "Calling Another Service on a User's Behalf" in the authentication guide).
 
 === Required credential configuration (CredentialUserIdPassword)
 
