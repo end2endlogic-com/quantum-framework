@@ -1,9 +1,11 @@
 seedPack: system-initialize
 version: 1.0.0
 
-# Apply globally; idempotency is enforced per-realm by the registry and natural keys
+# Issuer/product baseline counter. GLOBAL is tenant-breadth; lifecycle marks
+# this as production data, not a demo catalog.
 scope:
   type: GLOBAL
+  lifecycle: production
 
 datasets:
   # Counters (e.g., accountNumber). Upsert by refName

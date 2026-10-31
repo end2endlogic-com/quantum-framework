@@ -1,0 +1,428 @@
+package com.e2eq.framework.rest.resources.security;
+import com.e2eq.framework.exceptions.RefNameViolationException;
+import com.e2eq.framework.model.persistent.morphia.RefNameContract;
+
+import com.e2eq.framework.model.persistent.morphia.PolicyRepo;
+import com.e2eq.framework.model.security.Policy;
+import com.e2eq.framework.model.security.Rule;
+import com.e2eq.framework.rest.core.BaseResource;
+import com.e2eq.framework.security.runtime.RuleContext;
+import com.e2eq.framework.securityrules.io.YamlPolicyItem;
+import com.e2eq.framework.securityrules.io.YamlPolicyLoader;
+import com.e2eq.framework.securityrules.io.YamlRuleMapper;
+import com.e2eq.framework.util.SecurityUtils;
+import jakarta.inject.Inject;
+import jakarta.annotation.security.RolesAllowed;
+import jakarta.ws.rs.HeaderParam;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.BadRequestException;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.HttpHeaders;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
+import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.media.Content;
+import org.eclipse.microprofile.openapi.annotations.media.Schema;
+import org.eclipse.microprofile.openapi.annotations.parameters.Parameter;
+import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
+import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
+import org.eclipse.microprofile.openapi.annotations.security.SecurityRequirement;
+
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+
+import com.e2eq.framework.rest.models.CounterResponse;
+
+@Path("/security/permission/policies")
+public class PolicyResource extends BaseResource<Policy, PolicyRepo> {
+   @Inject
+   RuleContext ruleContext;
+
+   @Inject
+   SecurityUtils securityUtils;
+
+   protected PolicyResource (PolicyRepo repo) {
+      super(repo);
+   }
+
+   @Override
+   @Path("refName")
+   @GET
+   @Operation(summary = "Get The entity by refName", description = "Will get the entity or return a 404 if not found")
+   @SecurityRequirement(name = "bearerAuth")
+   @APIResponses({
+         @APIResponse(responseCode = "200", description = "Entity found", content = @Content(mediaType = MediaType.APPLICATION_JSON, schema = @Schema(implementation = Policy.class))),
+         @APIResponse(responseCode = "404", description = "Entity not found")
+   })
+   public Response byRefName(@Context HttpHeaders headers,
+         @Parameter(description = "Reference name of the entity", required = true) @QueryParam("refName") String refName) {
+      return super.byRefName(headers, refName);
+   }
+
+   /**
+    * Override save to automatically refresh the rule context cache after policy modifications.
+    * This ensures that any changes to policies are immediately reflected in security evaluations.
+    */
+   @Override
+   public Policy save(@Context HttpHeaders headers, Policy model) {
+      String realmId = headers.getHeaderString("X-Realm");
+      Policy saved = super.save(headers, model);
+      // Refresh rule context for the affected realm
+      // Use X-Realm if provided, otherwise use the realm from SecurityContext (where the policy was actually saved)
+      String effectiveRealm = (realmId != null && !realmId.isBlank()) ? realmId : repo.getSecurityContextRealmId();
+      io.quarkus.logging.Log.infof("PolicyResource: policy saved (refName=%s), refreshing rule context for realm=%s",
+          saved.getRefName(), effectiveRealm);
+      ruleContext.reloadFromRepo(effectiveRealm);
+      return saved;
+   }
+
+   /**
+    * Override delete by refName to automatically refresh the rule context cache after policy deletion.
+    */
+   @Override
+   public Response deleteByRefName(@Context HttpHeaders headers, String refName)
+           throws com.e2eq.framework.exceptions.ReferentialIntegrityViolationException {
+      String realmId = headers.getHeaderString("X-Realm");
+      Response response = super.deleteByRefName(headers, refName);
+      // Only refresh if delete was successful (status 200)
+      if (response.getStatus() == Response.Status.OK.getStatusCode()) {
+         // Use X-Realm if provided, otherwise use the realm from SecurityContext (where the policy was actually deleted)
+         String effectiveRealm = (realmId != null && !realmId.isBlank()) ? realmId : repo.getSecurityContextRealmId();
+         io.quarkus.logging.Log.infof("PolicyResource: policy deleted (refName=%s), refreshing rule context for realm=%s",
+             refName, effectiveRealm);
+         ruleContext.reloadFromRepo(effectiveRealm);
+      }
+      return response;
+   }
+
+   /**
+    * Override delete by id to automatically refresh the rule context cache after policy deletion.
+    */
+   @Override
+   public Response delete(@Context HttpHeaders headers, String id)
+           throws com.e2eq.framework.exceptions.ReferentialIntegrityViolationException {
+      String realmId = headers.getHeaderString("X-Realm");
+      Response response = super.delete(headers, id);
+      // Only refresh if delete was successful (status 200)
+      if (response.getStatus() == Response.Status.OK.getStatusCode()) {
+         // Use X-Realm if provided, otherwise use the realm from SecurityContext (where the policy was actually deleted)
+         String effectiveRealm = (realmId != null && !realmId.isBlank()) ? realmId : repo.getSecurityContextRealmId();
+         io.quarkus.logging.Log.infof("PolicyResource: policy deleted (id=%s), refreshing rule context for realm=%s",
+             id, effectiveRealm);
+         ruleContext.reloadFromRepo(effectiveRealm);
+      }
+      return response;
+   }
+
+   @Override
+   public com.e2eq.framework.rest.models.Collection<Policy> getList(
+           jakarta.ws.rs.core.HttpHeaders headers,
+           int skip,
+           int limit,
+           String filter,
+           String sort,
+           String projection) {
+      return getList(headers, skip, limit, filter, sort, projection, null);
+   }
+
+   /**
+    * JAX-RS binds {@code GET /list} to the 7-argument signature (optional
+    * {@code uiActions}). The 6-argument override is never the resource method,
+    * so the default-system policies that {@link #getCount} already includes
+    * must be merged here or the hub count and directory list disagree.
+    */
+   @Override
+   public com.e2eq.framework.rest.models.Collection<Policy> getList(
+           jakarta.ws.rs.core.HttpHeaders headers,
+           int skip,
+           int limit,
+           String filter,
+           String sort,
+           String projection,
+           Boolean uiActions) {
+      return mergeDefaultPolicies(
+            super.getList(headers, skip, limit, filter, sort, projection, uiActions),
+            filter,
+            skip,
+            limit,
+            headers.getHeaderString("X-Realm"));
+   }
+
+   static com.e2eq.framework.rest.models.Collection<Policy> mergePolicyCollections(
+           List<Policy> defaultPolicies,
+           com.e2eq.framework.rest.models.Collection<Policy> dbCollection,
+           String filter,
+           int skip,
+           int limit,
+           String realmId,
+           String fallbackRealm) {
+      List<Policy> filteredDefaults = defaultPolicies == null
+            ? new ArrayList<>()
+            : new ArrayList<>(defaultPolicies);
+      List<Policy> databaseRows = dbCollection == null || dbCollection.getRows() == null
+            ? List.of()
+            : dbCollection.getRows();
+      long databaseTotal = dbCollection == null ? 0L : dbCollection.getTotalCount();
+
+      List<Policy> mergedList = new ArrayList<>(filteredDefaults.size() + databaseRows.size());
+      mergedList.addAll(filteredDefaults);
+      mergedList.addAll(databaseRows);
+
+      com.e2eq.framework.rest.models.Collection<Policy> mergedCollection =
+            new com.e2eq.framework.rest.models.Collection<>(
+                  mergedList, skip, limit, filter, filteredDefaults.size() + databaseTotal);
+      mergedCollection.setFilter(filter);
+      mergedCollection.setRealm(realmId == null || realmId.isBlank() ? fallbackRealm : realmId);
+      if (dbCollection != null) {
+         mergedCollection.setActionList(dbCollection.getActionList());
+      }
+      return mergedCollection;
+   }
+
+   private com.e2eq.framework.rest.models.Collection<Policy> mergeDefaultPolicies(
+           com.e2eq.framework.rest.models.Collection<Policy> dbCollection,
+           String filter,
+           int skip,
+           int limit,
+           String realmId) {
+      List<Policy> defaultPolicies = ruleContext.getDefaultSystemPolicies();
+      List<Policy> filteredDefaults = (filter != null && !filter.isEmpty())
+            ? applyFilterToPolicies(defaultPolicies, filter)
+            : new ArrayList<>(defaultPolicies);
+      return mergePolicyCollections(
+            filteredDefaults,
+            dbCollection,
+            filter,
+            skip,
+            limit,
+            realmId,
+            repo.getDatabaseName());
+   }
+
+   @Override
+   public CounterResponse getCount(@Context HttpHeaders headers, @QueryParam("filter") String filter) {
+      List<Policy> defaultPolicies = ruleContext.getDefaultSystemPolicies();
+      List<Policy> filteredDefaults = (filter != null && !filter.isEmpty())
+              ? applyFilterToPolicies(defaultPolicies, filter)
+              : new ArrayList<>(defaultPolicies);
+
+      CounterResponse dbCount = super.getCount(headers, filter);
+      long totalCount = filteredDefaults.size() + dbCount.getValue();
+
+      CounterResponse response = new CounterResponse(totalCount);
+      response.setStatusCode(Response.Status.OK.getStatusCode());
+      response.setMessage(String.format("Count: %d", totalCount));
+      return response;
+   }
+
+   private List<Policy> applyFilterToPolicies(List<Policy> policies, String filter) {
+      if (filter == null || filter.isEmpty()) {
+         return new ArrayList<>(policies);
+      }
+
+      List<Policy> filtered = new ArrayList<>();
+      try {
+         // Use QueryPredicates to compile filter
+         Class<?> qp = Class.forName("com.e2eq.framework.query.runtime.QueryPredicates");
+         java.lang.reflect.Method m = qp.getMethod("compilePredicate", String.class, Map.class, Map.class);
+
+         @SuppressWarnings("unchecked")
+         java.util.function.Predicate<com.fasterxml.jackson.databind.JsonNode> predicate =
+            (java.util.function.Predicate<com.fasterxml.jackson.databind.JsonNode>) m.invoke(null, filter, Collections.emptyMap(), Collections.emptyMap());
+
+         com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+         for (Policy policy : policies) {
+            com.fasterxml.jackson.databind.JsonNode node = mapper.valueToTree(policy);
+            if (predicate.test(node)) {
+               filtered.add(policy);
+            }
+         }
+      } catch (Exception e) {
+         io.quarkus.logging.Log.warnf(e, "Failed to apply filter to default policies: %s", filter);
+         throw new BadRequestException("Invalid policy filter: " + filter, e);
+      }
+
+      return filtered;
+   }
+
+   @POST
+   @Path("/refreshRuleContext")
+   public Response refreshRuleContext(@HeaderParam("X-Realm") String realm) {
+      // Use X-Realm if provided, otherwise use the realm from SecurityContext (user's default realm)
+      String effectiveRealm = (realm == null || realm.isBlank()) ? repo.getSecurityContextRealmId() : realm;
+      ruleContext.reloadFromRepo(effectiveRealm);
+      return Response.ok().build();
+   }
+
+   @POST
+   @Path("/import")
+   @Consumes({MediaType.TEXT_PLAIN, "application/yaml", "text/yaml"})
+   @Produces(MediaType.APPLICATION_JSON)
+   @RolesAllowed({"admin", "system"})
+   public Response importPolicies(@HeaderParam("X-Realm") String realm, String yamlPayload) {
+      // Use X-Realm if provided, otherwise use the realm from SecurityContext (user's default realm)
+      String effectiveRealm = (realm == null || realm.isBlank()) ? repo.getSecurityContextRealmId() : realm;
+
+      if (yamlPayload == null || yamlPayload.isBlank()) {
+         return Response.status(Response.Status.BAD_REQUEST)
+                 .entity(Map.of("error", "YAML payload is required"))
+                 .build();
+      }
+
+      List<YamlPolicyItem> yamlPolicies;
+      try {
+         YamlPolicyLoader loader = new YamlPolicyLoader();
+         yamlPolicies = loader.load(yamlPayload);
+      } catch (IOException ex) {
+         return Response.status(Response.Status.BAD_REQUEST)
+                 .entity(Map.of(
+                         "error", "Malformed YAML",
+                         "details", ex.getMessage()))
+                 .build();
+      }
+
+      List<Map<String, Object>> created = new ArrayList<>();
+      List<Map<String, Object>> updated = new ArrayList<>();
+      List<Map<String, Object>> errors = new ArrayList<>();
+
+      int row = 0;
+      for (YamlPolicyItem item : yamlPolicies) {
+         row++;
+         if (item == null) {
+            errors.add(errorEntry(row, null, "Entry was null"));
+            continue;
+         }
+
+         String refName = item.refName;
+         try (var clientNames = RefNameContract.clientSuppliedRefNames()) {
+            PolicyImportResult result = upsertPolicy(effectiveRealm, item);
+            Map<String, Object> entry = successEntry(result.policy(), row, result.created());
+            if (result.created()) {
+               created.add(entry);
+            } else {
+               updated.add(entry);
+            }
+         } catch (RefNameViolationException ex) {
+            Map<String, Object> entry = errorEntry(row, refName, ex.getMessage());
+            entry.put("errorCode", ex.getCode().name());
+            entry.put("diagnostics", ex.diagnostics());
+            errors.add(entry);
+         } catch (IllegalArgumentException ex) {
+            errors.add(errorEntry(row, refName, ex.getMessage()));
+         } catch (Exception ex) {
+            errors.add(errorEntry(row, refName, "Failed to import policy: " + ex.getMessage()));
+         }
+      }
+
+      if (!created.isEmpty() || !updated.isEmpty()) {
+         ruleContext.reloadFromRepo(effectiveRealm);
+      }
+
+      Map<String, Object> response = new LinkedHashMap<>();
+      response.put("realm", effectiveRealm);
+      response.put("totalProcessed", yamlPolicies.size());
+      response.put("createdCount", created.size());
+      response.put("updatedCount", updated.size());
+      response.put("errorCount", errors.size());
+      response.put("created", created);
+      response.put("updated", updated);
+      response.put("errors", errors);
+
+      return Response.ok(response).build();
+   }
+
+   private PolicyImportResult upsertPolicy(String realm, YamlPolicyItem item) {
+      if (item.refName == null || item.refName.isBlank()) {
+         throw new IllegalArgumentException("refName is required");
+      }
+      if (item.principalId == null || item.principalId.isBlank()) {
+         throw new IllegalArgumentException("principalId is required");
+      }
+
+      // Existing policies may sit in a data domain the caller's row filters hide (e.g. seeded or earlier imports
+      // stamped with the system data domain), so look the refName up without them; otherwise every re-import
+      // takes the create path and duplicates the policy. The save below is still checked against the caller's rules.
+      Optional<Policy> existing = repo.findByRefName(
+              repo.getMorphiaDataStoreWrapper().getDataStore(realm), item.refName, true);
+      Policy policy = existing.orElseGet(Policy::new);
+      boolean created = existing.isEmpty();
+
+      policy.setRefName(item.refName);
+      policy.setDisplayName((item.displayName != null && !item.displayName.isBlank()) ? item.displayName : item.refName);
+      policy.setDescription(item.description);
+      policy.setPrincipalId(item.principalId);
+      policy.setPrincipalType(resolvePrincipalType(item.principalType, existing.map(Policy::getPrincipalType).orElse(null)));
+
+      // A new policy takes the data domain the save path resolves for the caller, exactly as a policy created
+      // through the regular save endpoint does. Stamping the system data domain here made every import by a
+      // tenant admin a write outside the caller's tenant, which the write-side rule filter check refuses.
+      // An existing policy keeps its stored domain, so a caller still cannot rewrite a policy it does not own.
+      // A legacy row stored without a domain is treated as a system-plane policy rather than adopted by the caller.
+      if (!created && policy.getDataDomain() == null) {
+         policy.setDataDomain(securityUtils.getSystemDataDomain());
+      }
+
+      List<Rule> rules;
+      if (item.rules != null && !item.rules.isEmpty()) {
+         rules = YamlRuleMapper.toRules(item.rules);
+      } else if (item.legacyRules != null && !item.legacyRules.isEmpty()) {
+         List<Rule> copy = new ArrayList<>();
+         for (Rule r : item.legacyRules) {
+            if (r != null) {
+               copy.add(r);
+            }
+         }
+         rules = copy;
+      } else {
+         rules = Collections.emptyList();
+      }
+      policy.setRules(new ArrayList<>(rules));
+
+      repo.save(realm, policy);
+
+      return new PolicyImportResult(policy, created);
+   }
+
+   private Policy.PrincipalType resolvePrincipalType(String raw, Policy.PrincipalType existing) {
+      if (raw == null || raw.isBlank()) {
+         return existing != null ? existing : Policy.PrincipalType.ROLE;
+      }
+      try {
+         return Policy.PrincipalType.valueOf(raw.trim().toUpperCase());
+      } catch (IllegalArgumentException ex) {
+         throw new IllegalArgumentException("Invalid principalType '" + raw + "'");
+      }
+   }
+
+   private Map<String, Object> successEntry(Policy policy, int row, boolean created) {
+      Map<String, Object> entry = new LinkedHashMap<>();
+      entry.put("row", row);
+      entry.put("refName", policy.getRefName());
+      entry.put("principalId", policy.getPrincipalId());
+      entry.put("ruleCount", policy.getRules() != null ? policy.getRules().size() : 0);
+      entry.put("status", created ? "created" : "updated");
+      return entry;
+   }
+
+   private Map<String, Object> errorEntry(int row, String refName, String message) {
+      Map<String, Object> entry = new LinkedHashMap<>();
+      entry.put("row", row);
+      if (refName != null) {
+         entry.put("refName", refName);
+      }
+      entry.put("error", message);
+      return entry;
+   }
+
+   private record PolicyImportResult(Policy policy, boolean created) {}
+}

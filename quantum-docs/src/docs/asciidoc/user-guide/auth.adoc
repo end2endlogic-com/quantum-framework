@@ -1,3 +1,7 @@
+ifndef::doc-root[]
+:doc-root: ..
+endif::[]
+
 [[auth]]
 = Authentication and Authorization
 
@@ -104,7 +108,7 @@ When you extend BaseAuthProvider, you inherit ready-to-use capabilities that red
 
 Best practices when deriving:
 
-- Always set the auth provider name in stored credentials so records can be traced to the correct provider.
+- Record the auth provider name in stored credentials as informational provenance. It tells callers which provider resolved the credential or token; it is not an authentication routing or authorization binding.
 - Reuse the role merge/remove patterns to avoid accidental role loss.
 - Prefer emitting precise exceptions (e.g., NotFound for missing users, SecurityException for access violations).
 
@@ -152,7 +156,7 @@ lastUpdate:: Timestamp for auditing and token invalidation strategies.
 area2RealmOverrides:: Optional map to route specific functional areas to different realms than the default (e.g., “Reporting” → analytics-realm).
 realmRegEx:: Optional regex to limit or override which realms this identity may act in; also used by impersonation/override flows.
 impersonateFilterScript:: Optional script indicating the filter/scope applied during impersonation so actions are constrained.
-authProviderName:: The name of the provider that owns this credential (e.g., “custom”, “oidc”), enabling multi-provider operations and audits.
+authProviderName:: Informational provenance naming the provider that resolved this credential or token (e.g., “custom”, “oidc”). Provider selection comes from an explicit request override or the ordered `auth.provider` configuration, never from this field.
 
 How DomainContext selects the realm for REST calls
 
@@ -603,6 +607,56 @@ To follow the principle of least privilege:
 * **Use `expirationSeconds`** -- even for long-lived tokens, set an expiration. A 1-year token (`31536000` seconds) is preferable to an effectively infinite one.
 * **Monitor and audit** -- the `parentCredentialSubject` on `SERVICE_TOKEN` credentials links every service token to the admin who created it. Token validation logs include the userId and realm for each request.
 
+=== Calling Another Service on a User's Behalf
+
+When your service handles a signed-in user's request and has to call another Quantum service to do it, the user's identity must reach that service. Do not reconstruct it with headers: the receiving service resolves realm, tenant and roles from a verified token, exactly as for a call the user made directly.
+
+Pick the credential by situation:
+
+[cols="2,2,3",options="header"]
+|===
+| Situation | Credential to send | Headers
+
+| A user is present, the target only needs the user's own permissions (reads, user-level writes), and the target accepts the user's token (see the note below)
+| The user's access token, forwarded unchanged
+| None. Pass on `X-Realm`, `X-Tenant-Id` or `X-Impersonate-*` only if the user's own request carried that switch; never add one yourself.
+
+| A user is present and the target operation must be performed by your service (a governed step such as activating an ontology after a steward approves it)
+| A delegated token from the token exchange (planned, see below). Until it ships: your service token
+| None once the exchange ships. Until then: `X-Realm`, `X-Tenant-Id` and `X-Acting-On-Behalf-Of-UserId`, for these operations only
+
+| No user is present (scheduled, queued or replayed work)
+| Your service token
+| `X-Tenant-Id` naming the tenant and `X-Realm` naming its realm (required unless it is the system realm: a service token has no realm of its own); `X-Acting-On-Behalf-Of-UserId` to attribute the work
+|===
+
+==== Forwarding the user's token
+
+[source,bash]
+----
+# inside your handler: reuse the caller's bearer as-is
+curl -sS -H "Authorization: Bearer ${USER_ACCESS_TOKEN}" \
+  https://ontology.example.com/v1/ontology/tbox
+----
+
+The receiving service builds the same `PrincipalContext` the user would get: the token's `realm` and `tenantId` claims select the realm and tenant, and the user's roles apply. Your service's own roles play no part.
+
+[NOTE]
+====
+* A receiver that enforces application admission (`quantum.auth.expected-audience`, `ApplicationTokenAdmissionFilter`) accepts a user token only if it was issued for that application (`aud` contains it and `azp` is absent or equal to it). A token the user got for application A is refused (403) by application B. Across applications, use the token exchange once it ships; until then, call B with your service token.
+* The forwarded token is the user's full-lifetime bearer. Forward it only within the application's own trust boundary, and never log it.
+====
+
+==== Why not a service token with `X-Acting-On-Behalf-Of-*`?
+
+`X-Acting-On-Behalf-Of-*` is for attribution only (see the permissions guide). With a service token the request still runs as your service: without `X-Realm` it runs in the system realm, the tenant comes from `X-Tenant-Id`, and your service's roles apply. Use it only when no user is present.
+
+==== Token exchange (planned)
+
+NOTE: Planned, not yet implemented. Design: `docs/design/USER_ACTOR_TOKEN_EXCHANGE_DESIGN.md`.
+
+For operations that must be performed by a specific service on a user's behalf, and for calls across applications, the service will exchange the user's access token at `POST /oauth/token` (`grant_type=urn:ietf:params:oauth:grant-type:token-exchange`, authenticated with the service's own token) for a short-lived token bound to one target application. That token's subject is the user (realm, tenant and roles unchanged) and its `act` claim names the calling service, so the target can require both: the user's permission and the right actor. Until it ships, such operations keep using the service token with explicit `X-Realm`/`X-Tenant-Id`.
+
 === Generating RSA Key Pairs
 
 The framework signs tokens with an RSA key pair.
@@ -664,7 +718,7 @@ mp.jwt.verify.publickey.location=/etc/quantum/keys/publicKey.pem
 ----
 
 This approach allows key rotation without rebuilding or redeploying the application.
-See xref:multiple-auth-providers.adoc#per-tenant-key-pairs[Key Pair Management] for the full configuration reference.
+See xref:{doc-root}/user-guide/multiple-auth-providers.adoc#per-tenant-key-pairs[Key Pair Management] for the full configuration reference.
 
 === Configuration Reference
 
@@ -674,7 +728,7 @@ See xref:multiple-auth-providers.adoc#per-tenant-key-pairs[Key Pair Management] 
 
 | `auth.provider`
 | (required)
-| Comma-separated list of provider names (e.g., `custom`, `custom,oidc`). See xref:multiple-auth-providers.adoc[Multiple Auth Providers].
+| Comma-separated list of provider names (e.g., `custom`, `custom,oidc`). See xref:{doc-root}/user-guide/multiple-auth-providers.adoc[Multiple Auth Providers].
 
 | `mp.jwt.verify.publickey.location`
 | (required)
@@ -706,7 +760,7 @@ See xref:multiple-auth-providers.adoc#per-tenant-key-pairs[Key Pair Management] 
 
 | `quantum.jwt.private-key-location`
 | _(unset — defaults to classpath `privateKey.pem`)_
-| Path to the RSA private key for token signing. Supports `file:`, `classpath:`, or bare classpath resource names. See xref:multiple-auth-providers.adoc#per-tenant-key-pairs[Key Pair Management].
+| Path to the RSA private key for token signing. Supports `file:`, `classpath:`, or bare classpath resource names. See xref:{doc-root}/user-guide/multiple-auth-providers.adoc#per-tenant-key-pairs[Key Pair Management].
 
 | `quantum.jwt.public-key-location`
 | _(unset — defaults to classpath `publicKey.pem`)_

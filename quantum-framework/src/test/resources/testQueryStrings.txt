@@ -170,3 +170,8 @@ hasEdge(placedInOrg, ORG-ACME)
 #-- Text search
 text("priority escalation")
 text("priority escalation")&&status:"OPEN"
+type:text
+text:active
+type:^ [text]
+text("search")&&(status:OPEN||status:PENDING)
+text("cat")

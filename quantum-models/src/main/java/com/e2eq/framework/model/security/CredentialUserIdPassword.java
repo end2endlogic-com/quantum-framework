@@ -54,7 +54,7 @@ public class CredentialUserIdPassword extends BaseModel {
                                                                                             CollationStrength.SECONDARY)))
    @NotNull(message = "userId must be provided for userIdPassword credential")
    @NonNull
-   @Size(min = 3, max = 50, message = "userId length must be less than or equal to 50 and greater than or equal to 3 " +
+   @Size(min = 3, max = 254, message = "userId length must be less than or equal to 254 and greater than or equal to 3 " +
                                          "characters")
    protected String userId;
 
@@ -113,9 +113,18 @@ public class CredentialUserIdPassword extends BaseModel {
 
    protected List<RealmEntry> authorizedRealms;
    //@Regex
-   @ToString.Exclude
-   protected String realmRegEx; // if the authorizedRealms is not found or null, then this is used if defined
-   protected String authProviderName; // the provider this record belongs to.
+    protected String realmRegEx; // if the authorizedRealms is not found or null, then this is used if defined
+    /**
+     * Credential-wide application entitlement pattern. Per-realm application grants
+     * remain authoritative when present; otherwise this pattern is evaluated against
+     * the requested application. The value {@code "*"} authorizes any named application.
+     */
+    protected String applicationRegEx;
+   /**
+    * Informational provenance naming the provider that resolved the credential/token.
+    * This value is not an authentication routing or authorization binding.
+    */
+   protected String authProviderName;
 
    /**
     * Utility method to set the password hash from a plain text password.
@@ -124,6 +133,9 @@ public class CredentialUserIdPassword extends BaseModel {
     */
    public void setPassword(String password) {
       if (password != null) {
+         if (credentialType == CredentialType.EMAIL) {
+            throw new IllegalStateException("EMAIL_CREDENTIAL_PASSWORD_FORBIDDEN");
+         }
          this.passwordHash = EncryptionUtils.hashPassword(password);
          this.hashingAlgorithm = EncryptionUtils.hashAlgorithm();
       }
@@ -134,12 +146,22 @@ public class CredentialUserIdPassword extends BaseModel {
    @Builder.Default
    protected CredentialType credentialType = CredentialType.PASSWORD;
 
+   /**
+    * The NATURE of the account (orthogonal to the mechanism above): USER
+    * requires a directory UserProfile (enforced at login), SERVICE/SYSTEM do
+    * not. null = legacy/unclassified (flagged, not locked out).
+    */
+   protected AccountType accountType;
+
    /** For SERVICE_TOKEN credentials: the subject of the owning PASSWORD credential. */
    protected String parentCredentialSubject;
 
    @Override
    public void validate () {
       super.validate();
+      if (credentialType == CredentialType.EMAIL && passwordHash != null) {
+         throw new IllegalArgumentException("EMAIL_CREDENTIAL_PASSWORD_FORBIDDEN");
+      }
       if (roles != null) {
          // check that roles array does not include null or empty strings
          for (String role : roles) {

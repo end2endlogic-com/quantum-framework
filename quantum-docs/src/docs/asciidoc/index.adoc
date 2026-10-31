@@ -1,3 +1,7 @@
+ifndef::doc-root[]
+:doc-root: .
+endif::[]
+
 :toc: left
 :toclevels: 3
 :sectnums:
@@ -11,13 +15,16 @@ This documentation provides user guides and tutorials for mid-level Java develop
 
 == Quick links
 
-- Executive Brief: xref:business/executive-brief.adoc[Executive Brief for Business Leaders]
+- Realm memberships: xref:{doc-root}/user-guide/identity-and-membership.adoc[Identity, organizations and realm access]
+- Pre-release migration notes: xref:{doc-root}/prerelease-defect-remediation.adoc[Correctness and security changes]
+
+- Executive Brief: xref:{doc-root}/business/executive-brief.adoc[Executive Brief for Business Leaders]
 - Tutorial Guide: xref:#tutorial-guide[Quantum Tutorial]
 - Reference Guide: xref:#reference-guide[Quantum Reference Guide]
-- Ontologies in Quantum: xref:user-guide/ontology.adoc#ontologies-in-quantum[Modeling relationships and cascading]
-- Multiple Auth Providers: xref:user-guide/multiple-auth-providers.adoc#multiple-auth-providers[Multi-provider auth, OIDC, and per-tenant key pairs]
-- MCP Server and Client: xref:user-guide/mcp-server-and-client.adoc#mcp-server-and-client[MCP integration with Claude, agent tools, and end-to-end examples]
-- AI Agent Integration: xref:user-guide/ai-agent-integration.adoc#ai-agent-integration[AI Agent APIs (tools, schema, execute)]
+- Ontologies in Quantum: xref:{doc-root}/user-guide/ontology.adoc#ontologies-in-quantum[Modeling relationships and cascading]
+- Multiple Auth Providers: xref:{doc-root}/user-guide/multiple-auth-providers.adoc#multiple-auth-providers[Multi-provider auth, OIDC, and per-tenant key pairs]
+- MCP Server and Client: xref:{doc-root}/user-guide/mcp-server-and-client.adoc#mcp-server-and-client[MCP integration with Claude, agent tools, and end-to-end examples]
+- AI Agent Integration: xref:{doc-root}/user-guide/ai-agent-integration.adoc#ai-agent-integration[AI Agent APIs (tools, schema, execute)]
 
 [[executive-brief-section]]
 == Executive Brief
@@ -48,3 +55,6 @@ include::tutorials/supply-chain.adoc[]
 include::appendix/configuration.adoc[]
 include::appendix/quarkus-foundation.adoc[]
 include::appendix/glossary.adoc[]
+
+include::user-guide/identity-and-membership.adoc[]
+include::prerelease-defect-remediation.adoc[]

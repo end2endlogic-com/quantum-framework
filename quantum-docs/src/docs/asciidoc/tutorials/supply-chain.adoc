@@ -1,3 +1,7 @@
+ifndef::doc-root[]
+:doc-root: ..
+endif::[]
+
 [[tutorial-supply-chain]]
 = Supply Chain Collaboration SaaS: A Business‑First Guide
 
@@ -75,11 +79,11 @@ Policies are simple, readable rules that match:
 - What they’re trying to access (area, domain, action)
 - Request details (headers/body, like a shipment id or tenant)
 
-Rules then allow or deny the action and can add filters so the user only sees data they’re permitted to see. See the Permissions guide for authoring details (xref:../user-guide/permissions.adoc#permissions[Permissions Guide]).
+Rules then allow or deny the action and can add filters so the user only sees data they’re permitted to see. See the Permissions guide for authoring details (xref:{doc-root}/user-guide/permissions.adoc#permissions[Permissions Guide]).
 
 Write‑time data placement (where a new record belongs)
 - By default, new records use the creator’s organization.
-- You can override per area/domain with a small policy—for example, keep Partner records in a shared “directory” domain while Shipments stay tenant‑local. See “Data domain assignment on create” (xref:../user-guide/permissions.adoc#_data_domain_assignment[]).
+- You can override per area/domain with a small policy—for example, keep Partner records in a shared “directory” domain while Shipments stay tenant‑local. See “Data domain assignment on create” (xref:{doc-root}/user-guide/permissions.adoc#_data_domain_assignment[]).
 
 == Domain contexts and domain policies (placing and sharing data)
 
@@ -110,7 +114,7 @@ Why this matters to a supply‑chain SaaS
 - Less manual setup: Reduce back‑and‑forth with partners; eliminate error‑prone spreadsheets and one‑off scripts.
 - Controlled change: Roll out new catalogs or policy tweaks as a versioned pack; apply to selected tenants when they opt in.
 
-Learn more: xref:../user-guide/seed-packs.adoc[Seed packs and declarative tenant seeding].
+Learn more: xref:{doc-root}/user-guide/seed-packs.adoc[Seed packs and declarative tenant seeding].
 
 == Security policies: practical protections and proofs
 
@@ -196,7 +200,7 @@ The framework gives you these foundations so your teams focus on business value�
 - Add small, targeted policies to enable collaboration bubbles and shared directories.
 - Introduce delegated administration so partners self‑serve.
 - Use CSV imports and Completion Tasks to operationalize data stewardship.
-- Deep dive: Permissions and Rule Language (xref:../user-guide/permissions.adoc#permissions[Permissions Guide]), and Data domain assignment on create (xref:../user-guide/permissions.adoc#_data_domain_assignment[Data domain assignment on create]).
+- Deep dive: Permissions and Rule Language (xref:{doc-root}/user-guide/permissions.adoc#permissions[Permissions Guide]), and Data domain assignment on create (xref:{doc-root}/user-guide/permissions.adoc#_data_domain_assignment[Data domain assignment on create]).
 
 
 == A day in the life: From Purchase Order to Delivery

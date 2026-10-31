@@ -18,9 +18,20 @@ public class EdgeRecord {
     private String dstType;
     private boolean inferred; // legacy flag used by existing materializer
     private boolean derived;  // new flag for implied/derived edges
+    private Map<String, Object> props; // open edge properties map
     private Map<String, Object> prov;
     private List<Support> support; // provenance support: list of rules and path edge ids
     private Date ts;
+    private Date validFrom;
+    private Date validTo;
+    private String securityLabel;
+    private List<String> compartments;
+    private Double confidence;
+    private String assertionMethod;
+    private List<String> allowedPurposes;
+    private String consentId;
+    private EdgeAttestation attestation;
+    private List<String> mutuallyExclusiveWith;
 
     public EdgeRecord() { }
 
@@ -30,6 +41,13 @@ public class EdgeRecord {
      * derived edges come from ComputedEdgeProvider.
      */
     public EdgeRecord(DataDomainInfo dataDomainInfo, String srcType, String src, String p, String dstType, String dst, boolean inferred, Map<String, Object> prov, Date ts) {
+        this(dataDomainInfo, srcType, src, p, dstType, dst, inferred, null, prov, ts);
+    }
+
+    /**
+     * Constructor for explicit or inferred edges with DataDomainInfo scoping and edge properties.
+     */
+    public EdgeRecord(DataDomainInfo dataDomainInfo, String srcType, String src, String p, String dstType, String dst, boolean inferred, Map<String, Object> props, Map<String, Object> prov, Date ts) {
         this.dataDomainInfo = dataDomainInfo;
         this.srcType = srcType;
         this.src = src;
@@ -37,7 +55,8 @@ public class EdgeRecord {
         this.dstType = dstType;
         this.dst = dst;
         this.inferred = inferred;
-        this.derived = false; // inferred edges are NOT derived; derived is for ComputedEdgeProvider
+        this.derived = false;
+        this.props = props;
         this.prov = prov;
         this.ts = ts;
     }
@@ -46,6 +65,13 @@ public class EdgeRecord {
      * Constructor for derived edges with support provenance and DataDomainInfo scoping.
      */
     public EdgeRecord(DataDomainInfo dataDomainInfo, String srcType, String src, String p, String dstType, String dst, boolean derived, Map<String, Object> prov, List<Support> support, Date ts) {
+        this(dataDomainInfo, srcType, src, p, dstType, dst, derived, null, prov, support, ts);
+    }
+
+    /**
+     * Constructor for derived edges with support provenance, properties, and DataDomainInfo scoping.
+     */
+    public EdgeRecord(DataDomainInfo dataDomainInfo, String srcType, String src, String p, String dstType, String dst, boolean derived, Map<String, Object> props, Map<String, Object> prov, List<Support> support, Date ts) {
         this.dataDomainInfo = dataDomainInfo;
         this.srcType = srcType;
         this.src = src;
@@ -54,6 +80,7 @@ public class EdgeRecord {
         this.dst = dst;
         this.derived = derived;
         this.inferred = derived; // map derived to inferred for legacy code paths
+        this.props = props;
         this.prov = prov;
         this.support = support;
         this.ts = ts;
@@ -84,12 +111,44 @@ public class EdgeRecord {
     public void setInferred(boolean inferred) { this.inferred = inferred; }
     public boolean isDerived() { return derived; }
     public void setDerived(boolean derived) { this.derived = derived; }
+    public Map<String, Object> getProps() { return props; }
+    public void setProps(Map<String, Object> props) { this.props = props; }
     public Map<String, Object> getProv() { return prov; }
     public void setProv(Map<String, Object> prov) { this.prov = prov; }
     public List<Support> getSupport() { return support; }
     public void setSupport(List<Support> support) { this.support = support; }
     public Date getTs() { return ts; }
     public void setTs(Date ts) { this.ts = ts; }
+
+    public Date getValidFrom() { return validFrom; }
+    public void setValidFrom(Date validFrom) { this.validFrom = validFrom; }
+
+    public Date getValidTo() { return validTo; }
+    public void setValidTo(Date validTo) { this.validTo = validTo; }
+
+    public String getSecurityLabel() { return securityLabel; }
+    public void setSecurityLabel(String securityLabel) { this.securityLabel = securityLabel; }
+
+    public List<String> getCompartments() { return compartments; }
+    public void setCompartments(List<String> compartments) { this.compartments = compartments; }
+
+    public Double getConfidence() { return confidence; }
+    public void setConfidence(Double confidence) { this.confidence = confidence; }
+
+    public String getAssertionMethod() { return assertionMethod; }
+    public void setAssertionMethod(String assertionMethod) { this.assertionMethod = assertionMethod; }
+
+    public List<String> getAllowedPurposes() { return allowedPurposes; }
+    public void setAllowedPurposes(List<String> allowedPurposes) { this.allowedPurposes = allowedPurposes; }
+
+    public String getConsentId() { return consentId; }
+    public void setConsentId(String consentId) { this.consentId = consentId; }
+
+    public EdgeAttestation getAttestation() { return attestation; }
+    public void setAttestation(EdgeAttestation attestation) { this.attestation = attestation; }
+
+    public List<String> getMutuallyExclusiveWith() { return mutuallyExclusiveWith; }
+    public void setMutuallyExclusiveWith(List<String> mutuallyExclusiveWith) { this.mutuallyExclusiveWith = mutuallyExclusiveWith; }
 
     public static class Support {
         private String ruleId;

@@ -1,0 +1,6 @@
+languages: [java]
+package_name: quantum-cli-auth
+package_version: 1.4.2-SNAPSHOT
+java_package: com.e2eq.framework.cli.generated
+diagnostics:
+  fail_on_error: true

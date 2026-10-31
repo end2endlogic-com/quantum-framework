@@ -48,7 +48,7 @@ public class TestMorphiaDataStore extends BaseRepoTest{
 
     @Test
     public void testConcurrentAccessCreatesSingleDatastore() throws Exception {
-        String realm = "concurrent-test-realm";
+        String realm = "test-concurrent-realm";
 
         int threads = 10;
         ExecutorService executor = Executors.newFixedThreadPool(threads);

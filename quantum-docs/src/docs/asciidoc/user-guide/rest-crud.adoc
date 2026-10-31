@@ -1,3 +1,7 @@
+ifndef::doc-root[]
+:doc-root: ..
+endif::[]
+
 [[rest-crud]]
 == REST: Find, Get, List, Save, Update, Delete
 
@@ -76,7 +80,7 @@ For detailed rule-base matching (URL, headers, body predicates, priorities), see
 
 - Use query parameters or a request body (depending on your API convention) to express filters.
 - RuleContext contributes tenant-aware filters and projections automatically.
-- See xref:query-language.adoc#query-language[Query Language] for the full BIAPIQuery syntax, including array filtering with elemMatch and IN‑clause enhancements that accept resolver‑provided lists.
+- See xref:{doc-root}/user-guide/query-language.adoc#query-language[Query Language] for the full BIAPIQuery syntax, including array filtering with elemMatch and IN‑clause enhancements that accept resolver‑provided lists.
 
 === Responses and Schemas
 
@@ -443,7 +447,7 @@ When `intentColumn` is configured, each row can specify its own intent:
 
 NOTE: `MERGE` and `DELETE` are intentionally not supported for safety reasons.
 
-For complete ImportProfile documentation, see xref:../design/csv-import-enhancements.adoc[CSV Import Enhancements].
+For complete ImportProfile documentation, see xref:{doc-root}/design/csv-import-enhancements.adoc[CSV Import Enhancements].
 
 === RowValueResolver: Custom Per-Row Logic
 
@@ -525,7 +529,7 @@ public class GeocodeResolver implements RowValueResolver {
 |Mark the row as an error
 |===
 
-For complete RowValueResolver documentation, see xref:../design/csv-import-enhancements.adoc[CSV Import Enhancements].
+For complete RowValueResolver documentation, see xref:{doc-root}/design/csv-import-enhancements.adoc[CSV Import Enhancements].
 
 === Dynamic Attribute Import
 
@@ -596,7 +600,7 @@ name,sku,dynamicAttributes
 |Keep existing attributes, only add new (no updates)
 |===
 
-For complete dynamic attribute import documentation, see xref:../design/csv-dynamic-attributes-design.adoc[CSV Dynamic Attributes Design].
+For complete dynamic attribute import documentation, see xref:{doc-root}/design/csv-dynamic-attributes-design.adoc[CSV Dynamic Attributes Design].
 
 [[rest-crud-auth]]
 = Authentication and Authorization
@@ -707,7 +711,7 @@ When you extend BaseAuthProvider, you inherit ready-to-use capabilities that red
 
 Best practices when deriving:
 
-* Always set the auth provider name in stored credentials so records can be traced to the correct provider.
+* Record the auth provider name in stored credentials as informational provenance. It tells callers which provider resolved the credential or token; it is not an authentication routing or authorization binding.
 * Reuse the role merge/remove patterns to avoid accidental role loss.
 * Prefer emitting precise exceptions (e.g., NotFound for missing users, SecurityException for access violations).
 
@@ -756,7 +760,7 @@ lastUpdate:: Timestamp for auditing and token invalidation strategies.
 area2RealmOverrides:: Optional map to route specific functional areas to different realms than the default (e.g., “Reporting” → analytics-realm).
 realmRegEx:: Optional regex to limit or override which realms this identity may act in; also used by impersonation/override flows.
 impersonateFilterScript:: Optional script indicating the filter/scope applied during impersonation so actions are constrained.
-authProviderName:: The name of the provider that owns this credential (e.g., “custom”, “oidc”), enabling multi-provider operations and audits.
+authProviderName:: Informational provenance naming the provider that resolved this credential or token (e.g., “custom”, “oidc”). Provider selection comes from an explicit request override or the ordered `auth.provider` configuration, never from this field.
 
 How DomainContext selects the realm for REST calls
 
@@ -870,7 +874,7 @@ Notes
 
 - Always scope by tenantId from DomainContext/RuleContext.
 - Index edges on (tenantId, p, dst) and (tenantId, src, p) to keep queries fast.
-- See xref:ontology.adoc#ontology-integration-morphia-permissions-section[Integrating Ontology] for more integration options.
+- See xref:{doc-root}/user-guide/ontology.adoc#ontology-integration-morphia-permissions-section[Integrating Ontology] for more integration options.
 
 [[ontology-aware-resource]]
 ==== OntologyAwareResource

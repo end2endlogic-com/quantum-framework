@@ -27,10 +27,21 @@ public class ManagedSecret extends FullBaseModel {
     private boolean realmDefault;
 
     /**
-     * Placeholder field name retained for forward compatibility with a stronger
-     * encryption-at-rest implementation.
+     * AES-256-GCM encrypted ciphertext (Base64-encoded).
+     * Encrypted using the KEK identified by {@link #keyVersion}.
      */
     private String valueEncrypted;
+
+    /**
+     * Base64-encoded 12-byte initialization vector used for GCM encryption.
+     */
+    private String iv;
+
+    /**
+     * The KEK version that was used to encrypt {@link #valueEncrypted}.
+     * Enables key rotation — old secrets can be re-encrypted to a newer key.
+     */
+    private int keyVersion;
 
     public boolean isConfigured() {
         return valueEncrypted != null && !valueEncrypted.isBlank();

@@ -55,7 +55,17 @@ public class BaselineIdentityStartupService {
     @ConfigProperty(name = "quantum.defaultTestPassword", defaultValue = "test123!")
     String defaultDemoPassword;
 
+    /**
+     * When true, only the cross-tenant SYSTEM identity is seeded; the tenant-shaped
+     * admin@default-tenant and admin@test-tenant identities (and their tenant-admin groups)
+     * are skipped. Defaults to false so existing apps/tests retain the system + default-tenant +
+     * test-tenant admin behavior (non-breaking).
+     */
+    @ConfigProperty(name = "quantum.baseline-identity.seed-system-only", defaultValue = "false")
+    boolean seedSystemOnly;
+
     public void onStart() {
+        // The system identity is always seeded, in every mode.
         ensureSystemUser();
         ensureTenantAdmin(
                 "admin@" + envConfigUtils.getSystemTenantId(),
@@ -67,26 +77,30 @@ public class BaselineIdentityStartupService {
                         .accountId(envConfigUtils.getSystemAccountNumber())
                         .build()
         );
-        ensureTenantAdmin(
-                "admin@" + envConfigUtils.getDefaultTenantId(),
-                defaultDemoPassword,
-                DomainContext.builder()
-                        .tenantId(envConfigUtils.getDefaultTenantId())
-                        .orgRefName(envConfigUtils.getDefaultOrgRefName())
-                        .defaultRealm(envConfigUtils.getDefaultRealm())
-                        .accountId(envConfigUtils.getDefaultAccountNumber())
-                        .build()
-        );
-        ensureTenantAdmin(
-                "admin@" + envConfigUtils.getTestTenantId(),
-                defaultDemoPassword,
-                DomainContext.builder()
-                        .tenantId(envConfigUtils.getTestTenantId())
-                        .orgRefName(envConfigUtils.getTestOrgRefName())
-                        .defaultRealm(envConfigUtils.getTestRealm())
-                        .accountId(envConfigUtils.getTestAccountNumber())
-                        .build()
-        );
+        if (!seedSystemOnly) {
+            ensureTenantAdmin(
+                    "admin@" + envConfigUtils.getDefaultTenantId(),
+                    defaultDemoPassword,
+                    DomainContext.builder()
+                            .tenantId(envConfigUtils.getDefaultTenantId())
+                            .orgRefName(envConfigUtils.getDefaultOrgRefName())
+                            .defaultRealm(envConfigUtils.getDefaultRealm())
+                            .accountId(envConfigUtils.getDefaultAccountNumber())
+                            .build()
+            );
+            ensureTenantAdmin(
+                    "admin@" + envConfigUtils.getTestTenantId(),
+                    defaultDemoPassword,
+                    DomainContext.builder()
+                            .tenantId(envConfigUtils.getTestTenantId())
+                            .orgRefName(envConfigUtils.getTestOrgRefName())
+                            .defaultRealm(envConfigUtils.getTestRealm())
+                            .accountId(envConfigUtils.getTestAccountNumber())
+                            .build()
+            );
+        } else {
+            Log.info("BaselineIdentityStartupService: seed-system-only=true; skipping default/test tenant admins");
+        }
     }
 
     private void ensureSystemUser() {

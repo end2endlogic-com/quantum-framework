@@ -1,6 +1,7 @@
 package com.e2eq.framework.system;
 
 import com.e2eq.framework.model.security.Realm;
+import com.e2eq.framework.model.security.RealmDeploymentType;
 import com.e2eq.framework.system.remote.RemoteSystemDirectory;
 import com.e2eq.framework.controlplane.api.DefaultEndpoint;
 import com.e2eq.framework.controlplane.model.RealmCatalogEntry;
@@ -8,6 +9,7 @@ import com.e2eq.framework.controlplane.model.RealmMembershipEntry;
 import com.e2eq.framework.controlplane.model.UserRealmRoleEntry;
 import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.ProcessingException;
+import jakarta.ws.rs.WebApplicationException;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -26,9 +28,11 @@ public class TestRemoteSystemDirectoryClient {
     static class StubEndpoint implements DefaultEndpoint {
         @Override public RealmCatalogEntry findRealmByEmailDomain(String emailDomain) { throw new NotFoundException(); }
         @Override public RealmCatalogEntry findRealmByRefName(String refName) { throw new NotFoundException(); }
-        @Override public RealmCatalogEntry registerRealm(RealmCatalogEntry body) { return body; }
+        @Override public RealmCatalogEntry registerRealm(String refName, RealmCatalogEntry body) { return body; }
         @Override public List<RealmMembershipEntry> membersOfRealm(String refName) { return List.of(); }
+        @Override public RealmMembershipEntry upsertRealmMembership(String r, String o, RealmMembershipEntry body) { return body; }
         @Override public List<UserRealmRoleEntry> realmsForUser(String userId) { return List.of(); }
+        @Override public UserRealmRoleEntry upsertUserRealmRole(String u, String r, UserRealmRoleEntry body) { return body; }
     }
 
     @Test
@@ -39,7 +43,11 @@ public class TestRemoteSystemDirectoryClient {
                 e.setRefName("acme-com");
                 e.setDisplayName("Acme");
                 e.setDatabaseName("acme-com");
+                e.setDeploymentType("SHARED");
                 e.setEmailDomain("acme.com");
+                e.setTenantId("acme.com");
+                e.setOrgRefName("acme");
+                e.setAccountNumber("0000000001");
                 return e;
             }
         });
@@ -47,12 +55,63 @@ public class TestRemoteSystemDirectoryClient {
         Assertions.assertTrue(realm.isPresent());
         Assertions.assertEquals("acme-com", realm.get().getRefName());
         Assertions.assertEquals("acme-com", realm.get().getDatabaseName());
+        Assertions.assertEquals(
+            RealmDeploymentType.SHARED, realm.get().getDeploymentType());
+        Assertions.assertNotNull(realm.get().getDomainContext());
+        Assertions.assertEquals("acme.com", realm.get().getDomainContext().getTenantId());
+        Assertions.assertEquals("acme", realm.get().getDomainContext().getOrgRefName());
+        Assertions.assertEquals("0000000001", realm.get().getDomainContext().getAccountId());
+        Assertions.assertEquals("acme-com", realm.get().getDomainContext().getDefaultRealm());
+    }
+
+    @Test
+    public void absentRemoteDeploymentTypeDefaultsToDedicated() {
+        RealmCatalogEntry entry = new RealmCatalogEntry();
+        entry.setRefName("legacy");
+        entry.setDatabaseName("legacy");
+        entry.setEmailDomain("legacy.example");
+
+        Realm realm =
+            com.e2eq.framework.system.remote.ControlPlaneRealmMapper.fromEntry(entry);
+
+        Assertions.assertEquals(
+            RealmDeploymentType.DEDICATED, realm.getDeploymentType());
     }
 
     @Test
     public void notFoundMapsToEmpty() {
         RemoteSystemDirectory directory = new RemoteSystemDirectory(new StubEndpoint());
         Assertions.assertTrue(directory.findRealmByEmailDomain("nowhere.example").isEmpty());
+    }
+
+    @Test
+    public void registerRealmPassesPathRefName() {
+        java.util.concurrent.atomic.AtomicReference<String> seen = new java.util.concurrent.atomic.AtomicReference<>();
+        RemoteSystemDirectory directory = new RemoteSystemDirectory(new StubEndpoint() {
+            @Override public RealmCatalogEntry registerRealm(String refName, RealmCatalogEntry body) {
+                seen.set(refName);
+                return body;
+            }
+        });
+        Realm realm = new Realm();
+        realm.setRefName("helixor-code-D1");
+        realm.setDisplayName("Helixor Code D1");
+        realm.setDatabaseName("helixor-code-D1");
+        realm.setEmailDomain("helixor-code-D1");
+        realm.setDeploymentType(RealmDeploymentType.SHARED);
+        realm.setTenancyMode(com.e2eq.framework.model.security.RealmTenancyMode.MULTI_TENANT);
+        directory.registerRealm(realm);
+        Assertions.assertEquals("helixor-code-D1", seen.get());
+    }
+
+    @Test
+    public void httpNotFoundMapsToEmpty() {
+        RemoteSystemDirectory directory = new RemoteSystemDirectory(new StubEndpoint() {
+            @Override public RealmCatalogEntry findRealmByRefName(String refName) {
+                throw new WebApplicationException("Not Found", 404);
+            }
+        });
+        Assertions.assertTrue(directory.findRealmByRefName("local-test").isEmpty());
     }
 
     @Test

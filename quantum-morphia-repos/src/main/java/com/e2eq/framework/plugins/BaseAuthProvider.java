@@ -17,7 +17,7 @@ public class BaseAuthProvider implements UserManagementBase {
    CredentialRepo credentialRepo;
 
    @Inject
-   SecurityUtils securityUtils;
+   protected SecurityUtils securityUtils;
 
 
    @Override
@@ -141,6 +141,11 @@ public class BaseAuthProvider implements UserManagementBase {
 
       credentialRepo.findBySubject(subject).ifPresent(cred -> {
          cred.setRealmRegEx(regexForRealm);
+         // A realm regex is an authoritative credential boundary.  The shared
+         // resolver intentionally prefers authorizedRealms when present, so a
+         // stale explicit list would silently mask the newly-enabled wildcard or
+         // pattern and make the override appear broken.
+         cred.setAuthorizedRealms(null);
          credentialRepo.save( cred);
       });
    }

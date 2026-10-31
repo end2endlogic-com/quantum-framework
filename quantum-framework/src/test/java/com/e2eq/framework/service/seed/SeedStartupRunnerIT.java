@@ -132,4 +132,63 @@ public class SeedStartupRunnerIT {
         assertEquals("admin@test-quantum-di.com", context.getVariable("baselineAdminUserId").orElse(null));
         assertEquals("demo@test-quantum-di.com", context.getVariable("demoUserId").orElse(null));
     }
+
+    @Test
+    void aRegisteredRealmWithoutALocalAdminCredentialSeedsIntoItsOwnDomain() {
+        // The realm's admin lives in the control plane (or another identity store), so there is no
+        // local credential; the realm is registered with its own domain. Seeds must land there, not
+        // in the system domain the realm's users cannot see.
+        Realm realm = Realm.builder()
+                .refName("test-seeddomain-com")
+                .databaseName("test-seeddomain-com")
+                .emailDomain("seeddomain.com")
+                .defaultAdminUserId("owner@seeddomain.com")
+                .domainContext(DomainContext.builder()
+                        .tenantId("seeddomain.com").orgRefName("seeddomain.com").accountId("0000000007")
+                        .defaultRealm("test-seeddomain-com").dataSegment(0).build())
+                .dataDomain(new DataDomain(envConfigUtils.getSystemOrgRefName(), envConfigUtils.getSystemAccountNumber(),
+                        envConfigUtils.getSystemTenantId(), 0, envConfigUtils.getSystemUserId()))
+                .build();
+
+        SeedContext context = seedStartupRunner.buildSeedContext("test-seeddomain-com", realm, null);
+
+        assertEquals("seeddomain.com", context.getTenantId().orElse(null));
+        assertEquals("seeddomain.com", context.getOrgRefName().orElse(null));
+        assertEquals("0000000007", context.getAccountId().orElse(null));
+        assertEquals("owner@seeddomain.com", context.getOwnerId().orElse(null),
+                "seeds run as the realm's admin in the realm's domain");
+    }
+
+    @Test
+    void remoteCatalogRoundTripSeedsAsTheCustomAdminInTheRegisteredSegment() throws Exception {
+        Realm original = Realm.builder().refName("remote-seed").databaseName("remote-seed").emailDomain("customer.example")
+                .defaultAdminUserId("owner@identity.example")
+                .domainContext(DomainContext.builder().tenantId("customer-tenant")
+                        .orgRefName("customer-org").accountId("account-7")
+                        .defaultRealm("remote-seed").dataSegment(7).build()).build();
+        var wire = new com.fasterxml.jackson.databind.ObjectMapper();
+        var entry = wire.readValue(wire.writeValueAsBytes(
+                com.e2eq.framework.system.remote.ControlPlaneRealmMapper.toEntry(original)),
+                com.e2eq.framework.controlplane.model.RealmCatalogEntry.class);
+        Realm remote = com.e2eq.framework.system.remote.ControlPlaneRealmMapper.fromEntry(entry);
+        SeedContext context = seedStartupRunner.buildSeedContext("remote-seed", remote, null);
+        assertEquals("owner@identity.example", context.getOwnerId().orElseThrow());
+        assertEquals("customer-tenant", context.getTenantId().orElseThrow());
+        assertEquals("customer-org", context.getOrgRefName().orElseThrow());
+        assertEquals("account-7", context.getAccountId().orElseThrow());
+        assertEquals(7, SeedStartupRunner.realmSeedDomain(remote, context.getOwnerId().orElseThrow()).getDataSegment());
+    }
+
+    @Test
+    void anIncompleteRegistrationDoesNotCountAsTheRealmsDomain() {
+        Realm realm = Realm.builder()
+                .refName("test-seeddomain-com")
+                .databaseName("test-seeddomain-com")
+                .emailDomain("seeddomain.com")
+                .domainContext(DomainContext.builder().tenantId("seeddomain.com").orgRefName("seeddomain.com")
+                        .accountId("").defaultRealm("test-seeddomain-com").build())
+                .build();
+        assertEquals(null, SeedStartupRunner.realmSeedDomain(realm, "owner@seeddomain.com"));
+        assertEquals(null, SeedStartupRunner.realmSeedDomain(null, "owner@seeddomain.com"));
+    }
 }

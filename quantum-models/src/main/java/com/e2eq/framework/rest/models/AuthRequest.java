@@ -21,6 +21,13 @@ public class AuthRequest  {
    protected String tenantId;
    protected String accountId;
    protected String realm;
+   /**
+    * The application the user is signing into (application-scoped auth). Optional:
+    * when omitted and exactly one app is authorized it is assumed; when multiple are
+    * authorized the default is used, or a 400 lists the choices for the login UI.
+    * Named to match the OAuth {@code client_id}/{@code audience} concept.
+    */
+   protected String applicationId;
    protected boolean rememberme;
 
    public AuthRequest(String userId, String password) {

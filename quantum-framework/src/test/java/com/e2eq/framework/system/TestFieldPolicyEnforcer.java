@@ -25,6 +25,11 @@ public class TestFieldPolicyEnforcer {
         }
     }
 
+    static class PrimitiveRecord {
+        boolean enabled;
+        int priority;
+    }
+
     @Test
     public void masksTopLevelAndNestedPaths() {
         Order order = new Order("O-1", "12 Main St", new Pricing(10.5, 0.3));
@@ -38,17 +43,40 @@ public class TestFieldPolicyEnforcer {
     }
 
     @Test
-    public void masksCollectionsElementWiseAndIgnoresUnknownPaths() {
+    public void masksCollectionsElementWise() {
         List<Order> orders = List.of(
             new Order("O-1", "A", new Pricing(1.0, 0.1)),
             new Order("O-2", "B", new Pricing(2.0, 0.2)));
 
-        FieldPolicyEnforcer.mask(orders, Set.of("pricing", "noSuchField", "no.such.path"));
+        FieldPolicyEnforcer.mask(orders, Set.of("pricing"));
 
         for (Order order : orders) {
             Assertions.assertNull(order.pricing);
             Assertions.assertNotNull(order.orderId);
         }
+    }
+
+    @Test
+    public void masksPrimitiveFieldsToTheirDefaultValues() {
+        PrimitiveRecord record = new PrimitiveRecord();
+        record.enabled = true;
+        record.priority = 7;
+
+        FieldPolicyEnforcer.mask(record, Set.of("enabled", "priority"));
+
+        Assertions.assertFalse(record.enabled);
+        Assertions.assertEquals(0, record.priority);
+    }
+
+    @Test
+    public void unknownReadPolicyPathFailsClosed() {
+        Order order = new Order("O-1", "A", new Pricing(1.0, 0.1));
+
+        IllegalStateException failure = Assertions.assertThrows(IllegalStateException.class,
+            () -> FieldPolicyEnforcer.mask(order, Set.of("pricing.noSuchField")));
+
+        Assertions.assertTrue(failure.getMessage().contains("failing closed"));
+        Assertions.assertInstanceOf(NoSuchFieldException.class, failure.getCause());
     }
 
     @Test
@@ -60,5 +88,32 @@ public class TestFieldPolicyEnforcer {
 
         Assertions.assertEquals(10.5, incoming.pricing.unitPrice, "hidden field overwrite must be reverted");
         Assertions.assertEquals(0.99, incoming.pricing.margin, "non-protected sibling stays");
+    }
+
+    @Test
+    public void unknownWritePolicyPathFailsClosed() {
+        Order stored = new Order("O-1", "A", new Pricing(1.0, 0.1));
+        Order incoming = new Order("O-1", "B", new Pricing(2.0, 0.2));
+
+        Assertions.assertThrows(NoSuchFieldException.class,
+            () -> FieldPolicyEnforcer.copyPath(stored, incoming, "pricing.noSuchField"));
+    }
+
+    @Test
+    public void createRejectsProtectedValuesInsteadOfSilentlyClearingThem() {
+        Order incoming = new Order("O-1", "12 Main St", new Pricing(10.5, 0.3));
+
+        SecurityException failure = Assertions.assertThrows(SecurityException.class,
+            () -> FieldPolicyEnforcer.assertUnset(incoming, Set.of("shippingAddress", "pricing.margin")));
+
+        Assertions.assertTrue(failure.getMessage().contains("protected by field-level policy"));
+    }
+
+    @Test
+    public void createAllowsPayloadWhenProtectedPathsAreUnset() {
+        Order incoming = new Order("O-1", null, new Pricing(10.5, null));
+
+        Assertions.assertDoesNotThrow(
+            () -> FieldPolicyEnforcer.assertUnset(incoming, Set.of("shippingAddress", "pricing.margin")));
     }
 }

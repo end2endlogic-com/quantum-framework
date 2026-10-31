@@ -3,10 +3,14 @@ package com.e2eq.ontology.mongo;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.persistent.morphia.PostPersistHook;
+import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import com.e2eq.ontology.annotations.OntologyClass;
+import com.e2eq.ontology.core.ComputedEdgeProvider;
 import com.e2eq.ontology.core.DataDomainInfo;
+import com.e2eq.ontology.core.MaterializationMode;
 import com.e2eq.ontology.core.OntologyRegistry;
 import com.e2eq.ontology.core.Reasoner;
+import com.e2eq.ontology.metrics.OntologyMetrics;
 import com.e2eq.ontology.model.OntologyEdge;
 import com.e2eq.ontology.repo.OntologyEdgeRepo;
 import com.e2eq.ontology.spi.OntologyEdgeProvider;
@@ -29,6 +33,7 @@ public class OntologyWriteHook implements PostPersistHook {
     @Inject CascadeExecutor cascadeExecutor;
     @Inject OntologyEdgeRepo edgeRepo;
     @Inject Instance<OntologyEdgeProvider> providers;
+    @Inject OntologyMetrics metrics;
 
     @Override
     public void afterPersist(String realmId, Object entity) {
@@ -53,26 +58,47 @@ public class OntologyWriteHook implements PostPersistHook {
 
         // Extend with SPI-provided edges (includes ComputedEdgeProviders)
         DataDomainInfo dataDomainInfo = DataDomainConverter.toInfo(dataDomain);
-        try {
-            for (OntologyEdgeProvider p : providers) {
-                if (p.supports(entityClass)) {
-                    var extra = p.edges(realmId, dataDomainInfo, entity);
-                    if (extra != null && !extra.isEmpty()) {
-                        explicit.addAll(extra);
-                    }
-                }
+        for (OntologyEdgeProvider p : providers) {
+            if (!p.supports(entityClass)) continue;
+            String providerId = (p instanceof ComputedEdgeProvider<?> cep)
+                    ? cep.getProviderId()
+                    : p.getClass().getSimpleName();
+            // Honor materialization mode: only EAGER providers contribute at write time.
+            if (p instanceof ComputedEdgeProvider<?> cep
+                    && cep.getMaterializationMode() != MaterializationMode.EAGER) {
+                continue;
             }
-        } catch (Throwable t) {
-            io.quarkus.logging.Log.warn("OntologyWriteHook: provider extension failed", t);
+            long start = System.nanoTime();
+            int produced = 0;
+            try {
+                var extra = p.edges(realmId, dataDomainInfo, entity);
+                if (extra != null && !extra.isEmpty()) {
+                    produced = extra.size();
+                    explicit.addAll(extra);
+                }
+            } catch (Throwable t) {
+                metrics.recordProviderError(providerId);
+                io.quarkus.logging.Log.warnf(t, "OntologyWriteHook: provider %s failed", providerId);
+                continue;
+            } finally {
+                metrics.recordProviderInvocation(providerId, System.nanoTime() - start, produced);
+            }
         }
 
         String srcId = extractor.idOf(entity);
-        // Capture prior edges for this source to support cascade diffs - now scoped by DataDomain
-        java.util.List<OntologyEdge> priorAll = edgeRepo.findBySrc(dataDomain, srcId);
         java.util.List<OntologyEdge> priorExplicit = new java.util.ArrayList<>();
-        for (OntologyEdge e : priorAll) if (!e.isInferred()) priorExplicit.add(e);
-        // First, apply materialization so explicit edges are upserted and stale ones pruned
-        materializer.apply(realmId, dataDomain, srcId, entityType, explicit);
+        // Edge materialization is derived from a write the caller was already allowed to make
+        // (this hook runs after it), and every edge is scoped to the entity's DataDomain. The
+        // caller's row filters describe its business records, not OntologyEdge: judging the edges
+        // by them fails closed and silently drops the edges. Only the hook's own edge reads and
+        // writes skip the rules; direct OntologyEdge writes and the cascade below stay checked.
+        try (SecurityCallScope.Scope ignored = SecurityCallScope.openIgnoringRules()) {
+            // Capture prior edges for this source to support cascade diffs - now scoped by DataDomain
+            java.util.List<OntologyEdge> priorAll = edgeRepo.findBySrc(dataDomain, srcId);
+            for (OntologyEdge e : priorAll) if (!e.isInferred()) priorExplicit.add(e);
+            // First, apply materialization so explicit edges are upserted and stale ones pruned
+            materializer.apply(realmId, dataDomain, srcId, entityType, explicit);
+        }
         // Then handle ORPHAN_REMOVE cascade based on prior vs new state and repo contents
         try { cascadeExecutor.onAfterPersist(realmId, dataDomain, srcId, entity, priorExplicit, explicit); } catch (Throwable ignored) {}
     }

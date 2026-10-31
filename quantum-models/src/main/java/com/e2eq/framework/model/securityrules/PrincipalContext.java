@@ -3,6 +3,8 @@ package com.e2eq.framework.model.securityrules;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.security.DataDomainPolicy;
 import com.e2eq.framework.model.security.DomainContext;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.annotation.JsonPOJOBuilder;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import org.graalvm.polyglot.HostAccess;
 
@@ -21,9 +23,11 @@ import java.util.Map;
  * The scope of the authentication that is taking place
  */
 @RegisterForReflection
+@JsonDeserialize(builder = PrincipalContext.Builder.class)
 public final class PrincipalContext {
    @NotNull( message = "defaultRealm must be non null, needs to be the realm that this principal will use by default")
    String defaultRealm;           // The realm that this Principal came from
+   String applicationId;          // The application whose authorization vocabulary/policies apply
    @NotNull( message = "the data domain must be non null, needs to be the org, account, tenant, ds, or owner for this principal")
    DataDomain dataDomain;  // org, account, tenant, ds, owner
 
@@ -98,9 +102,11 @@ public final class PrincipalContext {
 
 
 
+   @JsonPOJOBuilder(withPrefix = "with", buildMethodName = "build")
    public static class Builder {
 
       String defaultRealm = null;
+      String applicationId = null;
       DataDomain dataDomain = null;
       String userId = null;
       String subjectId = null;
@@ -119,6 +125,10 @@ public final class PrincipalContext {
 
       public Builder withDefaultRealm(String realm) {
          this.defaultRealm = realm;
+         return this;
+      }
+      public Builder withApplicationId(String applicationId) {
+         this.applicationId = applicationId;
          return this;
       }
       public Builder withDataDomain(@Valid @NotNull DataDomain dataDomain) {
@@ -236,6 +246,8 @@ public final class PrincipalContext {
             new PrincipalContext(defaultRealm, dataDomain, userId, roles, scope,
                impersonatedBySubject, impersonatedByUserId, actingOnBehalfOfUserId, actingOnBehalfOfSubject);
          pc.area2RealmOverrides = this.area2RealmOverrides;
+         pc.applicationId = this.applicationId;
+         pc.subjectId = this.subjectId;
          pc.dataDomainPolicy = this.dataDomainPolicy;
          pc.realmOverrideActive = this.realmOverrideActive;
          pc.originalDataDomain = this.originalDataDomain;
@@ -271,6 +283,15 @@ public final class PrincipalContext {
    }
 
    @HostAccess.Export
+   public String getApplicationId() {
+      return applicationId;
+   }
+
+   public void setApplicationId(String applicationId) {
+      this.applicationId = applicationId;
+   }
+
+   @HostAccess.Export
    public DataDomain getDataDomain() {return dataDomain;}
    public void setDataDomain(DataDomain dataDomain) {this.dataDomain = dataDomain;}
 
@@ -280,6 +301,11 @@ public final class PrincipalContext {
    }
    public void setUserId (String userId) {
       this.userId = userId;
+   }
+
+   @HostAccess.Export
+   public String getSubjectId() {
+      return subjectId;
    }
 
    @HostAccess.Export
@@ -435,6 +461,7 @@ public final class PrincipalContext {
       PrincipalContext that = (PrincipalContext) o;
 
       if (defaultRealm != null ? !defaultRealm.equals(that.defaultRealm) : that.defaultRealm != null) return false;
+      if (applicationId != null ? !applicationId.equals(that.applicationId) : that.applicationId != null) return false;
       if (dataDomain != null ? !dataDomain.equals(that.dataDomain) : that.dataDomain != null) return false;
       if (userId != null ? !userId.equals(that.userId) : that.userId != null) return false;
       if (impersonatedBySubject != null ? !impersonatedBySubject.equals(that.impersonatedBySubject) : that.impersonatedBySubject != null) return false;
@@ -456,6 +483,7 @@ public final class PrincipalContext {
    @HostAccess.Export
    public int hashCode () {
       int result = defaultRealm != null ? defaultRealm.hashCode() : 0;
+      result = 31 * result + (applicationId != null ? applicationId.hashCode() : 0);
       result = 31 * result + (dataDomain != null ? dataDomain.hashCode() : 0);
       result = 31 * result + (userId != null ? userId.hashCode() : 0);
       result = 31 * result + Arrays.hashCode(roles);
@@ -476,6 +504,7 @@ public final class PrincipalContext {
    public String toString () {
       return "PrincipalContext{" +
                "defaultRealm='" + defaultRealm + '\'' +
+               ", applicationId='" + applicationId + '\'' +
                ", dataDomain=" + dataDomain +
                ", userId='" + userId + '\'' +
                ", roles=" + Arrays.toString(roles) +

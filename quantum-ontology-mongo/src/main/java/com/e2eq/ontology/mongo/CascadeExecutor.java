@@ -127,14 +127,12 @@ public class CascadeExecutor {
                 srcClass = ontologyTypeToClass.getOrDefault(entityType, null);
             }
             if (srcClass == null) {
-                Log.infof("[DEBUG_LOG] onAfterDelete: no class mapping for %s; running best-effort orphan removal", entityType);
-                bestEffortDeleteOutgoingTargets(dataDomain, entityId);
+                Log.infof("[DEBUG_LOG] onAfterDelete: no class mapping for %s; no declared deletion authority; skipping targets", entityType);
                 return;
             }
             Map<String, CascadeSpec> specs = buildCascadeSpecs(srcClass);
             if (specs.isEmpty()) {
-                Log.infof("[DEBUG_LOG] onAfterDelete: no cascade specs for %s; running best-effort orphan removal", entityType);
-                bestEffortDeleteOutgoingTargets(dataDomain, entityId);
+                Log.infof("[DEBUG_LOG] onAfterDelete: no cascade specs for %s; no declared deletion authority; skipping targets", entityType);
                 return;
             }
             Log.infof("[DEBUG_LOG] onAfterDelete specs for %s: %s", entityType, specs.keySet());

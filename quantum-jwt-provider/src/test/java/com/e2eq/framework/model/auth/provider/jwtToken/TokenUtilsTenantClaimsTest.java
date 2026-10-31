@@ -29,7 +29,7 @@ class TokenUtilsTenantClaimsTest {
 
     @Test
     void tenantAwareTokenCarriesDomainContextClaims() throws Exception {
-        TokenUtils.configure("file:/tmp/quantum-auth-keys/privateKey.pem", "file:/tmp/quantum-auth-keys/publicKey.pem");
+        TokenUtils.configure("privateKey.pem", "publicKey.pem");
 
         String jwt = TokenUtils.generateUserToken(
                 "svc-account-001", "service-account", Set.of("admin", "service"),
@@ -47,7 +47,7 @@ class TokenUtilsTenantClaimsTest {
 
     @Test
     void legacyOverloadStaysTenantBlind() throws Exception {
-        TokenUtils.configure("file:/tmp/quantum-auth-keys/privateKey.pem", "file:/tmp/quantum-auth-keys/publicKey.pem");
+        TokenUtils.configure("privateKey.pem", "publicKey.pem");
 
         String jwt = TokenUtils.generateUserToken(
                 "svc-1", Set.of("admin"), TokenUtils.expiresAt(3600), "https://auth.example.com");
@@ -56,5 +56,38 @@ class TokenUtilsTenantClaimsTest {
         // back-compat: no tenant claims when none supplied
         assertFalse(claims.contains("\"realm\""), claims);
         assertFalse(claims.contains("\"tenantId\""), claims);
+    }
+
+    @Test
+    void authenticatedUserTokenIsNotBoundToAnApplication() throws Exception {
+        TokenUtils.configure("privateKey.pem", "publicKey.pem");
+
+        String jwt = TokenUtils.generateAuthenticatedUserToken(
+                "michael-subject", "michael", Set.of("user"),
+                "demo-realm", "demo", "demo-org", "1001", "*",
+                TokenUtils.expiresAt(3600), "https://auth.example.com");
+
+        String claims = payloadJson(jwt);
+        assertTrue(claims.contains("\"sub\":\"michael-subject\""), claims);
+        assertTrue(claims.contains("\"realm\":\"demo-realm\""), claims);
+        assertFalse(claims.contains("\"aud\""), claims);
+        assertFalse(claims.contains("\"azp\""), claims);
+    }
+
+    @Test
+    void applicationScopedTokenCarriesAudienceAndActiveApplication() throws Exception {
+        TokenUtils.configure("privateKey.pem", "publicKey.pem");
+
+        String jwt = TokenUtils.generateUserToken(
+                "michael-subject", "michael", Set.of("scheduler-user"),
+                "acme-com", "acme", "acme-org", "1001",
+                Set.of("scheduler", "reporting"), "scheduler", "acme-.*",
+                TokenUtils.expiresAt(3600), "https://auth.example.com");
+
+        String claims = payloadJson(jwt);
+        assertTrue(claims.contains("\"azp\":\"scheduler\""), claims);
+        assertTrue(claims.contains("\"aud\""), claims);
+        assertTrue(claims.contains("scheduler"), claims);
+        assertTrue(claims.contains("reporting"), claims);
     }
 }

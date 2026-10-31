@@ -1,3 +1,4 @@
+:doc-root: .
 :toc: left
 :toclevels: 3
 :sectnums:
@@ -35,6 +36,7 @@ include::user-guide/permissions.adoc[]
 include::user-guide/action-enablement.adoc[]
 include::user-guide/security-annotations.adoc[]
 include::user-guide/shared-links.adoc[]
+include::user-guide/comment-chains-and-media.adoc[]
 include::user-guide/oauth-server.adoc[]
 
 == AI Integration
@@ -47,6 +49,7 @@ include::user-guide/email-templates.adoc[]
 include::user-guide/bootstrap-packs.adoc[]
 include::user-guide/migrations.adoc[]
 include::user-guide/testing.adoc[]
+include::user-guide/usage-and-token-allocation.adoc[]
 
 == Tutorials
 

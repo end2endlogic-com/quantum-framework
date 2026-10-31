@@ -29,11 +29,17 @@ import java.util.Set;
                @Field("dataDomain.tenantId"),
                @Field("tboxHash")
            }),
-    @Index(options = @IndexOptions(name = "idx_tenant_tbox_active"), 
+    @Index(options = @IndexOptions(name = "idx_tenant_tbox_active"),
            fields = {
                @Field("dataDomain.tenantId"),
                @Field("active"),
                @Field("appliedAt")
+           }),
+    // Rollback selects the most-recently genuinely-activated TBox (B2): index lastActivatedAt.
+    @Index(options = @IndexOptions(name = "idx_tenant_tbox_last_activated"),
+           fields = {
+               @Field("dataDomain.tenantId"),
+               @Field("lastActivatedAt")
            }),
     @Index(options = @IndexOptions(name = "idx_tenant_tbox_version"), 
            fields = {
@@ -47,7 +53,8 @@ public class TenantOntologyTBox extends UnversionedBaseModel {
     
     private String tboxHash;           // SHA-256 hash of TBox content
     private String yamlHash;           // Hash of source YAML (for correlation)
-    private Date appliedAt;            // When this TBox was applied
+    private Date appliedAt;            // When this TBox was submitted/persisted (NOT activation time)
+    private Date lastActivatedAt;      // When this TBox was last genuinely activated (null if never activated)
     private String source;             // Source description (YAML path, etc.)
     private boolean active;            // Whether this is the active TBox for the tenant
     private String softwareVersion;   // Software version this TBox is compatible with
@@ -60,6 +67,24 @@ public class TenantOntologyTBox extends UnversionedBaseModel {
     // Metadata
     private Integer version;            // Optional version number
     private String description;         // Optional description
+    /** Pack id from TBoxSubmitRequest.id. Part of CanonicalTBoxHasher PackMetadata; must survive GET. */
+    private String packId;
+    /** Pack display name from TBoxSubmitRequest.name. */
+    private String packName;
+    /** Openness from TBoxSubmitRequest.openness (hasher default "open" when omitted on submit). */
+    private String openness;
+
+    // B5: realm-governance vocabulary tier. The set of ontology predicates ADMITTED
+    // for policy (security-rule) use in this realm. null == legacy "all declared
+    // predicates admitted". A predicate declared in the TBox (properties) but NOT in
+    // this set is "provisional": usable for facts/edges but rejected when referenced
+    // by a security rule.
+    //
+    // OUT-OF-BAND from pack identity/hash: this is realm-governance state, NOT part of
+    // the canonical TBox content. It MUST NOT be fed into toTBox()/convertProperties()
+    // or anything reaching CanonicalTBoxHasher — two docs differing only in
+    // admittedPredicates must hash identically.
+    private java.util.Set<String> admittedPredicates;
     
     public TenantOntologyTBox(TBox tbox, String tboxHash, String yamlHash, String source, String softwareVersion) {
         this.tboxHash = tboxHash;
@@ -78,8 +103,9 @@ public class TenantOntologyTBox extends UnversionedBaseModel {
             classes.entrySet().stream()
                 .collect(java.util.stream.Collectors.toMap(
                     Map.Entry::getKey,
-                    e -> new ClassDef(e.getValue().name, e.getValue().parents, 
-                                     e.getValue().disjointWith, e.getValue().sameAs)
+                    e -> new ClassDef(e.getValue().name, e.getValue().parents,
+                                     e.getValue().disjointWith, e.getValue().sameAs,
+                                     e.getValue().label, e.getValue().aliases, e.getValue().metadata)
                 )) : Map.of();
         
         Map<String, PropertyDef> propDefs = properties != null ?
@@ -95,7 +121,11 @@ public class TenantOntologyTBox extends UnversionedBaseModel {
                         e.getValue().transitive,
                         e.getValue().symmetric,
                         e.getValue().functional,
-                        e.getValue().subPropertyOf != null ? e.getValue().subPropertyOf : Set.of()
+                        e.getValue().subPropertyOf != null ? e.getValue().subPropertyOf : Set.of(),
+                        e.getValue().inferred,
+                        e.getValue().label,
+                        e.getValue().aliases,
+                        e.getValue().metadata
                     )
                 )) : Map.of();
         
@@ -150,12 +180,20 @@ public class TenantOntologyTBox extends UnversionedBaseModel {
         private Set<String> parents;
         private Set<String> disjointWith;
         private Set<String> sameAs;
-        
+        // Presentation + governance metadata — MUST round-trip so an admitted class's governance
+        // (functionalArea/domain/defaultReadAction) survives activation and reaches the resolver.
+        private String label;
+        private Set<String> aliases;
+        private Map<String, Object> metadata;
+
         public ClassDefData(ClassDef def) {
             this.name = def.name();
             this.parents = def.parents();
             this.disjointWith = def.disjointWith();
             this.sameAs = def.sameAs();
+            this.label = def.label();
+            this.aliases = def.aliases();
+            this.metadata = def.metadata();
         }
     }
     
@@ -171,7 +209,12 @@ public class TenantOntologyTBox extends UnversionedBaseModel {
         private boolean symmetric;
         private boolean functional;
         private Set<String> subPropertyOf;
-        
+        // Round-trip inferred + presentation/governance metadata (e.g. a relation's join-key).
+        private boolean inferred;
+        private String label;
+        private Set<String> aliases;
+        private Map<String, Object> metadata;
+
         public PropertyDefData(PropertyDef def) {
             this.name = def.name();
             this.domain = def.domain().orElse(null);
@@ -182,6 +225,10 @@ public class TenantOntologyTBox extends UnversionedBaseModel {
             this.symmetric = def.symmetric();
             this.functional = def.functional();
             this.subPropertyOf = def.subPropertyOf();
+            this.inferred = def.inferred();
+            this.label = def.label();
+            this.aliases = def.aliases();
+            this.metadata = def.metadata();
         }
     }
     

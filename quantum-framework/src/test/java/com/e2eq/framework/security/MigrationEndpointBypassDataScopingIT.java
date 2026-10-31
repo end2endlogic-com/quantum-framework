@@ -119,6 +119,7 @@ public class MigrationEndpointBypassDataScopingIT extends BaseRepoTest {
         String checkPayload = """
             {
                 "identity": "system@system.com",
+                "applicationId": "quantum-framework-test",
                 "area": "MIGRATION",
                 "functionalDomain": "INDEXES",
                 "action": "APPLY_ALL_INDEXES"

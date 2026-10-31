@@ -72,23 +72,16 @@ public class IdentityAssembler {
             if (cred.getRoles() != null) {
                 for (String r : cred.getRoles()) if (r != null && !r.isBlank()) mergedRoles.add(r);
             }
-            // merge user group roles via profile
-            // Use the credential's realm context instead of hardcoded system realm
+            // Merge user group roles through the central auth/system realm first.
+            // Tenant-local lookup remains only as a compatibility fallback for embedded auth mode.
             String credentialRealm = (cred.getDomainContext() != null)
                 ? cred.getDomainContext().getDefaultRealm()
                 : systemRealm;
             try {
-                var userProfileOpt = userProfileRepo.getBySubject(credentialRealm, cred.getSubject());
-                if (userProfileOpt.isPresent()) {
-                    var groups = userGroupRepo.findByUserProfileRef(userProfileOpt.get().createEntityReference());
-                    if (groups != null) {
-                        for (UserGroup g : groups) {
-                            if (g != null && g.getRoles() != null) {
-                                for (String r : g.getRoles()) if (r != null && !r.isBlank()) mergedRoles.add(r);
-                            }
-                        }
-                    }
-                } else {
+                boolean foundCentralProfile = mergeUserGroupRoles(mergedRoles, systemRealm, cred.getSubject());
+                boolean foundTenantProfile = systemRealm.equalsIgnoreCase(credentialRealm)
+                        || mergeUserGroupRoles(mergedRoles, credentialRealm, cred.getSubject());
+                if (!foundCentralProfile && !foundTenantProfile) {
                     Log.warnf("No user profile found for credential subject=%s when trying to resolve roles / user groups", cred.getSubject());
                 }
             } catch (Exception e) {
@@ -114,5 +107,25 @@ public class IdentityAssembler {
         builder.addAttribute("auth_time", System.currentTimeMillis());
 
         return builder.build();
+    }
+
+    private boolean mergeUserGroupRoles(Set<String> mergedRoles, String realm, String subject) {
+        if (realm == null || realm.isBlank() || subject == null || subject.isBlank()) {
+            return false;
+        }
+        var userProfileOpt = userProfileRepo.getBySubject(realm, subject);
+        if (userProfileOpt.isEmpty()) {
+            return false;
+        }
+        var groups = userGroupRepo.findByUserProfileRefWithIgnoreRules(
+                realm, userProfileOpt.get().createEntityReference());
+        if (groups != null) {
+            for (UserGroup g : groups) {
+                if (g != null && g.getRoles() != null) {
+                    for (String r : g.getRoles()) if (r != null && !r.isBlank()) mergedRoles.add(r);
+                }
+            }
+        }
+        return true;
     }
 }

@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ontology Facet Segmentation & Edge Traversal Filtering - Comprehensive Architecture Design</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --border-color: #e2e8f0;
+      --primary-color: #2563eb;
+    }
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.6;
+    }
+    .design-card {
+      background-color: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 1rem;
+      padding: 2rem;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    }
+    .code-block {
+      background-color: #0f172a;
+      color: #f8fafc;
+      border-radius: 0.75rem;
+      padding: 1.25rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.85rem;
+      overflow-x: auto;
+      line-height: 1.5;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.25rem 0.75rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.025em;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+    }
+    th, td {
+      padding: 0.75rem 1rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border-color);
+    }
+    th {
+      background-color: #f1f5f9;
+      font-weight: 600;
+      color: #334155;
+    }
+    .callout {
+      border-left: 4px solid var(--primary-color);
+      padding: 1rem 1.25rem;
+      background-color: #eff6ff;
+      border-radius: 0 0.5rem 0.5rem 0;
+      margin: 1rem 0;
+    }
+    .callout-warning {
+      border-left-color: #f59e0b;
+      background-color: #fffbeb;
+    }
+    .callout-danger {
+      border-left-color: #ef4444;
+      background-color: #fef2f2;
+    }
+  </style>
+</head>
+<body class="p-6 sm:p-10 antialiased">
+  <div class="max-w-6xl mx-auto space-y-12">
+
+    <!-- Document Header -->
+    <header class="design-card space-y-4">
+      <div class="flex flex-wrap items-center justify-between gap-4">
+        <div class="flex items-center gap-2">
+          <span class="badge bg-blue-100 text-blue-800">Architecture Specification</span>
+          <span class="badge bg-indigo-100 text-indigo-800">Version 2.0 Robust</span>
+          <span class="badge bg-emerald-100 text-emerald-800">Target: Quantum 1.4.2+</span>
+        </div>
+        <div class="text-xs font-mono text-slate-500">
+          Branch: <strong>feature/ontology-facet-segmentation-edge-filtering</strong>
+        </div>
+      </div>
+      <h1 class="text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900">
+        Ontology Facet Segmentation & Edge Traversal Filtering
+      </h1>
+      <p class="text-lg text-slate-600 max-w-4xl leading-relaxed">
+        A comprehensive architecture for decoupling multi-tenant segmentation semantics from database persistence mechanics, broadening <code>DataDomainPolicy</code> into a universal coordinate engine, and establishing per-hop edge enforcement with relationship-level filtering in graph queries.
+      </p>
+      <div class="pt-4 border-t border-slate-200 flex flex-wrap gap-6 text-xs text-slate-500 font-mono">
+        <div>Author: <strong>Quantum Architecture Working Group</strong></div>
+        <div>Scope: <strong>quantum-models, quantum-morphia-repos, quantum-ontology-*, query-gateway</strong></div>
+        <div>Status: <strong>Approved for Implementation</strong></div>
+      </div>
+    </header>
+
+    <!-- Table of Contents -->
+    <nav class="design-card p-6 bg-slate-50">
+      <h3 class="text-sm font-bold uppercase tracking-wider text-slate-500 mb-3">Contents</h3>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-blue-600 font-medium">
+        <a href="#section-1" class="hover:underline">1. The Reframe: Decoupling Semantics, Carriage & Mechanics</a>
+        <a href="#section-2" class="hover:underline">2. Action Space vs. Fine-Grained Entity Space</a>
+        <a href="#section-3" class="hover:underline">3. Enforcement at the Edge: Staged Filter Maps</a>
+        <a href="#section-4" class="hover:underline">4. Deep Dive: Customer &rarr; Order &rarr; Supplier Traversal</a>
+        <a href="#section-5" class="hover:underline">5. Broadening DataDomainPolicy: The Universal Resolver</a>
+        <a href="#section-6" class="hover:underline">6. Relationship-Level Filtering & Grammar Extension</a>
+        <a href="#section-7" class="hover:underline">7. Open-Set Facet Contract & Admission Guards</a>
+        <a href="#section-8" class="hover:underline">8. Structural Realm Isolation vs. Logical Facet Predicates</a>
+        <a href="#section-9" class="hover:underline">9. Store-Free Decoupling & Non-Mongo Support</a>
+        <a href="#section-10" class="hover:underline">10. Formal Invariants & Acceptance Testing</a>
+        <a href="#section-11" class="hover:underline">11. Stacked Implementation Roadmap</a>
+      </div>
+    </nav>
+
+    <!-- Section 1: The Reframe -->
+    <section id="section-1" class="design-card space-y-6">
+      <div class="border-b border-slate-200 pb-4">
+        <span class="text-xs font-bold text-blue-600 uppercase tracking-wider">Section 1</span>
+        <h2 class="text-2xl font-bold text-slate-900 mt-1">The Reframe: Three Things Quantum Conflates</h2>
+      </div>
+
+      <p class="text-slate-700 leading-relaxed">
+        Quantum’s multi-tenant segmentation model has historically bundled three separate responsibilities into one monolithic concept: coordinate semantics, data carriage, and storage layout mechanics. Disentangling them is the fundamental move that removes the hard dependency on MongoDB while preserving physical isolation guarantees.
+      </p>
+
+      <div class="overflow-x-auto">
+        <table>
+          <thead>
+            <tr>
+              <th>Concern</th>
+              <th>What It Is</th>
+              <th>Current Framework Reality</th>
+              <th>Target Architectural Location</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="font-semibold text-slate-900">Semantics</td>
+              <td>The multi-tenant coordinate (<code>realm · org · account · tenant · dataSegment</code>), hierarchy rules, and comparison axioms.</td>
+              <td>Tied to Morphia base classes (<code>FullBaseModel</code>, <code>UnversionedBaseModel</code>) and persistence interceptors.</td>
+              <td>Admitted ontology (TBox) + store-free pure POJO evaluation library (<code>quantum-models</code>).</td>
+            </tr>
+            <tr>
+              <td class="font-semibold text-slate-900">Carriage</td>
+              <td>How a given row, record, or entity acquires its multi-tenant coordinate.</td>
+              <td>Implicitly assumed to be physically stamped on Morphia documents via <code>bm.setDataDomain(dd)</code>.</td>
+              <td>Declared per binding: <code>constant</code>, <code>derived</code>, or <code>stamped</code>.</td>
+            </tr>
+            <tr>
+              <td class="font-semibold text-slate-900">Mechanics</td>
+              <td>Realm-to-database routing, Morphia annotations, filter-string DSL, and CDI wiring.</td>
+              <td>Hardwired into <code>MorphiaRepo.getListByQuery(realm, ...)</code> and MongoDB drivers.</td>
+              <td>Stays in Quantum persistence tier unchanged; preserves physical database isolation.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout">
+        <strong>The Core Architectural Shift:</strong>
+        The segmentation model is <em>a coordinate system and a comparison function</em>. It is not a storage layout. Currently it appears to be a storage layout because <code>getListByQuery(realm, ...)</code> enforces realm at the API boundary and <code>FullBaseModel</code> physically stores <code>bmFunctionalArea</code> and <code>bmFunctionalDomain</code>.
+      </div>
+    </section>
+
+    <!-- Section 2: Action Space vs Entity Space -->
+    <section id="section-2" class="design-card space-y-6">
+      <div class="border-b border-slate-200 pb-4">
+        <span class="text-xs font-bold text-blue-600 uppercase tracking-wider">Section 2</span>
+        <h2 class="text-2xl font-bold text-slate-900 mt-1">The Action Space Is Not the Ontology</h2>
+      </div>
+
+      <p class="text-slate-700 leading-relaxed">
+        <code>Functional Area / Functional Domain / Functional Action</code> describe <em>an action that can be taken</em>. Paired with an attribute-based filter, they define the data scope that action is permitted to touch.
+      </p>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+        <div class="space-y-4">
+          <h4 class="font-semibold text-slate-900 text-sm">Why Actions and Entities Must Remain Decoupled</h4>
+          <p class="text-sm text-slate-600 leading-relaxed">
+            Actions are coarse-grained and routinely span dozens of entities; entities are fine-grained and singular.
+          </p>
+          <p class="text-sm text-slate-600 leading-relaxed">
+            When a tenant administrator grants <em>"View orders for Location ABC"</em>, they think in terms of business capability. Fulfilling that single grant requires reading <code>Customer</code>, <code>Order</code>, <code>Shipment</code>, <code>Invoice</code>, <code>Inventory</code>, and several relationship types. Requiring grants to enumerate the transitive entity closure would be brittle and unusable.
+          </p>
+          <div class="p-4 rounded-lg bg-slate-100 text-xs font-mono text-slate-800 space-y-1">
+            <div>grant = capability(area, domain, action) &times; scopeFilter(facets)</div>
+            <div>data  = coarse functional coordinate (match key)</div>
+            <div>        + facet values (scope evaluation)</div>
+            <div>        + ontology binding (meaning &amp; lineage)</div>
+          </div>
+        </div>
+
+        <div class="p-5 rounded-xl border border-slate-200 bg-slate-50 space-y-3">
+          <h4 class="font-bold text-sm text-slate-900">Three Structural Consequences</h4>
+          <ul class="text-xs text-slate-600 space-y-2.5">
+            <li>
+              <strong>1. Grant Coarse, Attest Fine:</strong> The administrator grants "View Orders"; the cryptographic execution receipt attests the exact four entities and three relationship edges traversed.
+            </li>
+            <li>
+              <strong>2. Action-Level Pushdown Validation:</strong> If a facet declares <code>pushdown: required</code>, every source and entity reachable by the coarse action must be able to push the predicate down. If one bound source cannot, the entire action is refused at registration.
+            </li>
+            <li>
+              <strong>3. Reachability Transparency:</strong> Reachability preview calculates all reachable entities and edge types up front, preventing accidental over-broad traversal before grants are finalized.
+            </li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 3: Enforcement at the Edge -->
+    <section id="section-3" class="design-card space-y-6">
+      <div class="border-b border-slate-200 pb-4">
+        <span class="text-xs font-bold text-blue-600 uppercase tracking-wider">Section 3</span>
+        <h2 class="text-2xl font-bold text-slate-900 mt-1">Enforcement Is at the Edge: Staged Filter Maps</h2>
+      </div>
+
+      <p class="text-slate-700 leading-relaxed">
+        Permissions must be enforced <em>as the ontology is traversed</em>, not merely at the root entry collection. A principal permitted to query Customer reaches Order, Invoice, Location, and Supplier. Each hop is governed by <strong>its own entity-specific filter</strong>, and each edge by <strong>its own traversal rule</strong>.
+      </p>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div class="code-block">
+          <span class="text-slate-400">// Resolution: Once per action, pinned to policy revision</span>
+          <span class="text-emerald-400">Map&lt;OntologyEntity, EntityPolicy&gt;</span> entityFilterMap;
+          <span class="text-emerald-400">Map&lt;RelationshipType, TraversalRule&gt;</span> edgeRuleMap;
+
+          <span class="text-slate-400">// Application: Per hop during query execution</span>
+          Entering Node E &rarr; Apply E.rowFilter + E.fieldExclusions
+          Crossing Edge R &rarr; Apply R.traversalPredicate
+        </div>
+
+        <div class="space-y-3 text-sm text-slate-600">
+          <h4 class="font-bold text-slate-900">Two Lookups, Two Keys</h4>
+          <p>
+            <strong>Entity Filter</strong> (keyed by ontology entity): Determines which rows of that entity are visible, and which sensitive attributes are stripped.
+          </p>
+          <p>
+            <strong>Edge Rule</strong> (keyed by relationship type): Determines whether the relationship can be traversed at all. If denied, graph expansion prunes immediately before reading the target collection.
+          </p>
+        </div>
+      </div>
+
+      <div class="p-4 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-900 leading-relaxed">
+        <strong>Four Traversal Invariants:</strong>
+        (1) <em>Unknown edge types are not traversable</em> (fail-closed, edge analogue of <code>onAbsent: deny</code>).
+        (2) <em>Restriction is monotonic along a path</em> (once a hop trims or masks fields, downstream hops cannot widen permissions).
+        (3) <em>Re-entry by another path unions</em> and explicitly records which path authorized access.
+        (4) <em>Traversal carries a declared depth/fan-out budget</em> to prevent unbounded graph expansion.
+      </div>
+    </section>
+
+    <!-- Section 4: Deep Dive Example -->
+    <section id="section-4" class="design-card space-y-8">
+      <div class="border-b border-slate-200 pb-4">
+        <span class="text-xs font-bold text-blue-600 uppercase tracking-wider">Section 4</span>
+        <h2 class="text-2xl font-bold text-slate-900 mt-1">Deep Dive: Customer &rarr; Order &rarr; Supplier Traversal</h2>
+      </div>
+
+      <p class="text-slate-700 leading-relaxed">
+        Consider the real-world scenario: <em>A customer queries their orders and views supplier details. However, they should only see active, retail-approved suppliers, and sensitive wholesale financials must be redacted.</em>
+      </p>
+
+      <!-- SVG Pipeline Visualization -->
+      <div class="bg-slate-900 rounded-xl p-6 text-white overflow-x-auto shadow-inner">
+        <h4 class="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Multi-Stage Aggregation Pipeline Pushdown</h4>
+        <svg viewBox="0 0 960 300" class="w-full min-w-[850px] font-sans">
+          <defs>
+            <marker id="arrow-pipe" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b" />
+            </marker>
+          </defs>
+
+          <!-- Stage 1 -->
+          <g transform="translate(20, 20)">
+            <rect width="260" height="250" rx="12" fill="#1e293b" stroke="#3b82f6" stroke-width="2"/>
+            <text x="20" y="30" font-size="14" font-weight="bold" fill="#60a5fa">STAGE 1: Customer (Root)</text>
+            <text x="20" y="48" font-size="11" fill="#94a3b8">db.customers.aggregate([...])</text>
+
+            <rect x="15" y="65" width="230" height="75" rx="6" fill="#0f172a" stroke="#334155"/>
+            <text x="25" y="85" font-size="11" font-weight="bold" fill="#38bdf8">$match (Row Scoping)</text>
+            <text x="25" y="105" font-size="10" fill="#cbd5e1">dataDomain.tenantId: "T-100"</text>
+            <text x="25" y="123" font-size="10" fill="#cbd5e1">status: "ACTIVE"</text>
+
+            <rect x="15" y="150" width="230" height="55" rx="6" fill="#0f172a" stroke="#334155"/>
+            <text x="25" y="170" font-size="11" font-weight="bold" fill="#f87171">$project (Redaction)</text>
+            <text x="25" y="190" font-size="10" fill="#fca5a5">- creditLimit, internalRating</text>
+
+            <text x="20" y="235" font-size="10" fill="#10b981">&#10004; Root Boundary Pushed Down</text>
+          </g>
+
+          <!-- Arrow 1 -->
+          <line x1="285" y1="145" x2="335" y2="145" stroke="#64748b" stroke-width="2" marker-end="url(#arrow-pipe)"/>
+          <text x="290" y="135" font-size="10" fill="#94a3b8">orders</text>
+
+          <!-- Stage 2 -->
+          <g transform="translate(340, 20)">
+            <rect width="270" height="250" rx="12" fill="#1e293b" stroke="#8b5cf6" stroke-width="2"/>
+            <text x="20" y="30" font-size="14" font-weight="bold" fill="#c084fc">STAGE 2: Order Lookup</text>
+            <text x="20" y="48" font-size="11" fill="#94a3b8">$lookup: from: "orders"</text>
+
+            <rect x="15" y="65" width="240" height="75" rx="6" fill="#0f172a" stroke="#334155"/>
+            <text x="25" y="85" font-size="11" font-weight="bold" fill="#c084fc">Inner $match (Correlated)</text>
+            <text x="25" y="105" font-size="10" fill="#cbd5e1">customerId: $$custId</text>
+            <text x="25" y="123" font-size="10" fill="#cbd5e1">dataDomain.tenantId: $$tenant</text>
+
+            <rect x="15" y="150" width="240" height="55" rx="6" fill="#0f172a" stroke="#334155"/>
+            <text x="25" y="170" font-size="11" font-weight="bold" fill="#f87171">Inner $project (Redaction)</text>
+            <text x="25" y="190" font-size="10" fill="#fca5a5">- billingNotes, discountCode</text>
+
+            <text x="20" y="235" font-size="10" fill="#c084fc">&#10004; Orders Filtered at Source</text>
+          </g>
+
+          <!-- Arrow 2 -->
+          <line x1="615" y1="145" x2="665" y2="145" stroke="#64748b" stroke-width="2" marker-end="url(#arrow-pipe)"/>
+          <text x="620" y="135" font-size="10" fill="#94a3b8">supplier</text>
+
+          <!-- Stage 3 -->
+          <g transform="translate(670, 20)">
+            <rect width="270" height="250" rx="12" fill="#1e293b" stroke="#10b981" stroke-width="2"/>
+            <text x="20" y="30" font-size="14" font-weight="bold" fill="#34d399">STAGE 3: Supplier Lookup</text>
+            <text x="20" y="48" font-size="11" fill="#94a3b8">$lookup: from: "suppliers"</text>
+
+            <rect x="15" y="65" width="240" height="75" rx="6" fill="#0f172a" stroke="#334155"/>
+            <text x="25" y="85" font-size="11" font-weight="bold" fill="#34d399">Inner $match (Row Pruning)</text>
+            <text x="25" y="105" font-size="10" fill="#cbd5e1">status: "ACTIVE"</text>
+            <text x="25" y="123" font-size="10" fill="#cbd5e1">type: "RETAIL_APPROVED"</text>
+
+            <rect x="15" y="150" width="240" height="55" rx="6" fill="#0f172a" stroke="#334155"/>
+            <text x="25" y="170" font-size="11" font-weight="bold" fill="#f87171">Inner $project (Redaction)</text>
+            <text x="25" y="190" font-size="10" fill="#fca5a5">- wholesaleCost, margin, taxId</text>
+
+            <text x="20" y="235" font-size="10" fill="#f59e0b">&#10004; Financials Never Read</text>
+          </g>
+        </svg>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div class="space-y-3">
+          <h4 class="font-bold text-red-600 text-sm flex items-center gap-2">
+            <span>&#9888;</span> Vulnerability in Current Framework
+          </h4>
+          <p class="text-sm text-slate-600 leading-relaxed">
+            In <code>MongoAggregationCompiler.java</code> today, <code>$lookup</code> constructs an inner pipeline that only checks ID equality and tenant ID. It embeds the entire <code>Supplier</code> document wholesale:
+          </p>
+          <div class="code-block text-xs">
+// Current MongoAggregationCompiler: Unfiltered Hydration
+Document lookup = new Document("$lookup", new Document()
+    .append("from", "suppliers")
+    .append("let", letDoc)
+    .append("pipeline", List.of(new Document("$match", matchExpr)))
+    .append("as", temp));
+// No stage-level row security.
+// No stage-level field exclusions.
+// Result: wholesaleCost and taxId leak into Customer payload!
+          </div>
+        </div>
+
+        <div class="space-y-3">
+          <h4 class="font-bold text-emerald-600 text-sm flex items-center gap-2">
+            <span>&#10004;</span> Target Staged Pushdown Execution
+          </h4>
+          <p class="text-sm text-slate-600 leading-relaxed">
+            The target compiler consults the resolved Filter Map for each stage in the expansion tree. The inner pipeline injects both target row filters and field exclusions:
+          </p>
+          <div class="code-block text-xs">
+// Target: Security & Redaction Pushed Inside MongoDB
+pipeline: [
+  { $match: { 
+      $expr: { $eq: ["$_id", "$$suppId"] },
+      "status": "ACTIVE",
+      "type": "RETAIL_APPROVED" 
+  }},
+  { $project: { 
+      "wholesaleCost": 0, 
+      "marginRate": 0, 
+      "taxId": 0 
+  }}
+]
+// Unapproved suppliers evaluate to null.
+// Sensitive fields never cross the database wire.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 5: Broadening DataDomainPolicy -->
+    <section id="section-5" class="design-card space-y-6">
+      <div class="border-b border-slate-200 pb-4">
+        <span class="text-xs font-bold text-blue-600 uppercase tracking-wider">Section 5</span>
+        <h2 class="text-2xl font-bold text-slate-900 mt-1">Broadening DataDomainPolicy: The Universal Resolver</h2>
+      </div>
+
+      <p class="text-slate-700 leading-relaxed">
+        Historically, <code>DataDomainPolicy</code> and <code>DataDomainResolver</code> were used only on creation/write persistence (<code>ValidationInterceptor.prePersist</code>) and ingestion. The query engine bypassed policy and blindly injected the caller's login domain (<code>${pTenantId}</code>) everywhere.
+      </p>
+
+      <div class="overflow-x-auto">
+        <table>
+          <thead>
+            <tr>
+              <th>Operation Lifecycle</th>
+              <th>Current Framework Status</th>
+              <th>Target Extended Contract</th>
+              <th>Execution Mechanism</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="font-semibold">Creation / Write</td>
+              <td>Supported (<code>resolveForCreate</code>)</td>
+              <td><code>resolveForCreate(area, domain, entity, attrs)</code></td>
+              <td>Morphia <code>ValidationInterceptor</code> stamps resolved <code>DataDomain</code>.</td>
+            </tr>
+            <tr>
+              <td class="font-semibold">Governed Ingest</td>
+              <td>Supported (<code>resolveIngestRow</code>)</td>
+              <td><code>resolveIngestRow(policy, area, domain, attrs)</code></td>
+              <td>Maps raw row attributes via <code>DataDomainComponentBinding</code> or quarantines.</td>
+            </tr>
+            <tr>
+              <td class="font-semibold">Query Scoping</td>
+              <td><span class="text-red-600 font-semibold">&#10008; Absent</span> (uses static token)</td>
+              <td><code>resolveForQuery(principal, area, domain, modelClass)</code></td>
+              <td>Determines effective query coordinate based on action &amp; functional domain.</td>
+            </tr>
+            <tr>
+              <td class="font-semibold">Edge Traversal</td>
+              <td><span class="text-red-600 font-semibold">&#10008; Absent</span></td>
+              <td><code>resolveForHop(principal, edgeType, targetArea, targetDomain)</code></td>
+              <td>Resolves coordinate transformation across multi-entity hops.</td>
+            </tr>
+            <tr>
+              <td class="font-semibold">Facet Scope Filtering</td>
+              <td><span class="text-amber-600 font-semibold">&#9888; Dormant</span> (field unused)</td>
+              <td><code>entry.getFilter() &rarr; BSON / Morphia Filter</code></td>
+              <td>Activates <code>DataDomainPolicyEntry.filter</code> to enforce facet predicates.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+        <div class="p-4 rounded-lg bg-slate-50 border border-slate-200">
+          <h5 class="font-bold text-xs text-slate-800 uppercase tracking-wider mb-1">Constant Carriage</h5>
+          <code class="text-xs text-indigo-600">ResolutionMode.FIXED</code>
+          <p class="text-xs text-slate-600 mt-1">Source or context bound to a fixed coordinate. Zero per-row runtime cost.</p>
+        </div>
+        <div class="p-4 rounded-lg bg-slate-50 border border-slate-200">
+          <h5 class="font-bold text-xs text-slate-800 uppercase tracking-wider mb-1">Derived Carriage</h5>
+          <code class="text-xs text-indigo-600">ResolutionMode.FROM_SOURCE</code>
+          <p class="text-xs text-slate-600 mt-1">Coordinates derived from source row attributes via <code>DataDomainComponentBinding</code>.</p>
+        </div>
+        <div class="p-4 rounded-lg bg-slate-50 border border-slate-200">
+          <h5 class="font-bold text-xs text-slate-800 uppercase tracking-wider mb-1">Stamped Carriage</h5>
+          <code class="text-xs text-indigo-600">ResolutionMode.FROM_CREDENTIAL</code>
+          <p class="text-xs text-slate-600 mt-1">Physically carried on Quantum document; falls back to ambient principal credential.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 6: Relationship-Level Filtering -->
+    <section id="section-6" class="design-card space-y-6">
+      <div class="border-b border-slate-200 pb-4">
+        <span class="text-xs font-bold text-blue-600 uppercase tracking-wider">Section 6</span>
+        <h2 class="text-2xl font-bold text-slate-900 mt-1">Relationship-Level Filtering & Grammar Extension</h2>
+      </div>
+
+      <p class="text-slate-700 leading-relaxed">
+        Relationships are rarely unadorned boolean pointers. In enterprise ontologies, relationships have <strong>qualifiers</strong> (roles, priority, capacity), <strong>temporal validity</strong> (start/end dates), and <strong>provenance</strong> (source system, derivation rules).
+      </p>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div class="space-y-4">
+          <h4 class="font-bold text-sm text-slate-900">Grammar Extension (BIAPIQuery.g4)</h4>
+          <p class="text-sm text-slate-600">
+            Extend the ANTLR query grammar to accept an optional 3rd argument for edge qualification:
+          </p>
+          <div class="code-block text-xs">
+// Extended Grammar Specification
+hasEdgeExpr: HASEDGE LPAREN 
+    predicate=(STRING|TEXT|QUOTED_STRING|VARIABLE) COMMA 
+    dst=(STRING|TEXT|QUOTED_STRING|VARIABLE|OID|REFERENCE) 
+    (COMMA lp=LBRCE edgeFilter=query rp=RBRCE)? 
+RPAREN;
+          </div>
+          <p class="text-xs text-slate-500 font-mono">
+            Example: hasEdge("assignedTo", ${locId}, { role: "PRIMARY" &amp;&amp; status: "ACTIVE" })
+          </p>
+        </div>
+
+        <div class="space-y-4">
+          <h4 class="font-bold text-sm text-slate-900">OntologyEdge Schema Enrichment</h4>
+          <p class="text-sm text-slate-600">
+            Formally equip <code>OntologyEdge</code> with open properties and compound indexes:
+          </p>
+          <div class="code-block text-xs">
+public class OntologyEdge extends UnversionedBaseModel {
+    protected String src;
+    protected String p;
+    protected String dst;
+    
+    // NEW: Open edge properties map
+    protected Map&lt;String, Object&gt; props;
+    
+    // Existing metadata now queryable
+    protected boolean derived;
+    protected boolean inferred;
+    protected Map&lt;String, Object&gt; prov;
+}
+          </div>
+        </div>
+      </div>
+
+      <div class="p-4 rounded-lg bg-blue-50 border border-blue-200 text-xs text-blue-900 leading-relaxed">
+        <strong>Repository Pushdown:</strong> 
+        <code>OntologyEdgeRepo.srcIdsByDst(dataDomain, predicate, dst, Filter... edgeFilters)</code> pushes the edge property filters directly into the MongoDB query on the <code>edges</code> collection. Edges that do not satisfy the qualifier are discarded at the index level before source IDs are gathered.
+      </div>
+    </section>
+
+    <!-- Section 7: Open-Set Facet Contract -->
+    <section id="section-7" class="design-card space-y-6">
+      <div class="border-b border-slate-200 pb-4">
+        <span class="text-xs font-bold text-blue-600 uppercase tracking-wider">Section 7</span>
+        <h2 class="text-2xl font-bold text-slate-900 mt-1">Open-Set Facet Contract & Admission Guards</h2>
+      </div>
+
+      <p class="text-slate-700 leading-relaxed">
+        Rather than hard-coding tenancy axes into rigid Java fields, segmentation is expressed through <strong>facets</strong>. The facet set is open (domains can declare <code>jurisdiction</code>, <code>contractId</code>, <code>retentionClass</code>), but facet declarations are strictly <strong>admitted into the TBox</strong> with cryptographic hash pinning.
+      </p>
+
+      <div class="code-block text-xs">
+facet jurisdiction
+  kind        nominal            # nominal | ordinal | set | hierarchical
+  domain      [EU, US, APAC]     # declared value space
+  operator    record == principal
+  onAbsent    deny               # deny | inherit | allow (allow requires steward sign-off)
+  propagates  union              # none | high-water | union | weakest-link
+  pushdown    required           # required | optional | none
+  sensitive   false              # may carrier be read to resolve coordinate?
+      </div>
+
+      <div class="overflow-x-auto">
+        <table>
+          <thead>
+            <tr>
+              <th>Failure Mode</th>
+              <th>What Goes Wrong With Bare Metadata</th>
+              <th>How Admission Contract Closes It</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="font-semibold">Undeclared Operator</td>
+              <td>Two policy authors interpret <code>segment: 3</code> differently (equality vs &le;).</td>
+              <td><code>operator</code> is declared once on the facet definition.</td>
+            </tr>
+            <tr>
+              <td class="font-semibold">Absence Permits</td>
+              <td>Record missing a label matches no rule and defaults to allow.</td>
+              <td><code>onAbsent: deny</code> is the default; <code>allow</code> requires steward attestation.</td>
+            </tr>
+            <tr>
+              <td class="font-semibold">Typo Policy</td>
+              <td>Misspelling (<code>dataSegment</code> vs <code>data_segment</code>) creates silent dead rules.</td>
+              <td>TBox vocabulary check rejects unadmitted literals at registration.</td>
+            </tr>
+            <tr>
+              <td class="font-semibold">Directionless Composition</td>
+              <td>Derived artifacts cannot determine whether to use high-water or weakest-link.</td>
+              <td><code>propagates</code> defines explicit algebra for derivations.</td>
+            </tr>
+            <tr>
+              <td class="font-semibold">Unknowable Pushdown</td>
+              <td>Filter cannot be pushed into data source; data crosses boundary before being dropped.</td>
+              <td><code>pushdown: required</code> validates at binding registration time.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Section 8: Structural Realm Isolation -->
+    <section id="section-8" class="design-card space-y-6">
+      <div class="border-b border-slate-200 pb-4">
+        <span class="text-xs font-bold text-blue-600 uppercase tracking-wider">Section 8</span>
+        <h2 class="text-2xl font-bold text-slate-900 mt-1">Structural Realm Isolation vs. Logical Facet Predicates</h2>
+      </div>
+
+      <p class="text-slate-700 leading-relaxed">
+        This distinction must remain absolute or the fundamental security property that makes Quantum trustworthy is compromised:
+      </p>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div class="p-5 rounded-xl border border-blue-200 bg-blue-50/50 space-y-2">
+          <h4 class="font-bold text-blue-900 text-sm">Realm is an Admission Gate</h4>
+          <p class="text-xs text-blue-800 leading-relaxed">
+            Realm is resolved <em>before query lowering</em>. It selects the physical MongoDB database or cluster. A realm mismatch means the query is never constructed. Cross-realm joins are structurally unrepresentable, not merely policy-forbidden. Realm must <strong>never</strong> become a filterable facet.
+          </p>
+        </div>
+
+        <div class="p-5 rounded-xl border border-purple-200 bg-purple-50/50 space-y-2">
+          <h4 class="font-bold text-purple-900 text-sm">Facets are Lowering Predicates</h4>
+          <p class="text-xs text-purple-800 leading-relaxed">
+            All other coordinates (<code>orgRefName</code>, <code>accountNum</code>, <code>tenantId</code>, <code>dataSegment</code>, and custom facets) are predicates in the plan. They compile into the stage-level <code>$match</code> filters inside that realm’s database boundary.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 9: Store-Free Decoupling -->
+    <section id="section-9" class="design-card space-y-6">
+      <div class="border-b border-slate-200 pb-4">
+        <span class="text-xs font-bold text-blue-600 uppercase tracking-wider">Section 9</span>
+        <h2 class="text-2xl font-bold text-slate-900 mt-1">Store-Free Decoupling & Second-Store Wedge</h2>
+      </div>
+
+      <p class="text-slate-700 leading-relaxed">
+        To fulfill the strategic goal of governing customer data where it resides (PostgreSQL, S3, APIs), coordinate resolution must not depend on a running MongoDB instance:
+      </p>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div class="space-y-2 text-sm text-slate-600">
+          <h4 class="font-bold text-slate-900">What Moves to Store-Free Core (quantum-models)</h4>
+          <ul class="list-disc list-inside space-y-1 text-xs">
+            <li><code>DataDomainPolicy</code> &amp; <code>DataDomainPolicyEntry</code> (already pure POJOs).</li>
+            <li><code>DataDomainComponentBinding</code>.</li>
+            <li><code>DataDomainResolver</code> interface and its default evaluation logic.</li>
+            <li>Facet declaration schemas and validation rules.</li>
+          </ul>
+        </div>
+
+        <div class="space-y-2 text-sm text-slate-600">
+          <h4 class="font-bold text-slate-900">What Stays in Quantum Persistence (quantum-morphia-repos)</h4>
+          <ul class="list-disc list-inside space-y-1 text-xs">
+            <li>Realm-to-database connection pooling and routing.</li>
+            <li>Morphia entity mapping and change streams.</li>
+            <li>MongoDB aggregation pipeline compiler.</li>
+            <li>Provisioning and decommissioning lifecycles.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 10: Invariants & Acceptance Testing -->
+    <section id="section-10" class="design-card space-y-6">
+      <div class="border-b border-slate-200 pb-4">
+        <span class="text-xs font-bold text-blue-600 uppercase tracking-wider">Section 10</span>
+        <h2 class="text-2xl font-bold text-slate-900 mt-1">Formal Invariants & Acceptance Testing</h2>
+      </div>
+
+      <div class="space-y-2 text-xs text-slate-700 leading-relaxed font-mono">
+        <div class="p-2 rounded bg-slate-100"><strong>INV-01:</strong> Policy naming an unadmitted facet is rejected at registration with the literal named.</div>
+        <div class="p-2 rounded bg-slate-100"><strong>INV-02:</strong> Facet with no declared onAbsent defaults to deny; allow requires steward attestation.</div>
+        <div class="p-2 rounded bg-slate-100"><strong>INV-03:</strong> Pushdown validation is verified per-action across all reachable bindings.</div>
+        <div class="p-2 rounded bg-slate-100"><strong>INV-04:</strong> Realm is resolved before query lowering and cannot appear as a filterable predicate.</div>
+        <div class="p-2 rounded bg-slate-100"><strong>INV-05:</strong> A lowered query cannot be constructed without a resolved coordinate.</div>
+        <div class="p-2 rounded bg-slate-100"><strong>INV-06:</strong> Restriction along a traversal path is monotonic; downstream hops cannot loosen filters.</div>
+        <div class="p-2 rounded bg-slate-100"><strong>INV-07:</strong> Denied edges prune before target entity reads; withheld edges are named on the audit receipt.</div>
+        <div class="p-2 rounded bg-slate-100"><strong>INV-08:</strong> Sub-collections in $lookup must execute stage-specific $match and $project.</div>
+      </div>
+
+      <div class="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-900">
+        <strong>The Benchmark Acceptance Test:</strong>
+        Execute a pilot against a customer’s PostgreSQL database, an S3 object store, and an external REST API—with <em>zero MongoDB instances in the deployment</em>—and produce a cryptographic receipt carrying an exact trim record naming every withheld row and stripped attribute.
+      </div>
+    </section>
+
+    <!-- Section 11: Stacked Implementation Roadmap -->
+    <section id="section-11" class="design-card space-y-6">
+      <div class="border-b border-slate-200 pb-4">
+        <span class="text-xs font-bold text-blue-600 uppercase tracking-wider">Section 11</span>
+        <h2 class="text-2xl font-bold text-slate-900 mt-1">Stacked Implementation Roadmap</h2>
+        <p class="text-xs text-slate-500 mt-1">Tracked in Helixor <code>brain.todo</code> (ID: <code>todo_f76c97ee7ec144adb2ceaf5005fe3901</code>)</p>
+      </div>
+
+      <div class="space-y-4">
+        <div class="p-4 rounded-xl border border-slate-200 bg-slate-50 space-y-1">
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-sm text-slate-900">Phase 1: Model &amp; Schema Evolution</span>
+            <span class="badge bg-slate-200 text-slate-700">quantum-models</span>
+          </div>
+          <p class="text-xs text-slate-600">
+            Extend <code>OntologyEdge</code> with <code>Map&lt;String, Object&gt; props</code> and compound indexes. Extend <code>DataDomainComponentBinding</code> to support open admitted facets. Activate <code>DataDomainPolicyEntry.filter</code>.
+          </p>
+        </div>
+
+        <div class="p-4 rounded-xl border border-slate-200 bg-slate-50 space-y-1">
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-sm text-slate-900">Phase 2: Store-Free Coordinate SPI</span>
+            <span class="badge bg-slate-200 text-slate-700">quantum-models</span>
+          </div>
+          <p class="text-xs text-slate-600">
+            Move <code>DataDomainResolver</code> into <code>quantum-models</code>. Broaden interface to include <code>resolveForQuery</code> and <code>resolveForHop</code>. Implement fail-closed <code>onAbsent: deny</code> semantics.
+          </p>
+        </div>
+
+        <div class="p-4 rounded-xl border border-slate-200 bg-slate-50 space-y-1">
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-sm text-slate-900">Phase 3: Grammar &amp; Query Language</span>
+            <span class="badge bg-slate-200 text-slate-700">quantum-models</span>
+          </div>
+          <p class="text-xs text-slate-600">
+            Update <code>BIAPIQuery.g4</code> to support <code>hasEdge(predicate, dst, { edgeFilter })</code>. Update ANTLR listeners and <code>QueryToFilterListener</code> to extract edge property filters.
+          </p>
+        </div>
+
+        <div class="p-4 rounded-xl border border-slate-200 bg-slate-50 space-y-1">
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-sm text-slate-900">Phase 4: Policy &amp; Script Runtime</span>
+            <span class="badge bg-slate-200 text-slate-700">quantum-ontology-policy-bridge</span>
+          </div>
+          <p class="text-xs text-slate-600">
+            Update <code>ScriptHelpers.java</code> with edge qualification callbacks. Validate edge property names against admitted TBox schemas via <code>RuleVocabularyValidator</code>.
+          </p>
+        </div>
+
+        <div class="p-4 rounded-xl border border-slate-200 bg-slate-50 space-y-1">
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-sm text-slate-900">Phase 5: Data Access Pushdown</span>
+            <span class="badge bg-slate-200 text-slate-700">quantum-ontology-mongo</span>
+          </div>
+          <p class="text-xs text-slate-600">
+            Overload <code>OntologyEdgeRepo.srcIdsByDst</code> and <code>dstIdsBySrc</code> to accept edge property filters. Push filters directly to MongoDB index scans. Update <code>ListQueryRewriter</code>.
+          </p>
+        </div>
+
+        <div class="p-4 rounded-xl border border-slate-200 bg-slate-50 space-y-1">
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-sm text-slate-900">Phase 6: Aggregation Compiler Per-Stage Pushdown</span>
+            <span class="badge bg-slate-200 text-slate-700">quantum-morphia-repos</span>
+          </div>
+          <p class="text-xs text-slate-600">
+            Enhance <code>MongoAggregationCompiler</code> to inject target model row security (<code>$match</code>) and field exclusions (<code>$project</code>) inside inner <code>$lookup</code> pipelines.
+          </p>
+        </div>
+
+        <div class="p-4 rounded-xl border border-slate-200 bg-slate-50 space-y-1">
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-sm text-slate-900">Phase 7: Security Integration</span>
+            <span class="badge bg-slate-200 text-slate-700">quantum-morphia-repos &amp; query-gateway</span>
+          </div>
+          <p class="text-xs text-slate-600">
+            Connect <code>RepoSecurityFilterBuilder</code> and <code>QueryGatewayResource</code> to <code>DataDomainPolicy</code> for target coordinates before defaulting to ambient <code>${pTenantId}</code>.
+          </p>
+        </div>
+
+        <div class="p-4 rounded-xl border border-slate-200 bg-slate-50 space-y-1">
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-sm text-slate-900">Phase 8: Conformance &amp; End-to-End Verification</span>
+            <span class="badge bg-slate-200 text-slate-700">quantum-framework IT</span>
+          </div>
+          <p class="text-xs text-slate-600">
+            Integration tests: (a) <code>Customer &rarr; Order &rarr; Supplier</code> multi-hop pruning and attribute redaction; (b) edge qualification queries; (c) non-Mongo store-free coordinate resolution.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="text-center text-xs text-slate-500 py-8 border-t border-slate-200">
+      End2EndLogic Quantum Framework Architecture &bull; Comprehensive Design Document 2026-09
+    </footer>
+
+  </div>
+</body>
+</html>

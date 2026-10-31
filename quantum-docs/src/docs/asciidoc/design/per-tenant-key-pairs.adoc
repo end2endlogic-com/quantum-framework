@@ -1,3 +1,7 @@
+ifndef::doc-root[]
+:doc-root: ..
+endif::[]
+
 = Per-Tenant Key Pairs — Design
 
 *Implementation status:* Phase 1 (configurable key paths) and Phase 2 (extractable default keys) are implemented.
@@ -161,7 +165,7 @@ GET /{realm}/.well-known/jwks.json
   The `privateKeyPemOrVaultRef` field holds a vault reference; `TenantKeyResolver` resolves actual key material at runtime.
 * Key pairs should be cached in memory with a TTL to avoid vault/database calls on every token operation.
 * Access to the `tenantKeyPairs` collection should be restricted to system-level administrative operations.
-* See xref:../user-guide/secrets-and-vault.adoc[Secrets and Vault Configuration] for the vault integration model.
+* See xref:{doc-root}/user-guide/secrets-and-vault.adoc[Secrets and Vault Configuration] for the vault integration model.
 
 == Implementation Status
 

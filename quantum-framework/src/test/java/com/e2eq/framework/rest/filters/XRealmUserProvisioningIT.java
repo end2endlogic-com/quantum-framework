@@ -51,10 +51,10 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 public class XRealmUserProvisioningIT extends BaseRepoTest {
 
     // Test target realm configuration (the "other" tenant)
-    private static final String TARGET_REALM_REF_NAME = "xrealm-provision-target";
+    private static final String TARGET_REALM_REF_NAME = "test-xrealm-provision-target";
     private static final String TARGET_EMAIL_DOMAIN = "xrealmtarget.com";
     private static final String TARGET_ORG = "XREALM-TARGET-ORG";
-    private static final String TARGET_TENANT = "xrealm-provision-target";
+    private static final String TARGET_TENANT = "test-xrealm-provision-target";
     private static final String TARGET_ACCOUNT = "XREALM-TARGET-ACCT";
 
     // Test users to be provisioned
@@ -97,10 +97,15 @@ public class XRealmUserProvisioningIT extends BaseRepoTest {
         try (final SecuritySession s = new SecuritySession(pContext, rContext)) {
             // Ensure the admin test user exists and has realm override capability
             ensureAdminUserWithRealmOverride();
+        }
 
-            // Ensure target realm exists
+        // The realm catalog entry lives in the system data domain: register it as the system principal,
+        // as the control plane does. The test-tenant admin in pContext may not write into that domain.
+        try (final SecuritySession s = asSystem()) {
             ensureTargetRealmExists();
+        }
 
+        try (final SecuritySession s = new SecuritySession(pContext, rContext)) {
             // Clean up any test users from previous runs
             cleanupTestUsers();
 
@@ -114,8 +119,11 @@ public class XRealmUserProvisioningIT extends BaseRepoTest {
         try (final SecuritySession s = new SecuritySession(pContext, rContext)) {
             // Clean up test users
             cleanupTestUsers();
-
-            // Clean up target realm
+        } catch (Exception e) {
+            Log.warnf("Cleanup failed: %s", e.getMessage());
+        }
+        try (final SecuritySession s = asSystem()) {
+            // Clean up target realm (system data domain)
             cleanupTargetRealm();
         } catch (Exception e) {
             Log.warnf("Cleanup failed: %s", e.getMessage());
@@ -132,6 +140,10 @@ public class XRealmUserProvisioningIT extends BaseRepoTest {
         CredentialUserIdPassword cred;
         if (credop.isPresent()) {
             cred = credop.get();
+            cred.setPassword(testUtils.getDefaultTestPassword());
+            cred.setApplicationRegEx("*");
+            cred.setRealmRegEx("*");
+            credRepo.save(testUtils.getSystemRealm(), cred);
             // Ensure admin role and realm override is enabled
             boolean needsUpdate = false;
 
@@ -179,7 +191,8 @@ public class XRealmUserProvisioningIT extends BaseRepoTest {
             cred.setDomainContext(new DomainContext(dataDomain, testUtils.getTestRealm()));
             cred.setLastUpdate(new Date());
             cred.setDataDomain(dataDomain);
-            cred.setRealmRegEx("*");  // Allow all realm overrides
+            cred.setRealmRegEx("*");
+            cred.setApplicationRegEx("*");  // Explicit fixture application grant
             cred.setImpersonateFilterScript("return true");
             cred = credRepo.save(testUtils.getSystemRealm(), cred);
         }
@@ -219,6 +232,8 @@ public class XRealmUserProvisioningIT extends BaseRepoTest {
 
         targetRealm = Realm.builder()
                 .refName(TARGET_REALM_REF_NAME)
+                .applicationRef(com.e2eq.framework.model.persistent.base.EntityReference.builder()
+                        .entityRefName("quantum-framework-test").entityDisplayName("Quantum Framework Test").build())
                 .displayName("X-Realm Provisioning Target")
                 .emailDomain(TARGET_EMAIL_DOMAIN)
                 .databaseName(TARGET_REALM_REF_NAME)
@@ -347,6 +362,7 @@ public class XRealmUserProvisioningIT extends BaseRepoTest {
      */
     private String loginAndGetToken() throws Exception {
         AuthRequest request = new AuthRequest();
+        request.setApplicationId("quantum-framework-test");
         request.setUserId(testUtils.getTestUserId());
         request.setPassword(testUtils.getDefaultTestPassword());
 
@@ -594,6 +610,7 @@ public class XRealmUserProvisioningIT extends BaseRepoTest {
         try {
             // Login as the test user (now without realm override permission)
             AuthRequest request = new AuthRequest();
+        request.setApplicationId("quantum-framework-test");
             request.setUserId(testUtils.getTestUserId());
             request.setPassword(testUtils.getDefaultTestPassword());
 

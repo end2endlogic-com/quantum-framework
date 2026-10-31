@@ -3,7 +3,26 @@
 
 Quantum supports multiple multi-tenant models for MongoDB deployments:
 
-=== One Tenant per Database (in a MongoDB Cluster)
+Every persisted `Realm` has a `deploymentType`:
+
+* `DEDICATED` is the default. Realm records created before this field existed,
+  and any record whose value is absent or null, resolve to `DEDICATED`.
+* `SHARED` must be set explicitly before the realm can accept pooled tenant
+  admissions.
+
+The system-management realm catalog exposes this value so operators can see
+the database topology directly. Tenant lifecycle requests use
+`DEDICATED_REALM` and `POOLED_REALM`; those request values must agree with the
+realm's persisted `DEDICATED` or `SHARED` type.
+
+Database migration `1.0.6` backfills existing system-realm catalog records.
+It updates only Realm documents where `deploymentType` is missing or null,
+setting them to `DEDICATED`; an explicitly configured `SHARED` value is
+preserved. Deployments should advance `quantum.database.version` to `1.0.6`
+and run the normal Quantum migration workflow rather than patching Realm
+documents individually.
+
+=== `DEDICATED_REALM`: One Tenant per Database
 
 - Each tenant is mapped to a dedicated MongoDB database within a cluster.
 - Strong isolation at the database level; operational controls via MongoDB roles.
@@ -15,7 +34,7 @@ How Quantum helps:
 - DataDomain carries tenant identifiers (e.g., tenantId, ownerId, orgRefName) on each model.
 - Repositories can resolve connections/DB selection per tenant, enabling routing to the appropriate database.
 
-=== Many Tenants in One Database (Shared Database)
+=== `POOLED_REALM`: Many Tenants in One Database
 
 - Multiple tenants share a single database and collections.
 - Isolation is enforced at the application layer using DataDomain filters.
@@ -25,8 +44,13 @@ How Quantum helps:
 How Quantum helps:
 
 - DataDomain is part of every persisted model, enabling programmatic, rule-based filtering.
-- RuleContext and DomainContext can be used to inject tenant-aware filters into repositories and resources.
+- RuleContext and DomainContext inject tenant-aware filters into governed repositories and resources.
 - Cross-tenant sharing can be modeled by specific DataDomain fields and RuleContext logic granting read access across tenants on a per-functional-area basis.
+
+In both modes, realm means MongoDB placement and schema lifecycle while
+DataDomain means row visibility. `POOLED_REALM` is therefore safe only for
+models and repository paths that participate in governed DataDomain
+filtering. A shared database does not weaken or replace the policy boundary.
 
 === Freemium and Trial Tenants
 
@@ -43,9 +67,12 @@ Quantum patterns:
 [[tenant-onboarding-and-invites]]
 === Tenant Onboarding and Access Invites
 
-Quantum separates tenant creation from user access and from the user-facing onboarding journey. Those are related, but they are not the same thing:
+Quantum separates realm creation, tenant admission, user access, and the
+user-facing onboarding journey. Those are related, but they are not the same
+thing:
 
-- Tenant provisioning creates the tenant realm, runs migrations, and establishes the initial admin user.
+- Dedicated provisioning creates the tenant realm, runs realm migrations, and establishes the initial admin user.
+- Pooled admission adds a tenant to an existing realm and does not create or initialize a database.
 - Tenant onboarding workflow defines the steps a tenant user should complete before access is considered fully activated.
 - Access invites bring an individual user into an existing tenant and can attach scoped access metadata.
 
@@ -58,7 +85,11 @@ The admin tenant provisioning API is exposed at:
 - `POST /admin/tenants`
 - `DELETE /admin/tenants/{realmId}`
 
-Provisioning is intended for `admin` and `system` roles. The request creates the tenant catalog entry, initializes the tenant database, and ensures an initial admin credential exists.
+Provisioning is intended for `admin` and `system` roles. The same endpoint
+supports both deployment topologies. Omitting `deploymentTopology` preserves
+the historical `DEDICATED_REALM` behavior. `POOLED_REALM` admission succeeds
+only when `placementRealmId` identifies an existing Realm explicitly marked
+`SHARED`; legacy and untyped realms are treated as `DEDICATED`.
 
 Request fields:
 
@@ -87,8 +118,22 @@ Request fields:
 | `adminPassword`
 | Initial password for the admin user
 
+| `applicationId`
+| Application that owns the realm placement; may use the configured default
+
+| `deploymentTopology`
+| `DEDICATED_REALM` or `POOLED_REALM`; when omitted, uses
+`quantum.tenant.provisioning.deployment-topology` (default
+`DEDICATED_REALM`)
+
+| `placementRealmId`
+| Existing target realm for `POOLED_REALM`; when omitted, uses
+`quantum.tenant.provisioning.pooled-realm`
+
 | `seedArchetypes` or `archetypes`
-| Optional list of seed archetypes to apply during tenant creation
+| Optional list of seed archetypes for dedicated realm creation. Pooled
+admission rejects archetypes until the seed contract can prove all writes are
+tenant-scoped.
 |===
 
 Representative request:
@@ -131,15 +176,116 @@ What provisioning does:
 - optionally applies requested seed archetypes
 - applies indexes and verifies initialization
 
+For `POOLED_REALM`, provisioning instead:
+
+- derives a distinct tenant id from `tenantEmailDomain`
+- resolves `placementRealmId` to an existing `Realm` catalog record
+- creates a PARTICIPANT `RealmTenantMembership`
+- assigns the tenant's users to the shared realm with the tenant's own
+  `DomainContext` and `DataDomain`
+- creates only the requested administrator identity and tenant-scoped realm
+  assignment; it does not create baseline or demo identities
+- skips realm migrations, base seed packs, archetypes, and index initialization
+- never creates or drops the shared realm/database
+
+The pooled realm must therefore be provisioned and migrated before admitting
+tenants. Every persisted model reachable by a pooled tenant must participate
+in governed `DataDomain` filtering for reads and writes. A user currently has
+one active tenant `DataDomain` assignment per realm; admitting the same
+identity into a second tenant in that realm fails closed until an explicit
+tenant-selection claim is available.
+
+Example pooled admission:
+
+[source,json]
+----
+{
+  "tenantDisplayName": "Acme Logistics",
+  "tenantEmailDomain": "acme.example",
+  "orgRefName": "acme.example",
+  "accountId": "1000000001",
+  "adminUserId": "admin@acme.example",
+  "adminPassword": "change-me-now",
+  "deploymentTopology": "POOLED_REALM",
+  "placementRealmId": "shared-logistics"
+}
+----
+
 Provisioning is designed to be largely idempotent. If the same tenant or admin user already exists with matching attributes, the service proceeds and returns warnings instead of blindly recreating state. If existing state conflicts with the request, the service rejects the operation.
 
-Deleting a tenant removes:
+==== 2. Tenant decommissioning: archive before topology-specific cleanup
 
-- the tenant database
-- the tenant's `Realm` catalog entry
-- matching credentials associated with that tenant setup
+Tenant deletion is a governed lifecycle operation, not a direct CRUD delete.
+The placement topology determines the cleanup boundary:
 
-CAUTION: `DELETE /admin/tenants/{realmId}` is destructive and is intentionally blocked for the configured system realm.
+* `DEDICATED_REALM`: revoke tenant access, create and verify a database
+  archive, then drop the tenant database and retire its realm catalog state.
+* `POOLED_REALM`: revoke tenant access, export only rows matching the
+  canonical tenant `DataDomain` identity (`orgRefName`, `accountNum`,
+  `tenantId`, and `dataSegment`), then stamp every matching row with one
+  immutable purge batch reference and one `purgeAfter` timestamp. The shared
+  database and realm are never dropped.
+
+MongoDB TTL cleanup is asynchronous and may remove documents from different
+collections at different times. Revoking tenant access before expiration is
+therefore the logical atomic barrier: users cannot observe a partially drained
+tenant. Before the workflow reports the pooled purge as scheduled, it must
+reconcile archive and expiration counts for every collection declared
+tenant-scoped.
+
+Revocation verification includes already-issued tokens or sessions, not only
+future logins. Suspending a system-plane membership by itself is not a safe
+barrier for a stateless tenant plane. A deployment must install a revocation
+provider that invalidates active access (or waits behind an equivalent
+verified write/read fence) before archive and expiration proceed.
+
+Before a pooled purge is planned, the persisted collection inventory must be
+reconciled with the collection ownership catalog. Every existing user
+collection must have exactly one scope:
+
+* `TENANT_SCOPED`: selectable by the canonical tenant identity and eligible
+  for tenant archive and expiration.
+* `REALM_SHARED`: shared within the realm and excluded from every individual
+  tenant purge.
+* `SYSTEM_GLOBAL`: owned by the system management plane and excluded from
+  tenant purge.
+
+An existing collection without a scope declaration blocks the operation.
+Declaring a collection as shared or global also forbids tenant-selection and
+expiration field mappings for that collection.
+
+The default Mongo registry is configured with comma-separated collection
+names:
+
+[source,properties]
+----
+quantum.tenant-storage.tenant-scoped-collections=orders,orderEvents,tenantFiles.files,tenantFiles.chunks
+quantum.tenant-storage.realm-shared-collections=realmConfiguration
+quantum.tenant-storage.system-global-collections=
+----
+
+Only MongoDB internal `system.*` namespaces are excluded automatically.
+GridFS and other blob collections are ordinary user collections for this
+purpose and must be classified explicitly. Reading the inventory does not
+create a Morphia datastore, collections, or indexes.
+
+TTL indexes must exist on the configured `purgeAfter` field for every
+tenant-scoped collection. Realm bootstrap/migrations should install them; the
+default Mongo expiration provider also creates the absolute-time TTL index
+idempotently before it stamps rows. Large collections may be processed in
+resumable batches, but every batch uses the same purge reference and
+timestamp. Blob payloads owned by tenant rows are part of both archive and
+expiration coverage.
+
+`ownerId` is not part of tenant deletion identity. It can narrow policy access,
+but using it for archive or purge selection can leave tenant-owned data behind.
+Direct `DELETE /admin/tenants/{realmId}` remains disabled until a governed
+control-plane workflow supplies archive verification, collection-scope
+metadata, and purge reconciliation.
+
+Direct tenant deletion is disabled. Decommissioning must use the governed
+control-plane lifecycle. In particular, pooled tenant removal is a scoped
+DataDomain operation and must never drop its shared realm/database.
 
 ==== 2. Tenant onboarding workflow: define the journey after invite/registration
 
@@ -231,16 +377,70 @@ Access invites are exposed at:
 - `GET /access/invites/{refName}`
 - `POST /access/invites`
 - `POST /access/invites/{refName}/revoke`
+- `POST /access/invites/{refName}/resend`
 - `POST /access/invites/accept`
 
-The first four require an authenticated caller in the target tenant. Invite acceptance is `@PermitAll` because the recipient may not yet have tenant access.
+All but `accept` require an authenticated caller in the target tenant. Invite acceptance is `@PermitAll` because the recipient may not yet have tenant access.
+
+===== Realm-scoped invites
+
+*One realm per invite.* An invite is for exactly one realm: the realm of the request context (`realm` / `X-Realm`). Granting access to five realms takes five invites. A request whose optional `realm` names a different realm, whose `realms` names more than one realm, or that uses a wildcard or pattern is refused with `400 INVITE_SINGLE_REALM_REQUIRED`.
+
+*The inviter must be able to access that realm.* The request header is not trusted on its own; the realm must be registered, and the service checks it against the inviter's own credential, with the same precedence as sign-in. The realm is accessible when it is:
+
+- the credential's home realm (`domainContext.defaultRealm`), or
+- listed in the credential's `authorizedRealms`, or
+- when `authorizedRealms` is empty, matched in full by its `realmRegEx` (case-insensitive and anchored; `*` alone means every realm, and `*` elsewhere is a wildcard). An explicit `authorizedRealms` list takes precedence and the pattern is then not consulted.
+
+The system realm is never accessible this way; only the framework system user can invite into it. Any other realm is refused with `403 INVITE_REALM_NOT_ACCESSIBLE`.
+
+*Realm administrator.* The framework system principal, or a caller that can access the realm and holds `admin` there (as a flat credential role or in its `UserRealmRole` for the realm). Listing returns every invite to a realm administrator and only the caller's own invites to anyone else. Reading, revoking, and resending an invite require the inviter or a realm administrator.
+
+*Grantable roles and applications.* An inviter can grant only roles it holds in that same realm: its flat credential roles plus the roles of its `UserRealmRole` for the realm (`403 INVITE_ROLE_NOT_GRANTABLE`). Only the framework system user can grant `system`. Applications named in `authorizedApplications` must be registered; a realm administrator may grant any of them (and the admin-only `*`), anyone else only applications its own `UserRealmRole` grant for the realm already includes (`403 INVITE_APPLICATION_NOT_GRANTABLE`). The inviter's realm access, roles, and applications are checked again when the invite is accepted, so an inviter that has since lost them can no longer hand them out (invites created by the framework system principal are exempt). Because flat roles apply in every realm a user can access, inviting an existing account that cannot yet access the realm also brings its flat roles into the realm; the inviter must hold those roles in the realm too (other than the baseline `user`), otherwise acceptance is refused with `403 INVITE_ROLE_NOT_GRANTABLE`.
+
+*Roles apply only in the invited realm.* Flat credential roles apply in every realm the user can access, by design. Invited roles are therefore never written to the credential: on acceptance they go to the invitee's `UserRealmRole` for (userId, invited realm), unioned with any existing assignment for that realm. Named applications are unioned into `UserRealmRole.authorizedApplications`; when the invite names none, that field is left as it is. There is one `UserRealmRole` per (userId, realm), so accepting again merges instead of duplicating. In embedded mode the unique index `uidx_user_realm_role_realm_user` (realmRefName, userId) is created by the first invite acceptance rather than at datastore start-up; if existing duplicate assignments prevent it, acceptance fails closed until they are merged. A new assignment takes the data domain and tenant the realm's acceptance policy decides: the realm's own under `dedicated-realm`, the inviter's partition under `pooled-realm-tenant`. A concurrent change to the same assignment between read and write is refused (optimistic version check) and the acceptance can be retried.
+
+[[invite-acceptance-policy]]
+===== Pooled realms: invite acceptance policy
+
+An invite records only one realm, but a pooled realm (`Realm.tenancyMode = MULTI_TENANT` or `Realm.deploymentType = SHARED`, as set by `POOLED_REALM` provisioning) holds many tenants separated by DataDomain. Where the invitee lands inside the realm is decided by an *invite acceptance policy*, a CDI bean implementing `InviteAcceptancePolicy`, selected by the realm's topology.
+
+*Which policy.* The realm's topology decides: a pooled realm uses `pooled-realm-tenant`, any other realm uses `dedicated-realm`. There is no per-realm override. A `SHARED` realm that is not `MULTI_TENANT` is refused by `pooled-realm-tenant` with `409 INVITE_POLICY_UNAVAILABLE`, because request tenant selection does not run there. A missing or ambiguous policy bean is refused the same way. A request may send `acceptancePolicy` only to repeat the realm's policy. The id is recorded on the invite, and acceptance is refused (`409 INVITE_POLICY_UNAVAILABLE`, invite stays pending) if the realm's policy has changed since (for example, the realm's tenancy mode changed).
+
+*Scope snapshot.* When an invite is created the service resolves the inviter's data partition with the framework's `DataDomainResolver` (`resolveForQuery` for `SECURITY:ACCESS_INVITE`): the principal's `DataDomainPolicy`, then the global policy, then the principal's own DataDomain. The principal is the verified, signed-in context (after pooled-realm tenant selection), never request fields. The result is stored as `AccessInvite.scope` (`InviteScope`): the realm it was resolved in, every DataDomain field it yields (tenant, org, account, data segment, owner, location, business transaction), and any policy filter or facet filters. A partition that cannot be resolved is refused with `403 INVITE_SCOPE_UNRESOLVABLE`; nothing falls back to default fields. A request `scope` may only echo the snapshot: any field that differs is refused with `403 INVITE_SCOPE_NOT_AUTHORIZED`.
+
+*Built-in policies.*
+
+[cols="1,3,3",options="header"]
+|===
+|Policy |At creation |At acceptance
+|`dedicated-realm` (every realm that is not pooled)
+|Refuses a pooled realm.
+|Today's placement: a new account's home context is the realm; a new `UserRealmRole` takes the realm's registered data domain and tenant.
+|`pooled-realm-tenant` (every pooled realm)
+|Serves only `MULTI_TENANT` realms (where request tenant selection enforces the tenant grant); a `SHARED` realm that is not `MULTI_TENANT` is refused with `409 INVITE_POLICY_UNAVAILABLE`. The scope must be resolved in this realm, its tenant must be an active `RealmTenantMembership` of the realm, its org/account must be that membership's, and it must carry no policy filter or facet filters (else `403 INVITE_SCOPE_UNRESOLVABLE`). The inviter must be entitled to the tenant: its `UserRealmRole` for the realm authorizes it (`authorizedTenantIds` / `authorizedTenantRegEx`), or it is a realm administrator or the system principal (else `403 INVITE_SCOPE_NOT_AUTHORIZED`). The invite record itself is stored in the inviter's partition.
+|Re-runs the creation checks against the inviter's current assignment; if the inviter has lost the tenant, `403 INVITE_SCOPE_NOT_AUTHORIZED` and the invite stays pending. The invitee's partition is the snapshot with `ownerId` set to the invitee. A new account's home context is that tenant/org/account/data segment; a new `UserRealmRole` takes the partition as its data domain; the tenant is unioned into `authorizedTenantIds` (an existing member keeps its other tenants and its default partition, so one user can belong to several tenants); the `UserProfile` is created in the partition. Roles stay realm-scoped: one role list per (user, realm). Two refusals protect existing members: if the member's default partition would give it a different data segment, location, or business transaction in the invited tenant than the snapshot, `403 INVITE_SCOPE_UNRESOLVABLE`; and because roles apply in every tenant the member already has, an invite that adds a role is accepted only when the inviter is entitled to all of those tenants (or is a realm administrator or the system principal), else `403 INVITE_ROLE_NOT_GRANTABLE`.
+|===
+
+*Managing invites in a pooled realm.* Realm-scoped `admin` does not cross tenants: listing, reading, revoking and resending an invite need the inviter, the system principal, or an administrator whose realm assignment authorizes the invite's scope tenant. An invite with no recorded scope is managed only by its inviter or the system principal.
+
+Pooled-realm tenant selection (`SecurityFilter`) builds a request's DataDomain from the tenant's `RealmTenantMembership`. When the user's `UserRealmRole` data domain (its default partition in the realm) is for that same tenant, org and account, its data segment, location, and business transaction carry over, so an invitee placed in a partition with a data segment works in that segment. Another tenant of the same user does not inherit it.
+
+*Fail closed.* A policy that throws while resolving the grant rolls back everything the acceptance wrote and releases the claim. Rollback removes only what the acceptance added (roles, tenants, applications, a status or subject it set), from the assignment as it is at that moment, so a change made meanwhile (a suspension, a removed role) is kept; a profile is removed only together with an account the acceptance created; in remote mode a new assignment that cannot be deleted is emptied and suspended. The service also refuses (`409 INVITE_POLICY_UNAVAILABLE`) a grant that names roles or applications the invite does not carry, or (in a pooled realm) any tenant, home context, assignment or profile partition other than the invite's scope, or a tenant that is not an active member of the realm.
+
+*Order.* Creation: realm access, grantable roles and applications, then `InviteAcceptancePolicy.validateCreate`, then `AccessInviteProvisioner.validateInviteCreation` and `validateScopes`. Acceptance: identity binding and the inviter's realm/role re-check, the claim, `InviteAcceptancePolicy.resolveGrant`, the grant (credential, `UserRealmRole`, `UserProfile`), then `AccessInviteProvisioner.onInviteAccepted`. Provisioners therefore see the invitee already placed.
+
+*Custom policies.* Not supported: the policy follows from the realm's topology only, and a second bean that reuses a built-in id makes selection ambiguous and is refused (`409 INVITE_POLICY_UNAVAILABLE`). A pooled realm that needs other rules (for example partner and operator tenants) needs a design change to the selection, not configuration.
 
 The persisted `AccessInvite` model includes:
 
 - `email` or `targetUserId`
 - `invitedByUserId`
 - `scopeRefs`
-- `grantedRoles`
+- `grantedRoles` (realm-scoped; written to the invitee's `UserRealmRole` for the invite's realm)
+- `acceptancePolicy` (id of the realm's acceptance policy when the invite was created)
+- `scope` (`InviteScope`: the inviter's resolved partition when the invite was created)
+- `authorizedApplications` (optional; written to the same `UserRealmRole`)
 - `allowedFunctionalAreas`
 - `allowedFunctionalDomains`
 - `allowedActions`
@@ -285,11 +485,17 @@ Representative creation response:
 
 Important invite behavior:
 
+- the invite is for the request's realm only; `realm`, if sent, must name that same realm and `realms` may not name more than one
 - either `email` or `targetUserId` is required
 - only one active pending invite is allowed for the same email or target user
-- tokens are stored as a hash; the raw token is only returned at invite creation time
+- the invite is bound to the `email` or `targetUserId` given at creation; acceptance can only ever apply to that identity
+- tokens are stored only as a SHA-256 hash (no fragment of the raw token is persisted), compared in constant time, and are single-use
+- the raw token is returned only by create and `resend`, never by list or get, and only when no delivering `AccessInviteNotificationService` is installed; with a delivery channel the token reaches only the invitee. `quantum.access-invites.return-token=true|false` forces the behavior
+- invite an existing user by `targetUserId`: an email invite is bound to the email as the user ID, so an existing user whose user ID differs from that email cannot accept it
 - invites expire automatically based on `expiresAt`
 - invites can be revoked before acceptance
+- `resend` rotates the token and renews the expiry. The new token is staged first and the invitee notified; only after delivery succeeds does it replace the previous token, which then stops working. If the notification service fails, nothing is re-issued, the previous token still works, and the call fails with `502 INVITE_NOTIFICATION_FAILED`
+- every change to an invite after creation (accept, release after a failed acceptance, expire, revoke, resend) is a conditional atomic update that increments the record's `version` and stamps `auditInfo.lastUpdateTs`/`lastUpdateIdentity`, so a stale copy of an invite can never be saved over a newer state
 
 Representative accept request:
 
@@ -298,7 +504,6 @@ Representative accept request:
 {
   "realm": "acme-example",
   "token": "raw-token-returned-at-create-time-only",
-  "email": "jane.doe@partner.example",
   "firstName": "Jane",
   "lastName": "Doe",
   "password": "choose-a-password"
@@ -321,23 +526,37 @@ Representative accept response:
 What happens when an invite is accepted:
 
 - the invite token is validated and checked for expiry
-- the user identity is resolved from the authenticated user, request payload, invite target user, or invite email
-- if the user does not already exist, a new credential is created and a password is required
-- if the user already exists, the service ensures the user is authorized for the tenant realm
-- a `UserProfile` is created if needed
+- the user identity is always the invite's `targetUserId`, else its `email`; the request cannot choose it
+- a request `userId` or `email` that differs from the invite is refused with `403 INVITE_IDENTITY_MISMATCH` and logged (clients should omit both fields)
+- a signed-in caller must be the invited user; any other signed-in user is refused with `403 INVITE_IDENTITY_MISMATCH`
+- if the invited user already has an account, the caller must be signed in as that user; otherwise the call is refused with `401 INVITE_SIGN_IN_REQUIRED` and no access is attached
+- the inviter must still be able to access the realm and still hold the granted roles and applications there; otherwise `403 INVITE_REALM_NOT_ACCESSIBLE`, `INVITE_ROLE_NOT_GRANTABLE`, or `INVITE_APPLICATION_NOT_GRANTABLE`, and the invite stays pending
+- if the invited user has no account, one is created for the invited identity and a password is required; the new credential gets only the flat `user` role and the invite's realm as its home realm
+- an existing user gets the invite's realm added to `authorizedRealms`, unless its `realmRegEx` already grants it; when the account's access is a `realmRegEx` that does not include the realm, adding a list entry would cut it off from its other realms, so acceptance is refused with `409 INVITE_ACCOUNT_REALM_CONFLICT` and an administrator must grant the realm
+- the realm in the accept request must be a registered realm; otherwise the request is refused as `400 INVITE_TOKEN_INVALID`
+- the invited roles, and any named applications, are written to the user's `UserRealmRole` for the invite's realm (merged by union), never to the credential's flat roles
+- if any step after the claim fails (credential, assignment, profile, or an `AccessInviteProvisioner`), the grant is rolled back: a just-created account is deleted, the prior `UserRealmRole` is restored (or the new one removed), and a realm entry added by the attempt is removed; then the claim is released and the invite stays pending
+- the invite is claimed atomically, so a token can be used once; a reused, revoked, or already-accepted token returns `409 INVITE_NOT_PENDING`, an expired one `410 INVITE_EXPIRED`, an unknown or altered one `400 INVITE_TOKEN_INVALID`
+- the realm's acceptance policy re-checks the inviter's entitlement to the invite's scope and decides the grant (see <<invite-acceptance-policy>>); the response's `tenantId` names the tenant the invitee was placed in
+- a `UserProfile` is created if needed (in the invitee's partition under `pooled-realm-tenant`)
+- for an account the invite creates, the system-realm directory profile is created as well (in the account's home context), as tenant provisioning does; sign-in refuses a USER account without one as half-created
+- realm roles reach the invitee's token only for the realm the token is issued for: on an `X-Realm` switch the token's role claims are not honored, the target realm's own `UserRealmRole` roles apply, and flat credential roles still apply in every realm
 - the invite status is changed to `ACCEPTED`
+
+Refusals use the shared `RestError` payload with a stable `errorCode`.
 
 ==== Invite extension points
 
-The invite flow is intentionally extensible through two SPIs:
+The invite flow is intentionally extensible through three SPIs:
 
+- `InviteAcceptancePolicy` (where the invitee lands; see <<invite-acceptance-policy>>)
 - `AccessInviteProvisioner`
 - `AccessInviteNotificationService`
 
 `AccessInviteProvisioner` can:
 
 - validate requested scopes when the invite is created
-- perform application-specific provisioning when the invite is accepted
+- perform application-specific provisioning when the invite is accepted (after the acceptance policy's grant is written)
 
 `AccessInviteNotificationService` can:
 
@@ -434,3 +653,119 @@ Resolution APIs live in `RealmMembershipService` (quantum-system):
 `membershipsForOrg`, `membersOfRealm`, `ownerOfRealm`, `realmsForUser`,
 `rolesForUser`. Embedded deployments resolve locally; remote (tier-2)
 deployments get the same surface backed by the control-plane client (Phase C).
+
+[[user-definable-facet-segmentation]]
+=== User-Definable Facet Segmentation & Coordinate SPI in Multi-Tenant Environments
+
+Traditional multi-tenancy models stop at isolating database collections by a single tenant ID. However, enterprise SaaS platforms often require multidimensional logical segmentation within and across tenants -- such as isolating data by geographic region, operating subsidiary, business unit, partner channel, or sensitivity facet.
+
+Quantum delivers this capability through the **Store-Free Coordinate SPI (`DataDomainResolver`)** and **User-Definable Facet Segmentation**, allowing a single server instance to support heterogeneous segmentation policies for different tenants.
+
+==== Physical Realm Isolation vs. Logical Facet Segmentation
+
+Quantum maintains a strict distinction between physical database placement and logical row-level segmentation:
+
+- **Physical Realm Isolation**: Dictates MongoDB cluster and database routing (`DEDICATED` vs `SHARED`/`POOLED`). It acts as an inviolate physical admission gate.
+- **Logical Facet Segmentation**: Dictates which rows, relationships, and fields within a realm are visible to a given principal based on multidimensional coordinates (e.g. `tenantId`, `orgRefName`, `department`, `region`, `classificationTier`).
+
+==== Single Server Instance with Per-Tenant Heterogeneous Policies
+
+A single Quantum server instance natively supports distinct, user-defined segmentation policies for different tenants without requiring separate runtime processes or re-deployments:
+
+- **Tenant Isolation**: In dedicated realms, policies reside in the tenant's own database; in pooled realms, policies are isolated by `tenantId`.
+- **Custom Dimension Modeling**: Tenant A can segment data by `department` and `complianceTier`, while Tenant B concurrently segments data by `region` and `partnerId`.
+- **Dynamic Variable Injection**: Policies automatically bind contextual coordinates into `RuleContext` (`${pTenantId}`, `${orgRefName}`, `${ownerId}`, `${policyFilter}`, and custom facet variables), which are evaluated transparently across both single-collection queries and multi-hop aggregation pipelines.
+
+==== Configuring User-Definable Facets
+
+Facet definitions and policy rules are declared via `DataDomainComponentBinding` and `DataDomainPolicyEntry`:
+
+.Configuring Facet Bindings (`DataDomainComponentBinding`)
+[source,json]
+----
+{
+  "tenantId": "tenant-acme",
+  "name": "OrderSegmentation",
+  "facets": {
+    "region": {
+      "type": "FIELD",
+      "targetPath": "shippingAddress.region"
+    },
+    "department": {
+      "type": "FIELD",
+      "targetPath": "departmentCode"
+    },
+    "classification": {
+      "type": "VARIABLE",
+      "targetPath": "principal.securityClearance"
+    }
+  }
+}
+----
+
+.Configuring Policy Constraints (`DataDomainPolicyEntry`)
+[source,json]
+----
+{
+  "tenantId": "tenant-acme",
+  "targetClass": "com.e2eq.sample.Order",
+  "action": "find",
+  "filter": "status:!\"ARCHIVED\" && region:${userRegion}",
+  "facetFilters": {
+    "department": "${userDepartment}",
+    "classification": "CONFIDENTIAL"
+  }
+}
+----
+
+==== Coordinate Resolution Precedence and Defaults
+
+When a request arrives at `QueryGatewayResource` or a governed `MorphiaRepo`, `DataDomainResolver` resolves coordinates using a strict three-tier precedence hierarchy:
+
+```mermaid
+flowchart TD
+    Req["Incoming Query / Traversal Request"] --> T1{"Tier 1: Tenant-Specific Policy?<br/>(systemDataDomainPolicies for Class + Action)"}
+    T1 -- Yes --> ApplyTenant["Apply Tenant Policy & Bind Custom Facets"]
+    T1 -- No --> T2{"Tier 2: Global / System Policy Provider?"}
+    T2 -- Yes --> ApplyGlobal["Apply Global Policy & Bind Standard Facets"]
+    T2 -- No --> T3{"Tier 3: Caller PrincipalContext Present?<br/>(tenantId, ownerId, orgRefName)"}
+    T3 -- Yes --> ApplyPrincipal["Apply Principal Default Coordinates"]
+    T3 -- No --> FailClosed["DataDomainResolution.Unresolvable<br/>(FAIL CLOSED - HTTP 500 / 403)"]
+
+    ApplyTenant --> Execute["Execute Query / Traversal Pipeline"]
+    ApplyGlobal --> Execute
+    ApplyPrincipal --> Execute
+```
+
+===== Resolution Defaults Table
+
+[cols="1,2,2"]
+|===
+| Resolution Stage | Resolution Source | Default / Fallback Behavior
+
+| **Tenant Policy Configured**
+| `systemDataDomainPolicies` collection for tenant.
+| Employs tenant's custom `filter` and `facetFilters`. Variables are injected into `RuleContext`.
+
+| **No Tenant Policy Configured**
+| System Global Policy Provider.
+| Employs platform-wide default data domain rules if registered; otherwise falls back to Tier 3.
+
+| **Fallback (Zero Policy Records)**
+| Caller's `PrincipalContext`.
+| Resolves default coordinates directly from user credentials: `pTenantId = principal.tenantId`, `ownerId = principal.userId`, `orgRefName = principal.orgRefName`.
+
+| **Missing Security Credentials**
+| None.
+| Yields `DataDomainResolution.Unresolvable`. Fails closed immediately with HTTP 500 (`SecurityContextMissing`) or HTTP 403.
+|===
+
+==== Multi-Hop Traversal Isolation
+
+During multi-hop traversals (e.g. `Customer -> Order -> Supplier` via `expand(...)`):
+
+1. `DataDomainResolver.resolveForHop(targetClass, viaPath, context)` is invoked at each relationship boundary.
+2. Target entity policies and row-level security constraints are applied to that hop's MongoDB `$lookup` pipeline.
+3. Access constraints **accumulate monotonically**: a caller cannot hop across a foreign reference to bypass tenant boundaries or see records they are not authorized to view in the target domain.
+4. References pointing to external tenants or unauthorized records are pruned silently, returning `null` or empty arrays to eliminate information leakage.
+

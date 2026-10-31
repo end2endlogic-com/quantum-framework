@@ -40,6 +40,31 @@ public class TenantOntologyTBoxRepo extends MorphiaRepo<TenantOntologyTBox> {
     }
 
     /**
+     * Lightweight staleness probe: return ONLY the {@code tboxHash} of the active TBox
+     * for the tenant, projecting away the (potentially large) class/property/chain maps.
+     * <p>
+     * Used by {@code TenantOntologyRegistryProvider} to cheaply detect — from any cluster
+     * instance — that a DIFFERENT TBox has been activated since a registry was cached,
+     * so activation on one instance becomes visible on the others without a broker.
+     * </p>
+     */
+    public Optional<String> findActiveTBoxHash(DataDomain dataDomain) {
+        validateDataDomain(dataDomain);
+        Query<TenantOntologyTBox> q = ds().find(TenantOntologyTBox.class)
+                .filter(dataDomainFilters(dataDomain))
+                .filter(Filters.eq("active", true));
+
+        FindOptions options = new FindOptions()
+                .sort(Sort.descending("appliedAt"))
+                .limit(1);
+        options.projection().include("tboxHash");
+
+        List<TenantOntologyTBox> results = q.iterator(options).toList();
+        return results.isEmpty() ? Optional.empty()
+                : Optional.ofNullable(results.get(0).getTboxHash());
+    }
+
+    /**
      * Find TBox by hash for a specific tenant
      */
     public Optional<TenantOntologyTBox> findByHash(DataDomain dataDomain, String tboxHash) {
@@ -77,6 +102,44 @@ public class TenantOntologyTBoxRepo extends MorphiaRepo<TenantOntologyTBox> {
     }
 
     /**
+     * Find the TBox to roll back to when deactivating {@code excludeHash}: the most
+     * recently <em>genuinely activated</em> TBox for the tenant whose hash is NOT
+     * {@code excludeHash}. Selection is by activation time ({@code lastActivatedAt}),
+     * not submit time ({@code appliedAt}); a submitted-but-never-activated candidate
+     * (no {@code lastActivatedAt}) is never chosen, even if its {@code appliedAt} is
+     * later. Returns empty when the tenant has no other ever-activated TBox.
+     */
+    public Optional<TenantOntologyTBox> findPreviousActive(DataDomain dataDomain, String excludeHash) {
+        validateDataDomain(dataDomain);
+        Query<TenantOntologyTBox> q = ds().find(TenantOntologyTBox.class)
+                .filter(dataDomainFilters(dataDomain))
+                .filter(Filters.exists("lastActivatedAt"))
+                .filter(Filters.ne("lastActivatedAt", null));
+        if (excludeHash != null && !excludeHash.isBlank()) {
+            q = q.filter(Filters.ne("tboxHash", excludeHash));
+        }
+
+        FindOptions options = new FindOptions()
+                .sort(Sort.descending("lastActivatedAt"))
+                .limit(1);
+
+        List<TenantOntologyTBox> results = q.iterator(options).toList();
+        return results.isEmpty() ? Optional.empty() : Optional.of(results.get(0));
+    }
+
+    /**
+     * List every TBox document for a tenant (active and inactive), newest submit first.
+     */
+    public List<TenantOntologyTBox> listByDataDomain(DataDomain dataDomain) {
+        validateDataDomain(dataDomain);
+        Query<TenantOntologyTBox> q = ds().find(TenantOntologyTBox.class)
+                .filter(dataDomainFilters(dataDomain));
+        FindOptions options = new FindOptions()
+                .sort(Sort.descending("appliedAt"));
+        return q.iterator(options).toList();
+    }
+
+    /**
      * Deactivate all TBoxes for a tenant (before activating a new one)
      */
     public void deactivateAll(DataDomain dataDomain) {
@@ -85,6 +148,42 @@ public class TenantOntologyTBoxRepo extends MorphiaRepo<TenantOntologyTBox> {
                 .filter(dataDomainFilters(dataDomain))
                 .update(new dev.morphia.UpdateOptions().multi(true), 
                         dev.morphia.query.updates.UpdateOperators.set("active", false));
+    }
+
+    /** Atomically replace the active version, serializing even first activations per data domain. */
+    public void setActiveTBox(DataDomain dataDomain, String hash) {
+        validateDataDomain(dataDomain);
+        var datastore = ds();
+        String scope = new org.bson.Document("org", dataDomain.getOrgRefName())
+                .append("account", dataDomain.getAccountNum()).append("tenant", dataDomain.getTenantId())
+                .append("segment", dataDomain.getDataSegment()).toJson();
+        try (var session = datastore.startSession()) {
+            session.startTransaction();
+            try {
+                com.mongodb.client.ClientSession nativeSession = session instanceof dev.morphia.transactions.SessionDatastore wrapper
+                        ? wrapper.getSession() : session;
+                // A shared write forces concurrent activation transactions to conflict instead of write-skew.
+                datastore.getDatabase().getCollection("ontology_activation_guards").updateOne(nativeSession,
+                        com.mongodb.client.model.Filters.eq("_id", scope),
+                        com.mongodb.client.model.Updates.inc("revision", 1),
+                        new com.mongodb.client.model.UpdateOptions().upsert(true));
+                TenantOntologyTBox target = hash == null ? null : session.find(TenantOntologyTBox.class)
+                        .filter(dataDomainFilters(dataDomain)).filter(Filters.eq("tboxHash", hash)).first();
+                if (hash != null && target == null) throw new IllegalArgumentException("TBOX_ACTIVATION_TARGET_NOT_FOUND");
+                session.find(TenantOntologyTBox.class).filter(dataDomainFilters(dataDomain))
+                        .update(new dev.morphia.UpdateOptions().multi(true),
+                                dev.morphia.query.updates.UpdateOperators.set("active", false));
+                if (target != null) {
+                    target.setActive(true);
+                    target.setLastActivatedAt(new java.util.Date());
+                    save(session, target);
+                }
+                session.commitTransaction();
+            } catch (RuntimeException failure) {
+                session.abortTransaction();
+                throw failure;
+            }
+        }
     }
 
     private void validateDataDomain(DataDomain dd) {

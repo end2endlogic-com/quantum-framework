@@ -1,0 +1,642 @@
+package com.e2eq.framework.rest.filters;
+
+import com.e2eq.framework.annotations.FunctionalMapping;
+import com.e2eq.framework.api.system.SystemDirectory;
+import com.e2eq.framework.model.persistent.base.DataDomain;
+import com.e2eq.framework.model.persistent.base.EntityReference;
+import com.e2eq.framework.model.security.CredentialUserIdPassword;
+import com.e2eq.framework.model.security.DomainContext;
+import com.e2eq.framework.model.security.Realm;
+import com.e2eq.framework.model.security.RealmTenancyMode;
+import com.e2eq.framework.model.security.RealmTenantMembership;
+import com.e2eq.framework.model.security.UserRealmRole;
+import com.e2eq.framework.model.securityrules.PrincipalContext;
+import com.e2eq.framework.system.membership.RealmMembershipService;
+import jakarta.ws.rs.BadRequestException;
+import jakarta.ws.rs.ForbiddenException;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.container.ResourceInfo;
+import org.junit.jupiter.api.Test;
+
+import java.lang.reflect.Method;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+class SecurityFilterTenantSelectionTest {
+
+    @Test
+    void delegatedSameRealmSelectionDoesNotRequireLocalIdentityCatalog() {
+        SecurityFilter filter = new SecurityFilter();
+        filter.trustTokenClaims = true;
+        PrincipalContext context = new PrincipalContext.Builder()
+                .withDefaultRealm("test-app-P1")
+                .withApplicationId("test-app")
+                .withUserId("user@example.test")
+                .withRoles(new String[]{"user"})
+                .withScope("AUTHENTICATED")
+                .build();
+        assertSame(context, filter.applyRealmOverride(context, "test-app-P1"));
+    }
+
+    @Test
+    void anonymousRequestWithoutTenantDoesNotRequireControlPlane() {
+        SecurityFilter filter = new SecurityFilter();
+        filter.systemDirectory = new StubDirectory(Map.of()) {
+            @Override
+            public Optional<Realm> findRealmByRefName(String refName) {
+                throw new IllegalStateException("remote control plane rejected service token");
+            }
+        };
+
+        PrincipalContext anonymous = new PrincipalContext.Builder()
+            .withDefaultRealm("quantum-auth")
+            .withDataDomain(DataDomain.builder()
+                .tenantId("quantum-auth")
+                .orgRefName("system")
+                .accountNum("system")
+                .ownerId("anonymous")
+                .build())
+            .withUserId("anonymous")
+            .withRoles(new String[]{"ANONYMOUS"})
+            .withScope("systemGenerated")
+            .build();
+
+        assertSame(anonymous, filter.applyTenantSelection(anonymous, null));
+    }
+
+    @Test
+    void singleTenantRealmNeedsNoTenantHeader() {
+        Realm realm = realm("dedicated", RealmTenancyMode.SINGLE_TENANT, "tenant-a");
+        SecurityFilter filter = filter(realm, null, null);
+        PrincipalContext context = context("dedicated", "tenant-a");
+
+        assertSame(context, filter.applyTenantSelection(context, null));
+        assertSame(context, filter.applyTenantSelection(context, "tenant-a"));
+        assertThrows(ForbiddenException.class,
+            () -> filter.applyTenantSelection(context, "tenant-b"));
+    }
+
+    @Test
+    void multiTenantRealmResolvesTenantFromTokenWithoutHeader() {
+        Realm realm = realm("pooled", RealmTenancyMode.MULTI_TENANT, "realm-default");
+        SecurityFilter filter = filter(realm, assignment("pooled", "tenant-a"),
+            membership("pooled", "tenant-a", "org-a", "account-a"));
+
+        PrincipalContext selected = filter.applyTenantSelection(
+            context("pooled", "tenant-a"), null, "tenant-a");
+
+        assertEquals("pooled", selected.getDefaultRealm());
+        assertEquals("tenant-a", selected.getDataDomain().getTenantId());
+        assertEquals("org-a", selected.getDataDomain().getOrgRefName());
+        assertEquals("account-a", selected.getDataDomain().getAccountNum());
+        assertEquals("user@example.test", selected.getDataDomain().getOwnerId());
+        assertEquals("tenant-a", selected.getDomainContext().getTenantId());
+    }
+
+    @Test
+    void multiTenantRealmRejectsTokenTenantOutsideUserAssignment() {
+        Realm realm = realm("pooled", RealmTenancyMode.MULTI_TENANT, "realm-default");
+        SecurityFilter filter = filter(realm, assignment("pooled", "tenant-a"),
+            membership("pooled", "tenant-b", "org-b", "account-b"));
+
+        assertThrows(ForbiddenException.class,
+            () -> filter.applyTenantSelection(context("pooled", "tenant-b"), null, "tenant-b"));
+    }
+
+    @Test
+    void multiTenantRealmWithoutHeaderOrTokenTenantFailsClosed() {
+        Realm realm = realm("pooled", RealmTenancyMode.MULTI_TENANT, "tenant-a");
+        SecurityFilter filter = filter(realm, assignment("pooled", "tenant-a"),
+            membership("pooled", "tenant-a", "org-a", "account-a"));
+
+        BadRequestException noTokenTenant = assertThrows(BadRequestException.class,
+            () -> filter.applyTenantSelection(context("pooled", "tenant-a"), null, null));
+        assertTrue(noTokenTenant.getMessage().contains("token carries no tenant"));
+        assertThrows(BadRequestException.class,
+            () -> filter.applyTenantSelection(context("pooled", "tenant-a"), " ", " "));
+        assertThrows(BadRequestException.class,
+            () -> filter.applyTenantSelection(context("pooled", "tenant-a"), null));
+    }
+
+    @Test
+    void unregisteredRealmRejectsTokenTenant() {
+        Realm registered = realm("pooled", RealmTenancyMode.MULTI_TENANT, "tenant-a");
+        SecurityFilter filter = filter(registered, assignment("deleted-pool", "tenant-a"),
+            membership("deleted-pool", "tenant-a", "org-a", "account-a"));
+        PrincipalContext context = context("deleted-pool", "tenant-a");
+
+        ForbiddenException refused = assertThrows(ForbiddenException.class,
+            () -> filter.applyTenantSelection(context, null, "tenant-a"));
+        assertTrue(refused.getMessage().contains("is not registered"));
+        assertThrows(ForbiddenException.class,
+            () -> filter.applyTenantSelection(context, "tenant-a", null));
+        assertSame(context, filter.applyTenantSelection(context, null, null));
+    }
+
+    @Test
+    void explicitTenantHeaderSwitchesFromTokenTenantAndIsChecked() {
+        Realm realm = realm("pooled", RealmTenancyMode.MULTI_TENANT, "realm-default");
+        SecurityFilter allowed = filter(realm, assignment("pooled", "tenant-a", "tenant-b"),
+            membership("pooled", "tenant-b", "org-b", "account-b"));
+
+        PrincipalContext switched = allowed.applyTenantSelection(
+            context("pooled", "tenant-a"), "tenant-b", "tenant-a");
+        assertEquals("tenant-b", switched.getDataDomain().getTenantId());
+        assertEquals("org-b", switched.getDataDomain().getOrgRefName());
+        assertEquals("account-b", switched.getDataDomain().getAccountNum());
+
+        SecurityFilter refused = filter(realm, assignment("pooled", "tenant-a"),
+            membership("pooled", "tenant-b", "org-b", "account-b"));
+        assertThrows(ForbiddenException.class,
+            () -> refused.applyTenantSelection(context("pooled", "tenant-a"), "tenant-b", "tenant-a"));
+    }
+
+    @Test
+    void anonymousAndPlatformExemptPathsIgnoreTokenTenant() {
+        Realm realm = realm("helixor-code-D1", RealmTenancyMode.MULTI_TENANT, "tenant-a");
+        SecurityFilter filter = filter(realm, assignment("helixor-code-D1", "tenant-a"),
+            membership("helixor-code-D1", "tenant-a", "org-a", "account-a"));
+        filter.resourceInfo = resourceInfo(ControlPlaneDirectoryStub.class, null);
+        PrincipalContext context = context("helixor-code-D1", "tenant-a");
+
+        assertSame(context, filter.applyTenantSelection(context, null, "tenant-a"));
+    }
+
+    @Test
+    void singleTenantRealmIgnoresTokenTenant() {
+        Realm realm = realm("dedicated", RealmTenancyMode.SINGLE_TENANT, "tenant-a");
+        SecurityFilter filter = filter(realm, null, null);
+        PrincipalContext context = context("dedicated", "tenant-a");
+
+        assertSame(context, filter.applyTenantSelection(context, null, "tenant-a"));
+    }
+
+    @Test
+    void controlPlaneDirectoryDoesNotRequireTenantHeader() {
+        Realm realm = realm("helixor-code-D1", RealmTenancyMode.MULTI_TENANT, "tenant-a");
+        SecurityFilter filter = filter(realm, assignment("helixor-code-D1", "tenant-a"),
+            membership("helixor-code-D1", "tenant-a", "org-a", "account-a"));
+        filter.resourceInfo = resourceInfo(ControlPlaneDirectoryStub.class, null);
+        PrincipalContext context = context("helixor-code-D1", "tenant-a");
+
+        assertSame(context, filter.applyTenantSelection(context, null));
+    }
+
+    @Test
+    void serviceTokenMintDoesNotRequireTenantHeader() throws Exception {
+        Realm realm = realm("helixor-code-D1", RealmTenancyMode.MULTI_TENANT, "tenant-a");
+        SecurityFilter filter = filter(realm, assignment("helixor-code-D1", "tenant-a"),
+            membership("helixor-code-D1", "tenant-a", "org-a", "account-a"));
+        filter.resourceInfo = resourceInfo(
+            ServiceTokenStub.class, ServiceTokenStub.class.getDeclaredMethod("generate"));
+        PrincipalContext context = context("helixor-code-D1", "tenant-a");
+
+        assertSame(context, filter.applyTenantSelection(context, null));
+    }
+
+    @Test
+    void identityCurrentDoesNotRequireTenantHeader() throws Exception {
+        Realm realm = realm("helixor-code-D1", RealmTenancyMode.MULTI_TENANT, "tenant-a");
+        SecurityFilter filter = filter(realm, assignment("helixor-code-D1", "tenant-a"),
+            membership("helixor-code-D1", "tenant-a", "org-a", "account-a"));
+        filter.resourceInfo = resourceInfo(
+            IdentityCurrentStub.class, IdentityCurrentStub.class.getDeclaredMethod("validateToken"));
+        PrincipalContext context = context("helixor-code-D1", "tenant-a");
+
+        assertSame(context, filter.applyTenantSelection(context, null));
+    }
+
+    @Test
+    void controlPlaneDirectoryPathDoesNotRequireTenantHeader() throws Exception {
+        Realm realm = realm("helixor-code-D1", RealmTenancyMode.MULTI_TENANT, "tenant-a");
+        SecurityFilter filter = filter(realm, assignment("helixor-code-D1", "tenant-a"),
+            membership("helixor-code-D1", "tenant-a", "org-a", "account-a"));
+        filter.resourceInfo = resourceInfo(
+            AuthControlPlaneStub.class, AuthControlPlaneStub.class.getDeclaredMethod("findRealm"));
+        PrincipalContext context = context("helixor-code-D1", "tenant-a");
+
+        assertSame(context, filter.applyTenantSelection(context, null));
+    }
+
+    private static final String SUB = "subject-123";
+    private static final String USER = "user@example.test";
+
+    private static SecurityFilter switchFilter(SystemDirectory directory, UserRealmRole... assignments) {
+        SecurityFilter filter = new SecurityFilter();
+        filter.systemDirectory = directory;
+        filter.realmMembershipService = new RealmMembershipService() {
+            @Override
+            public Optional<UserRealmRole> assignmentForUser(String userId, String realmRefName) {
+                for (UserRealmRole a : assignments) {
+                    if (a.getUserId().equals(userId) && a.getRealmRefName().equals(realmRefName)) {
+                        return Optional.of(a);
+                    }
+                }
+                return Optional.empty();
+            }
+        };
+        return filter;
+    }
+
+    private static UserRealmRole roles(String realm, String... roles) {
+        return UserRealmRole.builder().userId(USER).realmRefName(realm).roles(List.of(roles)).build();
+    }
+
+    private static SystemDirectory directoryWithCredential(String subject, String userId, String... flatRoles) {
+        CredentialUserIdPassword credential = new CredentialUserIdPassword();
+        credential.setSubject(subject);
+        credential.setUserId(userId);
+        credential.setRoles(flatRoles);
+        return new StubDirectory(Map.of()) {
+            @Override
+            public Optional<CredentialUserIdPassword> findCredentialBySubject(String s) {
+                return subject.equals(s) ? Optional.of(credential) : Optional.empty();
+            }
+        };
+    }
+
+    @Test
+    void delegatedRealmSwitchDropsTheIssuingRealmsRolesAndAddsTheTargets() {
+        SecurityFilter filter = switchFilter(directoryWithCredential(SUB, USER, "user"),
+            roles("realm-a", "admin"), roles("realm-b", "viewer"));
+        List<String> roles = List.of(filter.delegatedRolesAfterRealmSwitch(
+            SUB, USER, List.of("user", "admin"), "realm-b"));
+        assertTrue(roles.contains("user"), "a genuine flat credential role survives the switch");
+        assertTrue(roles.contains("viewer"), "the target realm's own roles apply");
+        assertTrue(!roles.contains("admin"), "realm A's admin does not follow the switch");
+    }
+
+    @Test
+    void delegatedRealmSwitchDropsIdpAssertedRealmRoleMissingFromLocalAssignment() {
+        // The IdP asserts a realm-specific "admin" that the local realm-a assignment never lists.
+        SecurityFilter filter = switchFilter(directoryWithCredential(SUB, USER, "user"),
+            roles("realm-a", "member"), roles("realm-b", "viewer"));
+        List<String> roles = List.of(filter.delegatedRolesAfterRealmSwitch(
+            SUB, USER, List.of("user", "admin"), "realm-b"));
+        assertEquals(List.of("user", "viewer"), roles);
+    }
+
+    @Test
+    void delegatedRealmSwitchWithoutLocalIssuingAssignmentDoesNotLeak() {
+        SecurityFilter filter = switchFilter(directoryWithCredential(SUB, USER, "user"),
+            roles("realm-b", "viewer"));
+        List<String> roles = List.of(filter.delegatedRolesAfterRealmSwitch(
+            SUB, USER, List.of("user", "admin"), "realm-b"));
+        assertEquals(List.of("user", "viewer"), roles);
+    }
+
+    @Test
+    void delegatedRealmSwitchWithoutCredentialCarriesNoTokenRoles() {
+        // No local credential for the subject: nothing proves any token role is global.
+        SecurityFilter filter = switchFilter(new StubDirectory(Map.of()), roles("realm-b", "viewer"));
+        List<String> roles = List.of(filter.delegatedRolesAfterRealmSwitch(
+            SUB, USER, List.of("user", "admin"), "realm-b"));
+        assertEquals(List.of("viewer"), roles);
+    }
+
+    @Test
+    void delegatedRealmSwitchInRemoteModeFailsClosed() {
+        SystemDirectory remote = new StubDirectory(Map.of()) {
+            @Override
+            public Optional<CredentialUserIdPassword> findCredentialBySubject(String s) {
+                throw new IllegalStateException("Credential lookups are control-plane-internal");
+            }
+        };
+        SecurityFilter filter = switchFilter(remote);
+        String[] roles = filter.delegatedRolesAfterRealmSwitch(
+            SUB, USER, List.of("user", "admin"), "realm-b");
+        assertEquals(List.of("ANONYMOUS"), List.of(roles));
+    }
+
+    @Test
+    void delegatedRealmSwitchIgnoresCredentialBoundToAnotherUser() {
+        SecurityFilter filter = switchFilter(directoryWithCredential(SUB, "someone-else", "admin"),
+            roles("realm-b", "viewer"));
+        List<String> roles = List.of(filter.delegatedRolesAfterRealmSwitch(
+            SUB, USER, List.of("admin"), "realm-b"));
+        assertEquals(List.of("viewer"), roles);
+    }
+
+    @Test
+    void assignmentPartitionRefinesTheSameTenantOnly() {
+        Realm realm = realm("pooled", RealmTenancyMode.MULTI_TENANT, "realm-default");
+        UserRealmRole assignment = assignment("pooled", "tenant-a", "tenant-b");
+        DataDomain partition = DataDomain.builder()
+            .tenantId("tenant-a").orgRefName("org-a").accountNum("account-a")
+            .dataSegment(3).ownerId("user@example.test").build();
+        partition.setLocationId("dock-7");
+        assignment.setDataDomain(partition);
+
+        PrincipalContext inA = filter(realm, assignment, membership("pooled", "tenant-a", "org-a", "account-a"))
+            .applyTenantSelection(context("pooled", "tenant-a"), null, "tenant-a");
+        assertEquals(3, inA.getDataDomain().getDataSegment());
+        assertEquals("dock-7", inA.getDataDomain().getLocationId());
+        assertEquals(3, inA.getDomainContext().getDataSegment());
+        assertEquals("user@example.test", inA.getDataDomain().getOwnerId());
+
+        // Another tenant of the same user does not inherit tenant A's partition.
+        PrincipalContext inB = filter(realm, assignment, membership("pooled", "tenant-b", "org-b", "account-b"))
+            .applyTenantSelection(context("pooled", "tenant-a"), "tenant-b", "tenant-a");
+        assertEquals(0, inB.getDataDomain().getDataSegment());
+        assertEquals(null, inB.getDataDomain().getLocationId());
+
+        // A partition whose org differs from the membership is ignored: the membership is authoritative.
+        partition.setOrgRefName("other-org");
+        PrincipalContext mismatch = filter(realm, assignment, membership("pooled", "tenant-a", "org-a", "account-a"))
+            .applyTenantSelection(context("pooled", "tenant-a"), null, "tenant-a");
+        assertEquals("org-a", mismatch.getDataDomain().getOrgRefName());
+        assertEquals(0, mismatch.getDataDomain().getDataSegment());
+    }
+
+    @Test
+    void multiTenantRealmBuildsDataDomainFromAuthorizedMembership() {
+        Realm realm = realm("pooled", RealmTenancyMode.MULTI_TENANT, "tenant-a");
+        SecurityFilter filter = filter(realm, assignment("pooled", "tenant-b"),
+            membership("pooled", "tenant-b", "org-b", "account-b"));
+
+        PrincipalContext selected = filter.applyTenantSelection(
+            context("pooled", "tenant-a"), "tenant-b");
+
+        assertEquals("pooled", selected.getDefaultRealm());
+        assertEquals("tenant-b", selected.getDataDomain().getTenantId());
+        assertEquals("org-b", selected.getDataDomain().getOrgRefName());
+        assertEquals("account-b", selected.getDataDomain().getAccountNum());
+        assertEquals("user@example.test", selected.getDataDomain().getOwnerId());
+    }
+
+    @Test
+    void multiTenantRealmRejectsTenantOutsideUserAssignment() {
+        Realm realm = realm("pooled", RealmTenancyMode.MULTI_TENANT, "tenant-a");
+        SecurityFilter filter = filter(realm, assignment("pooled", "tenant-a"),
+            membership("pooled", "tenant-b", "org-b", "account-b"));
+
+        assertThrows(ForbiddenException.class,
+            () -> filter.applyTenantSelection(context("pooled", "tenant-a"), "tenant-b"));
+    }
+
+    @Test
+    void realmSelectionRejectsRealmOwnedByAnotherApplication() {
+        Realm realm = realm("other-app-realm", RealmTenancyMode.SINGLE_TENANT, "tenant-a");
+        realm.setApplicationRef(EntityReference.builder()
+                .entityRefName("other-application")
+                .entityDisplayName("Other application")
+                .build());
+        SecurityFilter filter = filter(realm, null, null);
+        PrincipalContext context = new PrincipalContext.Builder()
+                .withDefaultRealm("home-realm")
+                .withApplicationId("requested-application")
+                .withDataDomain(DataDomain.builder()
+                        .tenantId("home-tenant")
+                        .orgRefName("default-org")
+                        .accountNum("default-account")
+                        .ownerId("user@example.test")
+                        .build())
+                .withUserId("user@example.test")
+                .withRoles(new String[]{"user"})
+                .withScope("AUTHENTICATED")
+                .build();
+
+        assertThrows(ForbiddenException.class,
+                () -> filter.applyRealmOverride(context, "other-app-realm"));
+    }
+
+    @Test
+    void realmSelectionAllowsGrantedApplicationOnSharedRealm() {
+        Realm realm = realm("helixor-code-P1", RealmTenancyMode.SINGLE_TENANT, "helixor-code-P1");
+        realm.setApplicationRef(EntityReference.builder()
+                .entityRefName("helixor-code")
+                .entityDisplayName("Helixor Code")
+                .build());
+        UserRealmRole grant = UserRealmRole.builder()
+                .userId("user@example.test")
+                .realmRefName("helixor-code-P1")
+                .status(UserRealmRole.STATUS_ACTIVE)
+                .authorizedApplications(List.of("helixor-code", "quantum-b2bi"))
+                .build();
+        SecurityFilter filter = filter(realm, grant, null);
+        PrincipalContext context = new PrincipalContext.Builder()
+                .withDefaultRealm("helixor-code-P1")
+                .withApplicationId("quantum-b2bi")
+                .withDataDomain(DataDomain.builder()
+                        .tenantId("helixor-code-P1")
+                        .orgRefName("default-org")
+                        .accountNum("default-account")
+                        .ownerId("user@example.test")
+                        .build())
+                .withUserId("user@example.test")
+                .withRoles(new String[]{"user"})
+                .withScope("AUTHENTICATED")
+                .build();
+
+        assertSame(context, filter.applyRealmOverride(context, "helixor-code-P1"));
+    }
+
+    @Test
+    void realmSelectionAllowsCurrentSessionRealmWhenMembershipGrantOmitsApplication() {
+        Realm realm = realm("helixor-code-P1", RealmTenancyMode.SINGLE_TENANT, "helixor-code-P1");
+        realm.setApplicationRef(EntityReference.builder()
+                .entityRefName("helixor-code")
+                .entityDisplayName("Helixor Code")
+                .build());
+        UserRealmRole staleGrant = UserRealmRole.builder()
+                .userId("user@example.test")
+                .realmRefName("helixor-code-P1")
+                .status(UserRealmRole.STATUS_ACTIVE)
+                .authorizedApplications(List.of("helixor-code"))
+                .build();
+        SecurityFilter filter = filter(realm, staleGrant, null);
+        PrincipalContext context = new PrincipalContext.Builder()
+                .withDefaultRealm("helixor-code-P1")
+                .withApplicationId("quantum-b2bi")
+                .withDataDomain(DataDomain.builder()
+                        .tenantId("helixor-code-P1")
+                        .orgRefName("default-org")
+                        .accountNum("default-account")
+                        .ownerId("user@example.test")
+                        .build())
+                .withUserId("user@example.test")
+                .withRoles(new String[]{"user"})
+                .withScope("AUTHENTICATED")
+                .build();
+
+        assertSame(context, filter.applyRealmOverride(context, "helixor-code-P1"));
+    }
+
+    @Test
+    void realmSelectionRejectsDifferentRealmWhenMembershipGrantOmitsApplication() {
+        Realm realm = realm("other-app-realm", RealmTenancyMode.SINGLE_TENANT, "tenant-a");
+        realm.setApplicationRef(EntityReference.builder()
+                .entityRefName("other-application")
+                .entityDisplayName("Other application")
+                .build());
+        UserRealmRole staleGrant = UserRealmRole.builder()
+                .userId("user@example.test")
+                .realmRefName("other-app-realm")
+                .status(UserRealmRole.STATUS_ACTIVE)
+                .authorizedApplications(List.of("helixor-code"))
+                .build();
+        SecurityFilter filter = filter(realm, staleGrant, null);
+        PrincipalContext context = new PrincipalContext.Builder()
+                .withDefaultRealm("helixor-code-P1")
+                .withApplicationId("quantum-b2bi")
+                .withDataDomain(DataDomain.builder()
+                        .tenantId("helixor-code-P1")
+                        .orgRefName("default-org")
+                        .accountNum("default-account")
+                        .ownerId("user@example.test")
+                        .build())
+                .withUserId("user@example.test")
+                .withRoles(new String[]{"user"})
+                .withScope("AUTHENTICATED")
+                .build();
+
+        assertThrows(ForbiddenException.class,
+                () -> filter.applyRealmOverride(context, "other-app-realm"));
+    }
+
+    @FunctionalMapping(area = "system", domain = "control_plane_directory")
+    private static final class ControlPlaneDirectoryStub {
+    }
+
+    @Path("/security")
+    private static final class ServiceTokenStub {
+        @Path("/service-token")
+        public void generate() {
+        }
+    }
+
+    @Path("/control")
+    private static final class AuthControlPlaneStub {
+        @Path("/realms/{refName}")
+        public void findRealm() {
+        }
+    }
+
+    @Path("/v1/auth/identity")
+    @FunctionalMapping(area = "security", domain = "identity")
+    private static final class IdentityCurrentStub {
+        @Path("/current")
+        public void validateToken() {
+        }
+    }
+
+    private static ResourceInfo resourceInfo(Class<?> resourceClass, Method resourceMethod) {
+        return new ResourceInfo() {
+            @Override
+            public Method getResourceMethod() {
+                return resourceMethod;
+            }
+
+            @Override
+            public Class<?> getResourceClass() {
+                return resourceClass;
+            }
+        };
+    }
+
+    private static SecurityFilter filter(
+            Realm realm, UserRealmRole assignment, RealmTenantMembership membership) {
+        SecurityFilter filter = new SecurityFilter();
+        filter.systemDirectory = new StubDirectory(Map.of(realm.getRefName(), realm));
+        filter.realmMembershipService = new StubMembershipService(assignment, membership);
+        return filter;
+    }
+
+    private static PrincipalContext context(String realm, String tenantId) {
+        return new PrincipalContext.Builder()
+            .withDefaultRealm(realm)
+            .withDataDomain(DataDomain.builder()
+                .tenantId(tenantId)
+                .orgRefName("default-org")
+                .accountNum("default-account")
+                .ownerId("user@example.test")
+                .build())
+            .withUserId("user@example.test")
+            .withRoles(new String[]{"user"})
+            .withScope("AUTHENTICATED")
+            .build();
+    }
+
+    private static Realm realm(String refName, RealmTenancyMode mode, String defaultTenantId) {
+        return Realm.builder()
+            .refName(refName)
+            .emailDomain(refName + ".example.test")
+            .databaseName(refName)
+            .tenancyMode(mode)
+            .domainContext(DomainContext.builder()
+                .defaultRealm(refName)
+                .tenantId(defaultTenantId)
+                .orgRefName("default-org")
+                .accountId("default-account")
+                .build())
+            .build();
+    }
+
+    private static UserRealmRole assignment(String realm, String... tenantIds) {
+        return UserRealmRole.builder()
+            .userId("user@example.test")
+            .realmRefName(realm)
+            .status(UserRealmRole.STATUS_ACTIVE)
+            .authorizedTenantIds(List.of(tenantIds))
+            .build();
+    }
+
+    private static RealmTenantMembership membership(
+            String realm, String tenantId, String org, String account) {
+        return RealmTenantMembership.builder()
+            .realmRefName(realm)
+            .tenantId(tenantId)
+            .organizationRefName(org)
+            .accountId(account)
+            .participationStatus(RealmTenantMembership.PARTICIPATION_STATUS_ACTIVE)
+            .build();
+    }
+
+    private static class StubDirectory implements SystemDirectory {
+        private final Map<String, Realm> realms;
+
+        private StubDirectory(Map<String, Realm> realms) {
+            this.realms = realms;
+        }
+
+        @Override public String systemRealmId() { return "system"; }
+        @Override public Optional<Realm> findRealmByEmailDomain(String emailDomain) { return Optional.empty(); }
+        @Override public Optional<Realm> findRealmByRefName(String refName) {
+            return Optional.ofNullable(realms.get(refName));
+        }
+        @Override public Realm registerRealm(Realm realm) { throw new UnsupportedOperationException(); }
+        @Override public Optional<CredentialUserIdPassword> findCredentialBySubject(String subject) {
+            return Optional.empty();
+        }
+        @Override public Optional<CredentialUserIdPassword> findCredentialByUserId(String userId) {
+            return Optional.empty();
+        }
+    }
+
+    private static final class StubMembershipService extends RealmMembershipService {
+        private final UserRealmRole assignment;
+        private final RealmTenantMembership membership;
+
+        private StubMembershipService(UserRealmRole assignment, RealmTenantMembership membership) {
+            this.assignment = assignment;
+            this.membership = membership;
+        }
+
+        @Override
+        public Optional<UserRealmRole> assignmentForUser(String userId, String realmRefName) {
+            return Optional.ofNullable(assignment);
+        }
+
+        @Override
+        public Optional<RealmTenantMembership> tenantInRealm(String realmRefName, String tenantId) {
+            return Optional.ofNullable(membership)
+                .filter(value -> tenantId.equals(value.getTenantId()));
+        }
+    }
+}

@@ -70,7 +70,9 @@ public class SymmetricAndSubPropertyIT {
     @Test
     public void testSymmetric_propertyInference() {
         // Given: ORG-A peerOf ORG-B explicitly
-        edgeRepo.upsert(testDataDomain, "Organization", "ORG-A", "peerOf", "Organization", "ORG-B", false, null);
+        try (var fixture = com.e2eq.framework.model.securityrules.SecurityCallScope.openIgnoringRules()) {
+            edgeRepo.upsert(testDataDomain, "Organization", "ORG-A", "peerOf", "Organization", "ORG-B", false, null);
+        }
 
         // Infer symmetric counterpart using reasoner on an org snapshot
         List<Reasoner.Edge> explicit = List.of(new Reasoner.Edge("ORG-A", "Organization", "peerOf", "ORG-B", "Organization", false, Optional.empty()));
@@ -78,7 +80,9 @@ public class SymmetricAndSubPropertyIT {
         Reasoner.InferenceResult out = reasoner.infer(snap, ontologyRegistry);
         for (Reasoner.Edge e : out.addEdges()) {
             Map<String, Object> prov = e.prov().map(p -> Map.<String, Object>of("rule", p)).orElse(null);
-            edgeRepo.upsert(testDataDomain, e.srcType(), e.srcId(), e.p(), e.dstType(), e.dstId(), e.inferred(), prov);
+            try (var fixture = com.e2eq.framework.model.securityrules.SecurityCallScope.openIgnoringRules()) {
+                edgeRepo.upsert(testDataDomain, e.srcType(), e.srcId(), e.p(), e.dstType(), e.dstId(), e.inferred(), prov);
+            }
         }
 
         // When: querying for who is peerOf ORG-A should include ORG-B
@@ -94,8 +98,12 @@ public class SymmetricAndSubPropertyIT {
     }
 
     private void setupOrderInOrg(String orderId, String customerId, String orgId) {
-        edgeRepo.upsert(testDataDomain, "Order", orderId, "placedBy", "Customer", customerId, false, null);
-        edgeRepo.upsert(testDataDomain, "Customer", customerId, "memberOf", "Organization", orgId, false, null);
+        try (var fixture = com.e2eq.framework.model.securityrules.SecurityCallScope.openIgnoringRules()) {
+            edgeRepo.upsert(testDataDomain, "Order", orderId, "placedBy", "Customer", customerId, false, null);
+        }
+        try (var fixture = com.e2eq.framework.model.securityrules.SecurityCallScope.openIgnoringRules()) {
+            edgeRepo.upsert(testDataDomain, "Customer", customerId, "memberOf", "Organization", orgId, false, null);
+        }
 
         List<Reasoner.Edge> explicitEdges = List.of(
                 new Reasoner.Edge(orderId, "Order", "placedBy", customerId, "Customer", false, Optional.empty()),
@@ -107,7 +115,9 @@ public class SymmetricAndSubPropertyIT {
 
         for (Reasoner.Edge edge : result.addEdges()) {
             Map<String, Object> prov = edge.prov().map(p -> Map.<String, Object>of("rule", p)).orElse(null);
-            edgeRepo.upsert(testDataDomain, edge.srcType(), edge.srcId(), edge.p(), edge.dstType(), edge.dstId(), edge.inferred(), prov);
+            try (var fixture = com.e2eq.framework.model.securityrules.SecurityCallScope.openIgnoringRules()) {
+                edgeRepo.upsert(testDataDomain, edge.srcType(), edge.srcId(), edge.p(), edge.dstType(), edge.dstId(), edge.inferred(), prov);
+            }
         }
     }
 }

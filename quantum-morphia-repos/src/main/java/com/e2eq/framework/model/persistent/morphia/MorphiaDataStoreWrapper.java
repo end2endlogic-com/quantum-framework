@@ -4,7 +4,15 @@ package com.e2eq.framework.model.persistent.morphia;
 import com.e2eq.framework.model.persistent.morphia.interceptors.*;
 
 import com.e2eq.framework.util.EnvConfigUtils;
+import com.coditory.sherlock.connector.AcquireResult;
+import com.coditory.sherlock.DistributedLock;
+import com.coditory.sherlock.Sherlock;
+import com.coditory.sherlock.mongo.MongoSherlock;
 import com.mongodb.client.MongoClient;
+import com.mongodb.client.MongoCollection;
+import org.bson.Document;
+
+import java.time.Duration;
 import dev.morphia.Datastore;
 import dev.morphia.MorphiaDatastore;
 import dev.morphia.config.MorphiaConfig;
@@ -14,10 +22,12 @@ import io.quarkus.logging.Log;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.validation.constraints.NotNull;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 @ApplicationScoped
@@ -43,6 +53,26 @@ public class MorphiaDataStoreWrapper {
 
    @Inject
    EnvConfigUtils envConfigUtils;
+
+   /**
+    * Compatibility escape hatch only. The default keeps global identity/security
+    * resources out of tenant realm datastores; embedded auth still maps those
+    * resources in the configured system realm.
+    */
+   @ConfigProperty(name = "quantum.morphia.map-global-resources-to-tenant-realms", defaultValue = "false")
+   boolean mapGlobalResourcesToTenantRealms;
+
+   @ConfigProperty(
+       name = "quantum.morphia.tenant-excluded-entity-package-prefixes",
+       defaultValue = RealmEntityMappingPolicy.DEFAULT_TENANT_EXCLUDED_ENTITY_PACKAGE_PREFIXES
+   )
+   String tenantExcludedEntityPackagePrefixes;
+
+   @ConfigProperty(name = "quantum.morphia.tenant-excluded-entity-classes")
+   Optional<String> tenantExcludedEntityClasses;
+
+   @ConfigProperty(name = "quantum.mode", defaultValue = "embedded")
+   String quantumMode;
 
 
 
@@ -71,6 +101,28 @@ public class MorphiaDataStoreWrapper {
       return datastoreMap.computeIfAbsent(realm, r -> createMorphiaDatastore(r));
    }
 
+   /** Shared database used only for short-lived coordination locks; mirrors MigrationService. */
+   @ConfigProperty(name = "quantum.database.coordination-database", defaultValue = "quantum-coordination-shared")
+   String coordinationDatabase;
+
+   /**
+    * How long the index lock is held before it expires.
+    *
+    * <p>An expiry is required, not optional: a process killed mid-build would
+    * otherwise hold the lock forever and no realm could ever create indexes again.
+    * It must comfortably exceed a cold index build for the largest realm.</p>
+    */
+   @ConfigProperty(name = "quantum.database.index-lock-duration-seconds", defaultValue = "300")
+   long indexLockDurationSeconds;
+
+   private DistributedLock indexLock(String realm) {
+      MongoCollection<Document> collection = mongoClient
+              .getDatabase(coordinationDatabase)
+              .getCollection("locks");
+      Sherlock sherlock = MongoSherlock.create(collection);
+      return sherlock.createLock(String.format("index-lock-%s", realm));
+   }
+
    private MorphiaDatastore createMorphiaDatastore(String realm) {
       Log.infof("Creating MorphiaDatastore for realm/database: %s", realm);
 
@@ -87,18 +139,61 @@ public class MorphiaDataStoreWrapper {
       mdatastore.getMapper().addInterceptor(referenceInterceptor);
       mdatastore.getMapper().addInterceptor(persistenceAuditEventInterceptor);
 
-      // Reuse already-mapped entity types from the base datastore (no classpath scanning per realm)
+      // Reuse already-mapped entity types from the base datastore (no classpath scanning per realm),
+      // but do not project system-plane security/identity entities into tenant realms.
+      int mappedEntityCount = 0;
+      int skippedEntityCount = 0;
       for (Class<?> entityType : getMappedEntityTypesFromBase()) {
-         mdatastore.getMapper().map(entityType);
+         if (shouldMapEntityType(realm, entityType)) {
+            mdatastore.getMapper().map(entityType);
+            mappedEntityCount++;
+         } else {
+            skippedEntityCount++;
+            Log.debugf("Skipping system-plane entity type %s for tenant realm/database %s", entityType.getName(), realm);
+         }
+      }
+      if (skippedEntityCount > 0) {
+         Log.infof(
+             "MorphiaDataStoreWrapper: mapped %d entity types and skipped %d system-plane entity types for realm/database %s",
+             mappedEntityCount,
+             skippedEntityCount,
+             realm
+         );
       }
 
-      // Apply indexes and document validations
-      if (baseConfig.applyIndexes()) {
-         mdatastore.applyIndexes();
-      }
-
-      if (baseConfig.applyDocumentValidations()) {
-         mdatastore.applyDocumentValidations();
+      // Apply indexes and document validations under a per-realm coordination lock.
+      //
+      // The first process to touch a realm builds its indexes. When two do it at
+      // once -- an application provisioning a new realm while the control plane
+      // opens a datastore for that same realm to project its status -- MongoDB is
+      // handed two identical createIndexes for one collection and the second build
+      // parks in "draining writes received during build" forever. It survives
+      // killOp; only dropIndexes clears it. Every later index build on that
+      // collection then queues behind it, so an install that reported completed
+      // hangs for minutes on its next write. Observed twice, on two different
+      // realms, both on `policy`.
+      //
+      // Serializing on the same coordination database the migration lock uses
+      // makes index creation exclusive per realm. The lock name is deliberately
+      // NOT the migration lock's: migration holds that one while opening
+      // datastores, and these locks are not reentrant.
+      if (baseConfig.applyIndexes() || baseConfig.applyDocumentValidations()) {
+         DistributedLock lock = indexLock(realm);
+         AcquireResult result = lock.runLocked(Duration.ofSeconds(indexLockDurationSeconds), () -> {
+            if (baseConfig.applyIndexes()) {
+               mdatastore.applyIndexes();
+            }
+            if (baseConfig.applyDocumentValidations()) {
+               mdatastore.applyDocumentValidations();
+            }
+         });
+         if (!result.acquired()) {
+            // Another process holds the lock and is building the very same indexes.
+            // Skipping is the point: running anyway is exactly the concurrent build
+            // this exists to prevent, and the holder creates what this realm needs.
+            Log.warnf("Index creation for realm/database %s skipped: another process holds "
+                    + "the index lock and is building the same indexes", realm);
+         }
       }
 
       return mdatastore;
@@ -108,6 +203,14 @@ public class MorphiaDataStoreWrapper {
     * Returns the entity types already mapped on the base datastore, so realm datastores can register
     * the same types by class without repeating package scanning.
     */
+   /**
+    * The collection {@code type} is stored in, from the base mapper (mapping it there if needed). Works for
+    * system-plane types that a tenant realm's datastore deliberately leaves unmapped.
+    */
+   public String collectionNameOf(Class<?> type) {
+      return dataStore.getMapper().getEntityModel(type).collectionName();
+   }
+
    private List<Class<?>> getMappedEntityTypesFromBase() {
       if (cachedMappedEntityTypes == null) {
          synchronized (this) {
@@ -122,6 +225,18 @@ public class MorphiaDataStoreWrapper {
          }
       }
       return cachedMappedEntityTypes;
+   }
+
+   private boolean shouldMapEntityType(String realm, Class<?> entityType) {
+      return RealmEntityMappingPolicy.shouldMapToRealm(
+          realm,
+          envConfigUtils.getSystemRealm(),
+          entityType,
+          mapGlobalResourcesToTenantRealms,
+          "remote".equalsIgnoreCase(quantumMode),
+          tenantExcludedEntityPackagePrefixes,
+          tenantExcludedEntityClasses.orElse("")
+      );
    }
 
     /* Original as of March 26th 2025

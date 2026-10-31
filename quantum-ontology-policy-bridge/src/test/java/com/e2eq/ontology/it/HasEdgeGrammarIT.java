@@ -2,6 +2,8 @@ package com.e2eq.ontology.it;
 
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.morphia.QueryToFilterListener;
+import com.e2eq.framework.model.securityrules.SecurityContext;
+import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import com.e2eq.framework.grammar.BIAPIQueryLexer;
 import com.e2eq.framework.grammar.BIAPIQueryParser;
 import com.e2eq.ontology.core.ForwardChainingReasoner;
@@ -47,11 +49,13 @@ public class HasEdgeGrammarIT {
     private static final String TENANT = "test-tenant";
     private ForwardChainingReasoner reasoner;
     private DataDomain testDataDomain;
+    private DataDomain otherOrgDataDomain;
 
     @BeforeEach
     public void setup() {
         reasoner = new ForwardChainingReasoner();
-        edgeRepo.deleteAll();
+        SecurityContext.clear();
+        edgeRepo.deleteAll(TENANT);
         datastore.getDatabase().getCollection("orders").drop();
         
         // Create test DataDomain
@@ -61,6 +65,13 @@ public class HasEdgeGrammarIT {
         testDataDomain.setTenantId(TENANT);
         testDataDomain.setOwnerId("system");
         testDataDomain.setDataSegment(0);
+
+        otherOrgDataDomain = new DataDomain();
+        otherOrgDataDomain.setOrgRefName("other-org");
+        otherOrgDataDomain.setAccountNum("9999999999");
+        otherOrgDataDomain.setTenantId(TENANT);
+        otherOrgDataDomain.setOwnerId("system");
+        otherOrgDataDomain.setDataSegment(0);
     }
 
     @Test
@@ -156,11 +167,34 @@ public class HasEdgeGrammarIT {
         assertEquals(0, results.size(), "Should return no results");
     }
 
+    @Test
+    public void testHasEdgeGrammar_DoesNotLeakAcrossDataDomainsInSameTenant() {
+        createOrder("ORDER-LOCAL", "OPEN");
+        createOrder("ORDER-FOREIGN", "OPEN");
+        try (SecurityCallScope.Scope ignored = SecurityCallScope.openIgnoringRules()) {
+            edgeRepo.upsert(testDataDomain, "Order", "ORDER-LOCAL", "placedInOrg",
+                    "Organization", "ORG-SHARED", false, null);
+            edgeRepo.upsert(otherOrgDataDomain, "Order", "ORDER-FOREIGN", "placedInOrg",
+                    "Organization", "ORG-SHARED", false, null);
+        }
+
+        Filter grammarFilter = parseQuery("hasEdge(placedInOrg, ORG-SHARED)", TENANT);
+        List<TestOrder> results = datastore.find(TestOrder.class)
+                .filter(grammarFilter)
+                .iterator()
+                .toList();
+
+        assertEquals(List.of("ORDER-LOCAL"),
+                results.stream().map(TestOrder::getRefName).toList());
+    }
+
     private void createOrder(String refName, String status) {
-        TestOrder order = new TestOrder();
-        order.setRefName(refName);
-        order.setStatus(status);
-        datastore.save(order);
+        try (SecurityCallScope.Scope ignored = SecurityCallScope.openIgnoringRules()) {
+            TestOrder order = new TestOrder();
+            order.setRefName(refName);
+            order.setStatus(status);
+            datastore.save(order);
+        }
     }
 
     private Filter parseQuery(String query, String tenantId) {
@@ -170,27 +204,33 @@ public class HasEdgeGrammarIT {
         BIAPIQueryParser parser = new BIAPIQueryParser(tokens);
         BIAPIQueryParser.QueryContext tree = parser.query();
         
-        Map<String, String> vars = Map.of("pTenantId", tenantId);
+        Map<String, String> vars = Map.of(
+                "pTenantId", tenantId,
+                "orgRefName", testDataDomain.getOrgRefName(),
+                "pAccountId", testDataDomain.getAccountNum(),
+                "pDataSegment", String.valueOf(testDataDomain.getDataSegment()));
         QueryToFilterListener listener = new QueryToFilterListener(vars, null, null);
         ParseTreeWalker.DEFAULT.walk(listener, tree);
         return listener.getFilter();
     }
     
     private void setupOrderInOrg(String orderId, String customerId, String orgId) {
-        edgeRepo.upsert(testDataDomain, "Order", orderId, "placedBy", "Customer", customerId, false, null);
-        edgeRepo.upsert(testDataDomain, "Customer", customerId, "memberOf", "Organization", orgId, false, null);
+        try (SecurityCallScope.Scope ignored = SecurityCallScope.openIgnoringRules()) {
+            edgeRepo.upsert(testDataDomain, "Order", orderId, "placedBy", "Customer", customerId, false, null);
+            edgeRepo.upsert(testDataDomain, "Customer", customerId, "memberOf", "Organization", orgId, false, null);
 
-        List<Reasoner.Edge> explicitEdges = List.of(
-                new Reasoner.Edge(orderId, "Order", "placedBy", customerId, "Customer", false, Optional.empty()),
-                new Reasoner.Edge(customerId, "Customer", "memberOf", orgId, "Organization", false, Optional.empty())
-        );
+            List<Reasoner.Edge> explicitEdges = List.of(
+                    new Reasoner.Edge(orderId, "Order", "placedBy", customerId, "Customer", false, Optional.empty()),
+                    new Reasoner.Edge(customerId, "Customer", "memberOf", orgId, "Organization", false, Optional.empty())
+            );
 
-        Reasoner.EntitySnapshot snapshot = new Reasoner.EntitySnapshot(TENANT, orderId, "Order", explicitEdges);
-        Reasoner.InferenceResult result = reasoner.infer(snapshot, ontologyRegistry);
+            Reasoner.EntitySnapshot snapshot = new Reasoner.EntitySnapshot(TENANT, orderId, "Order", explicitEdges);
+            Reasoner.InferenceResult result = reasoner.infer(snapshot, ontologyRegistry);
 
-        for (Reasoner.Edge edge : result.addEdges()) {
-            Map<String, Object> prov = edge.prov().map(p -> Map.<String, Object>of("rule", p)).orElse(null);
-            edgeRepo.upsert(testDataDomain, edge.srcType(), edge.srcId(), edge.p(), edge.dstType(), edge.dstId(), edge.inferred(), prov);
+            for (Reasoner.Edge edge : result.addEdges()) {
+                Map<String, Object> prov = edge.prov().map(p -> Map.<String, Object>of("rule", p)).orElse(null);
+                edgeRepo.upsert(testDataDomain, edge.srcType(), edge.srcId(), edge.p(), edge.dstType(), edge.dstId(), edge.inferred(), prov);
+            }
         }
     }
 }

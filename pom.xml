@@ -7,7 +7,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.end2endlogic</groupId>
     <artifactId>quantum-parent</artifactId>
-    <version>1.4.0-SNAPSHOT</version>
+    <version>1.4.2</version>
     <packaging>pom</packaging>
 
     <name>${project.groupId}:${project.artifactId}</name>
@@ -57,8 +57,14 @@
         <quarkus.platform.version>3.31.2</quarkus.platform.version>
         <skipITs>true</skipITs>
         <surefire-plugin.version>3.2.5</surefire-plugin.version>
+        <!-- Referenced by the maven-failsafe-plugin entry in pluginManagement
+             below. Previously undefined, so any module inheriting this parent
+             directly could not resolve the plugin and its *IT tests never ran.
+             quantum-enterprise already pins 3.2.5; matched here. skipITs stays
+             true; modules opt in by setting it false. -->
+        <failsafe-plugin.version>3.2.5</failsafe-plugin.version>
         <lombrok.version>1.18.38</lombrok.version>
-        <quantum.version>1.4.0-SNAPSHOT</quantum.version>
+        <quantum.version>1.4.2</quantum.version>
         <apachecommons.lang3.version>3.18.0</apachecommons.lang3.version>
     </properties>
 
@@ -67,16 +73,32 @@
         <module>quantum-ontology-core</module>
         <module>quantum-ontology-policy-bridge</module>
         <module>quantum-ontology-mongo</module>
+        <module>quantum-ontology-rest</module>
         <module>quantum-models</module>
+        <module>quantum-query-runtime</module>
         <module>quantum-morphia-repos</module>
+        <module>quantum-contract-core</module>
+        <module>quantum-contract-rest</module>
+        <module>quantum-rest-core</module>
+        <module>quantum-query-rest</module>
+        <module>quantum-security-runtime</module>
         <module>quantum-control-plane-client</module>
         <module>quantum-system</module>
+        <module>quantum-bootstrap-core</module>
+        <module>quantum-application-registration</module>
+        <module>quantum-bootstrap-rest</module>
+        <module>quantum-seed-core</module>
+        <module>quantum-seed-rest</module>
+        <module>quantum-migration-rest</module>
+        <module>quantum-system-management</module>
         <module>quantum-action-enablement-models</module>
         <module>quantum-action-enablement-quarkus</module>
+        <module>quantum-observability-quarkus</module>
         <module>quantum-default-keys</module>
         <module>quantum-jwt-provider</module>
         <module>quantum-oauth-server</module>
         <module>quantum-framework</module>
+        <module>quantum-system-rest</module>
         <module>quantum-seed-s3</module>
         <module>quantum-secrets</module>
         <module>quantum-mcp-server</module>
@@ -209,6 +231,9 @@
                             >org.jboss.logmanager.LogManager</java.util.logging.manager>
                             <maven.home>${maven.home}</maven.home>
                             <maven.repo>${settings.localRepository}</maven.repo>
+                            <!-- Tests must not collide with running local services. -->
+                            <quarkus.http.test-port>0</quarkus.http.test-port>
+                            <quarkus.http.test-ssl-port>0</quarkus.http.test-ssl-port>
                         </systemPropertyVariables>
                     </configuration>
                 </plugin>
@@ -221,6 +246,9 @@
                             >org.jboss.logmanager.LogManager</java.util.logging.manager>
                             <maven.home>${maven.home}</maven.home>
                             <maven.repo>${settings.localRepository}</maven.repo>
+                            <!-- Tests must not collide with running local services. -->
+                            <quarkus.http.test-port>0</quarkus.http.test-port>
+                            <quarkus.http.test-ssl-port>0</quarkus.http.test-ssl-port>
                         </systemPropertyVariables>
                     </configuration>
                 </plugin>
@@ -255,18 +283,38 @@
             <modules>
                 <module>quantum-util</module>
                 <module>quantum-ontology-core</module>
-                <module>quantum-ontology-mongo</module>
                 <module>quantum-ontology-policy-bridge</module>
+                <module>quantum-ontology-mongo</module>
+                <module>quantum-ontology-rest</module>
                 <module>quantum-models</module>
+                <module>quantum-query-runtime</module>
                 <module>quantum-morphia-repos</module>
+                <module>quantum-contract-core</module>
+                <module>quantum-contract-rest</module>
+                <module>quantum-rest-core</module>
+                <module>quantum-query-rest</module>
+                <module>quantum-security-runtime</module>
                 <module>quantum-control-plane-client</module>
                 <module>quantum-system</module>
+                <module>quantum-bootstrap-core</module>
+                <module>quantum-application-registration</module>
+                <module>quantum-bootstrap-rest</module>
+                <module>quantum-seed-core</module>
+                <module>quantum-seed-rest</module>
+                <module>quantum-migration-rest</module>
+                <module>quantum-system-management</module>
+                <module>quantum-action-enablement-models</module>
+                <module>quantum-action-enablement-quarkus</module>
+                <module>quantum-observability-quarkus</module>
                 <module>quantum-default-keys</module>
                 <module>quantum-jwt-provider</module>
                 <module>quantum-oauth-server</module>
                 <module>quantum-framework</module>
+                <module>quantum-system-rest</module>
                 <module>quantum-seed-s3</module>
+                <module>quantum-secrets</module>
                 <module>quantum-mcp-server</module>
+                <module>quantum-cli</module>
             </modules>
             <build>
                 <plugins>
@@ -277,6 +325,9 @@
                         <extensions>true</extensions>
                         <configuration>
                             <publishingServerId>central</publishingServerId>
+                            <excludeArtifacts>
+                                <excludeArtifact>quantum-docs</excludeArtifact>
+                            </excludeArtifacts>
                         </configuration>
                     </plugin>
 
@@ -306,6 +357,9 @@
                                 </goals>
                             </execution>
                         </executions>
+                        <configuration>
+                            <doclint>none</doclint>
+                        </configuration>
                     </plugin>
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>

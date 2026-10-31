@@ -2,6 +2,7 @@ package com.e2eq.framework.model.persistent.morphia;
 
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.securityrules.SecurityContext;
+import com.e2eq.framework.security.runtime.RuleFilterComposition;
 import com.e2eq.framework.security.runtime.RuleContext;
 import dev.morphia.query.filters.Filter;
 import io.quarkus.logging.Log;
@@ -19,6 +20,10 @@ final class RepoSecurityFilterBuilder {
     }
 
     List<Filter> buildSecuredFilters(List<Filter> filters, Class<? extends UnversionedBaseModel> modelClass) {
+        if (SecurityContext.isIgnoringRules()) {
+            return filters;
+        }
+
         if (SecurityContext.getResourceContext().isEmpty() || SecurityContext.getPrincipalContext().isEmpty()) {
             securityContextResolver.ensureSecurityContextFromIdentity();
         }
@@ -43,6 +48,9 @@ final class RepoSecurityFilterBuilder {
      * context. Fail-closed on missing context exactly like row filters.
      */
     java.util.Set<String> buildExcludedFieldPaths() {
+        if (SecurityContext.isIgnoringRules()) {
+            return java.util.Set.of();
+        }
         if (SecurityContext.getResourceContext().isEmpty() || SecurityContext.getPrincipalContext().isEmpty()) {
             securityContextResolver.ensureSecurityContextFromIdentity();
         }
@@ -51,12 +59,9 @@ final class RepoSecurityFilterBuilder {
                     SecurityContext.getPrincipalContext().get(),
                     SecurityContext.getResourceContext().get());
         }
-        // Field exclusions are principal-relative: with no principal on the
-        // thread (system-internal/ignore-rules reads — e.g. the ontology edge
-        // store) there is nothing to exclude. Row-level security separately
-        // fails loud on the paths that REQUIRE a principal; this must not
-        // turn principal-less infrastructure reads into failures.
-        return java.util.Set.of();
+        throw new IllegalStateException(
+                "SecurityContext is not set in thread; cannot resolve field-level policy. "
+                        + "Use an explicit ignore-rules scope only for authorized internal reads.");
     }
 
     Filter[] getFilterArray(List<Filter> filters, Class<? extends UnversionedBaseModel> modelClass) {
@@ -65,7 +70,7 @@ final class RepoSecurityFilterBuilder {
                 Log.debugf("getFilterArray: ignoring rules mode active, skipping rule evaluation for %s",
                         modelClass != null ? modelClass.getSimpleName() : "null");
             }
-            return filters.toArray(new Filter[0]);
+            return RuleFilterComposition.conjoin(filters);
         }
 
         List<Filter> securedFilters = buildSecuredFilters(filters, modelClass);
@@ -74,6 +79,8 @@ final class RepoSecurityFilterBuilder {
                 Log.debugf("getFilterArray for %s security context: %s", SecurityContext.getPrincipalContext().get().getUserId(), securedFilters);
             }
         }
-        return securedFilters.toArray(new Filter[0]);
+        // One explicit $and: Morphia merges top-level filters on the same field (last wins), which
+        // would let a caller filter replace a rule filter. See RuleFilterComposition.
+        return RuleFilterComposition.conjoin(securedFilters);
     }
 }

@@ -23,8 +23,8 @@ public class SeedNoHttpTestProfile implements QuarkusTestProfile {
         // Bind explicitly to loopback if anything starts
         cfg.put("quarkus.http.host", "127.0.0.1");
         // Use a dedicated Morphia database for tests to avoid collisions with default/system DB
-        cfg.put("quarkus.morphia.database", "seed-tests");
-        cfg.put("quarkus.mongodb.database", "seed-tests");
+        cfg.put("quarkus.morphia.database", "test-seed");
+        cfg.put("quarkus.mongodb.database", "test-seed");
         // Avoid Morphia auto index creation to reduce startup work and flakiness
         cfg.put("quarkus.morphia.create-indexes", "false");
         // Disable database migrations during these tests; tests drive seeding explicitly

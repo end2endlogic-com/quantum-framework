@@ -54,6 +54,17 @@ public class MigrationService {
    @ConfigProperty(name = "quantum.database.migration.enabled")
    protected boolean enabled;
 
+   @ConfigProperty(name = "quantum.migration.application-id")
+   Optional<String> migrationApplicationId;
+
+   /** Mirrors RuleContext's fail-closed switch; when true, migrations must carry an application id. */
+   @ConfigProperty(name = "quantum.security.policy-scope.require-application", defaultValue = "false")
+   boolean requireApplicationScope;
+
+   /** Shared database used only for short-lived migration/seed coordination locks. */
+   @ConfigProperty(name = "quantum.database.coordination-database", defaultValue = "quantum-coordination-shared")
+   String coordinationDatabase;
+
    /**
     * Optional comma-separated list of additional realms to initialize on startup before seed packs run.
     * When unset, startup migration falls back to the historical behavior:
@@ -63,6 +74,18 @@ public class MigrationService {
     */
    @ConfigProperty(name = "quantum.migration.apply.realms")
    Optional<String> startupRealmsCsv;
+
+   /**
+    * When true, startup realm resolution is restricted to the cross-tenant SYSTEM realm only:
+    * the tenant-shaped TEST realm and the DEFAULT realm are dropped from the scan (the default
+    * realm is kept only when it equals the system realm). An explicit
+    * {@code quantum.migration.apply.realms} entry is still honored, so a caller can opt a specific
+    * realm back in. Reuses the existing {@code quantum.realm.seed-system-only} flag so a
+    * "system-only" database neither creates nor even scans the test realm. Defaults to false so
+    * existing multi-tenant/dev behavior is unchanged (non-breaking).
+    */
+   @ConfigProperty(name = "quantum.realm.seed-system-only", defaultValue = "false")
+   boolean seedSystemOnly;
 
    @Inject
    DatabaseVersionRepo databaseVersionRepo;
@@ -89,7 +112,7 @@ public class MigrationService {
    /**
     * Run startup migrations, optionally excluding the system realm. In remote
     * mode (control-plane split, {@code quantum.mode=remote}) the control plane
-    * owns the system realm's lifecycle, so the caller (FrameworkStartupCoordinator)
+    * owns the system realm's lifecycle, so the caller (FrameworkStartupCoordinator, quantum-seed-core)
     * passes {@code includeSystemRealm=false}; app-realm migrations still run
     * locally. This class stays mode-unaware — the deployment mode is resolved
     * above it.
@@ -120,7 +143,10 @@ public class MigrationService {
       if (includeSystemRealm) {
          realms.add(systemRealm);
       }
-      if (existingDatabaseNames.contains(defaultRealm)) {
+      // System-only mode: do NOT auto-include the default (or test) realm in the scan. The
+      // default realm is kept only when it equals the system realm. Explicit apply.realms
+      // entries below are still honored so a caller can opt a specific realm back in.
+      if (!seedSystemOnly && existingDatabaseNames.contains(defaultRealm)) {
          realms.add(defaultRealm);
       }
 
@@ -162,14 +188,93 @@ public class MigrationService {
 
    private void migrateRealmSynchronously(String realm) {
       MultiEmitter<String> emitter = newLoggingEmitter();
-      SecurityCallScope.runWithContexts(
-         securityUtils.getSystemPrincipalContext(),
-         securityUtils.getSystemSecurityResourceContext(),
-         () -> {
-            runAllUnRunMigrations(realm, emitter);
-            applyAllIndexes(realm);
+      String applicationId = migrationApplicationId
+         .map(String::trim)
+         .filter(value -> !value.isEmpty())
+         .orElse(null);
+
+      if (applicationId == null) {
+         // Application-scoped policy evaluation is opt-in (quantum.security.policy-scope.require-application).
+         // When it is off, policies are still evaluated unscoped, so an unset migration application id is
+         // legal: fall back to the historical system contexts rather than failing startup. When it is on,
+         // RuleContext would fail closed anyway, so fail here with the actionable message.
+         if (requireApplicationScope) {
+            throw new IllegalStateException(
+               "quantum.migration.application-id is required for startup migrations when "
+                  + "quantum.security.policy-scope.require-application=true");
          }
-      );
+         runStartupMigrationRulesOff(
+            securityUtils.getSystemPrincipalContext(),
+            securityUtils.getSystemSecurityResourceContext(),
+            realm,
+            emitter);
+         return;
+      }
+
+      var systemPrincipal = securityUtils.getSystemPrincipalContext();
+      var migrationPrincipal = new com.e2eq.framework.model.securityrules.PrincipalContext.Builder()
+         .withDefaultRealm(systemPrincipal.getDefaultRealm())
+         .withApplicationId(applicationId)
+         .withDomainContext(systemPrincipal.getDomainContext())
+         .withDataDomain(systemPrincipal.getDataDomain())
+         .withUserId(systemPrincipal.getUserId())
+         .withRoles(systemPrincipal.getRoles())
+         .withScope(systemPrincipal.getScope())
+         .build();
+      var migrationResource = new com.e2eq.framework.model.securityrules.ResourceContext.Builder()
+         .withRealm(realm)
+         .withApplicationId(applicationId)
+         .withArea("MIGRATION")
+         .withFunctionalDomain("DATABASE")
+         .withAction("APPLY")
+         .build();
+      runStartupMigrationRulesOff(migrationPrincipal, migrationResource, realm, emitter);
+   }
+
+   /**
+    * Run startup migration for one realm with rule evaluation switched off.
+    *
+    * <p>Startup migration cannot evaluate policy, and the reason is structural rather than
+    * incidental. Applying a changeset saves bookkeeping records through {@code MorphiaRepo},
+    * which resolves field-level policy, which asks {@code RuleContext}. Where the deployment
+    * delegates authorization to the central auth service, that provider requires a
+    * <em>request-scoped</em> bearer token — and a {@code StartupEvent} has no request. The
+    * result was a {@code SecurityException} thrown several frames deep in a Morphia save,
+    * before the HTTP port ever opened.</p>
+    *
+    * <p>Supplying the system identity alone is not enough: it establishes <em>who</em> the
+    * caller is, while the delegating provider still tries to go and ask about them. The
+    * ignore-rules scope is the declaration this codebase already provides for exactly this
+    * case — {@code RepoSecurityFilterBuilder.buildExcludedFieldPaths} tests it first and
+    * short-circuits, and its own diagnostic points here: <em>"Use an explicit ignore-rules
+    * scope only for authorized internal reads."</em></p>
+    *
+    * <p>The system identity is still established inside the scope. Rules-off is not
+    * anonymity: the migration records remain stamped with the system principal and its data
+    * domain, so what was written at startup, and under whose identity, stays attributable.
+    * The scope is depth-counted and closed in a finally block by try-with-resources, so
+    * nested work cannot leave the thread elevated after migration returns.</p>
+    *
+    * <p>This is deliberately all startup migration rather than only the bookkeeping saves:
+    * a migration that could half-apply — some statements rules-off, others fail-closed
+    * against an unreachable auth service — is a worse outcome than one that is uniformly
+    * privileged and uniformly attributable.</p>
+    */
+   private void runStartupMigrationRulesOff(
+      com.e2eq.framework.model.securityrules.PrincipalContext principal,
+      com.e2eq.framework.model.securityrules.ResourceContext resource,
+      String realm,
+      MultiEmitter<String> emitter) {
+      try (SecurityCallScope.Scope ignoredRules = SecurityCallScope.openIgnoringRules()) {
+         SecurityCallScope.runWithContexts(
+            principal,
+            resource,
+            () -> {
+               runAllUnRunMigrations(realm, emitter);
+               applyAllIndexes(realm);
+            }
+         );
+      }
    }
 
    @SuppressWarnings("unchecked")
@@ -239,16 +344,19 @@ public class MigrationService {
    }
 
    public void dropIndexOnCollection (String realm, String collectionName) {
+      requireRealmOwnedByThisMigrationService(realm, "drop indexes");
       mongoClient.getDatabase(realm).getCollection(collectionName).dropIndexes();
    }
 
    public void applyIndexes (String realmId) {
       Objects.requireNonNull(realmId, "RealmId cannot be null");
+      requireRealmOwnedByThisMigrationService(realmId, "apply indexes");
       morphiaDataStoreWrapper.getDataStore(realmId).applyIndexes();
    }
 
    public void applyIndexes (String realmId, String collection) {
       Objects.requireNonNull(realmId, "RealmId cannot be null");
+      requireRealmOwnedByThisMigrationService(realmId, "apply indexes");
       Optional<EntityModel> em = morphiaDataStoreWrapper.getDataStore(realmId).getMapper().getMappedEntities().stream().filter(entity -> entity.collectionName().equals(collection)).findFirst();
       if (!em.isPresent()) {
          throw new NotFoundException(String.format("Collection %s not found in realm %s", collection, realmId));
@@ -263,6 +371,7 @@ public class MigrationService {
     */
    public void applyAllIndexes(String realmId) {
       Objects.requireNonNull(realmId);
+      requireRealmOwnedByThisMigrationService(realmId, "apply all indexes");
       var datastore = morphiaDataStoreWrapper.getDataStore(realmId);
       var entities = datastore.getMapper().getMappedEntities();
       Log.infof("applyAllIndexes: ensuring indexes for %d mapped entity types in realm %s", entities.size(), realmId);
@@ -274,12 +383,15 @@ public class MigrationService {
             Log.warnf(e, "applyAllIndexes: failed to ensure indexes for %s in %s", entity.collectionName(), realmId);
          }
       }
-      datastore.applyIndexes();
-      Log.infof("applyAllIndexes: completed for realm %s", realmId);
+      // Each mapped entity was handled above. Do not invoke Datastore.applyIndexes() as a
+      // second global pass: it repeats every operation and turns an intentionally isolated,
+      // logged legacy-index conflict into a fatal startup exception.
+      Log.infof("applyAllIndexes: completed best-effort index reconciliation for realm %s", realmId);
    }
 
    public void dropAllIndexes (String realmId) {
       Objects.requireNonNull(realmId, "RealmId cannot be null");
+      requireRealmOwnedByThisMigrationService(realmId, "drop all indexes");
       morphiaDataStoreWrapper.getDataStore(realmId).getMapper().getMappedEntities().forEach(entity -> {
          mongoClient.getDatabase(realmId).getCollection(entity.collectionName()).dropIndexes();
       });
@@ -315,7 +427,7 @@ public class MigrationService {
 
    protected DistributedLock getMigrationLock (String realm) {
       MongoCollection<Document> collection = mongoClient
-                                                .getDatabase("sherlock")
+                                                .getDatabase(coordinationDatabase)
                                                 .getCollection("locks");
       Sherlock sherlock = MongoSherlock.create(collection);
       // create Lock name
@@ -506,6 +618,7 @@ public class MigrationService {
    }
 
    public void runChangeSetBean(String changeSetName, String realm, MultiEmitter<? super String> emitter) throws Exception {
+      requireRealmOwnedByThisMigrationService(realm, "run change set");
 
       List<ChangeSetBean> changeSets = getAllChangeSetBeans();
       Optional<ChangeSetBean> changeSetBeanOptional = changeSets.stream().filter(changeSetBean -> changeSetBean.getName().equals(changeSetName)).findFirst();
@@ -537,6 +650,7 @@ public class MigrationService {
    }
 
    public void runAllUnRunMigrations (String realm, MultiEmitter<? super String> emitter) {
+      requireRealmOwnedByThisMigrationService(realm, "run migrations");
 
       Log.info("-- Running all migrations for realm: " + realm);
       List<ChangeSetBean> changeSetList = getAllPendingChangeSetBeans(realm, emitter);
@@ -631,6 +745,22 @@ public class MigrationService {
          } else {
             log(String.format("-- No pending change sets found for realm: %s", realm), emitter);
          }
+
+         // The target version describes the migration catalog this realm has fully
+         // processed, not only the last change set that mutated it. A change set may
+         // intentionally apply to a subset of realms (for example, a system-catalog
+         // migration). Tenant realms still need to advance past that version after
+         // the change set has been considered and skipped as non-applicable; leaving
+         // them at the prior version makes the request filter reject a clean database
+         // forever. This point is reached only after every applicable change set has
+         // completed successfully, so a failed migration can never stamp the target.
+         Datastore datastore = morphiaDataStoreWrapper.getDataStore(realm);
+         Optional<DatabaseVersion> current = getCurrentDatabaseVersion(datastore);
+         Semver target = Semver.parse(targetDatabaseVersion);
+         if (current.isEmpty() || current.get().getCurrentSemVersion().compareTo(target) < 0) {
+            saveDatabaseVersion(datastore, targetDatabaseVersion);
+            log(String.format("Advanced database version for realm %s to %s", realm, targetDatabaseVersion), emitter);
+         }
    }
 
 
@@ -653,5 +783,46 @@ public class MigrationService {
         record.setSuccessful(true);
         return record;
     }
+
+   /**
+    * Fails unless this service manages {@code realm}'s data: always, unless quantum.realm.seed-system-only is set, in
+    * which case only the system realm and realms listed in quantum.migration.apply.realms.
+    */
+   public void requireRealmOwned(String realm, String operation) {
+      requireRealmOwnedByThisMigrationService(realm, operation);
+   }
+
+   private void requireRealmOwnedByThisMigrationService(String realm, String operation) {
+      if (!seedSystemOnly || isSystemRealm(realm) || isExplicitlyConfiguredMigrationRealm(realm)) {
+         return;
+      }
+      throw new IllegalStateException(String.format(
+         "Refusing to %s for realm %s because quantum.realm.seed-system-only=true and this service only owns system realm %s. "
+            + "Set quantum.migration.apply.realms to explicitly opt in an additional managed realm.",
+         operation,
+         realm,
+         systemRealm
+      ));
+   }
+
+   private boolean isSystemRealm(String realm) {
+      return Objects.equals(realm, systemRealm);
+   }
+
+   private boolean isExplicitlyConfiguredMigrationRealm(String realm) {
+      if (startupRealmsCsv.isEmpty()) {
+         return false;
+      }
+      String csv = startupRealmsCsv.get().trim();
+      if (csv.isEmpty() || csv.equalsIgnoreCase("none")) {
+         return false;
+      }
+      for (String part : csv.split(",")) {
+         if (Objects.equals(part.trim(), realm)) {
+            return true;
+         }
+      }
+      return false;
+   }
 
 }

@@ -159,4 +159,31 @@ class ComputeAllowedRealmRefNamesTest {
 
         assertEquals(List.of("acme-prod", "acme-dev", "other-realm"), result);
     }
+
+    @Test
+    void wildcardAuthorizesRequestedRealmDuringLogin() {
+        CredentialUserIdPassword cred = buildCredential(null, "*", "realm-a");
+
+        assertEquals(
+            List.of("customer-realm"),
+            securityUtils.computeAllowedRealmRefNames(cred, List.of("customer-realm"))
+        );
+    }
+
+    @Test
+    void unmatchedPatternDeniesRequestedRealmDuringLogin() {
+        CredentialUserIdPassword cred = buildCredential(null, "acme-.*", "realm-a");
+
+        assertTrue(securityUtils.computeAllowedRealmRefNames(cred, List.of("other-realm")).isEmpty());
+    }
+
+    @Test
+    void defaultRealmRemainsAuthorizedWithoutOverrides() {
+        CredentialUserIdPassword cred = buildCredential(null, null, "realm-a");
+
+        assertEquals(
+            List.of("realm-a"),
+            securityUtils.computeAllowedRealmRefNames(cred, List.of("realm-a"))
+        );
+    }
 }

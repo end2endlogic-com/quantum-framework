@@ -8,6 +8,15 @@ public class SecurityCheckException extends RuntimeException {
       this.response = response;
    }
 
+   /**
+    * Denial with an explicit, specific message (e.g. a write into a data domain the caller's
+    * rules do not allow).
+    */
+   public SecurityCheckException(SecurityCheckResponse response, String message) {
+      super(message);
+      this.response = response;
+   }
+
    public SecurityCheckResponse getResponse () {
       return response;
    }

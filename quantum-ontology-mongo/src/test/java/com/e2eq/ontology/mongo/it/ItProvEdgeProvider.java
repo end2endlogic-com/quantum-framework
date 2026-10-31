@@ -24,7 +24,7 @@ public class ItProvEdgeProvider implements OntologyEdgeProvider {
         String extraRef = src.getProviderTargetRef();
         if (extraRef != null && !extraRef.isBlank()) {
             // srcId and srcType are determined by framework; we set here based on conventions
-            String srcId = src.getRefName();
+            String srcId = src.getId() == null ? src.getRefName() : src.getId().toString();
             if (srcId != null && !srcId.isBlank()) {
                 // Note: dataDomainInfo is available for any DataDomain-scoped filtering if needed
                 out.add(new Reasoner.Edge(srcId, "ProvSource", "provRel", extraRef, "ProvTgt", false, java.util.Optional.empty()));

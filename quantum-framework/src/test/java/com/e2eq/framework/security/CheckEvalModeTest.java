@@ -33,14 +33,23 @@ public class CheckEvalModeTest extends BaseRepoTest {
     @Inject
     SecurityUtils securityUtils;
 
+    private Policy installedPolicy;
+
     @AfterEach
-    void clearContexts() {
-        SecurityContext.clear();
+    void clearContexts() throws Exception {
+        try (SecurityCallScope.Scope ignored = SecurityCallScope.openIgnoringRules()) {
+            if (installedPolicy != null) {
+                policyRepo.delete(testUtils.getTestRealm(), installedPolicy);
+                ruleContext.reloadFromRepo(testUtils.getTestRealm());
+            }
+        } finally {
+            SecurityContext.clear();
+        }
     }
 
     private void installSimpleFilterAllowPolicy(String realm) {
         Policy p = new Policy();
-        p.setRefName("scoped-policy");
+        p.setRefName("SCOPED_POLICY");
         p.setDisplayName("Scoped Policy");
         p.setPrincipalId("user");
         p.setDataDomain(securityUtils.getSystemDataDomain());
@@ -61,8 +70,10 @@ public class CheckEvalModeTest extends BaseRepoTest {
                 .withFinalRule(false)
                 .build();
         p.getRules().add(r);
-        policyRepo.save(realm, p);
-        ruleContext.reloadFromRepo(realm);
+        try (SecurityCallScope.Scope ignored = SecurityCallScope.openIgnoringRules()) {
+            installedPolicy = policyRepo.save(realm, p);
+            ruleContext.reloadFromRepo(realm);
+        }
     }
 
     private PrincipalContext pc(String realm) {
