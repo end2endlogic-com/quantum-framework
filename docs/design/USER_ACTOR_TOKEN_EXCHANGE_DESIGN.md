@@ -24,13 +24,26 @@ Facts behind the table (1.4.2-SNAPSHOT):
   `realm`, `tenantId`, `userId` or `aud` (`TokenUtils` service claims;
   `CustomTokenAuthProvider` ignores the realm/audience arguments). Their realm/tenant
   boundary lives only server-side (`UserRealmRole.authorizedTenantIds/RegEx`,
-  `CredentialUserIdPassword.realmRegEx`). Default lifetime 100 years; not revocable except
-  by deleting the credential.
+  `CredentialUserIdPassword.realmRegEx`). Default lifetime 100 years. Receivers do not look
+  up the service credential (`buildServiceClaimsContext` builds no credential;
+  `RolesAugmentor` falls back to the token's `groups`), so deleting the credential does not
+  revoke an issued service token at receivers. A service-token `X-Realm` switch checks only
+  that the realm is registered (and the application, when present), not `realmRegEx`.
 - `SecurityFilter.buildServiceClaimsContext` uses `X-Realm` or the system realm;
   `handleImpersonation` only records `X-Acting-On-Behalf-Of-*` on the context.
 - Rule scripts and filter variables expose userId, defaultRealm, scope, roles,
   dataDomain, labels and resolver properties; not the acting user, the impersonator or
-  `azp`. No rule can say "only when service X is calling".
+  `azp`. A rule can match a service token's own userId or roles, but under a user token
+  nothing identifies the calling service, so "this user, via service X" cannot be
+  expressed.
+- `ApplicationTokenAdmissionFilter` (quantum-auth-client-provider, active where
+  `quantum.auth.expected-audience` is set) admits a service token when `azp` is the
+  receiving application, an access token when `aud` contains the receiving application and
+  `azp` is absent or that application, and refuses every other `token_type`. A user token
+  issued for application A is therefore refused (403) by an application B that enforces
+  admission.
+- helixor-core `require_service_principal` / `delegated_principal` refuse user tokens
+  (401 `service_token_required`) and give the delegated user the calling service's roles.
 - `/oauth/token` supports `authorization_code`, `client_credentials`, `refresh_token`.
   There is no `act`, `may_act` or token-exchange code anywhere.
 
@@ -69,9 +82,12 @@ Alternatives considered:
 - **Receiver looks up the acting user** from `X-Acting-On-Behalf-Of-UserId`. Needs an
   identity lookup on every call (resource servers have no identity catalog) and trusts an
   unsigned claim from the caller. Rejected.
-- **Forward the user token alone.** Correct and adopted for Helixor DI's ontology reads
-  (helixor#760, in review), but cannot express actor-gated operations. Kept as the default for calls
-  that need no actor (§6.1).
+- **Forward the user token alone.** Correct where the receiver admits the user's token
+  (same application, or no application admission), and adopted for Helixor DI's ontology
+  reads (helixor#760). It cannot express actor-gated operations, it is refused across
+  applications that enforce admission, and it spreads a full-lifetime, multi-audience
+  bearer to every downstream service. Kept as the interim default inside one application's
+  trust boundary (§6.1); the exchange replaces it across applications.
 
 ## 4. Protocol
 
@@ -92,6 +108,13 @@ scope=<optional, space separated; subset of what the target grants>
 The actor authenticates with its own service token in `Authorization` (the platform's
 existing service credential), not with `actor_token`. `actor_token` and
 `requested_token_type` other than `access_token` are refused (`invalid_request`).
+Optional `realm` and `tenant_id` parameters carry a realm or tenant switch **the user**
+made (§6.2); the issuer validates them against the user's credential.
+
+Today `OAuthTokenResource` authenticates only an `OAuthClient` (Basic or form
+`client_id`/secret) and checks its `allowedGrantTypes`. The exchange adds a separate branch,
+taken before client resolution when `grant_type` is token-exchange, that verifies the Bearer
+service token instead.
 
 ### 4.2 Checks (all must pass; any failure is a 400/401 with an OAuth error code and no token)
 
@@ -111,6 +134,12 @@ existing service credential), not with `actor_token`. `actor_token` and
 5. **Subject may use the audience**: the subject's own token lists the audience in `aud`,
    or the realm grants the audience to the subject (same rule the login path uses to fill
    `aud`). The exchange never widens what the user may reach.
+6. **Subject token was given to this actor**: the actor's application is in the subject
+   token's `aud`, or is its `azp`. A service cannot exchange a user token that was issued
+   for some other application and reached it by other means.
+7. **Requested switch**: `realm`/`tenant_id`, when sent, pass the same checks a user-token
+   `X-Realm`/`X-Tenant-Id` would (`realmRegEx`, tenant membership) against the subject's
+   credential; the issued token carries the switched realm and tenant.
 
 ### 4.3 Issued token
 
@@ -120,7 +149,7 @@ existing service credential), not with `actor_token`. `actor_token` and
   "realm": "<user realm>", "tenantId": "<user tenant>",
   "orgRefName": "...", "accountNum": "...", "realmRegEx": "<user's>",
   "groups": ["<user's roles>"],
-  "aud": "<audience>", "azp": "<actor application id>",
+  "aud": "<audience>", "azp": "<audience>",
   "scope": "authToken <granted scopes>",
   "act": { "sub": "<actor subject>", "userId": "svc-...", "azp": "<actor app>" },
   "token_type": "delegated",
@@ -128,6 +157,9 @@ existing service credential), not with `actor_token`. `actor_token` and
 }
 ```
 
+- `azp` is the audience, so `ApplicationTokenAdmissionFilter` and
+  `SecurityFilter.currentApplicationId()` see the application the token is for; the actor's
+  application appears only in `act.azp` and never becomes the request's `applicationId`.
 - Lifetime default 300 s, configurable; never later than the subject token's `exp`.
 - No refresh token. A service exchanges again per user request (or caches per
   user+audience until `exp`).
@@ -137,11 +169,11 @@ existing service credential), not with `actor_token`. `actor_token` and
 
 ### 4.4 Chains
 
-A delegated token may not be used as `subject_token`. Service A calling B calling C
-exchanges the **original user token** it received if it has one; if B holds only a
-delegated token, B may forward it to C only when C is the same audience. Nested `act`
-chains are out of scope for v1 and refused, so a token's actor is always the service
-that asked for it.
+A delegated token may not be used as `subject_token`, and it is accepted only by its own
+audience, so it is never forwarded onward. Multi-hop calls (A → B → C on the same user's
+behalf) are out of scope for v1: B has no user token to exchange, so a call from B to C is
+B's own work (service token, §7) until nested `act` chains are designed. A token's actor is
+always the service that asked for it.
 
 ## 5. Delegation grants
 
@@ -176,8 +208,12 @@ cannot widen it. No grant → no exchange (`unauthorized_client`).
 - New `PrincipalContext` fields: `actorSubject`, `actorUserId`, `actorApplicationId`
   (from `act`). `X-Acting-On-Behalf-Of-*` and `X-Impersonate-*` on a delegated token are
   refused (400): the token already says who is acting.
-- `X-Realm`/`X-Tenant-Id` on a delegated token follow the user-token rules (the user's
-  own switch), validated against the user's credential, never the actor's.
+- `X-Realm`/`X-Tenant-Id` on a delegated token are refused (400) when they differ from the
+  token's `realm`/`tenantId`: the bearer is the actor, so a header switch would let the
+  actor move the user. A user's own switch travels as the exchange's `realm`/`tenant_id`
+  parameters (§4.1), checked at the issuer.
+- `ApplicationTokenAdmissionFilter.admits` accepts `token_type=delegated` when `aud`
+  contains the receiving application (and `azp` equals it).
 
 ### 6.3 Authorization: actor-gated operations
 
@@ -207,8 +243,9 @@ calls too, without requiring `impersonatedBy*`).
 ## 7. Background work (no live user)
 
 Unchanged contract, now documented as the only use of headers for identity: the service
-authenticates as itself, names the tenant with `X-Tenant-Id` (and the realm with
-`X-Realm` only when acting across realms), and records the user it works for with
+authenticates as itself, names the tenant with `X-Tenant-Id` and its realm with `X-Realm`
+(required unless it is the system realm: a service token has no realm of its own and
+otherwise runs in the system realm), and records the user it works for with
 `X-Acting-On-Behalf-Of-UserId`. The receiver authorizes **the service**. A job that must
 act with a user's permissions later is a separate design (stored, revocable grant); it is
 not solved by holding user tokens.
@@ -218,11 +255,16 @@ not solved by holding user tokens.
 - **No privilege escalation**: the exchanged token holds exactly the user's roles; the
   actor's roles never merge in. Actor-gated operations need both.
 - **Confused deputy**: `aud` binds a token to one target; receivers reject other
-  audiences. A service cannot obtain a token for a user who has not sent it a valid token.
+  audiences. Check 6 binds the exchange to the actor: a service can only exchange a user
+  token that was issued for it.
 - **Replay**: 300 s lifetime, no refresh, audience-bound.
-- **Revocation**: actor revocation = delete/disable the service credential or its grant
-  (checked on every exchange). Subject revocation = existing credential disable (checked
-  on every exchange; an issued 300 s token is not recalled).
+- **Revocation**: actor revocation = delete/disable the service credential or its grant,
+  checked on every exchange. It does not revoke the service token itself at receivers
+  (existing gap, §1). Subject revocation = existing credential disable, checked on every
+  exchange; an issued 300 s token is not recalled.
+- **Interim forwarding (phase 0)** hands the user's full-lifetime bearer to the receiving
+  service. Keep it inside one application's trust boundary (receivers that admit that
+  application's tokens); it is what the exchange retires.
 - **Long-lived service tokens** (100 y) remain a separate risk; the exchange limits their
   blast radius to granted audiences and the user's own permissions.
 - **Logging**: never log subject, actor or issued tokens; log subject userId, actor
@@ -232,11 +274,11 @@ not solved by holding user tokens.
 
 | Phase | Change | Repos |
 |---|---|---|
-| 0 | Forward the user's own token for user-present reads (Helixor DI ontology reads: helixor#760, in review). Agent and user docs state the pattern. | helixor, helixor-ai-skills, quantum-framework docs |
-| 1 | `PrincipalContext` actor fields, rule/filter variables, audit recording (incl. the acting-on-behalf gap). Delegated-token verification in `SecurityFilter`. | quantum-framework |
+| 0 | Forward the user's own token for user-present reads (Helixor DI ontology reads: helixor#760, merged; this crosses applications, helixor-di → quantum-ontology-service, and works only while the ontology service does not set `quantum.auth.expected-audience`, which none does today; enabling admission there needs phase 3 first). Agent and user docs state the pattern. | helixor, helixor-ai-skills, quantum-framework docs |
+| 1 | `PrincipalContext` actor fields, rule/filter variables, audit recording (incl. the acting-on-behalf gap). Delegated-token verification in `SecurityFilter`; `ApplicationTokenAdmissionFilter` admits delegated tokens for their audience. | quantum-framework, quantum-enterprise |
 | 2 | Token-exchange grant + `DelegationGrant` model + admin API; discovery advertises the grant. | quantum-framework (`quantum-oauth-server`), quantum-enterprise (`quantum-auth-service`) |
 | 3 | Ontology service marks TBox submit/activate actor-gated (`helixor-di`); Helixor DI admissions exchange the steward's token instead of service delegation. | quantum-enterprise, helixor |
-| 4 | helixor-core `delegated_principal` accepts delegated tokens; solver and other Helixor receivers move; header delegation narrowed to background work. | helixor-core, helixor |
+| 4 | helixor-core accepts delegated tokens (today it refuses user tokens with `service_token_required`); `delegated_principal` stops giving the user the service's roles; solver and other Helixor receivers move; header delegation narrowed to background work. | helixor-core, helixor |
 
 Each phase ships behind no flag: receivers accept delegated tokens before any caller
 sends them (phase 1 before 2), and callers switch per operation (phase 3+).
@@ -259,6 +301,9 @@ Issuer (phase 2), `OAuthTokenResource` / exchange service:
 | E10 | `actor_token` or other `requested_token_type` sent | 400 `invalid_request` |
 | E11 | Subject credential disabled after its token was issued | 400 `invalid_grant` |
 | E12 | Tokens never appear in logs (log capture) | pass |
+| E13 | Subject token issued for another application (actor not in `aud`, not `azp`) | 400 `invalid_grant` |
+| E14 | `realm`/`tenant_id` the subject may switch to | issued token carries them; outside `realmRegEx`/membership → 400 `invalid_target` |
+| E15 | Issued `azp` | equals the audience; actor only in `act.azp` |
 
 Receiver (phase 1), `SecurityFilter` / `RuleContext` / `AuditInterceptor`:
 
@@ -267,13 +312,14 @@ Receiver (phase 1), `SecurityFilter` / `RuleContext` / `AuditInterceptor`:
 | R1 | Delegated token, no headers | user's realm, tenant, roles; actor fields set |
 | R2 | Delegated token for another audience | 401 |
 | R3 | Delegated token + `X-Acting-On-Behalf-Of-*` or `X-Impersonate-*` | 400 |
-| R4 | Delegated token + user's own `X-Realm` within user's `realmRegEx` | switched; outside → 403 |
 | R5 | Actor-gated rule, right actor, user allowed | allow |
 | R6 | Actor-gated rule, user token without actor | deny |
 | R7 | Actor-gated rule, right actor, user not allowed | deny |
 | R8 | Write under delegated token | audit has user and actor |
 | R9 | Write under service token + acting header | audit has the acting user (gap fix) |
 | R10 | `/v1/authz/filter` with delegated bearer | same decision as local evaluation |
+| R11 | Delegated token + `X-Realm`/`X-Tenant-Id` differing from its claims | 400 |
+| R12 | Admission filter: delegated token for this audience / another audience | admitted / 403 |
 
 End to end (phase 3), dev or an isolated stack:
 
