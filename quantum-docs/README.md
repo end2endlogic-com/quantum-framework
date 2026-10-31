@@ -61,7 +61,7 @@ git checkout main   # or your default branch
   - Source: "Deploy from a branch"
   - Branch: `gh-pages` and folder `/` (root)
 
-> Note: **LTS** (the **1.4.2** release) is published to **`gh-pages` root** (default site URL). **1.4.2-SNAPSHOT** preview docs go under **`gh-pages/1.4.2-SNAPSHOT/`** only. See [Publishing the docs](#publishing-the-docs) below.
+> Note: **LTS** (the **1.4.2** release) is published to **`gh-pages` root** (default site URL). **1.4.3-SNAPSHOT** preview docs go under **`gh-pages/1.4.3-SNAPSHOT/`** only. See [Publishing the docs](#publishing-the-docs) below.
 
 ## Configure GitHub Pages
 
@@ -77,14 +77,14 @@ GitHub Pages will serve your docs at:
 
 Once the branch exists, build and publish from the **repository root** (or use the same `-pl` paths from `quantum-docs/` if your reactor is set up that way).
 
-The **LTS** build replaces the **root** of `gh-pages` (what visitors see first). The **1.4** build only updates **`1.4.2-SNAPSHOT/`**; that directory is **not** removed when LTS publishes. The versioned `publish-scm` execution is **skipped by default**; activate one of the profiles below.
+The **LTS** build replaces the **root** of `gh-pages` (what visitors see first). The **1.4** build only updates **`1.4.3-SNAPSHOT/`**; that directory is **not** removed when LTS publishes. The versioned `publish-scm` execution is **skipped by default**; activate one of the profiles below.
 
 ### Profiles
 
 | Profile | Effect |
 |--------|--------|
 | `docs-ghpages-lts` (alias `docs-ghpages-1.3.x`) | Publishes the built site to **`gh-pages/` root** (default URL = LTS docs, currently 1.4.2). |
-| `docs-ghpages-1.4` | Publishes the built site to **`gh-pages/1.4.2-SNAPSHOT/`** (in-progress / non-default URL). |
+| `docs-ghpages-1.4` | Publishes the built site to **`gh-pages/1.4.3-SNAPSHOT/`** (in-progress / non-default URL). |
 
 ### Commands
 
@@ -94,7 +94,7 @@ Build HTML/PDF only (no push to `gh-pages`):
 mvn -pl quantum-docs -DskipTests -Dgpg.skip=true package
 ```
 
-Publish **LTS** docs to the **site root** — **required:** `git checkout v1.4.2` (the release tag, whose parent POM is **1.4.2**). The **“Version …”** banner comes from **`${project.version}`**; building on the `1.4.2-SNAPSHOT` branch produces **1.4.2-SNAPSHOT** in the HTML even if you use the LTS profile.
+Publish **LTS** docs to the **site root** — **required:** `git checkout v1.4.2` (the release tag, whose parent POM is **1.4.2**). The **“Version …”** banner comes from **`${project.version}`**; building on the `1.4.3-SNAPSHOT` branch produces **1.4.3-SNAPSHOT** in the HTML even if you use the LTS profile.
 
 ```bash
 mvn -pl quantum-docs -am -Pdocs-ghpages-lts -DskipTests -Dgpg.skip=true package deploy
@@ -102,7 +102,7 @@ mvn -pl quantum-docs -am -Pdocs-ghpages-lts -DskipTests -Dgpg.skip=true package 
 
 (`-Pdocs-ghpages-1.3.x` is an older alias of `-Pdocs-ghpages-lts`.)
 
-Publish **1.4.2-SNAPSHOT** preview docs (non-default URL: `…/1.4.2-SNAPSHOT/`):
+Publish **1.4.3-SNAPSHOT** preview docs (non-default URL: `…/1.4.3-SNAPSHOT/`):
 
 ```bash
 mvn -pl quantum-docs -am -Pdocs-ghpages-1.4 -DskipTests -Dgpg.skip=true package deploy
@@ -111,9 +111,9 @@ mvn -pl quantum-docs -am -Pdocs-ghpages-1.4 -DskipTests -Dgpg.skip=true package 
 What happens on `deploy` (with a profile):
 
 - Asciidoctor builds HTML/PDF into `quantum-docs/target/site` during `package`.
-- `maven-scm-publish-plugin` checks out `gh-pages`, copies the site to **root** (LTS) or **`1.4.2-SNAPSHOT/`** (preview), and commits/pushes.
+- `maven-scm-publish-plugin` checks out `gh-pages`, copies the site to **root** (LTS) or **`1.4.3-SNAPSHOT/`** (preview), and commits/pushes.
 
-CI: pushes to branch `1.4.2-SNAPSHOT` can run the matching profile via `.github/workflows/publish-quantum-docs.yml` (see that file for exact steps).
+CI: pushes to branch `1.4.3-SNAPSHOT` can run the matching profile via `.github/workflows/publish-quantum-docs.yml` (see that file for exact steps).
 
 More detail: [PUBLISHING.md](./PUBLISHING.md).
 

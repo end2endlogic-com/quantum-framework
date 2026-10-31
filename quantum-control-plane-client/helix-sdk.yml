@@ -1,7 +1,7 @@
 languages:
   - java
 package_name: quantum-control-plane-client
-package_version: 1.4.2-SNAPSHOT
+package_version: 1.4.3-SNAPSHOT
 java_package: com.e2eq.framework.controlplane
 diagnostics:
   fail_on_error: true
