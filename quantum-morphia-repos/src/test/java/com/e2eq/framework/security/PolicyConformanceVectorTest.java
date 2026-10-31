@@ -13,6 +13,7 @@ import com.e2eq.framework.model.securityrules.SecurityURIHeader;
 import com.e2eq.framework.security.runtime.RuleContext;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.DynamicTest;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestFactory;
 
 import java.io.InputStream;
@@ -24,6 +25,8 @@ import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Runs the policy conformance vectors (src/test/resources/policy-conformance-vectors) against RuleContext.
@@ -86,8 +89,26 @@ public class PolicyConformanceVectorTest {
         assertEquals(expected.get("excludedFields"), excluded, name + ": excludedFields");
     }
 
+    @Test
+    void aRuleWithAScriptIsRefused() {
+        for (String key : new String[] {"preconditionScript", "postconditionScript"}) {
+            Map<String, Object> raw = new LinkedHashMap<>();
+            raw.put("name", "scripted");
+            raw.put(key, "true");
+            IllegalArgumentException refused = assertThrows(IllegalArgumentException.class, () -> rule(raw));
+            assertTrue(refused.getMessage().contains(key), refused.getMessage());
+        }
+    }
+
+    /** Scripts are out of scope for the vectors: a rule that has one is refused, never built without it. */
     @SuppressWarnings("unchecked")
     private static Rule rule(Map<String, Object> raw) {
+        for (String key : new String[] {"preconditionScript", "postconditionScript"}) {
+            if (raw.get(key) != null) {
+                throw new IllegalArgumentException("rule " + raw.get("name") + " has a " + key
+                        + "; scripts are out of scope for the conformance vectors");
+            }
+        }
         Map<String, Object> h = (Map<String, Object>) raw.get("header");
         Map<String, Object> b = (Map<String, Object>) raw.get("body");
         SecurityURIHeader header = new SecurityURIHeader.Builder()
