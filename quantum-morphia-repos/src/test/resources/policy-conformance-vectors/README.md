@@ -22,6 +22,13 @@ Each `<name>.json` holds:
     orFilterString, joinOp}`;
   * `excludedFields`: in order, from `RuleContext.getExcludedFieldPaths`.
 
+The request side of a match is
+`realm:orgRefName:accountNumber:tenantId:dataSegment:identity:resourceId` (the
+principal's data domain, the identity being matched in the owner position, and
+`*` for a list request), matched case-insensitively against the rule's header
+and body as wildcard patterns. The `scoped-*` vectors pin each body field.
+
 Scripts (pre- and postconditions) are deliberately out of scope. An
-implementation that cannot evaluate them must refuse a rule that has one.
+implementation that cannot evaluate them must refuse a rule that has one; the
+Java runner refuses one too, rather than building the rule without it.
 `index.json` lists the vectors. `PolicyConformanceVectorTest` runs each of them.

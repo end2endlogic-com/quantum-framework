@@ -1,0 +1,54 @@
+{
+  "name": "scoped-realm-other",
+  "description": "A rule scoped to another realm does not apply: the default decides.",
+  "principal": {
+    "userId": "u1@acme.com",
+    "roles": [
+      "user"
+    ],
+    "defaultRealm": "acme",
+    "dataDomain": {
+      "orgRefName": "acme.com",
+      "accountNum": "0000000001",
+      "tenantId": "acme.com",
+      "dataSegment": 0,
+      "ownerId": "u1@acme.com"
+    }
+  },
+  "resource": {
+    "area": "sales",
+    "functionalDomain": "order",
+    "action": "view",
+    "resourceId": "o-1",
+    "ownerId": "u1@acme.com"
+  },
+  "rules": [
+    {
+      "name": "view-orders-scoped",
+      "header": {
+        "identity": "user",
+        "area": "sales",
+        "functionalDomain": "order",
+        "action": "view"
+      },
+      "body": {
+        "realm": "globex",
+        "orgRefName": "*",
+        "accountNumber": "*",
+        "tenantId": "*",
+        "dataSegment": "*",
+        "ownerId": "*",
+        "resourceId": "*"
+      },
+      "effect": "ALLOW",
+      "priority": 10,
+      "finalRule": false
+    }
+  ],
+  "defaultEffect": "DENY",
+  "expected": {
+    "finalEffect": "DENY",
+    "filterConstraints": [],
+    "excludedFields": []
+  }
+}

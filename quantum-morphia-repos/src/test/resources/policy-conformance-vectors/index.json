@@ -14,6 +14,17 @@
     "user-identity-rule",
     "excluded-fields-union",
     "excluded-fields-none-on-deny",
-    "filter-constraints-without-resource"
+    "filter-constraints-without-resource",
+    "scoped-realm",
+    "scoped-realm-other",
+    "scoped-tenant-other",
+    "scoped-org-account",
+    "scoped-account-other",
+    "scoped-data-segment-other",
+    "scoped-org-prefix",
+    "scoped-owner-is-identity",
+    "scoped-resource-id",
+    "scoped-resource-id-other",
+    "scoped-resource-id-list"
   ]
 }
