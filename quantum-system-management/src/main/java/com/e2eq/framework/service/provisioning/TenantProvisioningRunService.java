@@ -215,13 +215,13 @@ public class TenantProvisioningRunService {
     private void executeStep(String stepKey, TenantProvisioningService.ProvisioningContext context) {
         switch (stepKey) {
             case TenantProvisioningWorkflowDefaults.STEP_REALM_CATALOG ->
-                provisioningService.ensureRealmCatalog(context);
+                provisioningService.runControlPlaneStep(context, () -> provisioningService.ensureRealmCatalog(context));
             case TenantProvisioningWorkflowDefaults.STEP_REALM_MEMBERSHIP ->
-                provisioningService.ensureRealmMembership(context);
+                provisioningService.runControlPlaneStep(context, () -> provisioningService.ensureRealmMembership(context));
             case TenantProvisioningWorkflowDefaults.STEP_REALM_MIGRATIONS ->
                 provisioningService.runRealmMigrations(context);
             case TenantProvisioningWorkflowDefaults.STEP_TENANT_IDENTITIES ->
-                provisioningService.ensureTenantIdentities(context);
+                provisioningService.runControlPlaneStep(context, () -> provisioningService.ensureTenantIdentities(context));
             case TenantProvisioningWorkflowDefaults.STEP_BASE_SEED_PACKS ->
                 provisioningService.applyBaseSeedPacks(context);
             case TenantProvisioningWorkflowDefaults.STEP_REQUESTED_ARCHETYPES ->

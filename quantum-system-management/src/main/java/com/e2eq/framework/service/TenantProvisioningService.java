@@ -46,7 +46,9 @@ import com.e2eq.framework.service.seed.*;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.model.securityrules.SecurityCallScope;
+import com.e2eq.framework.model.securityrules.SecurityContext;
 import com.e2eq.framework.util.EnvConfigUtils;
+import com.e2eq.framework.util.SecurityUtils;
 import com.mongodb.MongoCommandException;
 import dev.morphia.Datastore;
 import dev.morphia.query.filters.Filters;
@@ -86,6 +88,7 @@ public class TenantProvisioningService implements TenantLifecycle {
     @Inject RealmCatalogService realmCatalog;
     @Inject SystemDirectory systemDirectory;
     @Inject RealmMembershipService realmMembershipService;
+    @Inject SecurityUtils securityUtils;
     @Inject CredentialRepo credentialRepo;
     @Inject OrganizationRepo organizationRepo;
     @Inject RealmTenantMembershipRepo realmTenantMembershipRepo;
@@ -641,6 +644,32 @@ public class TenantProvisioningService implements TenantLifecycle {
             orgRefName,
             dataDomain
         );
+    }
+
+    /**
+     * Runs a step that writes control-plane records for the tenant being provisioned
+     * (realm catalog, realm membership, the tenant administrator's identity). Those
+     * records carry the new tenant's data domain, which the caller's rules do not
+     * cover; the provisioning endpoint is the authorization decision, so the step runs
+     * as the system principal under the requested application. Tenant-realm steps
+     * (migrations, seed packs) run as the tenant principal instead.
+     */
+    public void runControlPlaneStep(ProvisioningContext context, Runnable step) {
+        Optional<PrincipalContext> caller = SecurityContext.getPrincipalContext();
+        ResourceContext systemResource = securityUtils.getSystemSecurityResourceContext();
+        String applicationId = Optional.ofNullable(resolveApplicationIdOrNull(context.getCommand()))
+            .or(() -> caller.map(PrincipalContext::getApplicationId))
+            .orElse(systemResource.getApplicationId());
+        ResourceContext resource = new ResourceContext.Builder()
+            .withRealm(systemResource.getRealm())
+            .withApplicationId(applicationId)
+            .withArea(systemResource.getArea())
+            .withFunctionalDomain(systemResource.getFunctionalDomain())
+            .withAction(systemResource.getAction())
+            .build();
+        Log.infof("Tenant provisioning %s: control-plane step runs as system on behalf of %s",
+            context.getTenantId(), caller.map(PrincipalContext::getUserId).orElse("<none>"));
+        SecurityCallScope.runWithContexts(securityUtils.getSystemPrincipalContext(), resource, step);
     }
 
     public void ensureRealmMembership(ProvisioningContext context) {
