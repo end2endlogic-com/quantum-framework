@@ -9,7 +9,7 @@ import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.*;
 
 @QuarkusTest
-@TestSecurity(user = "sysAdmin@system-com", roles = {"admin"})
+@TestSecurity(user = "system@system.com", roles = {"admin"})
 public class SeedAdminResourceIT {
 
     private static final String REALM = "test-quantum-com";

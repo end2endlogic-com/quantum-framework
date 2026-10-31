@@ -1,5 +1,7 @@
 package com.e2eq.framework.rest.models;
 
+import org.eclipse.microprofile.openapi.annotations.media.Schema;
+
 import io.quarkus.runtime.annotations.RegisterForReflection;
 
 import java.util.Objects;
@@ -9,9 +11,13 @@ public class UIAction {
    protected String label;
 
    protected String action;
+   @Schema(nullable = true, description = "Icon hint; null when the action has none")
    protected String icon;
+   @Schema(nullable = true, description = "Client handler hint; null when the action has none")
    protected String onclick;
+   @Schema(nullable = true, description = "Null when the resource did not evaluate enablement for this action")
    protected Boolean disabled;
+   @Schema(nullable = true, description = "Reason the action is disabled; null when enabled or not evaluated")
    protected String disabledReason;
 
    public String getLabel () {

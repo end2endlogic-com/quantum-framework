@@ -53,8 +53,8 @@ public class AgentResource {
     PermissionHintsProvider permissionHintsProvider;
 
     /**
-     * Returns the list of gateway tools (query_rootTypes, query_plan, query_find, query_save,
-     * query_delete, query_deleteMany) for discovery. Optionally scoped by realm for tenant config.
+     * Returns the gateway tool catalog, including CRUD, count, export, and import operations.
+     * Optionally scoped by realm for tenant configuration.
      *
      * @param realm optional realm; when tenant config is present, only enabled tools for that realm are returned
      * @return tools list and count
@@ -70,13 +70,14 @@ public class AgentResource {
      * Returns the list of entity types (root types) that can be used with the gateway.
      * Wraps GET /api/query/rootTypes for a single integration point.
      *
+     * @param realm optional realm; authenticated requests remain bound to their effective realm
      * @return root types list and count (same shape as QueryGatewayResource.listRootTypes)
      */
     @GET
     @Path("/schema")
     @FunctionalAction("listSchema")
-    public QueryGatewayResource.RootTypesResponse schema() {
-        return queryGatewayResource.listRootTypes();
+    public QueryGatewayResource.RootTypesResponse schema(@QueryParam("realm") String realm) {
+        return queryGatewayResource.listRootTypes(realm);
     }
 
     /**

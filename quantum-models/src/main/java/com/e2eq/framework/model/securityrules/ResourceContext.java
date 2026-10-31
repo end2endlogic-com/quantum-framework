@@ -1,11 +1,17 @@
 package com.e2eq.framework.model.securityrules;
 
+import com.e2eq.framework.model.persistent.base.DataDomain;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.annotation.JsonPOJOBuilder;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import org.graalvm.polyglot.HostAccess;
 
 import jakarta.validation.constraints.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -17,13 +23,17 @@ import java.util.Objects;
  */
 
 @RegisterForReflection
+@JsonDeserialize(builder = ResourceContext.Builder.class)
 public class ResourceContext {
   protected @NotNull String realm;              // The realm this resource is in
+  protected String applicationId;               // application-scoped authorization vocabulary
   protected @NotNull  String area;               // the area the resource resides in
   protected @NotNull String functionalDomain;   // the functional domain with in the area
   protected @NotNull String action;             // the action we are trying to take
   protected String resourceId; // the id (objectId) if known
   protected String ownerId; // the id (ownerId) if known
+  protected DataDomain dataDomain; // effective data-domain attributes for this resource access
+  protected Map<String, Object> attributes; // optional extension attributes for policy/debug consumers
 
    public static ResourceContext DEFAULT_ANONYMOUS_CONTEXT = new ResourceContext("NONE", "NONE", "NONE", "NONE", null, null);
 
@@ -33,6 +43,18 @@ public class ResourceContext {
                    @NotNull(message="action can not be null") String action,
                    String resourceId,
                    String ownerId) {
+      this(realm, null, area, functionalDomain, action, resourceId, ownerId, null, Collections.emptyMap());
+   }
+
+   ResourceContext(@NotNull(message="realmId can not be null") String realm,
+                   String applicationId,
+                   @NotNull(message="area can not be null") String area,
+                   @NotNull(message="functional domain can not be null") String functionalDomain,
+                   @NotNull(message="action can not be null") String action,
+                   String resourceId,
+                   String ownerId,
+                   DataDomain dataDomain,
+                   Map<String, Object> attributes) {
       Objects.requireNonNull(realm, "realm can not be null");
       Objects.requireNonNull(area, "area can not be null");
       Objects.requireNonNull(functionalDomain, "functionalDomain can not be null");
@@ -40,25 +62,39 @@ public class ResourceContext {
 
 
       this.realm = realm.toLowerCase();
+      this.applicationId = normalize(applicationId);
       this.area = area.toLowerCase();
       this.functionalDomain = functionalDomain.toLowerCase();
       this.action = action.toLowerCase();
       this.resourceId = resourceId != null ? resourceId.toLowerCase() : null;
       this.ownerId = ownerId!= null ? ownerId.toLowerCase() : null;
+      this.dataDomain = dataDomain;
+      this.attributes = attributes == null || attributes.isEmpty()
+              ? Collections.emptyMap()
+              : Collections.unmodifiableMap(new HashMap<>(attributes));
    }
 
+   @JsonPOJOBuilder(withPrefix = "with", buildMethodName = "build")
    public static class Builder {
       String any = "*";
       String realm = any;
+      String applicationId = null;
 
       String area = any;
       String functionalDomain = any;
       String action = any;
       String resourceId = any;
       String ownerId = any;
+      DataDomain dataDomain = null;
+      Map<String, Object> attributes = new HashMap<>();
 
       public Builder withRealm(String realm) {
          this.realm = realm.toLowerCase();
+         return this;
+      }
+
+      public Builder withApplicationId(String applicationId) {
+         this.applicationId = applicationId;
          return this;
       }
 
@@ -86,9 +122,28 @@ public class ResourceContext {
            return this;
        }
 
+      public Builder withDataDomain(DataDomain dataDomain) {
+         this.dataDomain = dataDomain;
+         return this;
+      }
+
+      public Builder withAttributes(Map<String, Object> attributes) {
+         if (attributes != null) {
+            this.attributes = new HashMap<>(attributes);
+         }
+         return this;
+      }
+
+      public Builder withAttribute(String key, Object value) {
+         if (key != null && !key.isBlank() && value != null) {
+            this.attributes.put(key, value);
+         }
+         return this;
+      }
+
       public ResourceContext build() {
-         return new ResourceContext( realm, area,
-            functionalDomain, action, resourceId, ownerId);
+         return new ResourceContext( realm, applicationId, area,
+            functionalDomain, action, resourceId, ownerId, dataDomain, attributes);
       }
    };
 
@@ -98,6 +153,15 @@ public class ResourceContext {
    }
    public void setRealm (String realm) {
       this.realm = realm.toLowerCase();
+   }
+
+   @HostAccess.Export
+   public String getApplicationId() {
+      return applicationId;
+   }
+
+   public void setApplicationId(String applicationId) {
+      this.applicationId = normalize(applicationId);
    }
 
    @HostAccess.Export
@@ -137,6 +201,37 @@ public class ResourceContext {
    public void setOwnerId (String ownerId) {this.ownerId = ownerId.toLowerCase();}
 
    @HostAccess.Export
+   public @Nullable DataDomain getDataDomain() {
+      return dataDomain;
+   }
+
+   public void setDataDomain(DataDomain dataDomain) {
+      this.dataDomain = dataDomain;
+   }
+
+   @HostAccess.Export
+   public Map<String, Object> getAttributes() {
+      return attributes == null ? Collections.emptyMap() : attributes;
+   }
+
+   public void setAttributes(Map<String, Object> attributes) {
+      this.attributes = attributes == null || attributes.isEmpty()
+              ? Collections.emptyMap()
+              : Collections.unmodifiableMap(new HashMap<>(attributes));
+   }
+
+   public ResourceContext withDataDomain(DataDomain dataDomain) {
+      return new ResourceContext(realm, applicationId, area, functionalDomain, action, resourceId, ownerId, dataDomain, attributes);
+   }
+
+   private static String normalize(String value) {
+      if (value == null || value.isBlank()) {
+         return null;
+      }
+      return value.trim().toLowerCase();
+   }
+
+   @HostAccess.Export
    @Override
    public boolean equals (Object o) {
       if (this == o) return true;
@@ -145,6 +240,7 @@ public class ResourceContext {
       ResourceContext that = (ResourceContext) o;
 
       if (realm != null ? !realm.equals(that.realm) : that.realm != null) return false;
+      if (applicationId != null ? !applicationId.equals(that.applicationId) : that.applicationId != null) return false;
 
       if (area != null ? !area.equals(that.area) : that.area != null) return false;
       if (functionalDomain != null ? !functionalDomain.equals(that.functionalDomain) : that.functionalDomain != null)
@@ -157,6 +253,7 @@ public class ResourceContext {
    @Override
    public int hashCode () {
       int result = realm != null ? realm.hashCode() : 0;
+      result = 31 * result + (applicationId != null ? applicationId.hashCode() : 0);
       result = 31 * result + (area != null ? area.hashCode() : 0);
       result = 31 * result + (functionalDomain != null ? functionalDomain.hashCode() : 0);
       result = 31 * result + (action != null ? action.hashCode() : 0);
@@ -168,11 +265,14 @@ public class ResourceContext {
    public String toString () {
       return "ResourceContext{" +
                 "realm='" + realm + '\'' +
+                ", applicationId='" + applicationId + '\'' +
                 ", area='" + area + '\'' +
                 ", functionalDomain='" + functionalDomain + '\'' +
                 ", action='" + action + '\'' +
                 ", resourceId='" + resourceId + '\'' +
                 ", ownerId='" + ownerId + '\'' +
+                ", dataDomain='" + dataDomain + '\'' +
+                ", attributes='" + attributes + '\'' +
                 '}';
    }
 }

@@ -1,5 +1,7 @@
 package com.e2eq.framework.rest.resources;
 
+import com.e2eq.framework.annotations.FunctionalAction;
+import com.e2eq.framework.annotations.FunctionalMapping;
 import com.e2eq.framework.mail.EmailTemplateDefinition;
 import com.e2eq.framework.mail.EmailTemplateRenderService;
 import com.e2eq.framework.mail.RenderedTemplate;
@@ -36,6 +38,11 @@ import java.util.Optional;
 @Path("/settings/email-templates")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
+// Mirrors the EmailTemplate model's mapping (SYSTEM / EMAIL_TEMPLATE). Without a RESOURCE-level mapping the
+// SecurityFilter builds an anonymous ResourceContext (action=none) for this path and
+// PermissionRuleInterceptor.prePersist fail-closes every save with "Persistence callback requires an explicit
+// write action" -- the same defect ManagedSecretResource fixed.
+@FunctionalMapping(area = "SYSTEM", domain = "EMAIL_TEMPLATE")
 public class EmailTemplateResource {
 
     @Inject
@@ -59,6 +66,7 @@ public class EmailTemplateResource {
     @GET
     @Operation(summary = "List email templates")
     @SecurityRequirement(name = "bearerAuth")
+    @FunctionalAction("LIST")
     public Response list() {
         String realm = getRealmId();
         if (realm == null) {
@@ -74,6 +82,7 @@ public class EmailTemplateResource {
     @Path("{refName}")
     @Operation(summary = "Get email template")
     @SecurityRequirement(name = "bearerAuth")
+    @FunctionalAction("VIEW")
     public Response get(@PathParam("refName") String refName) {
         String realm = getRealmId();
         if (realm == null) {
@@ -87,6 +96,7 @@ public class EmailTemplateResource {
     @POST
     @Operation(summary = "Create email template")
     @SecurityRequirement(name = "bearerAuth")
+    @FunctionalAction("CREATE")
     public Response create(EmailTemplateUpsertRequest request) {
         String realm = getRealmId();
         if (realm == null) {
@@ -125,6 +135,7 @@ public class EmailTemplateResource {
     @Path("{refName}")
     @Operation(summary = "Update email template")
     @SecurityRequirement(name = "bearerAuth")
+    @FunctionalAction("UPDATE")
     public Response update(@PathParam("refName") String refName, EmailTemplateUpsertRequest request) {
         String realm = getRealmId();
         if (realm == null) {
@@ -154,6 +165,7 @@ public class EmailTemplateResource {
     @Path("{refName}")
     @Operation(summary = "Delete email template")
     @SecurityRequirement(name = "bearerAuth")
+    @FunctionalAction("DELETE")
     public Response delete(@PathParam("refName") String refName) {
         String realm = getRealmId();
         if (realm == null) {
@@ -170,6 +182,7 @@ public class EmailTemplateResource {
     @Path("preview")
     @Operation(summary = "Preview email template rendering")
     @SecurityRequirement(name = "bearerAuth")
+    @FunctionalAction("VIEW")
     public Response preview(EmailTemplatePreviewRequest request) {
         String realm = getRealmId();
         if (realm == null) {

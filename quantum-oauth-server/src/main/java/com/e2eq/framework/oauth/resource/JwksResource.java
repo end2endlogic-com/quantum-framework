@@ -9,6 +9,8 @@ import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.security.PublicKey;
 import java.security.interfaces.RSAPublicKey;
@@ -22,19 +24,22 @@ import java.security.interfaces.RSAPublicKey;
 @PermitAll
 public class JwksResource {
 
+    @ConfigProperty(name = "auth.jwt.key-id", defaultValue = "quantum-auth")
+    String keyId;
+
     @GET
     @Produces(MediaType.APPLICATION_JSON)
-    public String jwks() {
+    public Response jwks() {
         try {
             PublicKey publicKey = TokenUtils.readPublicKey(TokenUtils.getPublicKeyLocation());
             RSAKey rsaKey = new RSAKey.Builder((RSAPublicKey) publicKey)
-                    .keyID(TokenUtils.getPrivateKeyLocation())
+                    .keyID(keyId)
                     .build();
             JWKSet jwkSet = new JWKSet(rsaKey);
             // JWKSet.toString() emits RFC 7517 JSON (public members only).
             // Do NOT use toJSONObject().toString() — that returns java.util.Map's
             // {k=v} form, which is not valid JSON and breaks JWKS clients.
-            return jwkSet.toString();
+            return Response.ok(jwkSet.toString(), MediaType.APPLICATION_JSON_TYPE).build();
         } catch (Exception e) {
             Log.error("Failed to build JWKS", e);
             throw new IllegalStateException("Unable to serve JWKS", e);

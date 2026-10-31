@@ -1,12 +1,11 @@
 package com.e2eq.framework.mcp;
 
 import com.e2eq.framework.model.persistent.base.DataDomain;
-import com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.SecurityContext;
 import com.e2eq.ontology.core.OntologyRegistry;
-import com.e2eq.ontology.model.OntologyEdge;
-import com.e2eq.ontology.repo.OntologyEdgeRepo;
+import com.e2eq.ontology.core.Reasoner;
+import com.e2eq.ontology.mongo.ComputedEdgeReader;
 import com.e2eq.ontology.runtime.TenantOntologyRegistryProvider;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkiverse.mcp.server.Tool;
@@ -23,14 +22,18 @@ import java.util.*;
  * find outgoing/incoming relationships for an entity, and discover
  * what predicates (relationship types) are defined in the ontology.</p>
  *
- * @see OntologyEdgeRepo
+ * <p>Relationship edge reads go through {@link ComputedEdgeReader} so LAZY/ONDEMAND
+ * computed edges participate in both source- and destination-keyed discovery
+ * (Codex review on calculated-relations roadmap PR #49).</p>
+ *
+ * @see ComputedEdgeReader
  * @see TenantOntologyRegistryProvider
  */
 @Authenticated
 public class McpOntologyTools {
 
     @Inject
-    OntologyEdgeRepo edgeRepo;
+    ComputedEdgeReader computedEdgeReader;
 
     @Inject
     TenantOntologyRegistryProvider registryProvider;
@@ -40,12 +43,13 @@ public class McpOntologyTools {
 
     @Tool(description = "Find ontology relationships (edges) for an entity. "
             + "Returns outgoing edges (entity -> target), incoming edges (source -> entity), or both. "
-            + "Each edge includes: predicate, source/destination entity ID and type, and whether it is inferred or derived.")
+            + "Each edge includes: predicate, source/destination entity ID and type, and whether it is inferred or derived. "
+            + "Includes LAZY/ONDEMAND computed edges when providers and enumerators are registered.")
     String query_relationships(
             @ToolArg(description = "The entity ID to find relationships for (e.g. the refName or ObjectId hex string of the entity)") String entityId,
-            @ToolArg(description = "Direction: 'out' for outgoing edges FROM this entity, 'in' for incoming edges TO this entity, 'both' for all. Default: 'both'") String direction,
-            @ToolArg(description = "Optional predicate filter - only return edges with this predicate (e.g. 'placedInOrg', 'canSeeLocation')") String predicate,
-            @ToolArg(description = "Optional tenant realm. When omitted, derived from the caller's security context.") String realm) {
+            @ToolArg(description = "Direction: 'out' for outgoing edges FROM this entity, 'in' for incoming edges TO this entity, 'both' for all. Default: 'both'", required = false, defaultValue = "both") String direction,
+            @ToolArg(description = "Optional predicate filter - only return edges with this predicate (e.g. 'placedInOrg', 'canSeeLocation')", required = false) String predicate,
+            @ToolArg(description = "Optional tenant realm. When omitted, derived from the caller's security context.", required = false) String realm) {
         try {
             DataDomain dataDomain = resolveDataDomain(realm);
             if (dataDomain == null) {
@@ -53,28 +57,19 @@ public class McpOntologyTools {
             }
 
             String dir = (direction != null && !direction.isBlank()) ? direction.toLowerCase() : "both";
+            String effectiveRealm = resolveRealm(realm);
             List<Map<String, Object>> edges = new ArrayList<>();
 
             if ("out".equals(dir) || "both".equals(dir)) {
-                List<OntologyEdge> outgoing;
-                if (predicate != null && !predicate.isBlank()) {
-                    outgoing = edgeRepo.findBySrcAndP(dataDomain, entityId, predicate);
-                } else {
-                    outgoing = edgeRepo.findBySrc(dataDomain, entityId);
-                }
-                for (OntologyEdge e : outgoing) {
+                for (Reasoner.Edge e : computedEdgeReader.relationshipEdgesFromSrc(
+                        effectiveRealm, dataDomain, entityId, predicate)) {
                     edges.add(edgeToMap(e, "outgoing"));
                 }
             }
 
             if ("in".equals(dir) || "both".equals(dir)) {
-                List<OntologyEdge> incoming;
-                if (predicate != null && !predicate.isBlank()) {
-                    incoming = edgeRepo.findByDstAndP(dataDomain, entityId, predicate);
-                } else {
-                    incoming = edgeRepo.findByDst(dataDomain, entityId);
-                }
-                for (OntologyEdge e : incoming) {
+                for (Reasoner.Edge e : computedEdgeReader.relationshipEdgesToDst(
+                        effectiveRealm, dataDomain, entityId, predicate)) {
                     edges.add(edgeToMap(e, "incoming"));
                 }
             }
@@ -94,9 +89,9 @@ public class McpOntologyTools {
             + "Returns predicate name, domain (source type), range (target type), and characteristics "
             + "(transitive, symmetric, functional, inferred). Use this to discover what relationship types exist before querying edges.")
     String query_predicates(
-            @ToolArg(description = "Optional filter: only return predicates where this is the domain (source entity type), e.g. 'Associate'") String domainFilter,
-            @ToolArg(description = "Optional filter: only return predicates where this is the range (target entity type), e.g. 'Location'") String rangeFilter,
-            @ToolArg(description = "Optional tenant realm. When omitted, derived from the caller's security context.") String realm) {
+            @ToolArg(description = "Optional filter: only return predicates where this is the domain (source entity type), e.g. 'Associate'", required = false) String domainFilter,
+            @ToolArg(description = "Optional filter: only return predicates where this is the range (target entity type), e.g. 'Location'", required = false) String rangeFilter,
+            @ToolArg(description = "Optional tenant realm. When omitted, derived from the caller's security context.", required = false) String realm) {
         try {
             String resolvedRealm = resolveRealm(realm);
             OntologyRegistry registry = registryProvider.getRegistryForRealm(resolvedRealm);
@@ -150,50 +145,56 @@ public class McpOntologyTools {
         }
     }
 
-    private Map<String, Object> edgeToMap(OntologyEdge e, String direction) {
+    private Map<String, Object> edgeToMap(Reasoner.Edge e, String direction) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("direction", direction);
-        m.put("predicate", e.getP());
-        m.put("src", e.getSrc());
-        m.put("srcType", e.getSrcType());
-        m.put("dst", e.getDst());
-        m.put("dstType", e.getDstType());
-        m.put("inferred", e.isInferred());
-        m.put("derived", e.isDerived());
-        if (e.getTs() != null) {
-            m.put("timestamp", e.getTs().toInstant().toString());
-        }
+        m.put("predicate", e.p());
+        m.put("src", e.srcId());
+        m.put("srcType", e.srcType());
+        m.put("dst", e.dstId());
+        m.put("dstType", e.dstType());
+        m.put("inferred", e.inferred());
+        // LAZY/ONDEMAND computed edges from providers are derived; store-converted
+        // edges may not carry the derived flag on Reasoner.Edge — treat non-inferred
+        // provider results as derived when provenance rule is "computed".
+        boolean derived = e.prov().isPresent()
+                && "computed".equals(e.prov().get().rule());
+        m.put("derived", derived);
         return m;
     }
 
     private DataDomain resolveDataDomain(String realm) {
-        // Try SecurityContext first
-        DataDomain dd = SecurityContext.getPrincipalContext()
-                .map(PrincipalContext::getDataDomain)
-                .orElse(null);
-        if (dd != null) {
-            return dd;
+        PrincipalContext principal = requirePrincipal();
+        requireEffectiveRealm(principal, realm);
+        DataDomain dataDomain = principal.getDataDomain();
+        if (dataDomain == null) {
+            throw new IllegalStateException("Authenticated principal has no effective DataDomain");
         }
-        // Fallback: build minimal DataDomain from realm
-        if (realm != null && !realm.isBlank()) {
-            dd = new DataDomain();
-            dd.setOrgRefName("system");
-            dd.setAccountNum("0000000000");
-            dd.setTenantId(realm.replace('-', '.'));
-            dd.setOwnerId("system");
-            dd.setDataSegment(0);
-            return dd;
-        }
-        return null;
+        return dataDomain;
     }
 
     private String resolveRealm(String requestRealm) {
-        if (requestRealm != null && !requestRealm.isBlank()) {
-            return requestRealm;
-        }
+        PrincipalContext principal = requirePrincipal();
+        return requireEffectiveRealm(principal, requestRealm);
+    }
+
+    private PrincipalContext requirePrincipal() {
         return SecurityContext.getPrincipalContext()
-                .map(PrincipalContext::getDefaultRealm)
-                .orElse("defaultRealm");
+                .orElseThrow(() -> new SecurityException(
+                        "Authenticated principal context is required for ontology access"));
+    }
+
+    private String requireEffectiveRealm(PrincipalContext principal, String requestRealm) {
+        String effectiveRealm = principal.getDefaultRealm();
+        if (effectiveRealm == null || effectiveRealm.isBlank()) {
+            throw new SecurityException("Authenticated principal has no effective realm");
+        }
+        if (requestRealm != null && !requestRealm.isBlank()
+                && !effectiveRealm.equals(requestRealm.trim())) {
+            throw new SecurityException("Requested realm '" + requestRealm
+                    + "' does not match authenticated effective realm '" + effectiveRealm + "'");
+        }
+        return effectiveRealm;
     }
 
     private static String escapeJson(String s) {

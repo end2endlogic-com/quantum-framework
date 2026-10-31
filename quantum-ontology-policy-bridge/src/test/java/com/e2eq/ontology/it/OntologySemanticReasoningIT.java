@@ -95,14 +95,30 @@ public class OntologySemanticReasoningIT {
         String orgOther = "ORG-OTHER";
 
         // Store explicit edges
-        edgeRepo.upsert(testDataDomain, "Order", order1, "placedBy", "Customer", cust1, false, null);
-        edgeRepo.upsert(testDataDomain, "Customer", cust1, "memberOf", "Organization", orgAcme, false, null);
+        try (var fixture = com.e2eq.framework.model.securityrules.SecurityCallScope.openIgnoringRules()) {
+            edgeRepo.upsert(testDataDomain, "Order", order1, "placedBy", "Customer", cust1, false, null);
+        }
+        try (var fixture = com.e2eq.framework.model.securityrules.SecurityCallScope.openIgnoringRules()) {
+            edgeRepo.upsert(testDataDomain, "Customer", cust1, "memberOf", "Organization", orgAcme, false, null);
+        }
 
-        edgeRepo.upsert(testDataDomain, "Order", order2, "placedBy", "Customer", cust2, false, null);
-        edgeRepo.upsert(testDataDomain, "Customer", cust2, "memberOf", "Organization", orgAcme, false, null);
+        try (var fixture = com.e2eq.framework.model.securityrules.SecurityCallScope.openIgnoringRules()) {
 
-        edgeRepo.upsert(testDataDomain, "Order", order3, "placedBy", "Customer", cust3, false, null);
-        edgeRepo.upsert(testDataDomain, "Customer", cust3, "memberOf", "Organization", orgOther, false, null);
+            edgeRepo.upsert(testDataDomain, "Order", order2, "placedBy", "Customer", cust2, false, null);
+
+        }
+        try (var fixture = com.e2eq.framework.model.securityrules.SecurityCallScope.openIgnoringRules()) {
+            edgeRepo.upsert(testDataDomain, "Customer", cust2, "memberOf", "Organization", orgAcme, false, null);
+        }
+
+        try (var fixture = com.e2eq.framework.model.securityrules.SecurityCallScope.openIgnoringRules()) {
+
+            edgeRepo.upsert(testDataDomain, "Order", order3, "placedBy", "Customer", cust3, false, null);
+
+        }
+        try (var fixture = com.e2eq.framework.model.securityrules.SecurityCallScope.openIgnoringRules()) {
+            edgeRepo.upsert(testDataDomain, "Customer", cust3, "memberOf", "Organization", orgOther, false, null);
+        }
 
         // Infer placedInOrg edges for each order
         inferAndStoreEdges(order1, "Order", List.of(
@@ -152,8 +168,12 @@ public class OntologySemanticReasoningIT {
         tenant2DataDomain.setDataSegment(0);
 
         // Store edges in tenant1
-        edgeRepo.upsert(tenant1DataDomain, "Order", orderId, "placedBy", "Customer", customerId, false, null);
-        edgeRepo.upsert(tenant1DataDomain, "Customer", customerId, "memberOf", "Organization", orgId, false, null);
+        try (var fixture = com.e2eq.framework.model.securityrules.SecurityCallScope.openIgnoringRules()) {
+            edgeRepo.upsert(tenant1DataDomain, "Order", orderId, "placedBy", "Customer", customerId, false, null);
+        }
+        try (var fixture = com.e2eq.framework.model.securityrules.SecurityCallScope.openIgnoringRules()) {
+            edgeRepo.upsert(tenant1DataDomain, "Customer", customerId, "memberOf", "Organization", orgId, false, null);
+        }
 
         inferAndStoreEdges(tenant1DataDomain, orderId, "Order", List.of(
                 new Reasoner.Edge(orderId, "Order", "placedBy", customerId, "Customer", false, Optional.empty()),
@@ -181,7 +201,9 @@ public class OntologySemanticReasoningIT {
 
         for (Reasoner.Edge edge : result.addEdges()) {
             Map<String, Object> prov = edge.prov().map(p -> Map.<String, Object>of("rule", p)).orElse(null);
-            edgeRepo.upsert(dataDomain, edge.srcType(), edge.srcId(), edge.p(), edge.dstType(), edge.dstId(), edge.inferred(), prov);
+            try (var fixture = com.e2eq.framework.model.securityrules.SecurityCallScope.openIgnoringRules()) {
+                edgeRepo.upsert(dataDomain, edge.srcType(), edge.srcId(), edge.p(), edge.dstType(), edge.dstId(), edge.inferred(), prov);
+            }
         }
     }
 }

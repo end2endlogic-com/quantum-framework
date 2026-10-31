@@ -1,3 +1,7 @@
+ifndef::doc-root[]
+:doc-root: ..
+endif::[]
+
 [[glossary]]
 === Glossary
 
@@ -88,7 +92,7 @@
 
 ==== Ontology (optional feature)
 
-**Ontology**:: A formal description of concepts (classes) and their relationships (properties/predicates) with rules (e.g., property chains) that allow inferring implied facts. See xref:../user-guide/ontology.adoc[Ontologies in Quantum].
+**Ontology**:: A formal description of concepts (classes) and their relationships (properties/predicates) with rules (e.g., property chains) that allow inferring implied facts. See xref:{doc-root}/user-guide/ontology.adoc[Ontologies in Quantum].
 
 **Predicate / Property**:: A named relationship (e.g., placedBy, memberOf, orderShipsToRegion). Predicates connect source and destination IDs and can be declared inverse or transitive.
 

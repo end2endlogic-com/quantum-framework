@@ -1,3 +1,7 @@
+ifndef::doc-root[]
+:doc-root: ..
+endif::[]
+
 [[email-templates]]
 === Email Templates
 
@@ -359,12 +363,12 @@ Use the framework email-template subsystem when:
 
 Do not use email templates for:
 
-- provisioning reference data, which belongs in xref:seed-packs.adoc[seed packs]
-- multi-step operational setup, which belongs in xref:bootstrap-packs.adoc[BootstrapPacks]
+- provisioning reference data, which belongs in xref:{doc-root}/user-guide/seed-packs.adoc[seed packs]
+- multi-step operational setup, which belongs in xref:{doc-root}/user-guide/bootstrap-packs.adoc[BootstrapPacks]
 
 ==== See also
 
-- xref:tenant-models.adoc#tenant-onboarding-and-invites[Tenant onboarding and access invites]
-- xref:seed-packs.adoc[Seed packs and declarative tenant seeding]
-- xref:bootstrap-packs.adoc[Bootstrap Packs]
-- xref:../appendix/configuration.adoc[Configuration reference]
+- xref:{doc-root}/user-guide/tenant-models.adoc#tenant-onboarding-and-invites[Tenant onboarding and access invites]
+- xref:{doc-root}/user-guide/seed-packs.adoc[Seed packs and declarative tenant seeding]
+- xref:{doc-root}/user-guide/bootstrap-packs.adoc[Bootstrap Packs]
+- xref:{doc-root}/appendix/configuration.adoc[Configuration reference]

@@ -16,7 +16,7 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 @QuarkusTest
-public class CascadeDeleteIT {
+public class CascadeDeleteIT extends com.e2eq.ontology.mongo.PrivilegedOntologyFixture {
 
     private static final String TENANT = "test-system-com";
 
@@ -59,7 +59,7 @@ public class CascadeDeleteIT {
         writeHook.afterPersist(TENANT, p);
 
         // now delete parent using cascade executor directly (simulates repository delete wiring)
-        cascadeExecutor.onAfterDelete(testDataDomain, "ParentDel", "PDEL-1");
+        cascadeExecutor.onAfterDelete(testDataDomain, "ParentDel", p.getId().toString());
 
         // verify children are deleted
         long left1 = datastore.getDatabase().getCollection("it_children").countDocuments(new Document("refName", "CD-1"));

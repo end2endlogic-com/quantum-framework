@@ -24,7 +24,7 @@ Enable tracking of policy origins to distinguish between system default rules an
 - Modified `reloadFromRepo()` to mark database policies with `POLICY_COLLECTION` source
 - Added `getDefaultSystemPolicies()` method to extract system rules as Policy objects marked with `SYSTEM_DEFAULT` source
 
-#### 3. PolicyResource (`quantum-framework/src/main/java/com/e2eq/framework/rest/resources/PolicyResource.java`)
+#### 3. PolicyResource (`quantum-system-rest/src/main/java/com/e2eq/framework/rest/resources/security/PolicyResource.java`)
 - Overrode `getList()` to merge default system policies with database policies
 - Added `applyFilterToPolicies()` to filter default policies using QueryPredicates
 - Default policies appear first, followed by database policies
@@ -137,7 +137,7 @@ See: `LIST_ACTION_INFERENCE.md`
 ### Policy Source Tracking
 1. `quantum-models/src/main/java/com/e2eq/framework/model/security/Policy.java`
 2. `quantum-morphia-repos/src/main/java/com/e2eq/framework/securityrules/RuleContext.java`
-3. `quantum-framework/src/main/java/com/e2eq/framework/rest/resources/PolicyResource.java`
+3. `quantum-system-rest/src/main/java/com/e2eq/framework/rest/resources/security/PolicyResource.java`
 
 ### LIST Action Inference
 1. `quantum-framework/src/main/java/com/e2eq/framework/rest/filters/SecurityFilter.java`

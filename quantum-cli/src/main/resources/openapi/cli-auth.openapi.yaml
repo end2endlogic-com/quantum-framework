@@ -1,0 +1,73 @@
+openapi: 3.0.3
+info:
+  title: Quantum CLI authentication contract
+  version: 1.4.2
+paths:
+  /security/login:
+    post:
+      tags: [Auth]
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/LoginRequest'}
+      responses:
+        '200':
+          description: Authentication response (additional producer fields are retained by the service)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LoginResponse'}
+  /security/service-token:
+    post:
+      tags: [Auth]
+      operationId: mintServiceToken
+      parameters:
+        - name: Authorization
+          in: header
+          required: true
+          schema: {type: string}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ServiceTokenRequest'}
+      responses:
+        '200':
+          description: Minted service token
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ServiceTokenResponse'}
+components:
+  schemas:
+    LoginRequest:
+      type: object
+      required: [userId, password]
+      properties:
+        userId: {type: string}
+        password: {type: string}
+    LoginResponse:
+      type: object
+      additionalProperties: true
+      properties:
+        access_token: {type: string}
+    ServiceTokenRequest:
+      type: object
+      required: [roles]
+      properties:
+        roles: {type: array, items: {type: string}}
+        expirationSeconds: {type: integer, format: int64, nullable: true}
+        description: {type: string, nullable: true}
+        realm: {type: string, nullable: true}
+        audiences: {type: array, items: {type: string}}
+    ServiceTokenResponse:
+      type: object
+      additionalProperties: true
+      required: [token, subject]
+      properties:
+        token: {type: string}
+        subject: {type: string}
+        roles: {type: array, items: {type: string}}
+        nonExpiring: {type: boolean}
+        expires_at: {type: string, nullable: true}
+        description: {type: string, nullable: true}

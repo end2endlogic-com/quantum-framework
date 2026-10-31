@@ -1,3 +1,7 @@
+ifndef::doc-root[]
+:doc-root: ..
+endif::[]
+
 [[multiple-auth-providers]]
 = Multiple Authentication Providers
 
@@ -26,7 +30,9 @@ When a request arrives with a JWT, the framework resolves which provider should 
 The first provider whose issuer matches the JWT `iss` claim wins.
 2. **By name** -- `AuthProviderFactory.getProviderByName(String name)` performs a case-insensitive lookup (for example `"custom"` or `"oidc"`).
 3. **Default** -- `AuthProviderFactory.getAuthProvider()` returns the first configured provider.
-If issuer-based lookup finds no match, the default provider is used as a fallback.
+Unknown or missing issuer routing fails closed; callers that intentionally want the default provider must request it explicitly.
+
+For user-facing login, an explicit `provider` request may contain a comma-separated ordered list. When omitted, the ordered `auth.provider` configuration is used. Every provider named by either list must be available; configuration errors are not silently skipped.
 
 === Canonical Identity Service
 
@@ -159,7 +165,7 @@ AuthProviderFactory.getProviderForIssuer(issuer)
     |       -> yes: use this provider
     |       -> no: try next
     |
-    +-- No match: fall back to default provider
+    +-- No match: fail provider resolution
     |
     v
 Provider validates token and returns ProviderClaims or SecurityIdentity
@@ -248,7 +254,7 @@ auth.provider=custom,my-oidc
 my.oidc.issuer=https://my-idp.example.com
 ----
 
-See xref:auth.adoc[Authentication and Authorization] for the full `AuthProvider` and `UserManagement` interface contracts and `BaseAuthProvider` capabilities.
+See xref:{doc-root}/user-guide/auth.adoc[Authentication and Authorization] for the full `AuthProvider` and `UserManagement` interface contracts and `BaseAuthProvider` capabilities.
 
 [[per-tenant-key-pairs]]
 == Key Pair Management
@@ -328,4 +334,4 @@ When you move to external keys, update both the `quantum.jwt.*` properties and `
 
 === Full Per-Tenant Design
 
-For the complete multi-phase design including per-tenant MongoDB key storage, key rotation, JWKS endpoints, and vault integration, see the xref:../design/per-tenant-key-pairs.adoc[Per-Tenant Key Pairs Design Document].
+For the complete multi-phase design including per-tenant MongoDB key storage, key rotation, JWKS endpoints, and vault integration, see the xref:{doc-root}/design/per-tenant-key-pairs.adoc[Per-Tenant Key Pairs Design Document].

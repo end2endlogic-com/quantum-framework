@@ -1,0 +1,524 @@
+package com.e2eq.framework.service.seed;
+
+import com.coditory.sherlock.DistributedLock;
+import com.coditory.sherlock.Sherlock;
+import com.coditory.sherlock.mongo.MongoSherlock;
+import com.e2eq.framework.model.persistent.base.DataDomain;
+import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
+import com.e2eq.framework.model.persistent.morphia.RealmRepo;
+import com.e2eq.framework.model.security.CredentialUserIdPassword;
+import com.e2eq.framework.model.security.Realm;
+import com.e2eq.framework.model.securityrules.SecurityCallScope;
+import com.e2eq.framework.model.persistent.migration.base.MigrationService;
+import com.e2eq.framework.api.system.SystemDirectory;
+import com.e2eq.framework.system.config.SystemRealmOwnership;
+import com.e2eq.framework.util.SecurityUtils;
+import com.mongodb.client.MongoClient;
+import com.mongodb.client.MongoCollection;
+import io.quarkus.logging.Log;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+import org.bson.Document;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
+
+import java.io.IOException;
+import java.util.*;
+
+import com.e2eq.framework.util.EnvConfigUtils;
+
+/**
+ * Version-agnostic seed runner that applies latest seed packs at startup,
+ * independent of schema migrations. Idempotency and repeatable behavior are
+ * guaranteed by MongoSeedRegistry per dataset checksum.
+ */
+@ApplicationScoped
+public class SeedStartupRunner {
+
+    @Inject
+    MongoClient mongoClient;
+
+    @Inject
+    CredentialRepo credRepo;
+
+    @Inject
+    RealmRepo realmRepo;
+
+    @Inject
+    SeedLoaderService seedLoaderService;
+
+    @Inject
+    SeedDiscoveryService seedDiscoveryService;
+
+    @Inject
+    SeedRegistry seedRegistry;
+
+    @Inject
+    EnvConfigUtils envConfigUtils;
+
+    @Inject
+    SecurityUtils securityUtils;
+
+    @Inject
+    MigrationService migrationService;
+
+    @ConfigProperty(name = "quantum.database.migration.enabled", defaultValue = "true")
+    boolean migrationEnabled;
+
+    @ConfigProperty(name = "quantum.database.coordination-database", defaultValue = "quantum-coordination-shared")
+    String coordinationDatabase;
+
+    @Inject
+    SystemRealmOwnership systemRealmOwnership;
+
+    @Inject
+    SystemDirectory systemDirectory;
+
+    @ConfigProperty(name = "quantum.seed-pack.enabled", defaultValue = "true")
+    boolean enabled;
+
+    @ConfigProperty(name = "quantum.seed-pack.root", defaultValue = "src/main/resources/seed-packs")
+    Optional<String> seedRootConfig;
+
+    @ConfigProperty(name = "quantum.seed-pack.apply.on-startup", defaultValue = "true")
+    boolean applyOnStartup;
+
+    @ConfigProperty(name = "quantum.seed.apply.filter")
+    Optional<String> seedFilterCsv;
+
+    /**
+     * Comma-separated list of realms to apply seeds to on startup.
+     * When {@code quantum.seed-pack.apply.honor-realm-flags=true} this list is
+     * also unioned with catalog realms that have applySeedsOnStartup=true.
+     *
+     * If not specified and no flagged realms apply, defaults to system/default/test realms.
+     * Set to empty string or "none" to disable CSV-based realms.
+     * Example: "system-com,mycompany-com,test-com"
+     */
+    @ConfigProperty(name = "quantum.seed-pack.apply.realms")
+    Optional<String> startupRealmsCsv;
+
+    /**
+     * When true, the default (fallback) startup seed realm set is restricted to the cross-tenant
+     * SYSTEM realm only: the tenant-shaped TEST realm and the DEFAULT realm are not scanned (the
+     * default realm is kept only when it equals the system realm). Explicit
+     * {@code quantum.seed-pack.apply.realms} entries still opt a realm back in. Catalog
+     * {@code applySeedsOnStartup} flags are controlled separately by
+     * {@code quantum.seed-pack.apply.honor-realm-flags}. Defaults to false so existing
+     * product-app behavior is unchanged.
+     */
+    @ConfigProperty(name = "quantum.realm.seed-system-only", defaultValue = "false")
+    boolean seedSystemOnly;
+
+    /**
+     * When true (default, product-app behavior), realms whose catalog records have
+     * {@code applySeedsOnStartup=true} are unioned into the startup seed list.
+     * Control-plane issuers such as quantum-auth-service hold the environment realm
+     * catalog and must set this false so they seed only
+     * {@code quantum.seed-pack.apply.realms} — not every tenant/demo database those
+     * catalog records point at.
+     */
+    @ConfigProperty(name = "quantum.seed-pack.apply.honor-realm-flags", defaultValue = "true")
+    boolean honorRealmFlags;
+
+    public void onStart() {
+        if (!enabled || !applyOnStartup) {
+            Log.info("SeedStartupRunner disabled by configuration (quantum.seed-pack.enabled / quantum.seed-pack.apply.on-startup)");
+            return;
+        }
+
+        List<String> realms = resolveStartupRealms();
+        systemRealmOwnership.excludeSystemRealmIfNotOwned(realms, "SeedStartupRunner");
+        if (realms.isEmpty()) {
+            Log.info("SeedStartupRunner: no realms configured for startup seeding");
+            return;
+        }
+
+        Log.infof("SeedStartupRunner: will apply seeds to realms: %s", realms);
+        for (String realm : realms) {
+            try {
+                // Wait for migration and datastore initialization before applying seeds.
+                if (!waitForDatabase(realm)) {
+                    Log.warnf("SeedStartupRunner: skipping startup seeding for realm %s because the database never became ready", realm);
+                    continue;
+                }
+                applySeedsIfNeeded(realm);
+            } catch (Exception e) {
+                Log.warnf("SeedStartupRunner: failed applying seeds for realm %s: %s", realm, e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * Wait for the database to be created and ready.
+     * This ensures migrations have had a chance to create the database before seeds run.
+     */
+    boolean waitForDatabase(String realm) {
+        int maxRetries = 10;
+        int retryDelayMs = 500;
+        for (int i = 0; i < maxRetries; i++) {
+            try {
+                List<String> databaseNames = mongoClient.listDatabaseNames().into(new ArrayList<>());
+                if (databaseNames.contains(realm)) {
+                    var db = mongoClient.getDatabase(realm);
+                    var collections = db.listCollectionNames().into(new ArrayList<>());
+                    if (!collections.isEmpty()) {
+                        // Seed packs are deliberately version-agnostic and may be
+                        // enabled in services that explicitly disable migrations.
+                        // In that mode, a reachable non-empty database is ready;
+                        // requiring migration metadata makes the two independent
+                        // startup features impossible to configure separately.
+                        if (requiresMigrationReadiness()) {
+                            migrationService.checkInitialized(realm);
+                        }
+                        Log.debugf("SeedStartupRunner: database %s is ready", realm);
+                        return true;
+                    }
+                }
+                if (i < maxRetries - 1) {
+                    Log.debugf("SeedStartupRunner: waiting for database %s to be created (attempt %d/%d)", realm, i + 1, maxRetries);
+                    Thread.sleep(retryDelayMs);
+                }
+            } catch (com.e2eq.framework.exceptions.DatabaseMigrationException e) {
+                Log.debugf("SeedStartupRunner: database %s is not yet migrated (attempt %d/%d): %s", realm, i + 1, maxRetries, e.getMessage());
+                if (i < maxRetries - 1) {
+                    try {
+                        Thread.sleep(retryDelayMs);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        return false;
+                    }
+                }
+            } catch (Exception e) {
+                Log.debugf("SeedStartupRunner: error checking database %s: %s (attempt %d/%d)", realm, e.getMessage(), i + 1, maxRetries);
+                if (i < maxRetries - 1) {
+                    try {
+                        Thread.sleep(retryDelayMs);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        return false;
+                    }
+                }
+            }
+        }
+        Log.warnf("SeedStartupRunner: database %s did not become ready after %d attempts", realm, maxRetries);
+        return false;
+    }
+
+    /**
+     * Seed packs and schema migrations are independent startup capabilities.
+     * Keep this decision explicit and testable so services that intentionally
+     * disable migrations can still apply idempotent, version-agnostic seeds.
+     */
+    boolean requiresMigrationReadiness() {
+        return migrationEnabled;
+    }
+
+    private void applySeedsIfNeeded(String realm) throws Exception {
+        DistributedLock lock = getSeedLock(realm);
+        lock.acquire();
+        try {
+            // Phase C gap closed: the realm record resolves through
+            // SystemDirectory (local repos embedded; control-plane HTTP in
+            // remote mode). The by-database-name fallback has no contract
+            // equivalent yet and stays embedded-only.
+            Realm realmRecord = systemDirectory.findRealmByRefName(realm)
+                    .orElseGet(() -> systemRealmOwnership.ownedLocally()
+                        ? realmRepo.findByDatabaseName(realm, true, envConfigUtils.getSystemRealm()).orElse(null)
+                        : null);
+
+            String emailDomain = resolveEmailDomain(realm, realmRecord);
+            String baselineAdminUserId = "admin@" + emailDomain;
+            String adminUserId = resolveAdminUserId(realmRecord, baselineAdminUserId);
+
+            // Lookup admin user profile in the target realm to obtain its dataDomain without requiring SecurityContext
+            CredentialUserIdPassword adminCred = null;
+            if (!systemRealmOwnership.ownedLocally()) {
+                // Remote mode: identity is control-plane-internal (B4/ADR) —
+                // no credential read crosses the seam. The catalog supplies the
+                // registered administrator and domain used below.
+                Log.infof("SeedStartupRunner: quantum.mode=remote — seeding %s from its registered realm metadata (identity stays in the control plane)", realm);
+            } else
+            try {
+               Optional<CredentialUserIdPassword> oAdminCred = credRepo.findByUserId(adminUserId, envConfigUtils.getSystemRealm(), true);
+               if (!oAdminCred.isPresent() && realmSeedDomain(realmRecord, adminUserId) != null) {
+                   // The realm is registered with its own domain: seed as its admin in that domain,
+                   // never as the system user (whose domain the realm's users cannot see).
+                   Log.infof("SeedStartupRunner: admin user %s has no local credential; seeding %s as that admin in the realm's registered domain",
+                      adminUserId, realm);
+               } else if (!oAdminCred.isPresent()) {
+                   Log.warnf("SeedStartupRunner: admin user %s not found in realm %s and the realm has no registered domain. Seeding will proceed with system context",
+                      adminUserId, credRepo.getDatabaseName());
+                      oAdminCred = credRepo.findByUserId(envConfigUtils.getSystemUserId(), envConfigUtils.getSystemRealm(), true);
+                      if (!oAdminCred.isPresent()) {
+                          Log.warnf("SeedStartupRunner: system user %s not found in realm %s. Seeding will proceed with realm-only context; tenant substitutions may be blank.",
+                             envConfigUtils.getSystemUserId(), envConfigUtils.getSystemRealm());
+                      } else {
+                         adminCred = oAdminCred.get();
+                      }
+               } else {
+                  adminCred = oAdminCred.get();
+               }
+
+            } catch (Exception e) {
+                Log.warnf("SeedStartupRunner: error looking up admin user in realm %s: %s", realm, e.getMessage());
+            }
+            DataDomain realmDomain = realmSeedDomain(realmRecord, adminUserId);
+            if (adminCred == null && realmDomain == null) {
+                Log.warnf("SeedStartupRunner: admin user %s not found in realm %s. Seeding will proceed with realm-only context; tenant substitutions may be blank.", adminUserId, realm);
+            }
+
+            // Who the seeds run as: the realm's admin (its credential, or else the realm's registered
+            // domain under the admin's user id); the system user only for a realm with neither.
+            DataDomain adminDD = (adminCred != null && adminCred.getDataDomain() != null) ? adminCred.getDataDomain() : realmDomain;
+            String resolvedOwnerId = null;
+            if (adminCred != null ) {
+                resolvedOwnerId = adminCred.getUserId();
+            }
+            SeedContext context = buildSeedContext(realm, realmRecord, adminCred);
+
+            // Establish a temporary SecurityContext based on the admin user so repo-layer substitutions resolve correctly
+            com.e2eq.framework.model.securityrules.PrincipalContext principalContext = null;
+            com.e2eq.framework.model.securityrules.ResourceContext resourceContext = null;
+            if (adminDD != null) {
+                String pcUserId = (resolvedOwnerId != null && !resolvedOwnerId.isBlank()) ? resolvedOwnerId : adminUserId;
+                principalContext = new com.e2eq.framework.model.securityrules.PrincipalContext.Builder()
+                        .withDefaultRealm(realm)
+                        .withDataDomain(adminDD)
+                        .withUserId(pcUserId)
+                        .withRoles(new String[]{"admin"})
+                        .withScope("systemGenerated")
+                        .withApplicationId("*")
+                        .build();
+                resourceContext = new com.e2eq.framework.model.securityrules.ResourceContext.Builder()
+                        .withRealm(realm)
+                        .withArea("SEED")
+                        .withFunctionalDomain("SEED")
+                        .withAction("APPLY")
+                        .withApplicationId("*")
+                        .build();
+            } else {
+                Log.warnf("SeedStartupRunner: failed to establish SecurityContext for admin user %s in realm %s attempting to use system@system.com", adminUserId, realm);
+                principalContext = securityUtils.getSystemPrincipalContext();
+                resourceContext = securityUtils.getSystemSecurityResourceContext();
+            }
+
+            // Use SeedDiscoveryService to discover, filter, and resolve latest versions
+            Map<String, SeedPackDescriptor> latestByName;
+            try {
+                latestByName = seedDiscoveryService.discoverLatestApplicable(
+                        context,
+                        seedFilterCsv.orElse(null));
+            } catch (IOException e) {
+                Log.warnf("SeedStartupRunner: failed to discover seed packs for realm %s: %s", realm, e.getMessage());
+                return;
+            }
+
+            if (latestByName.isEmpty()) {
+                Log.infof("SeedStartupRunner: no applicable seed packs for realm %s", realm);
+                return;
+            }
+
+            List<SeedPackRef> refs = new ArrayList<>();
+            for (SeedPackDescriptor descriptor : latestByName.values()) {
+                boolean pending = false;
+                for (SeedPackManifest.Dataset dataset : descriptor.getManifest().getDatasets()) {
+                    String checksum = seedDiscoveryService.calculateChecksum(descriptor, dataset);
+                    if (seedRegistry.shouldApply(context, descriptor.getManifest(), dataset, checksum)) {
+                        pending = true;
+                        break;
+                    }
+                }
+                if (pending) {
+                    refs.add(SeedPackRef.exact(
+                            descriptor.getManifest().getSeedPack(),
+                            descriptor.getManifest().getVersion()));
+                }
+            }
+
+            if (refs.isEmpty()) {
+                Log.infof("SeedStartupRunner: no seed pack changes detected for realm %s", realm);
+                return;
+            }
+
+            Log.infof("SeedStartupRunner: applying %d changed seed pack(s) to realm %s", refs.size(), realm);
+
+            SecurityCallScope.runWithContexts(principalContext, resourceContext, () -> {
+                seedLoaderService.applySeeds(context, refs);
+            });
+        } finally {
+            // Always clear any thread-local security contexts we may have set
+            try { com.e2eq.framework.model.securityrules.SecurityContext.clear(); } catch (Exception ignored) {}
+            lock.release();
+        }
+    }
+
+    private static String realmToTenantId(String realm) {
+        if (realm == null || realm.isBlank()) return realm;
+        int idx = realm.lastIndexOf('-');
+        if (idx < 0) return realm; // fallback
+        return realm.substring(0, idx) + "." + realm.substring(idx + 1);
+    }
+
+    SeedContext buildSeedContext(String realm, CredentialUserIdPassword adminCred) {
+        return buildSeedContext(realm, null, adminCred);
+    }
+
+    SeedContext buildSeedContext(String realm, Realm realmRecord, CredentialUserIdPassword adminCred) {
+        SeedContext.Builder ctxBuilder = SeedContext.builder(realm);
+        String realmAdminUserId = resolveAdminUserId(realmRecord, "admin@" + resolveEmailDomain(realm, realmRecord));
+        DataDomain seedDataDomain = null;
+        DataDomain registered = realmSeedDomain(realmRecord, realmAdminUserId);
+        if (adminCred != null && adminCred.getDataDomain() != null) {
+            seedDataDomain = adminCred.getDataDomain();
+        } else if (registered != null) {
+            // The realm's registered domain (its domainContext): what the realm's users act in.
+            seedDataDomain = registered;
+        } else if (realmRecord != null && realmRecord.getDataDomain() != null) {
+            seedDataDomain = realmRecord.getDataDomain();
+        }
+        if (seedDataDomain != null) {
+            ctxBuilder
+                    .tenantId(seedDataDomain.getTenantId())
+                    .orgRefName(seedDataDomain.getOrgRefName())
+                    .accountId(seedDataDomain.getAccountNum())
+                    .ownerId(seedDataDomain.getOwnerId());
+        } else {
+            ctxBuilder
+                    .tenantId(envConfigUtils.getSystemTenantId())
+                    .orgRefName(envConfigUtils.getSystemOrgRefName())
+                    .accountId(envConfigUtils.getSystemAccountNumber())
+                    .ownerId(envConfigUtils.getSystemUserId());
+        }
+        String emailDomain = resolveEmailDomain(realm, realmRecord);
+        String baselineAdminUserId = "admin@" + emailDomain;
+        String adminUserId = resolveAdminUserId(realmRecord, baselineAdminUserId);
+        String demoUserId = "demo@" + emailDomain;
+        ctxBuilder
+                .variable("adminUserId", adminUserId)
+                .variable("baselineAdminUserId", baselineAdminUserId)
+                .variable("demoUserId", demoUserId);
+        return ctxBuilder.build();
+    }
+
+    /**
+     * The realm's registered domain, from its realm record's domain context (the domain the realm's
+     * users act in), owned by the realm's admin; null when the realm has none. The record's own
+     * dataDomain says who owns the registry entry, not the realm's tenant, so it is not used here.
+     */
+    static DataDomain realmSeedDomain(Realm realmRecord, String adminUserId) {
+        if (realmRecord == null || realmRecord.getDomainContext() == null) {
+            return null;
+        }
+        var dc = realmRecord.getDomainContext();
+        if (isBlank(dc.getTenantId()) || isBlank(dc.getOrgRefName()) || isBlank(dc.getAccountId())) {
+            return null;
+        }
+        return new DataDomain(dc.getOrgRefName(), dc.getAccountId(), dc.getTenantId(), dc.getDataSegment(), adminUserId);
+    }
+
+    private static boolean isBlank(String s) {
+        return s == null || s.isBlank();
+    }
+
+    private String resolveEmailDomain(String realm, Realm realmRecord) {
+        if (realmRecord != null && realmRecord.getEmailDomain() != null && !realmRecord.getEmailDomain().isBlank()) {
+            return realmRecord.getEmailDomain();
+        }
+        return realmToTenantId(realm);
+    }
+
+    private String resolveAdminUserId(Realm realmRecord, String baselineAdminUserId) {
+        if (realmRecord != null && realmRecord.getDefaultAdminUserId() != null && !realmRecord.getDefaultAdminUserId().isBlank()) {
+            return realmRecord.getDefaultAdminUserId();
+        }
+        return baselineAdminUserId;
+    }
+
+    /**
+     * Resolves which realms should receive seeds on startup.
+     * Unions realms from:
+     * 1. Configuration property quantum.seed-pack.apply.realms (CSV list)
+     * 2. Realms with applySeedsOnStartup=true in the catalog, when
+     *    {@code quantum.seed-pack.apply.honor-realm-flags=true}
+     *
+     * If quantum.seed-pack.apply.realms is set to "none" or empty, only flagged
+     * catalog realms receive seeds (and only when honor-realm-flags is true).
+     *
+     * If neither is configured, falls back to system/default/test realms.
+     *
+     * @return list of realm names to seed (deduped)
+     */
+    private List<String> resolveStartupRealms() {
+        List<String> realms = new ArrayList<>();
+
+        // First, check the CSV configuration
+        boolean csvConfigured = false;
+        if (startupRealmsCsv.isPresent()) {
+            String csv = startupRealmsCsv.get().trim();
+            // "none" or empty string means skip CSV config but still check realm flags
+            if (!csv.isEmpty() && !csv.equalsIgnoreCase("none")) {
+                csvConfigured = true;
+                for (String part : csv.split(",")) {
+                    String realm = part.trim();
+                    if (!realm.isEmpty() && !realms.contains(realm)) {
+                        realms.add(realm);
+                    }
+                }
+            }
+        }
+
+        // Second, optionally query catalog realms with applySeedsOnStartup=true.
+        // Identity/control-plane hosts keep this off: they store tenant realm
+        // records but do not own those tenant databases.
+        if (honorRealmFlags) {
+            try {
+                List<Realm> flaggedRealms = realmRepo.findRealmsWithSeedsEnabled();
+                for (Realm r : flaggedRealms) {
+                    String realmName = r.getDatabaseName();
+                    if (realmName != null && !realmName.isEmpty() && !realms.contains(realmName)) {
+                        realms.add(realmName);
+                        Log.debugf("SeedStartupRunner: adding realm %s (applySeedsOnStartup=true)", realmName);
+                    }
+                }
+            } catch (Exception e) {
+                Log.warnf("SeedStartupRunner: failed to query realms with applySeedsOnStartup flag: %s", e.getMessage());
+            }
+        } else {
+            Log.infof("SeedStartupRunner: ignoring applySeedsOnStartup catalog flags; seeding only %s",
+                    csvConfigured ? realms : "the system-only fallback");
+        }
+
+        // If we found realms from config or flags, use them
+        if (!realms.isEmpty()) {
+            return realms;
+        }
+
+        // Default behavior only if nothing was configured: system/default/test realms (deduped).
+        if (!csvConfigured) {
+            String system = envConfigUtils.getSystemRealm();
+            realms.add(system);
+            if (seedSystemOnly) {
+                // System-only mode: do NOT scan the default or test realms. The system realm above
+                // is the only fallback; the default realm is implicitly included only when it
+                // equals the system realm (already added). Explicit apply.realms still opts a
+                // realm back in. Catalog applySeedsOnStartup flags do not.
+                Log.debug("SeedStartupRunner: quantum.realm.seed-system-only=true, restricting default startup realms to the system realm");
+            } else {
+                String def = envConfigUtils.getDefaultRealm();
+                String test = envConfigUtils.getTestRealm();
+                if (!Objects.equals(system, def)) realms.add(def);
+                if (!Objects.equals(system, test) && !Objects.equals(def, test)) realms.add(test);
+            }
+        }
+        return realms;
+    }
+
+
+    private DistributedLock getSeedLock(String realm) {
+        MongoCollection<Document> collection = mongoClient
+                .getDatabase(coordinationDatabase)
+                .getCollection("locks");
+        Sherlock sherlock = MongoSherlock.create(collection);
+        return sherlock.createLock(String.format("seed-lock-%s", realm));
+    }
+}

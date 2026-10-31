@@ -10,12 +10,17 @@ public class RealmCatalogEntry {
     private String refName;
     private String displayName;
     private String databaseName;
+    private String deploymentType;
+    private String tenancyMode;
     private String emailDomain;
+    private String defaultAdminUserId;
+    private Integer dataSegment;
     private String tenantId;
     private String orgRefName;
     private String accountNumber;
     private String connectionString;
     private Boolean active;
+    private String applicationRefName;
 
     @JsonProperty("refName")
     public String getRefName() { return refName; }
@@ -35,11 +40,35 @@ public class RealmCatalogEntry {
     @JsonProperty("databaseName")
     public void setDatabaseName(String databaseName) { this.databaseName = databaseName; }
 
+    @JsonProperty("deploymentType")
+    public String getDeploymentType() { return deploymentType; }
+
+    @JsonProperty("deploymentType")
+    public void setDeploymentType(String deploymentType) { this.deploymentType = deploymentType; }
+
+    @JsonProperty("tenancyMode")
+    public String getTenancyMode() { return tenancyMode; }
+
+    @JsonProperty("tenancyMode")
+    public void setTenancyMode(String tenancyMode) { this.tenancyMode = tenancyMode; }
+
     @JsonProperty("emailDomain")
     public String getEmailDomain() { return emailDomain; }
 
     @JsonProperty("emailDomain")
     public void setEmailDomain(String emailDomain) { this.emailDomain = emailDomain; }
+
+    @JsonProperty("defaultAdminUserId")
+    public String getDefaultAdminUserId() { return defaultAdminUserId; }
+
+    @JsonProperty("defaultAdminUserId")
+    public void setDefaultAdminUserId(String defaultAdminUserId) { this.defaultAdminUserId = defaultAdminUserId; }
+
+    @JsonProperty("dataSegment")
+    public Integer getDataSegment() { return dataSegment; }
+
+    @JsonProperty("dataSegment")
+    public void setDataSegment(Integer dataSegment) { this.dataSegment = dataSegment; }
 
     @JsonProperty("tenantId")
     public String getTenantId() { return tenantId; }
@@ -70,4 +99,10 @@ public class RealmCatalogEntry {
 
     @JsonProperty("active")
     public void setActive(Boolean active) { this.active = active; }
+
+    @JsonProperty("applicationRefName")
+    public String getApplicationRefName() { return applicationRefName; }
+
+    @JsonProperty("applicationRefName")
+    public void setApplicationRefName(String applicationRefName) { this.applicationRefName = applicationRefName; }
 }

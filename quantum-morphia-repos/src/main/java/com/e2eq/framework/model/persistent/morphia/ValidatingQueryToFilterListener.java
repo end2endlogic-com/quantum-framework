@@ -57,7 +57,7 @@ public class ValidatingQueryToFilterListener extends QueryToFilterListener {
     }
 
     private void validateField(Token fieldToken) {
-        if (fieldToken != null) {
+        if (fieldToken != null && !isInsideEdgeFilter()) {
             validator.validateField(fieldToken.getText());
         }
     }

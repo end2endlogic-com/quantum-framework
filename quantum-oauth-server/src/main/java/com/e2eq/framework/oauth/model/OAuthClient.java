@@ -56,6 +56,9 @@ public class OAuthClient extends BaseModel {
     /** The realm this client is associated with for data scoping. */
     private String realm;
 
+    /** Authorized application requested by this client; defaults to clientId when unset. */
+    private String applicationId;
+
     /** Whether this client is active. Inactive clients cannot obtain tokens. */
     private boolean active = true;
 

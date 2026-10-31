@@ -39,6 +39,9 @@ public class SecretResolver {
     @Inject
     ManagedSecretRepo managedSecretRepo;
 
+    @Inject
+    com.e2eq.framework.secrets.crypto.SecretEncryptor secretEncryptor;
+
     /** True when the value contains at least one secret reference. */
     public static boolean containsSecretReference(String value) {
         return value != null && SECRET_REFERENCE.matcher(value).find();
@@ -71,6 +74,6 @@ public class SecretResolver {
             throw new IllegalArgumentException("Secret resolution requires an explicit realm.");
         }
         return managedSecretRepo.findByRefName(realmId, secretRefName)
-            .map(ManagedSecret::getValueEncrypted);
+            .map(secret -> secretEncryptor.decrypt(secret.getValueEncrypted(), secret.getIv(), secret.getKeyVersion()));
     }
 }

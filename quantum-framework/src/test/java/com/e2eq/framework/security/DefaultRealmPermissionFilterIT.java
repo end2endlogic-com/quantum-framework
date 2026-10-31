@@ -40,7 +40,7 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("DefaultRealm Permission Filter Integration Tests")
 public class DefaultRealmPermissionFilterIT extends BaseRepoTest {
 
-    private static final String TEST_POLICY_REF = "test-realm-filter-policy";
+    private static final String TEST_POLICY_REF = "TEST_REALM_FILTER_POLICY";
     
     @Inject
     CodeListRepo codeListRepo;
@@ -53,7 +53,8 @@ public class DefaultRealmPermissionFilterIT extends BaseRepoTest {
 
     @AfterEach
     void cleanUp() {
-        try (SecuritySession s = new SecuritySession(pContext, rContext)) {
+        // The test policy is stamped with the system data domain, so it is removed as the system principal.
+        try (SecuritySession s = asSystem()) {
             String realm = testUtils.getTestRealm();
             Optional<Policy> policy = policyRepo.findByRefName(TEST_POLICY_REF, realm);
             policy.ifPresent(p -> {
@@ -167,7 +168,8 @@ public class DefaultRealmPermissionFilterIT extends BaseRepoTest {
     void policyRuleWithDefaultRealmProducesFilter() throws ReferentialIntegrityViolationException {
         String realm = testUtils.getTestRealm();
         
-        try (SecuritySession s = new SecuritySession(pContext, rContext)) {
+        // Policies carry the system data domain; write them as the system principal, not the test-tenant admin.
+        try (SecuritySession s = asSystem()) {
             // Create the test policy
             Optional<Policy> existingPolicy = policyRepo.findByRefName(TEST_POLICY_REF, realm);
             if (existingPolicy.isPresent()) {
@@ -211,17 +213,14 @@ public class DefaultRealmPermissionFilterIT extends BaseRepoTest {
             ruleContext.reloadFromRepo(realm);
         }
 
-        // Now test with a custom realm value
-        String testRealmValue = "unique-realm-" + UUID.randomUUID().toString().substring(0, 8);
-        
         PrincipalContext pc = new PrincipalContext.Builder()
-                .withDefaultRealm(testRealmValue)
+                .withDefaultRealm(realm)
                 .withUserId("alice@end2endlogic.com")
                 .withRoles(new String[]{"user"})
                 .withDataDomain(DataDomain.builder()
                         .orgRefName(testUtils.getTestOrgRefName())
                         .accountNum(testUtils.getTestAccountNumber())
-                        .tenantId(testRealmValue)
+                        .tenantId(realm)
                         .dataSegment(0)
                         .ownerId("alice@end2endlogic.com")
                         .build())
@@ -251,13 +250,13 @@ public class DefaultRealmPermissionFilterIT extends BaseRepoTest {
         String directFilterStr = directFilter.toString();
         Log.infof("Direct filter with defaultRealm: %s", directFilterStr);
         
-        assertTrue(directFilterStr.contains(testRealmValue), 
-                "Direct filter should contain the resolved ${defaultRealm} value '" + testRealmValue + "'");
+        assertTrue(directFilterStr.contains(realm), 
+                "Direct filter should contain the resolved ${defaultRealm} value '" + realm + "'");
         
         // If filters were returned from rule context, check if they contain our realm value
         if (!filters.isEmpty()) {
             boolean hasRealmFilter = filters.stream()
-                    .anyMatch(f -> f.toString().contains(testRealmValue));
+                    .anyMatch(f -> f.toString().contains(realm));
             if (hasRealmFilter) {
                 Log.info("Policy rule was matched and produced filter with defaultRealm value");
             } else {

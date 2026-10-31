@@ -1,9 +1,12 @@
+ifndef::doc-root[]
+:doc-root: ..
+endif::[]
+
 = ADR: Realm Membership and Identity Model
 :toc:
 
 == Status
-Accepted (2026-06-11) — implemented incrementally on branch the integration branch
-(membershipRole + UserRealmRole + RealmMembershipService @ cf1a1641).
+Accepted (2026-06-11) — implemented incrementally on the integration branch.
 
 == Context
 
@@ -18,11 +21,15 @@ plans) both need these answers to be explicit.
 
 == Decision
 
-1. **Realm = placement + lifecycle.** A realm is the unit of physical
-   isolation: its own database (own connection, possibly own cluster), own
-   migration history, own seed state, own blast radius, own residency. When
-   you ask "what can be dropped/backed up/migrated as one unit", the answer
-   is a realm.
+1. **Realm = placement + lifecycle.** A realm selects a logical Mongo
+   database (and possibly its own connection or cluster) and owns migration,
+   index, seed, backup, residency, and destructive lifecycle. A dedicated
+   realm has one tenant OWNER. A pooled realm has one platform/operator OWNER
+   plus many tenant PARTICIPANT memberships. When you ask "what can be
+   dropped/backed up/migrated as one unit", the answer is a realm, never an
+   individual participant in a pooled realm. `Realm.deploymentType` persists
+   this invariant as `DEDICATED` or `SHARED`. Missing legacy values resolve to
+   `DEDICATED`; only an explicit `SHARED` value permits pooled admission.
 
 2. **DataDomain = visibility.** Org/account/tenant/owner/segment stamps plus
    the policy engine (row filters, relationship policies via
@@ -34,11 +41,14 @@ plans) both need these answers to be explicit.
    `RealmTenantMembership.membershipRole`: the OWNER provisioned the realm
    and holds lifecycle/billing authority; PARTICIPANTs are collaborating
    orgs whose visibility comes entirely from DataDomain + policies. The
-   default (one tenant = one realm, owner only) remains what
-   `POST /admin/tenants` produces; participants are added deliberately.
+   `POST /admin/tenants` defaults to `DEDICATED_REALM` (one tenant OWNER) and
+   accepts `POOLED_REALM` to deliberately admit a PARTICIPANT to an existing
+   realm whose persisted deployment type is `SHARED`.
 
 4. **Users have ONE global identity and N realm-role assignments.** The
-   credential (system realm) is the identity — the GitHub account.
+   credential (system realm) anchors the identity within one authority.
+   External provider subjects require explicit identity binding; an identity
+   in one environment does not grant access in another.
    `UserRealmRole` documents are the org-membership analog: (userId, realm,
    roles[], sponsoring org, status). ADMIN in realm A / VIEWER in realm B is
    two documents. `credential.roles[]` keeps meaning "roles in the default
@@ -49,6 +59,34 @@ plans) both need these answers to be explicit.
    realm)`; the tenant plane routes by claims with no callback (JWKS
    validation). Embedded mode resolves the same service locally.
 
+6. **Tenant decommission follows placement topology.** A dedicated tenant is
+   decommissioned by revoking access, verifying a whole-database archive, and
+   dropping its realm database. A pooled tenant is decommissioned by revoking
+   access, verifying an export selected by the canonical DataDomain tuple
+   (`orgRefName`, `accountNum`, `tenantId`, `dataSegment`), and assigning one
+   purge batch plus one `purgeAfter` timestamp to all of its rows. Mongo TTL
+   cleanup may drain collections asynchronously; the access revocation is the
+   externally atomic barrier, and per-collection count reconciliation is the
+   completion gate. The pooled workflow never drops or migrates the shared
+   realm. Revocation must cover already-issued sessions/tokens as well as
+   future authentication; suspending only the catalog membership is not a
+   verified barrier for stateless tenant planes. TTL indexes are installed
+   during realm initialization and verified
+   or created idempotently by the expiration provider before stamping. Blob
+   payloads participate in archive and expiration coverage. Before planning
+   the purge, the runtime
+   reconciles every existing user collection against an explicit
+   `TENANT_SCOPED`, `REALM_SHARED`, or `SYSTEM_GLOBAL` declaration.
+   Unclassified collections fail closed; only existing collections declared
+   `TENANT_SCOPED` enter the purge plan.
+
+7. **Pooled admission is metadata-only.** The target realm must already be
+   migrated, indexed, and seeded. Admitting a participant creates the tenant
+   membership and requested administrator assignment, but does not run
+   migrations, base seeds, archetypes, or compatibility/demo identity setup.
+   A user has at most one active tenant DataDomain assignment in a realm until
+   token issuance supports explicit tenant selection.
+
 == Consequences
 
 * The fulfillment collaboration model is expressible without new isolation
@@ -58,6 +96,8 @@ plans) both need these answers to be explicit.
   control plane's denormalized registry (design review §2.2).
 * Phase C's control-plane API must expose membership resolution alongside the
   realm catalog (same seam, same fail-loud remote behavior).
-* GitHub-model mapping for product docs: account→credential, org→org,
-  org membership→UserRealmRole, repo→realm, repo role→roles[] per realm,
-  invitation→AccessInvite, personal default context→credential.defaultRealm.
+* Directory organization metadata, realm participation and user access are
+  separate records. External-provider membership synchronization is not
+  implemented by this ADR and must not be inferred from a product analogy.
+  See xref:{doc-root}/user-guide/identity-and-membership.adoc[Identity and membership]
+  for current fields, write semantics and integration constraints.

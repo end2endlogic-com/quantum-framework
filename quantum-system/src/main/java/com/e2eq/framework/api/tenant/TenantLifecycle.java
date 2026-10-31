@@ -19,17 +19,33 @@ package com.e2eq.framework.api.tenant;
 public interface TenantLifecycle {
 
     /**
-     * Provision a tenant: realm catalog entry, realm membership, migrations,
-     * admin/demo identities, base seed packs, requested archetypes,
-     * verification. Idempotent per the embedded implementation's semantics
-     * (re-provisioning an existing realm reports realmCreated=false and
-     * warnings rather than failing).
+     * Provision or admit a tenant according to
+     * {@link TenantProvisionRequest#deploymentTopology()}. Dedicated
+     * provisioning owns realm lifecycle; pooled admission targets an existing
+     * realm while DataDomain remains the tenant visibility boundary.
      */
     TenantProvisionResult provision(TenantProvisionRequest request);
 
     /**
-     * Delete a tenant's realm: catalog entry, database, credentials.
-     * Implementations refuse to delete system realms.
+     * Governed topology-aware tenant decommissioning.
+     *
+     * <p>The default preserves compatibility for existing lifecycle adapters
+     * while failing closed. A control-plane implementation must verify the
+     * archive and the topology-specific destructive boundary before returning
+     * a result.</p>
+     */
+    default TenantDecommissionResult decommission(TenantDecommissionRequest request) {
+        throw new TenantDecommissionUnavailableException(
+            "No governed tenant decommission workflow is installed");
+    }
+
+    /**
+     * Legacy compatibility boundary for tenant deletion.
+     *
+     * <p>The embedded open-source implementation must fail closed rather than
+     * deleting realm data synchronously. Soft decommission, verified archive,
+     * destructive approval, and restore belong to the governed system control
+     * plane workflow.</p>
      */
     TenantDeleteResult delete(String realmId);
 }

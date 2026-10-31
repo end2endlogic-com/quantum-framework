@@ -16,6 +16,7 @@ import com.e2eq.framework.util.WildCardMatcher;
 import dev.morphia.query.filters.Filter;
 import io.quarkus.logging.Log;
 import io.quarkus.test.junit.QuarkusTest;
+import jakarta.ws.rs.ForbiddenException;
 import jakarta.enterprise.context.control.ActivateRequestContext;
 import jakarta.inject.Inject;
 import org.graalvm.polyglot.Context;
@@ -241,14 +242,15 @@ public class TestRuleContext extends BaseRepoTest {
         Log.info("Test if mingardia is denied trying to view the system's profile with a default deny context'");
         checkRulesResponse = ruleContext.checkRules(mingardiaUserIdPC, sysAdminUserProfileRC);
         filters.clear();
-        filters1 = ruleContext.getFilters(filters, mingardiaUserIdPC, sysAdminUserProfileRC, UserProfile.class);
         logRuleResults("Test if mingardia is denied trying to view the system's profile with a default deny context'",
                 mingardiaUserIdPC,
                 sysAdminUserProfileRC,
                 checkRulesResponse,
-                filters1);
+                filters);
         assertTrue(checkRulesResponse.getFinalEffect().equals(RuleEffect.DENY));
-        assertTrue(filters1.isEmpty()); // will be empty because the post condition will cause the rule to be ignored / NA and the default is deny
+        assertThrows(ForbiddenException.class,
+                () -> ruleContext.getFilters(new ArrayList<>(), mingardiaUserIdPC, sysAdminUserProfileRC, UserProfile.class),
+                "Denied policy evaluation must fail closed rather than returning ungoverned filters");
 
         // show that its really about the default not an explicit rule
         checkRulesResponse = ruleContext.checkRules(mingardiaUserIdPC, sysAdminUserProfileRC, RuleEffect.ALLOW);
@@ -277,6 +279,31 @@ public class TestRuleContext extends BaseRepoTest {
 
     }
 
+    @Test
+    void testGetFiltersFailsClosedWhenNoPolicyAllowsResource() {
+        RuleContext ruleContext = new RuleContext();
+        PrincipalContext principal = new PrincipalContext.Builder()
+                .withDefaultRealm(testUtils.getTestRealm())
+                .withUserId("unprivileged@example.com")
+                .withRoles(new String[]{"unprivileged"})
+                .withDataDomain(testUtils.getTestDataDomain())
+                .withScope("AUTHENTICATED")
+                .build();
+        ResourceContext resource = new ResourceContext.Builder()
+                .withArea("sales")
+                .withFunctionalDomain("opportunity")
+                .withAction("view")
+                .withResourceId("OPP-1")
+                .build();
+
+        SecurityCheckResponse response = ruleContext.checkRules(principal, resource);
+        assertEquals(RuleEffect.DENY, response.getFinalEffect(),
+                "No matching policy must resolve to DENY");
+        assertThrows(ForbiddenException.class,
+                () -> ruleContext.getFilters(new ArrayList<>(), principal, resource, UserProfile.class),
+                "No matching policy must not return the caller's original filters as if access were allowed");
+    }
+
     /**
      * Tests that the RuleContext works correctly with seed-based system rules.
      *
@@ -293,6 +320,8 @@ public class TestRuleContext extends BaseRepoTest {
      * This is by design - @PermitAll bypasses the rule evaluation system entirely.
      */
     @Test
+    @ActivateRequestContext
+    @TestSecurity(user = "sysAdmin@system-com", roles = {"admin"})
     public void testDefaultRuleContext() {
         // Create roles for admin and user
         String[] adminRole = new String[]{"admin"};
@@ -334,10 +363,39 @@ public class TestRuleContext extends BaseRepoTest {
 
         List<Filter> filters = new ArrayList<>();
 
-        // Use the injected RuleContext which should already have seed data loaded via SeedStartupRunner
-        // Ensure it's reloaded from the test realm to get the latest policies including system rules from seed
         String testRealm = testUtils.getTestRealm();
-        injectedRuleContext.reloadFromRepo(testRealm);
+
+        // Self-sufficient seeding: the "view your own resource" rule this test asserts on (line ~380)
+        // is NOT a startup/system seed — addSystemRules() only adds the system, system-role, and
+        // tenant-admin rules, and no startup seed pack defines a userOwnResourcesPolicy. It is a
+        // realm-specific DB policy that a SIBLING test (testPolicyRepoHydration_*) happens to persist.
+        // Relying on that made this assertion order-dependent and flaky on a clean database. Seed the
+        // policy here so the test is self-contained and deterministic regardless of run order / DB state.
+        Policy userOwnResourcesPolicy = new Policy();
+        userOwnResourcesPolicy.setRefName("DEFAULT_CTX_USER_VIEW_OWN");
+        userOwnResourcesPolicy.setDisplayName("User view-own (test seed)");
+        userOwnResourcesPolicy.setPrincipalId("user");
+        userOwnResourcesPolicy.setDataDomain(securityUtils.getSystemDataDomain());
+        SecurityURIHeader viewOwnHeader = new SecurityURIHeader.Builder()
+                .withIdentity("user").withArea("*").withFunctionalDomain("*").withAction("view").build();
+        SecurityURIBody viewOwnBody = new SecurityURIBody.Builder()
+                .withRealm("*").withOrgRefName("*").withAccountNumber("*")
+                .withTenantId("*").withOwnerId("*").withDataSegment("*").withResourceId("*").build();
+        Rule viewOwnRule = new Rule.Builder()
+                .withName("user-view-own")
+                .withSecurityURI(new SecurityURI(viewOwnHeader, viewOwnBody))
+                .withPostconditionScript("pcontext.getUserId() == rcontext.getOwnerId()")
+                .withAndFilterString("dataDomain.ownerId:${principalId}")
+                .withEffect(RuleEffect.ALLOW)
+                .withPriority(200)
+                .withFinalRule(false)
+                .build();
+        userOwnResourcesPolicy.getRules().add(viewOwnRule);
+        try (SecurityCallScope.Scope ignored = SecurityCallScope.openIgnoringRules()) {
+            policyRepo.save(testRealm, userOwnResourcesPolicy);
+            // Reload so the just-seeded policy (plus default system rules) is loaded for the test realm.
+            injectedRuleContext.reloadFromRepo(testRealm);
+        }
 
         // test that an admin can view system admins profile.
         // Admin should have access via the adminTenantPolicy from seed data
@@ -407,7 +465,7 @@ public class TestRuleContext extends BaseRepoTest {
 
         // Build a policy for role "user": allow view of own userProfile; deny delete in security area
         Policy userPolicy = new Policy();
-        userPolicy.setRefName("it-user-policy");
+        userPolicy.setRefName("IT_USER_POLICY");
         userPolicy.setDisplayName("IT User Policy");
         userPolicy.setPrincipalId("user");
         userPolicy.setDataDomain(securityUtils.getSystemDataDomain());
@@ -447,8 +505,10 @@ public class TestRuleContext extends BaseRepoTest {
         userPolicy.getRules().add(denyDelete);
 
         // Persist and hydrate
-        policyRepo.save(realm, userPolicy);
-        injectedRuleContext.reloadFromRepo(realm);
+        try (SecurityCallScope.Scope ignored = SecurityCallScope.openIgnoringRules()) {
+            policyRepo.save(realm, userPolicy);
+            injectedRuleContext.reloadFromRepo(realm);
+        }
 
         // Build principal and resource contexts
         String userId = testUtils.getTestUserId();
@@ -485,7 +545,7 @@ public class TestRuleContext extends BaseRepoTest {
 
         // Build a broad ALLOW for admin
         Policy adminPolicy = new Policy();
-        adminPolicy.setRefName("it-admin-policy");
+        adminPolicy.setRefName("IT_ADMIN_POLICY");
         adminPolicy.setDisplayName("IT Admin Policy");
         adminPolicy.setPrincipalId("admin");
         adminPolicy.setDataDomain(securityUtils.getSystemDataDomain());
@@ -505,8 +565,10 @@ public class TestRuleContext extends BaseRepoTest {
                 .build();
         adminPolicy.getRules().add(adminAllowAll);
 
-        policyRepo.save(realm, adminPolicy);
-        injectedRuleContext.reloadFromRepo(realm);
+        try (SecurityCallScope.Scope ignored = SecurityCallScope.openIgnoringRules()) {
+            policyRepo.save(realm, adminPolicy);
+            injectedRuleContext.reloadFromRepo(realm);
+        }
 
         // Build principal and a random resource context
         PrincipalContext admin = new PrincipalContext.Builder()
@@ -521,5 +583,56 @@ public class TestRuleContext extends BaseRepoTest {
                 .withOwnerId(testUtils.getSystemUserId()).withResourceId("ORDER-1").build();
         SecurityCheckResponse resp = injectedRuleContext.checkRules(admin, anyRc);
         assertEquals(RuleEffect.ALLOW, resp.getFinalEffect());
+    }
+
+    @Test
+    @ActivateRequestContext
+    public void testAnonymousDefaultPolicyAllowsOnlyRegistrationRequests() {
+        String realm = envConfigUtils.getSystemRealm();
+        injectedRuleContext.reloadFromRepo(realm);
+
+        PrincipalContext anonymous = SecurityCallScope.anonymous(
+                realm,
+                securityUtils.getSystemDataDomain(),
+                "anonymous-registration-test");
+        ResourceContext allowed = SecurityCallScope.resource(
+                anonymous,
+                null,
+                "SECURITY",
+                "APPLICATION_REGISTRATION",
+                "create");
+
+        SecurityCheckResponse allowedResponse = injectedRuleContext.checkRules(anonymous, allowed);
+        assertEquals(RuleEffect.ALLOW, allowedResponse.getFinalEffect());
+
+        ResourceContext credentialAuthentication = SecurityCallScope.resource(
+                anonymous,
+                null,
+                "SECURITY",
+                "CREDENTIAL_USERID_PASSWORD",
+                "authenticate");
+        SecurityCheckResponse credentialAuthenticationResponse =
+                injectedRuleContext.checkRules(anonymous, credentialAuthentication);
+        assertEquals(RuleEffect.ALLOW, credentialAuthenticationResponse.getFinalEffect());
+
+        ResourceContext credentialView = SecurityCallScope.resource(
+                anonymous,
+                null,
+                "SECURITY",
+                "CREDENTIAL_USERID_PASSWORD",
+                "view");
+        SecurityCheckResponse credentialViewResponse = injectedRuleContext.checkRules(anonymous, credentialView);
+        assertEquals(RuleEffect.DENY, credentialViewResponse.getFinalEffect());
+
+        ResourceContext denied = SecurityCallScope.resource(
+                anonymous,
+                null,
+                "security",
+                "userProfile",
+                "view");
+        SecurityCheckResponse deniedResponse = injectedRuleContext.checkRules(anonymous, denied);
+        assertEquals(RuleEffect.DENY, deniedResponse.getFinalEffect());
+        assertThrows(ForbiddenException.class,
+                () -> injectedRuleContext.getFilters(new ArrayList<>(), anonymous, denied, UserProfile.class));
     }
 }

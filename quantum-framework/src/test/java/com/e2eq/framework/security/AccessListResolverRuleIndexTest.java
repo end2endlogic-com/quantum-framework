@@ -55,7 +55,7 @@ public class AccessListResolverRuleIndexTest extends BaseRepoTest {
 
         // Create a policy for identity "user" that attaches an IN filter using the resolver variable
         Policy p = new Policy();
-        p.setRefName("resolver-policy-in-var");
+        p.setRefName("RESOLVER_POLICY_IN_VAR");
         p.setDisplayName("Resolver Policy");
         p.setPrincipalId("user");
         p.setDataDomain(securityUtils.getSystemDataDomain());
@@ -78,9 +78,11 @@ public class AccessListResolverRuleIndexTest extends BaseRepoTest {
                 .build();
         p.getRules().add(r);
 
-        policyRepo.save(realm, p);
-        // reload which will build the index due to the TestProfile override
-        ruleContext.reloadFromRepo(realm);
+        try (SecurityCallScope.Scope ignored = SecurityCallScope.openIgnoringRules()) {
+            policyRepo.save(realm, p);
+            // Reload the fixture without applying the policy being installed to its own write.
+            ruleContext.reloadFromRepo(realm);
+        }
 
         // Build contexts that match the resolver's supports() and the rule
         PrincipalContext pc = new PrincipalContext.Builder()

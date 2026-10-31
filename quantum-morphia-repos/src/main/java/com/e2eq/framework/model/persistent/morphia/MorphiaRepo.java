@@ -1,5 +1,7 @@
 package com.e2eq.framework.model.persistent.morphia;
 
+import com.e2eq.framework.security.runtime.RuleFilterComposition;
+import com.e2eq.framework.security.runtime.SecuredQuery;
 import com.e2eq.framework.annotations.StateGraph;
 import com.e2eq.framework.annotations.Stateful;
 import com.e2eq.framework.annotations.TrackReferences;
@@ -7,6 +9,12 @@ import com.e2eq.framework.model.persistent.InvalidStateTransitionException;
 import com.e2eq.framework.exceptions.ReferentialIntegrityViolationException;
 import com.e2eq.framework.model.persistent.StateNode;
 import com.e2eq.framework.model.persistent.base.*;
+import com.e2eq.framework.model.persistent.morphia.compiler.mongo.MongoAggregationCompiler;
+import com.e2eq.framework.model.persistent.morphia.metadata.DefaultMetadataRegistry;
+import com.e2eq.framework.model.persistent.morphia.metadata.JoinSpec;
+import com.e2eq.framework.model.persistent.morphia.planner.LogicalPlan;
+import com.e2eq.framework.model.persistent.morphia.planner.PlannedQuery;
+import com.e2eq.framework.model.persistent.morphia.planner.PlannerResult;
 import com.e2eq.framework.model.securityrules.*;
 import com.e2eq.framework.rest.models.UIAction;
 import com.e2eq.framework.rest.models.UIActionList;
@@ -14,6 +22,8 @@ import com.e2eq.framework.rest.models.Collection;
 import com.e2eq.framework.security.runtime.RuleContext;
 import com.fasterxml.jackson.module.jsonSchema.jakarta.JsonSchema;
 import com.google.common.reflect.TypeToken;
+import com.mongodb.client.model.Collation;
+import com.mongodb.client.model.CollationStrength;
 import com.mongodb.client.result.DeleteResult;
 import com.mongodb.client.result.UpdateResult;
 import dev.morphia.Datastore;
@@ -39,6 +49,8 @@ import jakarta.ws.rs.NotSupportedException;
 import jakarta.ws.rs.PathParam;
 import org.apache.commons.lang3.NotImplementedException;
 import org.apache.commons.lang3.tuple.Pair;
+import org.bson.Document;
+import org.bson.conversions.Bson;
 import org.bson.types.ObjectId;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jetbrains.annotations.NotNull;
@@ -71,6 +83,19 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     @ConfigProperty(name = "ontology.auto-materialize", defaultValue = "true")
     protected boolean autoMaterialize;
+
+    // Opt-in MongoDB collation applied to server-side list/aggregation sorts.
+    // Empty locale disables collation and preserves upstream binary-order behavior.
+    // Downstreams (e.g. Movista, MOV-12188) set locale=en, strength=2 (SECONDARY)
+    // to get case-insensitive text sorting for AG Grid list grids.
+    @ConfigProperty(name = "quantum.sort.collation.locale")
+    protected Optional<String> sortCollationLocale = Optional.empty();
+
+    @ConfigProperty(name = "quantum.sort.collation.strength", defaultValue = "2")
+    protected int sortCollationStrength;
+
+    private volatile Collation cachedSortCollation;
+    private volatile boolean sortCollationResolved;
 
     private void callPostPersistHooks(String realmId, Object entity) {
         lifecycleHooks().callPostPersistHooks(realmId, entity);
@@ -152,8 +177,40 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
        return morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId()).getDatabase().getName();
     }
 
+    /**
+     * Returns the security rule filters for {@code modelClass} conjoined with {@code filters} as ONE
+     * explicit {@code $and} (see {@link RuleFilterComposition}).
+     *
+     * <p>Contract: every caller filter must be in {@code filters}. Apply the result with a single
+     * {@code Query.filter(...)} call and do not chain further {@code .filter(...)} calls onto that
+     * query: how Morphia merges a later filter that shares a top-level key with the secured
+     * {@code $and} is a Morphia implementation detail, not a security guarantee. To add filters
+     * after the query is opened, use {@link #securedQuery(Datastore, List)}, whose
+     * {@code filter(...)} always conjoins with the secured clause.</p>
+     */
     public Filter[] getFilterArray(@NotNull List<Filter> filters, Class<? extends UnversionedBaseModel> modelClass) {
         return securityFilterBuilder().getFilterArray(filters, modelClass);
+    }
+
+    /**
+     * Opens a query on this repository's entity that applies the security rule filters and
+     * {@code callerFilters} as one {@code $and}. Filters chained onto the returned query with
+     * {@code .filter(...)} are added as further clauses of that same {@code $and}, so neither a
+     * caller {@code $and}, an {@code $or} nor a filter on a rule's own field can replace or merge
+     * into the rule filters.
+     *
+     * @param datastore     the realm's datastore
+     * @param callerFilters caller filters; may be empty, never modified
+     * @return the secured query; rule evaluation happens now, against the current security context
+     */
+    public SecuredQuery<T> securedQuery(@NotNull Datastore datastore, @NotNull List<Filter> callerFilters) {
+        Filter[] secured = getFilterArray(new ArrayList<>(callerFilters), getPersistentClass());
+        return new SecuredQuery<>(() -> datastore.find(getPersistentClass()), secured);
+    }
+
+    /** {@link #securedQuery(Datastore, List)} on the datastore of {@code realm}. */
+    public SecuredQuery<T> securedQuery(@NotNull String realm, @NotNull List<Filter> callerFilters) {
+        return securedQuery(morphiaDataStoreWrapper.getDataStore(realm), callerFilters);
     }
 
     private RepoLifecycleHooks lifecycleHooks() {
@@ -251,8 +308,11 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
           qfilters = filters.toArray(qfilters);
        }
 
-        Query<T> query = datastore.find(getPersistentClass()).filter(qfilters);
-        T obj = query.first();
+         Query<T> query = datastore.find(getPersistentClass()).filter(qfilters);
+         FindOptions findOptions = ignoreRules
+                 ? new FindOptions()
+                 : buildFindOptions(0, 1, null, null);
+         T obj = query.first(findOptions);
 
         if (obj != null) {
             UIActionList uiActions = obj.calculateStateBasedUIActions();
@@ -293,8 +353,11 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
           qfilters = filters.toArray(qfilters);
        }
 
-        Query<T> query = datastore.find(getPersistentClass()).filter(qfilters);
-        T obj = query.first();
+         Query<T> query = datastore.find(getPersistentClass()).filter(qfilters);
+         FindOptions findOptions = ignoreRules
+                 ? new FindOptions()
+                 : buildFindOptions(0, 1, null, null);
+         T obj = query.first(findOptions);
 
         if (obj != null) {
             UIActionList uiActions = obj.calculateStateBasedUIActions();
@@ -366,14 +429,12 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
                 Filter filter = MorphiaUtils.convertToFilter(query, getPersistentClass());
                 filters.add(Filters.and(filter));
             }
-            Filter[] filterArray = new Filter[filters.size()];
             cursor = datastore.find(getPersistentClass())
-                    .filter(filters.toArray(filterArray))
+                    .filter(RuleFilterComposition.conjoin(filters))
                     .iterator(findOptions);
         } else {
-            Filter[] filterArray = new Filter[filters.size()];
             cursor = datastore.find(getPersistentClass())
-                    .filter(filters.toArray(filterArray))
+                    .filter(RuleFilterComposition.conjoin(filters))
                     .iterator(findOptions);
         }
 
@@ -456,6 +517,10 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         if (sortFields != null && !sortFields.isEmpty()) {
             List<Sort> sorts = convertToSort(sortFields);
             findOptions.sort(sorts.toArray(new Sort[sorts.size()]));
+            Collation sortCollation = getSortCollation();
+            if (sortCollation != null) {
+                findOptions.collation(sortCollation);
+            }
         }
 
         // Field-level policy (deny-wins): excluded paths are removed at the
@@ -466,32 +531,93 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         // (exclusion wins); caller exclude-projection -> union with policy.
         java.util.Set<String> policyExcluded = securityFilterBuilder().buildExcludedFieldPaths();
 
-        List<ProjectionField> effectiveProjection = projectionFields;
-        if (!policyExcluded.isEmpty() && projectionFields != null && !projectionFields.isEmpty()) {
-            effectiveProjection = new ArrayList<>();
-            for (ProjectionField pf : projectionFields) {
-                if (pf.getProjectionType() == ProjectionField.ProjectionType.INCLUDE
-                        && policyExcluded.contains(pf.getFieldName())) {
-                    continue; // policy exclusion wins over a requested include
-                }
-                effectiveProjection.add(pf);
-            }
-            for (String path : policyExcluded) {
-                if (effectiveProjection.stream().anyMatch(pf ->
-                        pf.getProjectionType() == ProjectionField.ProjectionType.EXCLUDE)) {
-                    effectiveProjection.add(new ProjectionField(path, ProjectionField.ProjectionType.EXCLUDE));
-                }
-            }
-        }
+         List<ProjectionField> effectiveProjection = projectionFields;
+         boolean callerIncludes = projectionFields != null && projectionFields.stream().anyMatch(pf ->
+                 pf.getProjectionType() == ProjectionField.ProjectionType.INCLUDE);
+         if (!policyExcluded.isEmpty() && projectionFields != null && !projectionFields.isEmpty()) {
+             effectiveProjection = new ArrayList<>();
+             for (ProjectionField pf : projectionFields) {
+                 if (pf.getProjectionType() == ProjectionField.ProjectionType.INCLUDE
+                         && policyExcluded.stream().anyMatch(path -> pathsOverlap(pf.getFieldName(), path))) {
+                     continue; // policy exclusion wins over exact, parent, or child includes
+                 }
+                 effectiveProjection.add(pf);
+             }
+             if (!callerIncludes) {
+                 for (String path : policyExcluded) {
+                     boolean alreadyExcluded = effectiveProjection.stream().anyMatch(pf ->
+                             pf.getProjectionType() == ProjectionField.ProjectionType.EXCLUDE
+                                     && Objects.equals(pf.getFieldName(), path));
+                     if (!alreadyExcluded) {
+                         effectiveProjection.add(new ProjectionField(path, ProjectionField.ProjectionType.EXCLUDE));
+                     }
+                 }
+             }
+         }
 
-        if (effectiveProjection != null && !effectiveProjection.isEmpty()) {
-            findOptions.projection().knownFields();
-            findOptions = convertToProjection(findOptions, effectiveProjection);
+         if (callerIncludes && (effectiveProjection == null || effectiveProjection.isEmpty())) {
+             // Never turn an emptied include projection into an unrestricted read.
+             findOptions.projection().include("_id");
+         } else if (effectiveProjection != null && !effectiveProjection.isEmpty()) {
+             findOptions.projection().knownFields();
+             findOptions = convertToProjection(findOptions, effectiveProjection);
         } else if (!policyExcluded.isEmpty()) {
             findOptions.projection().exclude(policyExcluded.toArray(new String[0]));
         }
 
-        return findOptions;
+         return findOptions;
+     }
+
+     private static boolean pathsOverlap(String requestedPath, String excludedPath) {
+         if (requestedPath == null || excludedPath == null) {
+             return false;
+         }
+         return requestedPath.equals(excludedPath)
+                 || requestedPath.startsWith(excludedPath + ".")
+                 || excludedPath.startsWith(requestedPath + ".");
+     }
+
+    /**
+     * Default {@link BaseMorphiaRepo#getSortCollation()} implementation
+     * that reads {@code quantum.sort.collation.locale} and
+     * {@code quantum.sort.collation.strength} config properties; a blank
+     * locale disables collation (upstream default). An out-of-range strength
+     * value is logged at WARN and treated as disabled rather than throwing.
+     *
+     * <p>Subclasses may override to supply a fixed policy independent of
+     * configuration; the aggregation/expand path in
+     * {@code OntologyAwareResource} delegates to this method so an override
+     * applies to both {@code find().sort(...)} and aggregation sorts.
+     */
+    @Override
+    public Collation getSortCollation() {
+        if (!sortCollationResolved) {
+            synchronized (this) {
+                if (!sortCollationResolved) {
+                    cachedSortCollation = buildSortCollation();
+                    sortCollationResolved = true;
+                }
+            }
+        }
+        return cachedSortCollation;
+    }
+
+    private Collation buildSortCollation() {
+        String locale = sortCollationLocale == null ? null : sortCollationLocale.orElse(null);
+        if (locale == null || locale.isBlank()) {
+            return null;
+        }
+        try {
+            return Collation.builder()
+                    .locale(locale)
+                    .collationStrength(CollationStrength.fromInt(sortCollationStrength))
+                    .build();
+        } catch (IllegalArgumentException ex) {
+            Log.warnf(
+                    "Invalid quantum.sort.collation.strength=%d for locale=%s; disabling sort collation. Valid range is 1-5 (PRIMARY..IDENTICAL).",
+                    sortCollationStrength, locale);
+            return null;
+        }
     }
 
     @Override
@@ -513,9 +639,8 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
             }
         }
 
-        Filter[] filterArray = new Filter[filters.size()];
         MorphiaCursor<T> cursor = datastore.find(getPersistentClass())
-                .filter(filters.toArray(filterArray))
+                .filter(RuleFilterComposition.conjoin(filters))
                 .iterator(findOptions);
 
         return new CloseableIterator<>() {
@@ -587,14 +712,12 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
                 Log.debugf("Running with filters:%s", filters.stream().map(Filter::toString).collect(Collectors.joining(",")));
 
             }
-            Filter[] filterArray = new Filter[filters.size()];
             cursor = datastore.find(getPersistentClass())
-                    .filter(filters.toArray(filterArray))
+                    .filter(RuleFilterComposition.conjoin(filters))
                     .iterator(findOptions);
         } else {
-            Filter[] filterArray = new Filter[filters.size()];
             cursor = datastore.find(getPersistentClass())
-                    .filter(filters.toArray(filterArray))
+                    .filter(RuleFilterComposition.conjoin(filters))
                     .iterator(findOptions);
         }
 
@@ -610,6 +733,207 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         }
 
         return list;
+    }
+
+    @Override
+    public List<Document> getSecuredAggregationDocuments(
+            @Nullable String realmId,
+            int skip,
+            int limit,
+            @NotNull String query,
+            @Nullable List<SortField> sortFields,
+            @Nullable List<ProjectionField> projectionFields) {
+        if (skip < 0 || limit < 0) {
+            throw new IllegalArgumentException("skip and limit cannot be negative for aggregation");
+        }
+        Objects.requireNonNull(query, "aggregation query cannot be null");
+        Datastore datastore = morphiaDataStoreWrapper.getDataStore(
+                realmId == null || realmId.isBlank() ? getSecurityContextRealmId() : realmId);
+        if (!(datastore instanceof MorphiaDatastore morphiaDatastore)) {
+            throw new IllegalStateException("Governed aggregation requires a MorphiaDatastore");
+        }
+
+        List<LogicalPlan.SortSpec.Field> plannerSort = sortFields == null ? null : sortFields.stream()
+                .map(field -> new LogicalPlan.SortSpec.Field(
+                        field.getFieldName(),
+                        field.getSortDirection() == SortField.SortDirection.DESC ? -1 : 1))
+                .toList();
+        PlannedQuery planned = MorphiaUtils.convertToPlannedQuery(
+                query, getPersistentClass(), limit, skip, plannerSort);
+        if (planned.getMode() != PlannerResult.Mode.AGGREGATION) {
+            throw new IllegalArgumentException("Query does not contain a valid expand(...) operation");
+        }
+
+        List<Document> pipeline = new ArrayList<>();
+        for (Bson stage : planned.getAggregation()) {
+            if (!(stage instanceof Document document)) {
+                throw new IllegalStateException("Aggregation compiler emitted an unsupported stage type: "
+                        + stage.getClass().getName());
+            }
+            if (!document.containsKey("$plannedExpandPaths")) {
+                pipeline.add(new Document(document));
+            }
+        }
+
+        MongoAggregationCompiler filterCompiler = new MongoAggregationCompiler(morphiaDatastore);
+        Document rootPolicyMatch = compilePolicyMatch(
+                filterCompiler,
+                securityFilterBuilder().buildSecuredFilters(new ArrayList<>(), getPersistentClass()));
+        if (rootPolicyMatch != null && !rootPolicyMatch.isEmpty()) {
+            pipeline.add(0, new Document("$match", rootPolicyMatch));
+        }
+
+        Map<String, AggregationAccessPolicy> lookupPolicies = resolveLookupPolicies(query, filterCompiler);
+        applyLookupPolicies(pipeline, lookupPolicies);
+        applyCallerProjection(pipeline, projectionFields);
+        appendExclusionProjection(pipeline, securityFilterBuilder().buildExcludedFieldPaths());
+
+        String rootCollection = morphiaDatastore.getMapper()
+                .getEntityModel(getPersistentClass()).collectionName();
+        return morphiaDatastore.getDatabase()
+                .getCollection(rootCollection)
+                .aggregate(new ArrayList<Bson>(pipeline), Document.class)
+                .into(new ArrayList<>());
+    }
+
+    private Document compilePolicyMatch(MongoAggregationCompiler compiler, List<Filter> filters) {
+        if (filters == null || filters.isEmpty()) {
+            return null;
+        }
+        Filter combined = filters.size() == 1
+                ? filters.get(0)
+                : Filters.and(filters.toArray(new Filter[0]));
+        return compiler.compileMatch(combined);
+    }
+
+    private Map<String, AggregationAccessPolicy> resolveLookupPolicies(
+            String query, MongoAggregationCompiler compiler) {
+        com.e2eq.framework.model.persistent.morphia.planner.QueryPlanner planner =
+                new com.e2eq.framework.model.persistent.morphia.planner.QueryPlanner();
+        DefaultMetadataRegistry metadata = new DefaultMetadataRegistry();
+        Map<String, AggregationAccessPolicy> policies = new LinkedHashMap<>();
+        for (String path : planner.analyze(query).getExpandPaths()) {
+            JoinSpec join = metadata.resolveJoin(getPersistentClass(), path);
+            if (join.fromCollection == null || join.fromCollection.isBlank()
+                    || join.targetType == null
+                    || !UnversionedBaseModel.class.isAssignableFrom(join.targetType)) {
+                throw new SecurityException("Expand path '" + path
+                        + "' has no governable target model/collection");
+            }
+            @SuppressWarnings("unchecked")
+            Class<? extends UnversionedBaseModel> targetType =
+                    (Class<? extends UnversionedBaseModel>) join.targetType;
+            com.e2eq.framework.annotations.FunctionalMapping mapping =
+                    targetType.getAnnotation(com.e2eq.framework.annotations.FunctionalMapping.class);
+            if (mapping == null) {
+                throw new SecurityException("Expand target " + targetType.getName()
+                        + " must declare @FunctionalMapping for policy evaluation");
+            }
+            ResourceContext current = SecurityContext.getResourceContext()
+                    .orElseThrow(() -> new SecurityException(
+                            "Governed aggregation requires a ResourceContext"));
+            ResourceContext targetContext = new ResourceContext.Builder()
+                    .withRealm(current.getRealm())
+                    .withApplicationId(current.getApplicationId())
+                    .withArea(mapping.area())
+                    .withFunctionalDomain(mapping.domain())
+                    .withAction(current.getAction())
+                    .withResourceId(current.getResourceId())
+                    .build();
+            AggregationAccessPolicy policy;
+            try (SecurityCallScope.Scope ignored = SecurityCallScope.openResourceOnly(targetContext)) {
+                Document targetMatch = compilePolicyMatch(compiler,
+                        securityFilterBuilder().buildSecuredFilters(new ArrayList<>(), targetType));
+                Set<String> targetExcluded = new LinkedHashSet<>(
+                        securityFilterBuilder().buildExcludedFieldPaths());
+                policy = new AggregationAccessPolicy(targetMatch, targetExcluded);
+            }
+            AggregationAccessPolicy previous = policies.putIfAbsent(join.fromCollection, policy);
+            if (previous != null && !previous.equals(policy)) {
+                throw new SecurityException("Conflicting policies resolved for expand collection "
+                        + join.fromCollection);
+            }
+        }
+        return policies;
+    }
+
+    @SuppressWarnings("unchecked")
+    private void applyLookupPolicies(
+            List<Document> pipeline, Map<String, AggregationAccessPolicy> policies) {
+        for (Document stage : pipeline) {
+            if (!stage.containsKey("$lookup")) {
+                continue;
+            }
+            Document lookup = stage.get("$lookup", Document.class);
+            if (lookup == null) {
+                throw new SecurityException("Aggregation contains an invalid $lookup stage");
+            }
+            String from = lookup.getString("from");
+            AggregationAccessPolicy policy = policies.get(from);
+            if (from == null || "__unknown__".equals(from) || policy == null) {
+                throw new SecurityException("Aggregation lookup target is unresolved or unauthorized: " + from);
+            }
+            List<Document> lookupPipeline = new ArrayList<>();
+            Object existing = lookup.get("pipeline");
+            if (existing instanceof List<?> stages) {
+                for (Object nested : stages) {
+                    if (!(nested instanceof Document document)) {
+                        throw new SecurityException("Lookup pipeline contains an unsupported stage");
+                    }
+                    lookupPipeline.add(new Document(document));
+                }
+            }
+            if (policy.rowMatch() != null && !policy.rowMatch().isEmpty()) {
+                Document matchStage = new Document("$match", policy.rowMatch());
+                if (!lookupPipeline.contains(matchStage)) {
+                    lookupPipeline.add(matchStage);
+                }
+            }
+            if (!policy.excludedFields().isEmpty()) {
+                Document projStage = exclusionProjection(policy.excludedFields());
+                if (!lookupPipeline.contains(projStage)) {
+                    lookupPipeline.add(projStage);
+                }
+            }
+            lookup.put("pipeline", lookupPipeline);
+        }
+    }
+
+    private void applyCallerProjection(List<Document> pipeline, List<ProjectionField> projectionFields) {
+        if (projectionFields == null || projectionFields.isEmpty()) {
+            return;
+        }
+        boolean includeMode = projectionFields.stream().anyMatch(field ->
+                field.getProjectionType() == ProjectionField.ProjectionType.INCLUDE);
+        Document projection = new Document();
+        for (ProjectionField field : projectionFields) {
+            if (includeMode && field.getProjectionType() == ProjectionField.ProjectionType.EXCLUDE
+                    && !"_id".equals(field.getFieldName())) {
+                throw new IllegalArgumentException(
+                        "Aggregation projection cannot mix includes with non-_id excludes");
+            }
+            projection.put(field.getFieldName(),
+                    field.getProjectionType() == ProjectionField.ProjectionType.INCLUDE ? 1 : 0);
+        }
+        if (includeMode && !projection.containsKey("_id")) {
+            projection.put("_id", 1);
+        }
+        pipeline.add(new Document("$project", projection));
+    }
+
+    private void appendExclusionProjection(List<Document> pipeline, Set<String> excludedFields) {
+        if (excludedFields != null && !excludedFields.isEmpty()) {
+            pipeline.add(exclusionProjection(excludedFields));
+        }
+    }
+
+    private Document exclusionProjection(Set<String> excludedFields) {
+        Document projection = new Document();
+        excludedFields.forEach(path -> projection.put(path, 0));
+        return new Document("$project", projection);
+    }
+
+    private record AggregationAccessPolicy(Document rowMatch, Set<String> excludedFields) {
     }
 
     // Convenience method that uses the default datastore
@@ -695,11 +1019,10 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
         filters.add(Filters.in("_id", ids));
 
-        FindOptions findOptions = new FindOptions();
+         FindOptions findOptions = buildFindOptions(0, -1, null, null);
 
-        Filter[] filterArray = new Filter[filters.size()];
-        Query<T> query = morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId()).find(getPersistentClass())
-                .filter(filters.toArray(filterArray));
+         Query<T> query = datastore.find(getPersistentClass())
+                .filter(RuleFilterComposition.conjoin(filters));
 
         List<T> list = query.iterator(findOptions).toList();
 
@@ -731,12 +1054,11 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
         filters.add(Filters.in("refName", refNames));
 
-        FindOptions findOptions = new FindOptions();
-       String realm= getSecurityContextRealmId();
+         FindOptions findOptions = buildFindOptions(0, -1, null, null);
+        String realm = datastore.getDatabase().getName();
 
-        Filter[] filterArray = new Filter[filters.size()];
-        Query<T> query = morphiaDataStoreWrapper.getDataStore(realm).find(getPersistentClass())
-                .filter(filters.toArray(filterArray));
+         Query<T> query = datastore.find(getPersistentClass())
+                .filter(RuleFilterComposition.conjoin(filters));
 
         List<T> list = query.iterator(findOptions).toList();
 
@@ -773,9 +1095,8 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
                 filters.add(Filters.and(filter));
             }
         }
-        Filter[] filterArray = new Filter[filters.size()];
         long count = datastore.find(getPersistentClass())
-                .filter(filters.toArray(filterArray))
+                .filter(RuleFilterComposition.conjoin(filters))
                 .count();
         return count;
     }
@@ -793,7 +1114,9 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
             model.setId(new ObjectId());
         }
 
-        if (model.getRefName() == null || model.getRefName().trim().isEmpty()) {
+        // Canonical refNames are never generated; RefNameContract has already required one on create.
+        if ((model.getRefName() == null || model.getRefName().trim().isEmpty())
+                && !RefNameContract.applies(model.getClass())) {
             model.setRefName (model.getId().toString());
         }
 
@@ -825,12 +1148,14 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
             StateGraph stateGraph = field.getAnnotation(StateGraph.class);
             if (stateGraph != null) {
                field.setAccessible(true);
-               String newState = (String) field.get(newEntity);
-               String currentState = (String) field.get(existingEntity);
-               if (newState != null) {
+               Object newValue = field.get(newEntity);
+               Object currentValue = field.get(existingEntity);
+               String newState = StateGraphManager.stateName(newValue);
+               String currentState = StateGraphManager.stateName(currentValue);
+               if (newValue != null && !Objects.equals(currentState, newState)) {
                   stateGraphManager.validateTransition(
                      stateGraph.graphName(),
-                     currentState != null ? currentState : "",
+                     currentState,
                      newState
                   );
                }
@@ -845,8 +1170,9 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
             StateGraph stateGraph = field.getAnnotation(StateGraph.class);
             if (stateGraph != null) {
                field.setAccessible(true);
-               String newState = (String) field.get(entity);
-               if (newState != null) {
+               Object newValue = field.get(entity);
+               String newState = StateGraphManager.stateName(newValue);
+               if (newValue != null) {
                   // Check if the state exists in the graph
                   StringState graph = stateGraphManager.getStateGraphs().get(stateGraph.graphName());
                   if (graph == null) {
@@ -877,6 +1203,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
    }
 
     public T save(@NotNull MorphiaSession session, @Valid T value) {
+        value = prepareWrite(session, value, RefNameContract.WriteMode.REPLACE);
         if (value.getClass().getAnnotation(Stateful.class)!= null) {
            try {
               validateStateTransitions(session, value);
@@ -884,7 +1211,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
               throw new RuntimeException("State transition validation failed", e);
            }
         }
-       setDefaultValues(value);
+        setDefaultValues(value);
         value.validate();
         T saved = session.save(value);
         callPostPersistHooks(getSecurityContextRealmId(), saved);
@@ -904,6 +1231,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     @Override
     public List<T> save(@NotNull Datastore datastore, List<T> entities) {
+       entities = prepareWrites(datastore, entities, RefNameContract.WriteMode.REPLACE);
        entities.forEach(entity -> {
           if (entity.getClass().getAnnotation(Stateful.class)!= null) {
              try {
@@ -924,7 +1252,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     @Override
     public List<T> save(@NotNull MorphiaSession session, List<T> entities) {
-
+       entities = prepareWrites(session, entities, RefNameContract.WriteMode.REPLACE);
        entities.forEach(entity -> {
           if (entity.getClass().getAnnotation(Stateful.class)!= null) {
              try {
@@ -946,6 +1274,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     @Override
     public T save(@NotNull Datastore datastore, @Valid T value) {
+       value = prepareWrite(datastore, value, RefNameContract.WriteMode.REPLACE);
        if (value.getClass().getAnnotation(Stateful.class)!= null) {
           try {
              validateStateTransitions(datastore, value);
@@ -953,7 +1282,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
              throw new RuntimeException("State transition validation failed", e);
           }
        }
-       setDefaultValues(value);
+        setDefaultValues(value);
        value.validate();
        T saved = datastore.save(value);
        callPostPersistHooks(getSecurityContextRealmId(), saved);
@@ -1034,85 +1363,26 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     public long delete (@NotNull String realmId, @NotNull ObjectId id) throws ReferentialIntegrityViolationException {
         Objects.requireNonNull(id, "Null argument passed to delete, api requires a non-null object");
 
-        // find the object to delete
-        Optional<T> oobj = this.findById(id, realmId);
-
-        if (oobj.isPresent()) {
-            // assuming the record exists
-            T obj = oobj.get();
-            DeleteResult result = null;
-            // if there are no references to this object, then we can just delete it
-            if (obj.getReferences() == null || obj.getReferences().isEmpty()) {
-                // delete the object and remove any references that it may have had to parents
-                try (MorphiaSession s = morphiaDataStoreWrapper.getDataStore(realmId).startSession()) {
-                    s.startTransaction();
-                    // ontology pre-delete hooks (may throw to block)
-                    try { callPreDeleteHooks(realmId, obj); } catch (RuntimeException ex) { s.abortTransaction(); throw ex; }
-                    removeReferenceConstraint(obj, s);
-                    result = s.delete(obj);
-                    // ontology post-delete hooks
-                    try { callPostDeleteHooks(realmId, obj.getClass(), String.valueOf(obj.getRefName()!=null?obj.getRefName():obj.getId())); } catch (Throwable ignored) {}
-                    s.commitTransaction();
+        Optional<T> found = this.findById(id, realmId);
+        if (found.isEmpty()) return 0;
+        try (MorphiaSession session = morphiaDataStoreWrapper.getDataStore(realmId).startSession()) {
+            session.startTransaction();
+            try {
+                // The session overload validates the complete reference set before deleting.
+                T object = found.get();
+                callPreDeleteHooks(realmId, object);
+                long deleted = delete(session, object);
+                if (deleted > 0) {
+                    callPostDeleteHooks(realmId, object.getClass(),
+                            String.valueOf(object.getRefName() != null ? object.getRefName() : object.getId()));
                 }
-                // we are done so now we can return the number of deleted records which should be just one
-
-            } else {
-                // there are references to this object, we need to find out which ones and if they are all stale or not
-                Set<ReferenceEntry> entriesToRemove = new HashSet<>();
-
-                // Iterate through references in this class and ensure that there are
-                // actually references and that the list of references is not stale
-
-                // for each reference, check if the referenced object still exists
-                for (ReferenceEntry reference : obj.getReferences()) {
-                    try (MorphiaSession s = morphiaDataStoreWrapper.getDataStore(realmId).startSession()) {
-                        s.startTransaction();
-                        // find the referenced object
-                        try {
-                            ClassLoader classLoader = this.getClass().getClassLoader();
-                            Class<?> clazz = classLoader.loadClass(reference.getType());
-                            Query<?> q = s.find(clazz).filter(Filters.eq("_id", reference.getReferencedId()));
-                            if (q.count() != 0) {
-                                entriesToRemove.add(reference);
-                            }
-                        } catch (ClassNotFoundException e) {
-                            Log.warn("Failed to load class: " + reference.getType() + "removing reference");
-                            entriesToRemove.add(reference);
-                        }
-                        // ok we now know all the reference which we found which will be in the entriesToRemove set.
-                        if (entriesToRemove.isEmpty()) {
-                            // entities are empty so there are no valid references to this object.
-                            // no remove all the reference there may from this class to other classes.
-                            removeReferenceConstraint(obj, s);
-                            // ontology pre-delete hooks (may throw to block)
-                            try { callPreDeleteHooks(realmId, obj); } catch (RuntimeException ex) { s.abortTransaction(); throw ex; }
-                            // now actually delete the object
-                            result = s.delete(obj);
-
-                            // just for completeness we can remove all the entries now
-                            obj.getReferences().removeAll(entriesToRemove);
-
-                            // ontology post-delete hooks
-                            try { callPostDeleteHooks(realmId, obj.getClass(), String.valueOf(obj.getRefName()!=null?obj.getRefName():obj.getId())); } catch (Throwable ignored) {}
-                            // commit the transaction and we are done.
-                            s.commitTransaction();
-                        } else {
-                            // there are references to this object so we can not delete this object until those are removed.
-                            // build a useful error message and throw an exception
-                            HashSet<String> referencingClasses = new HashSet<>();
-                            for (ReferenceEntry rreference : obj.getReferences()) {
-                                referencingClasses.add(rreference.getType());
-                            }
-                            String buffereferencingClassesString = referencingClasses.stream().collect(Collectors.joining(", "));
-                            throw new ReferentialIntegrityViolationException("Can not delete object because it has references from other objects to this one that would corrupt the relationship. Referencing classes: " + buffereferencingClassesString);
-                        }
-                    }
-                }
+                session.commitTransaction();
+                return deleted;
+            } catch (RuntimeException | ReferentialIntegrityViolationException failure) {
+                session.abortTransaction();
+                throw failure;
             }
-            return result.getDeletedCount();
         }
-        Log.warn("Object not found for deletion: " + id);
-        return 0;
     }
 
     @Override
@@ -1158,8 +1428,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
                         entriesToRemove.add(reference);
                     }
                 } catch (ClassNotFoundException e) {
-                    Log.warn("Failed to load class: " + reference.getType() + "removing reference");
-                    entriesToRemove.add(reference);
+                    throw new ReferentialIntegrityViolationException("Cannot verify referenced type: " + reference.getType());
                 }
             }
             obj.getReferences().removeAll(entriesToRemove);
@@ -1187,12 +1456,28 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
    @Override
    public long updateActiveStatus (Datastore datastore, @PathParam("id") ObjectId id, ActiveStatus activeStatus) {
+      Objects.requireNonNull(id, "id is required");
+      // Row gate: the caller must be able to read the row, and the write repeats the caller's
+      // rule filters so it cannot reach a row that left scope between the read and the update.
+      if (findById(datastore, id).isEmpty()) {
+         return 0;
+      }
       UpdateOperator updateOp = UpdateOperators.set("activeStatus", activeStatus);
-      UpdateResult update;
-      update = datastore.find(getPersistentClass()).filter(Filters.eq("_id", id))
+      UpdateResult update = datastore.find(getPersistentClass()).filter(governedIdFilter(id))
                      .update(updateOp);
 
      return update.getMatchedCount();
+   }
+
+   /**
+    * The by-id clause of a governed write: {@code _id} conjoined with the caller's rule filters
+    * into one explicit {@code $and}, exactly as {@link #findById(Datastore, ObjectId)} reads it.
+    * An explicit ignore-rules scope keeps only the id clause.
+    */
+   protected Filter[] governedIdFilter(@NotNull ObjectId id) {
+      List<Filter> filters = new ArrayList<>();
+      filters.add(Filters.eq("_id", id));
+      return getFilterArray(filters, getPersistentClass());
    }
 
    @Override
@@ -1243,52 +1528,16 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         throw new NoSuchFieldException("Field '" + fieldName + "' not found in class hierarchy of " + clazz.getName());
     }
 
+    /**
+     * Partial update inside the caller's session. The String id is parsed as the {@code ObjectId}
+     * it stands for (an {@code _id} String never matched before) and the write goes through the
+     * same row gate as {@link #update(MorphiaSession, ObjectId, Pair[])}.
+     */
     @SafeVarargs
     @Override
     public final long update(MorphiaSession session, @NotNull String id, @NotNull Pair<String, Object>... pairs) {
-        List<UpdateOperator> updateOperators = new ArrayList<>();
-        for (Pair<String, Object> pair : pairs) {
-            // check that the pair key corresponds to a field in the persistent class that is an enum
-            Field field = null;
-            try {
-                field = getFieldFromHierarchy(getPersistentClass(),pair.getKey());
-                Reference ref = field.getAnnotation(Reference.class);
-                if (ref != null) {
-                    Log.warn("Update to class that contains references");
-                    throw new NotSupportedException("Field:" + field + " is a managed reference, and not updatable via put. Use Post");
-                }
-                if (hasOntologyPropertyAnnotation(field)) {
-                    Log.warn("Update to class that contains ontology properties");
-                    throw new NotSupportedException("Field:" + field + " is an ontology property, and not updatable via put. Use save() to update relationships");
-                }
-
-                if (field.getType().isEnum()) {
-                    // check that the pair value is a valid enum value of te field
-                    if (!Arrays.stream(field.getType().getEnumConstants()).anyMatch(e -> e.toString().equals(pair.getValue().toString()))) {
-                        throw new IllegalArgumentException("Invalid value for enum field " + pair.getKey() + " can't set value:" + pair.getValue());
-                    }
-
-                }
-            } catch (NoSuchFieldException e) {
-                throw new RuntimeException(e);
-            }
-            updateOperators.add(UpdateOperators.set(pair.getKey(), pair.getValue()));
-        }
-        if (updateOperators.isEmpty()) {
-            return 0;
-        }
-
-        UpdateResult update;
-        if (updateOperators.size() == 1) {
-            update = session.find(getPersistentClass()).filter(Filters.eq("_id", id))
-                    .update(updateOperators.get(0));
-        } else {
-            UpdateOperator[] ops = updateOperators.toArray(new UpdateOperator[0]);
-            update = session.find(getPersistentClass()).filter(Filters.eq("_id", id))
-                    .update(ops[0], Arrays.copyOfRange(ops, 1, ops.length));
-        }
-
-        return update.getModifiedCount();
+        Objects.requireNonNull(id, "id is required");
+        return update(session, new ObjectId(id), pairs);
     }
 
     @Override
@@ -1312,6 +1561,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
        T currentEntity = currentEntityOpt.get();
 
        for (Pair<String, Object> pair : pairs) {
+          assertFieldUpdateAllowed(pair.getKey());
           if (reservedFields.contains(pair.getKey())) {
              throw new IllegalArgumentException("Field:" + pair.getKey() + " is a reserved field and can't be updated");
           }
@@ -1324,10 +1574,10 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
              StateGraph stateGraph = field.getAnnotation(StateGraph.class);
              if (stateGraph != null && pair.getValue() instanceof String) {
                 field.setAccessible(true);
-                String currentState = (String) field.get(currentEntity);
+                String currentState = StateGraphManager.stateName(field.get(currentEntity));
                 stateGraphManager.validateTransition(
                    stateGraph.graphName(),
-                   currentState != null ? currentState : "",
+                   currentState,
                    (String) pair.getValue()
                 );
              }
@@ -1379,13 +1629,16 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
        updateOperators.add(UpdateOperators.set("auditInfo.lastUpdateTs", new Date()));
        updateOperators.add(UpdateOperators.set("auditInfo.lastUpdateIdentity", securityIdentity.getPrincipal().getName()));
 
+       // The write repeats the read's rule filters (one $and with the id), so it cannot reach a
+       // row the caller could not read, even if the row changed after the read above.
+       Filter[] governed = governedIdFilter(id);
        UpdateResult update;
        if (updateOperators.size() == 1) {
-          update = datastore.find(getPersistentClass()).filter(Filters.eq("_id", id))
+          update = datastore.find(getPersistentClass()).filter(governed)
                       .update(updateOperators.get(0));
        } else {
           UpdateOperator[] ops = updateOperators.toArray(new UpdateOperator[0]);
-          update = datastore.find(getPersistentClass()).filter(Filters.eq("_id", id))
+          update = datastore.find(getPersistentClass()).filter(governed)
                       .update(ops[0], Arrays.copyOfRange(ops, 1, ops.length));
        }
 
@@ -1397,8 +1650,15 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
    @Override
    @SafeVarargs
     public final long update(MorphiaSession session, @NotNull ObjectId id, @NotNull Pair<String, Object>... pairs) {
+        Objects.requireNonNull(id, "id is required");
+        // Row gate, as on the Datastore overload: read inside the session with the caller's rule
+        // filters first; not readable means not found, and nothing is written.
+        if (findById(session, id).isEmpty()) {
+            return 0;
+        }
         List<UpdateOperator> updateOperators = new ArrayList<>();
         for (Pair<String, Object> pair : pairs) {
+           assertFieldUpdateAllowed(pair.getKey());
             // check that the pair key corresponds to a field in the persistent class that is an enum
             Field field = null;
             try {
@@ -1427,13 +1687,14 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
             return 0;
         }
 
+        Filter[] governed = governedIdFilter(id);
         UpdateResult update;
         if (updateOperators.size() == 1) {
-            update = session.find(getPersistentClass()).filter(Filters.eq("_id", id))
+            update = session.find(getPersistentClass()).filter(governed)
                     .update(updateOperators.get(0));
         } else {
             UpdateOperator[] ops = updateOperators.toArray(new UpdateOperator[0]);
-            update = session.find(getPersistentClass()).filter(Filters.eq("_id", id))
+            update = session.find(getPersistentClass()).filter(governed)
                     .update(ops[0], Arrays.copyOfRange(ops, 1, ops.length));
         }
 
@@ -1593,11 +1854,12 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     }
 
    @SafeVarargs
-    private  List<UpdateOperator> buildValidatedUpdateOperators(@NotNull Pair<String, Object>... pairs) {
+     private  List<UpdateOperator> buildValidatedUpdateOperators(@NotNull Pair<String, Object>... pairs) {
         Objects.requireNonNull(pairs, "update pairs must not be null");
         List<UpdateOperator> updateOperators = new ArrayList<>();
         List<String> reservedFields = List.of("refName", "id", "version", "references", "auditInfo", "persistentEvents");
-        for (Pair<String, Object> pair : pairs) {
+         for (Pair<String, Object> pair : pairs) {
+             assertFieldUpdateAllowed(pair.getKey());
             if (reservedFields.contains(pair.getKey())) {
                 throw new IllegalArgumentException("Field:" + pair.getKey() + " is a reserved field and can't be updated");
             }
@@ -1643,19 +1905,51 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
      * must not be able to overwrite it on update. For each excluded path, the
      * stored document's current value is restored onto the incoming entity
      * before persisting (preserve-hidden-field semantics). Top-level and
-     * one-level-nested ("parent.child") paths are supported in v1.
+     * nested paths are supported. When a nested collection is excluded, the
+     * stored collection is preserved as a unit because element identity is not
+     * available at this generic boundary.
      */
-    protected T restorePolicyExcludedFields(Datastore datastore, T entity) {
-        java.util.Set<String> excluded = securityFilterBuilder().buildExcludedFieldPaths();
-        if (excluded.isEmpty() || entity.getId() == null) {
-            return entity;
-        }
-        T stored = datastore.find(getPersistentClass())
-                .filter(dev.morphia.query.filters.Filters.eq("_id", entity.getId()))
-                .first();
-        if (stored == null) {
-            return entity;
-        }
+     /**
+      * Every save/merge entry point funnels through here (single entity) or {@link #prepareWrites} (batch) so
+      * field-policy restoration and the refName contract cannot drift apart across overloads.
+      */
+     private T prepareWrite(Datastore datastore, T entity, RefNameContract.WriteMode mode) {
+         T restored = (datastore instanceof MorphiaSession session)
+                 ? restorePolicyExcludedFields(session, entity)
+                 : restorePolicyExcludedFields(datastore, entity);
+         RefNameContract.enforceOnWrite(datastore, restored, mode);
+         return restored;
+     }
+
+     private List<T> prepareWrites(Datastore datastore, List<T> entities, RefNameContract.WriteMode mode) {
+         List<T> restored = entities.stream()
+                 .map(entity -> (datastore instanceof MorphiaSession session)
+                         ? restorePolicyExcludedFields(session, entity)
+                         : restorePolicyExcludedFields(datastore, entity))
+                 .collect(Collectors.toCollection(ArrayList::new));
+         RefNameContract.enforceOnWrites(datastore, restored, mode);
+         return restored;
+     }
+
+     protected T restorePolicyExcludedFields(Datastore datastore, T entity) {
+         java.util.Set<String> excluded = securityFilterBuilder().buildExcludedFieldPaths();
+         if (excluded.isEmpty()) {
+             return entity;
+         }
+         if (entity.getId() == null) {
+             FieldPolicyEnforcer.assertUnset(entity, excluded);
+             return entity;
+         }
+         List<Filter> filters = securityFilterBuilder().buildSecuredFilters(
+                 new ArrayList<>(), getPersistentClass());
+         filters.add(dev.morphia.query.filters.Filters.eq("_id", entity.getId()));
+         T stored = datastore.find(getPersistentClass())
+                 .filter(RuleFilterComposition.conjoin(filters))
+                 .first();
+         if (stored == null) {
+             throw new SecurityException(
+                     "Entity is not available in the caller's governed scope; update rejected");
+         }
         for (String path : excluded) {
             try {
                 com.e2eq.framework.model.securityrules.FieldPolicyEnforcer.copyPath(stored, entity, path);
@@ -1665,8 +1959,50 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
                     + getPersistentClass().getSimpleName() + "; failing closed.", e);
             }
         }
-        return entity;
-    }
+         return entity;
+     }
+
+     protected T restorePolicyExcludedFields(MorphiaSession session, T entity) {
+         java.util.Set<String> excluded = securityFilterBuilder().buildExcludedFieldPaths();
+         if (excluded.isEmpty()) {
+             return entity;
+         }
+         if (entity.getId() == null) {
+             FieldPolicyEnforcer.assertUnset(entity, excluded);
+             return entity;
+         }
+         List<Filter> filters = securityFilterBuilder().buildSecuredFilters(
+                 new ArrayList<>(), getPersistentClass());
+         filters.add(dev.morphia.query.filters.Filters.eq("_id", entity.getId()));
+         T stored = session.find(getPersistentClass())
+                 .filter(RuleFilterComposition.conjoin(filters))
+                 .first();
+         if (stored == null) {
+             throw new SecurityException(
+                     "Entity is not available in the caller's governed scope; update rejected");
+         }
+         for (String path : excluded) {
+             try {
+                 com.e2eq.framework.model.securityrules.FieldPolicyEnforcer.copyPath(stored, entity, path);
+             } catch (ReflectiveOperationException e) {
+                 throw new RuntimeException(
+                         "Field-level policy could not restore excluded path '" + path + "' on "
+                                 + getPersistentClass().getSimpleName() + "; failing closed.", e);
+             }
+         }
+         return entity;
+     }
+
+     private void assertFieldUpdateAllowed(String requestedPath) {
+         RefNameContract.enforceOnFieldUpdate(getPersistentClass(), requestedPath);
+         java.util.Set<String> excluded = securityFilterBuilder().buildExcludedFieldPaths();
+         for (String excludedPath : excluded) {
+             if (pathsOverlap(requestedPath, excludedPath)) {
+                 throw new SecurityException(
+                         "Field '" + requestedPath + "' is protected by field-level policy");
+             }
+         }
+     }
 
     @Override
     public T merge(@NotNull T entity){
@@ -1675,6 +2011,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     @Override
     public T merge(Datastore datastore, @NotNull T entity) {
+       entity = prepareWrite(datastore, entity, RefNameContract.WriteMode.MERGE);
        if (entity.getClass().getAnnotation(Stateful.class) != null) {
           try {
              validateStateTransitions(datastore, entity);
@@ -1682,12 +2019,12 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
              throw new RuntimeException("State transition validation failed", e);
           }
        }
-        entity = restorePolicyExcludedFields(datastore, entity);
         return datastore.merge(entity);
     }
 
     @Override
     public T merge(MorphiaSession session, @NotNull T entity) {
+       entity = prepareWrite(session, entity, RefNameContract.WriteMode.MERGE);
        if (entity.getClass().getAnnotation(Stateful.class) != null) {
           try {
              validateStateTransitions(session, entity);
@@ -1695,7 +2032,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
              throw new RuntimeException("State transition validation failed", e);
           }
        }
-        return session.merge(entity);
+         return session.merge(entity);
     }
 
     @Override
@@ -1705,11 +2042,13 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     @Override
     public List<T> merge(Datastore datastore, List<T> entities) {
-        return datastore.merge(entities);
+         entities = prepareWrites(datastore, entities, RefNameContract.WriteMode.MERGE);
+         return datastore.merge(entities);
     }
 
     @Override
     public List<T> merge(MorphiaSession session, List<T> entities) {
+       entities = prepareWrites(session, entities, RefNameContract.WriteMode.MERGE);
        entities.forEach(entity -> {
           if (entity.getClass().getAnnotation(Stateful.class) != null) {
              try {
@@ -1759,6 +2098,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
                 String actionString = action.getLabel().toUpperCase().replace(" ", "_");
 
                 ResourceContext rcontext = new ResourceContext.Builder()
+                        .withApplicationId(pcontext.getApplicationId())
                         .withFunctionalDomain(domain)
                         .withArea(area)
                         .withAction(actionString)

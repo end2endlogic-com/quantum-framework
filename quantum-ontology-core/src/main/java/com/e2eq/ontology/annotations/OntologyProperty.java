@@ -33,4 +33,31 @@ public @interface OntologyProperty {
     // Cascading (optional and opt-in)
     CascadeType[] cascade() default { CascadeType.NONE };
     int cascadeDepth() default 1;           // safety cap for recursive deletes
+
+    /**
+     * Expected validity half-life of this property's value, in seconds.
+     *
+     * <p>Timeliness is a ratio -- {@code age(observation) / half-life(property)} -- rather than a
+     * flat freshness bound, because how long a value stays true is a fact about the property and
+     * not about the source that supplied it. A registry extract is effectively permanent on a
+     * legal name and stale within weeks on a registration status; one bound over the source
+     * cannot express both.
+     *
+     * <p>Declaring it here puts the judgement in the vocabulary, where it is reviewed once and
+     * inherited by every binding that resolves the property, rather than being re-guessed per
+     * source. The declared value is a prior: it is better learned from successive observations
+     * than assigned, and a measured half-life should override it visibly rather than silently.
+     *
+     * <p>Defaults to {@link #HALF_LIFE_UNSPECIFIED}, which means "no judgement recorded" and is
+     * deliberately not a number -- a fabricated default would be indistinguishable from a
+     * reviewed one, and a consumer must be able to tell those apart. A property that leaves this
+     * unset writes no metadata key, so existing canonical TBox hashes are unaffected.
+     */
+    long expectedValidityHalfLifeSeconds() default HALF_LIFE_UNSPECIFIED;
+
+    /** Sentinel for {@link #expectedValidityHalfLifeSeconds()}: no half-life has been declared. */
+    long HALF_LIFE_UNSPECIFIED = -1L;
+
+    /** Metadata key carrying a declared half-life into {@code PropertyDef.metadata()}. */
+    String HALF_LIFE_METADATA_KEY = "expected_validity_half_life_seconds";
 }

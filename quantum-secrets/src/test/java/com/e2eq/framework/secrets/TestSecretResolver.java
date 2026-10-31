@@ -14,6 +14,11 @@ public class TestSecretResolver {
 
     static SecretResolver resolver(Map<String, String> realmSecrets) {
         SecretResolver resolver = new SecretResolver();
+        com.e2eq.framework.secrets.crypto.SecretEncryptor encryptor = encryptedFixture();
+        try {
+            var field = SecretResolver.class.getDeclaredField("secretEncryptor");
+            field.setAccessible(true); field.set(resolver, encryptor);
+        } catch (ReflectiveOperationException e) { throw new RuntimeException(e); }
         injectRepo(resolver, new ManagedSecretRepo() {
             @Override
             public Optional<ManagedSecret> findByRefName(String realmId, String refName) {
@@ -22,11 +27,27 @@ public class TestSecretResolver {
                     return Optional.empty();
                 }
                 ManagedSecret secret = new ManagedSecret();
-                secret.setValueEncrypted(value);
+                var encrypted = encryptor.encrypt(value);
+                secret.setValueEncrypted(encrypted.getCiphertext());
+                secret.setIv(encrypted.getIv());
+                secret.setKeyVersion(encrypted.getKeyVersion());
                 return Optional.of(secret);
             }
         });
         return resolver;
+    }
+
+    static com.e2eq.framework.secrets.crypto.SecretEncryptor encryptedFixture() {
+        var encryptor = new com.e2eq.framework.secrets.crypto.SecretEncryptor();
+        try {
+            for (int i=1;i<=5;i++) {
+                var field=encryptor.getClass().getDeclaredField("kekV"+i); field.setAccessible(true);
+                field.set(encryptor,i==1 ? Optional.of(java.util.Base64.getEncoder().encodeToString(new byte[32])) : Optional.empty());
+            }
+            var active=encryptor.getClass().getDeclaredField("activeKeyVersion"); active.setAccessible(true); active.set(encryptor,1);
+            var init=encryptor.getClass().getDeclaredMethod("init"); init.setAccessible(true); init.invoke(encryptor);
+            return encryptor;
+        } catch (ReflectiveOperationException e) { throw new RuntimeException(e); }
     }
 
     static void injectRepo(SecretResolver resolver, ManagedSecretRepo repo) {

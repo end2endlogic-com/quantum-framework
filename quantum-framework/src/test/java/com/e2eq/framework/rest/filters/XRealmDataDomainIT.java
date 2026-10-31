@@ -79,10 +79,15 @@ public class XRealmDataDomainIT extends BaseRepoTest {
         try (final SecuritySession s = new SecuritySession(pContext, rContext)) {
             // Ensure the test user exists and has realm override capability
             ensureTestUserWithRealmOverride();
-            
-            // Ensure target realm exists
+        }
+
+        // The realm catalog entry lives in the system data domain: register it as the system principal,
+        // as the control plane does. The test-tenant admin in pContext may not write into that domain.
+        try (final SecuritySession s = asSystem()) {
             ensureTargetRealmExists();
-            
+        }
+
+        try (final SecuritySession s = new SecuritySession(pContext, rContext)) {
             // Get access token for the test user
             accessToken = loginAndGetToken();
         }
@@ -90,7 +95,7 @@ public class XRealmDataDomainIT extends BaseRepoTest {
 
     @AfterEach
     void tearDown() {
-        try (final SecuritySession s = new SecuritySession(pContext, rContext)) {
+        try (final SecuritySession s = asSystem()) {
             // Clean up target realm if it was created
             cleanupTargetRealm();
         } catch (Exception e) {
@@ -108,11 +113,10 @@ public class XRealmDataDomainIT extends BaseRepoTest {
         CredentialUserIdPassword cred;
         if (credop.isPresent()) {
             cred = credop.get();
-            // Ensure realm override is enabled
-            if (cred.getRealmRegEx() == null || !cred.getRealmRegEx().equals("*")) {
-                cred.setRealmRegEx("*");
-                credRepo.save(testUtils.getSystemRealm(), cred);
-            }
+            cred.setPassword(testUtils.getDefaultTestPassword());
+            cred.setApplicationRegEx("*");
+            cred.setRealmRegEx("*");
+            credRepo.save(testUtils.getSystemRealm(), cred);
         } else {
             cred = new CredentialUserIdPassword();
             cred.setUserId(testUtils.getTestUserId());
@@ -133,7 +137,8 @@ public class XRealmDataDomainIT extends BaseRepoTest {
             cred.setDomainContext(new DomainContext(dataDomain, testUtils.getTestRealm()));
             cred.setLastUpdate(new Date());
             cred.setDataDomain(dataDomain);
-            cred.setRealmRegEx("*");  // Allow all realm overrides
+            cred.setRealmRegEx("*");
+            cred.setApplicationRegEx("*");  // Explicit fixture application grant
             cred.setImpersonateFilterScript("return true");
             cred = credRepo.save(testUtils.getSystemRealm(), cred);
         }
@@ -173,6 +178,8 @@ public class XRealmDataDomainIT extends BaseRepoTest {
 
         targetRealm = Realm.builder()
                 .refName(TARGET_REALM_REF_NAME)
+                .applicationRef(com.e2eq.framework.model.persistent.base.EntityReference.builder()
+                        .entityRefName("quantum-framework-test").entityDisplayName("Quantum Framework Test").build())
                 .displayName("X-Realm Test Target")
                 .emailDomain(TARGET_EMAIL_DOMAIN)
                 .databaseName(TARGET_REALM_REF_NAME)
@@ -235,6 +242,7 @@ public class XRealmDataDomainIT extends BaseRepoTest {
      */
     private String loginAndGetToken() throws Exception {
         AuthRequest request = new AuthRequest();
+        request.setApplicationId("quantum-framework-test");
         request.setUserId(testUtils.getTestUserId());
         request.setPassword(testUtils.getDefaultTestPassword());
 

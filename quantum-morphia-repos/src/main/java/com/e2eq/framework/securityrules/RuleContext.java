@@ -3,6 +3,10 @@ package com.e2eq.framework.security.runtime;
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.persistent.morphia.MorphiaUtils;
 import com.e2eq.framework.model.persistent.morphia.PolicyRepo;
+import com.e2eq.framework.model.auth.AuthProvider;
+import com.e2eq.framework.model.auth.AuthProviderFactory;
+import com.e2eq.framework.model.auth.AuthorizationProvider;
+import com.e2eq.framework.model.security.DataDomainResolver;
 import com.e2eq.framework.model.security.Policy;
 import com.e2eq.framework.model.security.Rule;
 import com.e2eq.framework.model.securityrules.*;
@@ -18,6 +22,7 @@ import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
 
 import jakarta.inject.Inject;
+import jakarta.ws.rs.ForbiddenException;
 import jakarta.enterprise.inject.Instance;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
@@ -56,6 +61,9 @@ public class RuleContext {
     @Inject
     Instance<AccessListResolver> resolvers;
 
+    @Inject
+    Instance<DataDomainResolver> dataDomainResolvers;
+
     /**
      * Fired for every registered rule so ontology-aware observers can
      * validate the vocabulary its scripts/filters reference (fail fast on
@@ -81,6 +89,9 @@ public class RuleContext {
 
      @Inject
      PolicyRepo policyRepo;
+
+     @Inject
+     AuthProviderFactory authProviderFactory;
 
     /**
      * This holds ONLY the default system rules, indexed by identity.
@@ -127,6 +138,17 @@ public class RuleContext {
     @ConfigProperty(name = "quantum.realmConfig.defaultRealm", defaultValue = "system-com")
     protected String defaultRealm;
 
+    /**
+     * Optional central datastore realm for policy documents. When blank, embedded
+     * mode retains the historical behavior of reading policy from the request realm.
+     */
+    @ConfigProperty(name = "quantum.security.policy-store-realm")
+    Optional<String> policyStoreRealm = Optional.empty();
+
+    /** Fail closed when application-scoped policy evaluation has no application id. */
+    @ConfigProperty(name = "quantum.security.policy-scope.require-application", defaultValue = "false")
+    boolean requireApplicationScope;
+
     // Scripting controls (sandbox & timeout)
     @ConfigProperty(name = "quantum.security.scripting.enabled", defaultValue = "true")
     boolean scriptingEnabled;
@@ -167,6 +189,39 @@ public class RuleContext {
                 + "|" + getEvalModeForThread().name();
     }
 
+    private String resolveApplicationId(PrincipalContext principalContext, ResourceContext resourceContext) {
+        String principalApplication = normalizeScope(principalContext == null ? null : principalContext.getApplicationId());
+        String resourceApplication = normalizeScope(resourceContext == null ? null : resourceContext.getApplicationId());
+        if (principalApplication != null && resourceApplication != null
+                && !principalApplication.equals(resourceApplication)) {
+            throw new IllegalArgumentException(
+                    "Principal and resource application scopes do not match: "
+                            + principalApplication + " != " + resourceApplication);
+        }
+        String applicationId = resourceApplication != null ? resourceApplication : principalApplication;
+        if (requireApplicationScope && applicationId == null) {
+            throw new IllegalStateException("Application-scoped authorization requires an applicationId");
+        }
+        return applicationId;
+    }
+
+    private String policyDatastoreRealm(String requestRealm) {
+        return policyStoreRealm
+                .filter(value -> !value.isBlank())
+                .map(String::trim)
+                .orElse(requestRealm);
+    }
+
+    private String policyScopeKey(String requestRealm, String applicationId) {
+        return policyDatastoreRealm(requestRealm) + "|"
+                + (applicationId == null ? "<legacy>" : applicationId) + "|"
+                + requestRealm;
+    }
+
+    private static String normalizeScope(String value) {
+        return value == null || value.isBlank() ? null : value.trim().toLowerCase(java.util.Locale.ROOT);
+    }
+
 
     /**
      * Field-level policy (deny-wins): the union of {@code Rule.excludedFields}
@@ -179,11 +234,21 @@ public class RuleContext {
     public java.util.Set<String> getExcludedFieldPaths(
             @Valid @NotNull(message = "Principal Context can not be null") PrincipalContext pcontext,
             @Valid @NotNull(message = "Resource Context can not be null") ResourceContext rcontext) {
-        java.util.LinkedHashSet<String> excluded = new java.util.LinkedHashSet<>();
         SecurityCheckResponse response = this.checkRules(pcontext, rcontext);
+        if (response == null || response.getExcludedFields() == null) {
+            return new java.util.LinkedHashSet<>();
+        }
+        return response.getExcludedFields().stream()
+                .filter(path -> path != null && !path.isBlank())
+                .map(String::trim)
+                .collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
+    }
+
+    private static List<String> collectExcludedFieldPaths(SecurityCheckResponse response) {
+        java.util.LinkedHashSet<String> excluded = new java.util.LinkedHashSet<>();
         if (response == null || response.getFinalEffect() != RuleEffect.ALLOW
                 || response.getMatchedRuleResults() == null) {
-            return excluded;
+            return new ArrayList<>();
         }
         for (RuleResult result : response.getMatchedRuleResults()) {
             if (result == null || result.getRule() == null) {
@@ -193,6 +258,12 @@ public class RuleContext {
                 continue;
             }
             Rule rule = result.getRule();
+            // Field exclusions are a restriction attached to an ALLOW grant. A matched DENY
+            // rule must never contribute projection metadata to a separately winning ALLOW
+            // decision; doing so would make the effective field contract depend on losing rules.
+            if (rule.getEffect() != RuleEffect.ALLOW) {
+                continue;
+            }
             if (rule.getExcludedFields() == null || rule.getExcludedFields().isEmpty()) {
                 continue;
             }
@@ -202,7 +273,7 @@ public class RuleContext {
                 }
             }
         }
-        return excluded;
+        return new ArrayList<>(excluded);
     }
 
     private List<SecurityCheckResponse.RuleFilterInfo> collectMatchedAllowFilterRules(SecurityCheckResponse response) {
@@ -611,6 +682,8 @@ public class RuleContext {
             policy.setRefName("system-default-" + identity);
             policy.setDisplayName("System Default: " + identity);
             policy.setDescription("Default system rules for " + identity);
+            policy.setApplicationId("*");
+            policy.setRealmRefName("*");
             policy.setPrincipalType("system".equals(identity) ?
                 com.e2eq.framework.model.security.Policy.PrincipalType.USER :
                 com.e2eq.framework.model.security.Policy.PrincipalType.ROLE);
@@ -662,6 +735,32 @@ public class RuleContext {
                 .withFinalRule(true).build();
         this.addRule(header, systemRoleRule);
 
+        SecurityURIHeader migrationHeader = new SecurityURIHeader.Builder()
+                .withIdentity("system")
+                .withArea("migration")
+                .withFunctionalDomain("*")
+                .withAction("*")
+                .build();
+        SecurityURIBody migrationBody = new SecurityURIBody.Builder()
+                .withOrgRefName("*")
+                .withAccountNumber("*")
+                .withRealm("*")
+                .withTenantId("*")
+                .withOwnerId("*")
+                .withDataSegment("*")
+                .build();
+        SecurityURI migrationUri = new SecurityURI(migrationHeader, migrationBody);
+
+        Rule systemMigrationRule = new Rule.Builder()
+                .withName("SysRoleAnyActionMigration")
+                .withDescription("system role can administer database migrations during realm bootstrap")
+                .withSecurityURI(migrationUri)
+                .withEffect(RuleEffect.ALLOW)
+                .withPriority(-100)
+                .withFinalRule(true)
+                .build();
+        this.addRule(migrationHeader, systemMigrationRule);
+
         //-----------------------
        // Now lets add a tenant admin id
 
@@ -699,6 +798,66 @@ public class RuleContext {
        Rule r = tenantAdminbuilder.build();
        this.addRule(header, r);
 
+       addAnonymousApplicationRegistrationRule("view");
+       addAnonymousApplicationRegistrationRule("create");
+       addAnonymousAuthenticationRule();
+
+    }
+
+    private void addAnonymousAuthenticationRule() {
+        SecurityURIHeader header = new SecurityURIHeader.Builder()
+                .withIdentity("ANONYMOUS")
+                .withArea("SECURITY")
+                .withFunctionalDomain("CREDENTIAL_USERID_PASSWORD")
+                .withAction("authenticate")
+                .build();
+
+        SecurityURIBody body = new SecurityURIBody.Builder()
+                .withRealm("*")
+                .withOrgRefName("*")
+                .withAccountNumber("*")
+                .withTenantId("*")
+                .withOwnerId("*")
+                .withDataSegment("*")
+                .build();
+
+        Rule rule = new Rule.Builder()
+                .withName("Anonymous can authenticate credentials")
+                .withDescription("Public login endpoints may resolve credentials only inside the explicit authentication action.")
+                .withSecurityURI(new SecurityURI(header, body))
+                .withEffect(RuleEffect.ALLOW)
+                .withPriority(0)
+                .withFinalRule(true)
+                .build();
+        this.addRule(header, rule);
+    }
+
+    private void addAnonymousApplicationRegistrationRule(String action) {
+        SecurityURIHeader header = new SecurityURIHeader.Builder()
+                .withIdentity("ANONYMOUS")
+                .withArea("SECURITY")
+                .withFunctionalDomain("APPLICATION_REGISTRATION")
+                .withAction(action)
+                .build();
+
+        SecurityURIBody body = new SecurityURIBody.Builder()
+                .withRealm("*")
+                .withOrgRefName("*")
+                .withAccountNumber("*")
+                .withTenantId("*")
+                .withOwnerId("*")
+                .withDataSegment("*")
+                .build();
+
+        Rule rule = new Rule.Builder()
+                .withName("Anonymous can " + action + " registration requests")
+                .withDescription("Public registration endpoints may access application-registration records through an explicit anonymous policy.")
+                .withSecurityURI(new SecurityURI(header, body))
+                .withEffect(RuleEffect.ALLOW)
+                .withPriority(0)
+                .withFinalRule(true)
+                .build();
+        this.addRule(header, rule);
     }
 
     /**
@@ -726,14 +885,17 @@ public class RuleContext {
      */
     public void clearCacheForRealm(String realm) {
         if (realm != null) {
-            compiledIndexes.remove(realm);
-            cachedEffectiveRules.remove(realm);
-            realmBuildLocks.remove(realm);
+            java.util.function.Predicate<String> matchesRealm = key -> key.equals(realm)
+                    || key.startsWith(realm + "|")
+                    || key.endsWith("|" + realm);
+            compiledIndexes.keySet().removeIf(matchesRealm);
+            cachedEffectiveRules.keySet().removeIf(matchesRealm);
+            realmBuildLocks.keySet().removeIf(matchesRealm);
             synchronized (evictionLock) {
-                realmAccessOrder.remove(realm);
+                realmAccessOrder.keySet().removeIf(matchesRealm);
             }
             // Also clear legacy single-index if it matches
-            if (realm.equals(compiledIndexRealm)) {
+            if (compiledIndexRealm != null && matchesRealm.test(compiledIndexRealm)) {
                 compiledIndex = null;
                 compiledIndexRealm = null;
             }
@@ -816,6 +978,10 @@ public class RuleContext {
      * @return the built RuleIndex, or null if building failed
      */
     public RuleIndex rebuildIndex(@NotNull String realm) {
+        return rebuildIndex(realm, null);
+    }
+
+    private RuleIndex rebuildIndex(String realm, String applicationId) {
         if (!indexEnabled) {
             Log.debug("RuleContext: index rebuild skipped - indexEnabled is false");
             return null;
@@ -823,11 +989,12 @@ public class RuleContext {
 
         // Get or create a lock object for this specific realm
         // This allows different realms to build indexes concurrently
-        Object realmLock = realmBuildLocks.computeIfAbsent(realm, k -> new Object());
+        String scopeKey = policyScopeKey(realm, applicationId);
+        Object realmLock = realmBuildLocks.computeIfAbsent(scopeKey, k -> new Object());
 
         synchronized (realmLock) {
             // Double-check: another thread may have built the index while we were waiting
-            RuleIndex existingIndex = compiledIndexes.get(realm);
+            RuleIndex existingIndex = compiledIndexes.get(scopeKey);
             if (existingIndex != null) {
                 Log.debugf("RuleContext: index for realm %s was built by another thread", realm);
                 return existingIndex;
@@ -838,7 +1005,8 @@ public class RuleContext {
                 Map<String, List<Rule>> effectiveRules;
                 if (policyRepo != null) {
                     List<Policy> defaults = getDefaultSystemPolicies();
-                    effectiveRules = policyRepo.getEffectiveRules(realm, defaults);
+                    effectiveRules = policyRepo.getEffectiveRules(
+                            policyDatastoreRealm(realm), defaults, applicationId, realm, !requireApplicationScope);
                 } else {
                     effectiveRules = new HashMap<>(defaultSystemRules);
                 }
@@ -855,19 +1023,19 @@ public class RuleContext {
                 RuleIndex newIndex = RuleIndex.build(allRules);
 
                 // Store in per-realm cache (atomic put)
-                compiledIndexes.put(realm, newIndex);
+                compiledIndexes.put(scopeKey, newIndex);
 
                 // Update LRU tracking and handle eviction
                 synchronized (evictionLock) {
                     // LinkedHashMap with accessOrder=true automatically moves accessed entries to end
-                    realmAccessOrder.put(realm, Boolean.TRUE);
+                    realmAccessOrder.put(scopeKey, Boolean.TRUE);
 
                     // Evict oldest entries if we exceed maxRealms
                     if (realmAccessOrder.size() > indexMaxRealms) {
                         Iterator<String> it = realmAccessOrder.keySet().iterator();
                         while (it.hasNext() && realmAccessOrder.size() > indexMaxRealms) {
                             String oldestRealm = it.next();
-                            if (!oldestRealm.equals(realm)) {
+                            if (!oldestRealm.equals(scopeKey)) {
                                 it.remove();
                                 compiledIndexes.remove(oldestRealm);
                                 realmBuildLocks.remove(oldestRealm);
@@ -879,16 +1047,16 @@ public class RuleContext {
 
                 // Update legacy single-index fields for backward compatibility
                 compiledIndex = newIndex;
-                compiledIndexRealm = realm;
+                compiledIndexRealm = scopeKey;
 
                 Log.infof("RuleContext: rebuilt compiled index with %d rules for realm %s (cached realms: %d)",
                     allRules.size(), realm, compiledIndexes.size());
                 return newIndex;
             } catch (Exception e) {
                 Log.warnf(e, "RuleContext: failed to rebuild index for realm %s; index will remain null", realm);
-                compiledIndexes.remove(realm);
+                compiledIndexes.remove(scopeKey);
                 synchronized (evictionLock) {
-                    realmAccessOrder.remove(realm);
+                    realmAccessOrder.remove(scopeKey);
                 }
                 compiledIndex = null;
                 compiledIndexRealm = null;
@@ -949,7 +1117,7 @@ public class RuleContext {
      * @return an optional list of rules
      */
     public Optional<List<Rule>> rulesForIdentity(@NotNull String identity, Map<String, List<Rule>> rulesMap) {
-        List<Rule> ruleList = rulesMap.get(identity);
+        List<Rule> ruleList = rulesMap.get(identity.toLowerCase(java.util.Locale.ROOT));
         if (ruleList == null) {
             return Optional.empty();
         }
@@ -963,7 +1131,7 @@ public class RuleContext {
      * @return an optional list of rules
      */
     public Optional<List<Rule>> rulesForIdentity(@NotNull String identity) {
-        List<Rule> ruleList = defaultSystemRules.get(identity);
+        List<Rule> ruleList = defaultSystemRules.get(identity.toLowerCase(java.util.Locale.ROOT));
         if (ruleList == null) {
             return Optional.empty();
         }
@@ -981,7 +1149,7 @@ public class RuleContext {
     @Inject
     LabelService labelService;
 
-    boolean runScript(PrincipalContext pcontext, ResourceContext rcontext, String script) {
+    public boolean runScript(PrincipalContext pcontext, ResourceContext rcontext, String script) {
         return new RuleScriptExecutor(labelService).runScript(scriptingTimeoutMillis, pcontext, rcontext, script);
     }
 
@@ -1010,22 +1178,24 @@ public class RuleContext {
         String requestRealm = pcontext != null && pcontext.getDefaultRealm() != null
             ? pcontext.getDefaultRealm()
             : defaultRealm;
+        String applicationId = resolveApplicationId(pcontext, rcontext);
+        String scopeKey = policyScopeKey(requestRealm, applicationId);
 
         // If the compiled index is enabled, try to use per-realm cached index
         if (indexEnabled) {
             // Check per-realm cache first (atomic get from ConcurrentHashMap)
-            RuleIndex realmIndex = compiledIndexes.get(requestRealm);
+            RuleIndex realmIndex = compiledIndexes.get(scopeKey);
 
             if (realmIndex == null) {
                 // No cached index for this realm - rebuild it
                 // rebuildIndex handles its own locking per-realm
                 Log.debugf("RuleContext: no cached index for realm=%s, building...", requestRealm);
-                realmIndex = rebuildIndex(requestRealm);
+                realmIndex = rebuildIndex(requestRealm, applicationId);
             } else {
                 // Update LRU tracking for cache hit (lightweight operation)
                 synchronized (evictionLock) {
                     // LinkedHashMap with accessOrder=true moves entry to end on access
-                    realmAccessOrder.get(requestRealm);
+                    realmAccessOrder.get(scopeKey);
                 }
             }
 
@@ -1040,7 +1210,7 @@ public class RuleContext {
         }
 
         // Legacy/fallback behavior: get fresh effective rules and gather by identity/roles
-        Map<String, List<Rule>> effectiveRules = getEffectiveRulesForRequest(pcontext);
+        Map<String, List<Rule>> effectiveRules = getEffectiveRulesForRequest(pcontext, rcontext);
 
         // Legacy behavior: gather rules by identity and roles, then sort by priority
         List<Rule> applicableRules = new ArrayList<Rule>();
@@ -1092,12 +1262,12 @@ public class RuleContext {
         java.util.Set<String> identities = new java.util.HashSet<>();
         if (pcontext != null) {
             if (pcontext.getUserId() != null && !pcontext.getUserId().isBlank()) {
-                identities.add(pcontext.getUserId());
+                identities.add(pcontext.getUserId().toLowerCase(java.util.Locale.ROOT));
             }
             if (pcontext.getRoles() != null) {
                 for (String role : pcontext.getRoles()) {
                     if (role != null && !role.isBlank()) {
-                        identities.add(role);
+                        identities.add(role.toLowerCase(java.util.Locale.ROOT));
                     }
                 }
             }
@@ -1115,7 +1285,7 @@ public class RuleContext {
      *
      * Thread-safe: Uses per-realm locking for cache building.
      */
-    private Map<String, List<Rule>> getEffectiveRulesForRequest(PrincipalContext pcontext) {
+    private Map<String, List<Rule>> getEffectiveRulesForRequest(PrincipalContext pcontext, ResourceContext rcontext) {
         // In test contexts without CDI, fall back to in-memory rules only
         if (policyRepo == null) {
             return new HashMap<>(defaultSystemRules);
@@ -1124,6 +1294,8 @@ public class RuleContext {
         String realm = pcontext != null && pcontext.getDefaultRealm() != null
             ? pcontext.getDefaultRealm()
             : defaultRealm;
+        String applicationId = resolveApplicationId(pcontext, rcontext);
+        String scopeKey = policyScopeKey(realm, applicationId);
 
         // If realm caching is disabled, fetch only rules matching this user's identities
         if (!realmCacheEnabled) {
@@ -1135,7 +1307,9 @@ public class RuleContext {
                     pcontext != null ? java.util.Arrays.toString(pcontext.getRoles()) : "null",
                     identities, realm);
             }
-            Map<String, List<Rule>> result = policyRepo.getEffectiveRulesForIdentities(realm, defaults, identities);
+            Map<String, List<Rule>> result = policyRepo.getEffectiveRulesForIdentities(
+                    policyDatastoreRealm(realm), defaults, identities,
+                    applicationId, realm, !requireApplicationScope);
             if (Log.isDebugEnabled()) {
                 Log.debugf("RuleContext: getEffectiveRulesForIdentities returned %d identity->rules mappings: %s",
                     result.size(), result.keySet());
@@ -1144,42 +1318,43 @@ public class RuleContext {
         }
 
         // Check cache first
-        Map<String, List<Rule>> cached = cachedEffectiveRules.get(realm);
+        Map<String, List<Rule>> cached = cachedEffectiveRules.get(scopeKey);
         if (cached != null) {
             // Update LRU tracking for cache hit
             synchronized (evictionLock) {
-                realmAccessOrder.get(realm);
+                realmAccessOrder.get(scopeKey);
             }
             return cached;
         }
 
         // Cache miss - need to build. Use per-realm lock to prevent duplicate work
-        Object realmLock = realmBuildLocks.computeIfAbsent(realm, k -> new Object());
+        Object realmLock = realmBuildLocks.computeIfAbsent(scopeKey, k -> new Object());
 
         synchronized (realmLock) {
             // Double-check after acquiring lock
-            cached = cachedEffectiveRules.get(realm);
+            cached = cachedEffectiveRules.get(scopeKey);
             if (cached != null) {
                 return cached;
             }
 
             // Fetch from database
             List<Policy> defaults = getDefaultSystemPolicies();
-            Map<String, List<Rule>> effectiveRules = policyRepo.getEffectiveRules(realm, defaults);
+            Map<String, List<Rule>> effectiveRules = policyRepo.getEffectiveRules(
+                    policyDatastoreRealm(realm), defaults, applicationId, realm, !requireApplicationScope);
 
             // Store in cache
-            cachedEffectiveRules.put(realm, effectiveRules);
+            cachedEffectiveRules.put(scopeKey, effectiveRules);
 
             // Update LRU tracking and handle eviction
             synchronized (evictionLock) {
-                realmAccessOrder.put(realm, Boolean.TRUE);
+                realmAccessOrder.put(scopeKey, Boolean.TRUE);
 
                 // Evict oldest entries if we exceed maxRealms
                 if (realmAccessOrder.size() > indexMaxRealms) {
                     Iterator<String> it = realmAccessOrder.keySet().iterator();
                     while (it.hasNext() && realmAccessOrder.size() > indexMaxRealms) {
                         String oldestRealm = it.next();
-                        if (!oldestRealm.equals(realm)) {
+                        if (!oldestRealm.equals(scopeKey)) {
                             it.remove();
                             cachedEffectiveRules.remove(oldestRealm);
                             compiledIndexes.remove(oldestRealm);
@@ -1231,6 +1406,24 @@ public class RuleContext {
             Class<? extends UnversionedBaseModel> modelClass,
             Object resourceInstance,
             @NotNull RuleEffect defaultFinalEffect) {
+
+        AuthProvider selectedProvider = authProviderFactory == null
+                ? null
+                : authProviderFactory.getAuthProvider();
+        if (selectedProvider instanceof AuthorizationProvider authorizationProvider) {
+            SecurityCheckResponse delegated = authorizationProvider.checkRules(
+                    pcontext,
+                    rcontext,
+                    modelClass == null ? null : modelClass.getName(),
+                    resourceInstance,
+                    defaultFinalEffect,
+                    getEvalModeForThread());
+            if (delegated == null) {
+                throw new IllegalStateException(
+                        "Authorization provider returned no decision: " + selectedProvider.getName());
+            }
+            return delegated;
+        }
 
         // Request-scope memoization: return cached result if enabled and present
         if (requestCacheEnabled && !shouldSkipRequestCache()) {
@@ -1737,6 +1930,8 @@ public class RuleContext {
             }
         } catch (Throwable ignored) { }
 
+        response.setExcludedFields(collectExcludedFieldPaths(response));
+
         // Store in request cache if enabled
         if (requestCacheEnabled && !shouldSkipRequestCache()) {
             try {
@@ -1828,7 +2023,7 @@ public class RuleContext {
             Class<? extends UnversionedBaseModel> modelClass,
             Object resourceInstance,
             com.e2eq.framework.model.securityrules.MatchEvent matchEvent) {
-        return new RuleFilterApplicabilityEvaluator(new RuleVariableBundleResolver(resolvers))
+        return new RuleFilterApplicabilityEvaluator(new RuleVariableBundleResolver(resolvers, dataDomainResolvers))
                 .evaluate(pcontext, rcontext, rule, modelClass, resourceInstance, matchEvent);
     }
 
@@ -1903,31 +2098,75 @@ public class RuleContext {
             @Valid @NotNull(message = "Resource Context can not be null") ResourceContext rcontext,
             Class<? extends UnversionedBaseModel> modelClass
     ) {
-        return new RuleVariableBundleResolver(resolvers).resolveVariableBundle(pcontext, rcontext, modelClass);
+        return new RuleVariableBundleResolver(resolvers, dataDomainResolvers).resolveVariableBundle(pcontext, rcontext, modelClass);
     }
 
     /**
-     * Get the list of filters that are applicable for the given principal and resource context.
-     * @param ifilters
-     * @param pcontext
-     * @param rcontext
-     * @return
+     * Store-agnostic governance seam for the federated query gateway (data-virtualization).
+     *
+     * <p>{@link #getFilters} returns Morphia {@link Filter}s keyed on a Java model class — a
+     * federated SQL/REST source has no Java model. This method instead composes the governed
+     * predicate as a <b>BIAPIQuery grammar STRING</b> ({@code (userQuery) && (matched rule
+     * filters)}) that a non-Mongo executor can translate into its own dialect (e.g. via
+     * {@code QueryToSqlListener}). It mirrors {@code getFilters}' rule matching and AND/OR
+     * composition, with variables ({@code ${pTenantId}} …) substituted to concrete values.</p>
+     *
+     * <p><b>This FAILS CLOSED.</b> {@code getFilters} turns a matched allow-filter rule whose
+     * variables cannot be resolved into a match-nothing filter; it never drops it. A federated
+     * query has no model class, so here an unresolved variable
+     * in a matched filter rule — or a non-ALLOW effect, or a composed string that fails to parse —
+     * throws instead. Only scalar variables from the standard/custom bundle are substitutable;
+     * collection-typed resolver variables (which {@code QueryToFilterListener} expands internally)
+     * are not, and correctly trip the fail-closed guard.</p>
+     *
+     * <p>Every clause is parenthesized so a top-level {@code ||} in {@code userQuery} cannot escape
+     * the policy {@code &&} (which would be a governance leak). The empty result means ALLOW with no
+     * row filter and no user query — the caller may read the source unfiltered.</p>
+     *
+     * @param userQuery optional caller-supplied BIAPIQuery filter (null/blank = none)
+     * @param pcontext  principal context
+     * @param rcontext  resource context {@code (area, functionalDomain, action)} of the view
+     * @return the composed governed BIAPIQuery string, or empty if there is nothing to constrain
+     * @throws SecurityException if access is not ALLOW or a matched filter rule cannot be fully
+     *                           resolved to concrete values
      */
-    public List<Filter> getFilters(List<Filter> ifilters, @Valid @NotNull(message = "Principal Context can not be null") PrincipalContext pcontext, @Valid @NotNull(message = "Resource Context can not be null") ResourceContext rcontext, Class<? extends UnversionedBaseModel> modelClass) {
-        List<Filter> filters = new ArrayList<>();
-        filters.addAll(ifilters);
+    public java.util.Optional<String> getGovernedFilterString(
+            String userQuery,
+            @Valid @NotNull(message = "Principal Context can not be null") PrincipalContext pcontext,
+            @Valid @NotNull(message = "Resource Context can not be null") ResourceContext rcontext) {
+        return projectGovernedFilter(userQuery, pcontext, rcontext).filter();
+    }
+
+    /**
+     * Compose the governed filter and keep the record of what produced it.
+     *
+     * <p>Same resolution as {@link #getGovernedFilterString}, which now delegates here so the
+     * two cannot drift: a filter and an explanation of that filter derived by separate code
+     * paths would eventually disagree, and a disagreement between them is an audit finding
+     * rather than a bug report.
+     *
+     * <p>The per-rule attribution has to be captured at composition time. It cannot be
+     * recovered from the returned string, which is a conjunction of substituted clauses with
+     * no attribution left in it, and re-running the rules later would apply today's policy to
+     * yesterday's decision.
+     *
+     * @return the governed filter plus its trim record
+     * @throws SecurityException if access is not ALLOW or a matched filter rule cannot be fully
+     *                           resolved to concrete values
+     */
+    public com.e2eq.framework.model.securityrules.GovernedFilterProjection projectGovernedFilter(
+            String userQuery,
+            @Valid @NotNull(message = "Principal Context can not be null") PrincipalContext pcontext,
+            @Valid @NotNull(message = "Resource Context can not be null") ResourceContext rcontext) {
 
         SecurityCheckResponse response = this.checkRules(pcontext, rcontext);
-
         if (response.getFinalEffect() != RuleEffect.ALLOW) {
-            return filters;
+            throw new SecurityException("Federated query denied by policy for resource "
+                    + rcontext.getArea() + "/" + rcontext.getFunctionalDomain() + "/" + rcontext.getAction()
+                    + " (effect=" + response.getFinalEffect() + ")");
         }
 
-        List<Filter> andFilters = new ArrayList<>();
-        List<Filter> orFilters = new ArrayList<>();
-
-        MorphiaUtils.VariableBundle vars = resolveVariableBundle(pcontext, rcontext, modelClass);
-
+        // The same matched allow-filter rule set getFilters() composes from.
         List<SecurityCheckResponse.RuleFilterInfo> filterInfos = collectMatchedAllowFilterRules(response);
         if (response.getFilterConstraints() != null) {
             for (SecurityCheckResponse.RuleFilterInfo info : response.getFilterConstraints()) {
@@ -1945,60 +2184,250 @@ public class RuleContext {
             }
         }
 
+        DataDomainResolver ddResolver = (dataDomainResolvers != null && !dataDomainResolvers.isUnsatisfied()) ? dataDomainResolvers.get() : null;
+        // Variables are substituted as text, so a value is admitted only when it cannot carry query
+        // syntax. A principal attribute such as "x) || (refName:y" would otherwise rewrite the
+        // governed clause it is substituted into.
+        java.util.Map<String, String> variableValues =
+                MorphiaUtils.buildVariableBundle(pcontext, rcontext, null, null, ddResolver).strings;
+        org.apache.commons.text.StringSubstitutor sub = new org.apache.commons.text.StringSubstitutor(key -> {
+            String value = variableValues.get(key);
+            if (value != null && !isSafeGovernedLiteral(value)) {
+                throw new SecurityException("Cannot lower a security rule into a federated filter: variable '"
+                        + key + "' resolves to a value containing query syntax. Federated queries fail closed.");
+            }
+            return value;
+        });
+
+        // The caller's query must be a complete expression on its own before it is wrapped in
+        // parentheses and conjoined with the governed clauses.
+        if (userQuery != null && !userQuery.isBlank()) {
+            try {
+                MorphiaUtils.validateCompleteQueryString(userQuery.trim());
+            } catch (RuntimeException invalid) {
+                throw new SecurityException("Federated query rejected: the caller query is not a self-contained "
+                        + "BIAPIQuery expression", invalid);
+            }
+        }
+
+        List<String> governedClauses = new ArrayList<>();
+        List<com.e2eq.framework.model.securityrules.GovernedFilterProjection.RuleTrim> ruleTrims =
+                new ArrayList<>();
+        for (SecurityCheckResponse.RuleFilterInfo info : filterInfos) {
+            String andClause = resolveGovernedClause(info.getAndFilterString(), sub, info.getRuleName());
+            String orClause = resolveGovernedClause(info.getOrFilterString(), sub, info.getRuleName());
+            String clause;
+            if (andClause != null && orClause != null) {
+                String joinOp = (info.getJoinOp() != null && !info.getJoinOp().isBlank())
+                        ? info.getJoinOp() : "AND";
+                String glue = "OR".equalsIgnoreCase(joinOp) ? " || " : " && ";
+                clause = "(" + andClause + ")" + glue + "(" + orClause + ")";
+            } else if (andClause != null) {
+                clause = andClause;
+            } else if (orClause != null) {
+                clause = orClause;
+            } else {
+                continue;
+            }
+            governedClauses.add("(" + clause + ")");
+            // Captured here, in composition order, because the composed string below keeps no
+            // attribution and the rules cannot be re-run later against the same policy state.
+            ruleTrims.add(new com.e2eq.framework.model.securityrules.GovernedFilterProjection.RuleTrim(
+                    info.getRuleName(),
+                    info.getAndFilterString(),
+                    info.getOrFilterString(),
+                    info.getJoinOp(),
+                    clause));
+        }
+
+        java.util.Set<String> excludedFields = (response.getExcludedFields() == null)
+                ? new java.util.LinkedHashSet<>()
+                : response.getExcludedFields().stream()
+                        .filter(path -> path != null && !path.isBlank())
+                        .map(String::trim)
+                        .collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
+
+        List<String> all = new ArrayList<>();
+        if (userQuery != null && !userQuery.isBlank()) {
+            all.add("(" + userQuery.trim() + ")");
+        }
+        all.addAll(governedClauses);
+        if (all.isEmpty()) {
+            // No clause constrained the read, but field exclusions still may have.
+            return com.e2eq.framework.model.securityrules.GovernedFilterProjection.of(
+                    null, response.getFinalEffect(), ruleTrims, excludedFields);
+        }
+        String governed = String.join(" && ", all);
+
+        // Fail closed: the composed governed string must be one complete BIAPIQuery expression.
+        try {
+            MorphiaUtils.validateCompleteQueryString(governed);
+        } catch (RuntimeException invalid) {
+            throw new SecurityException("Federated query rejected: the governed filter is not one complete "
+                    + "BIAPIQuery expression", invalid);
+        }
+        return com.e2eq.framework.model.securityrules.GovernedFilterProjection.of(
+                governed, response.getFinalEffect(), ruleTrims, excludedFields);
+    }
+
+    private static String resolveGovernedClause(String filterString,
+            org.apache.commons.text.StringSubstitutor sub, String ruleName) {
+        if (filterString == null || filterString.isEmpty()) {
+            return null;
+        }
+        String resolved = sub.replace(filterString);
+        if (resolved.contains("${")) {
+            throw new SecurityException("Cannot lower security rule '" + ruleName
+                    + "' into a federated filter: unresolved variable(s) in \"" + filterString
+                    + "\". Federated queries fail closed rather than drop a security filter.");
+        }
+        try {
+            MorphiaUtils.validateCompleteQueryString(resolved);
+        } catch (RuntimeException invalid) {
+            throw new SecurityException("Cannot lower security rule '" + ruleName
+                    + "' into a federated filter: the resolved clause is not a self-contained BIAPIQuery expression",
+                    invalid);
+        }
+        return resolved;
+    }
+
+    /**
+     * True when {@code value} can be substituted into a BIAPIQuery rule string without changing its
+     * structure: no grouping, operator, wildcard, quoting, escaping or substitution characters and
+     * no control characters, and not a {@code null}/{@code true}/{@code false} keyword or an
+     * {@code @@} reference. Commas are refused too: inside a rule's {@code ^[${v}]} list a scalar
+     * value {@code own,foreign} would widen the list. These variables are scalars (the bundle's
+     * string values), so a list-valued variable cannot be lowered here and fails closed. Spaces
+     * are allowed.
+     */
+    static boolean isSafeGovernedLiteral(String value) {
+        String trimmed = value.trim();
+        // Keywords and reference markers that would change the value's type or meaning.
+        if (trimmed.equalsIgnoreCase("null") || trimmed.equalsIgnoreCase("true")
+                || trimmed.equalsIgnoreCase("false") || trimmed.contains("@@")) {
+            return false;
+        }
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (Character.isISOControl(c) || "()[]{}&|!:^\"*~<>=\\$#%;`,".indexOf(c) >= 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * The matched ALLOW rule filters plus surfaced filter constraints: the rule filter set that
+     * {@link #getFilters} composes for reads and {@link #enforceWriteFilters} checks for writes.
+     */
+    private List<SecurityCheckResponse.RuleFilterInfo> collectEffectiveAllowFilterInfos(SecurityCheckResponse response) {
+        List<SecurityCheckResponse.RuleFilterInfo> filterInfos = collectMatchedAllowFilterRules(response);
+        if (response.getFilterConstraints() != null) {
+            for (SecurityCheckResponse.RuleFilterInfo info : response.getFilterConstraints()) {
+                if (info == null) {
+                    continue;
+                }
+                boolean alreadyPresent = filterInfos.stream().anyMatch(existing ->
+                        Objects.equals(existing.getRuleName(), info.getRuleName())
+                                && Objects.equals(existing.getAndFilterString(), info.getAndFilterString())
+                                && Objects.equals(existing.getOrFilterString(), info.getOrFilterString())
+                                && Objects.equals(existing.getJoinOp(), info.getJoinOp()));
+                if (!alreadyPresent) {
+                    filterInfos.add(info);
+                }
+            }
+        }
+        return filterInfos;
+    }
+
+    /**
+     * Write-side enforcement of rule filters: after a write action has been ALLOWed by
+     * {@link #checkRules}, the entity being created or updated (including its resolved or
+     * client-supplied {@code dataDomain}) must satisfy every matched ALLOW rule filter for that
+     * action, evaluated in memory with the same variable bundle reads use. Fails closed on
+     * unresolved variables or when a filter cannot be evaluated.
+     *
+     * @param response the ALLOW response returned by {@code checkRules} for this write
+     * @throws SecurityCheckException when the entity does not satisfy the rule filters
+     */
+    public void enforceWriteFilters(
+            @Valid @NotNull(message = "Principal Context can not be null") PrincipalContext pcontext,
+            @Valid @NotNull(message = "Resource Context can not be null") ResourceContext rcontext,
+            @NotNull SecurityCheckResponse response,
+            @NotNull UnversionedBaseModel entity) {
+        new RuleWriteFilterGuard(new RuleVariableBundleResolver(resolvers, dataDomainResolvers))
+                .enforce(pcontext, rcontext, response, collectEffectiveAllowFilterInfos(response), entity);
+    }
+
+    /**
+     * Get the list of filters that are applicable for the given principal and resource context.
+     * @param ifilters
+     * @param pcontext
+     * @param rcontext
+     * @return
+     */
+    public List<Filter> getFilters(List<Filter> ifilters, @Valid @NotNull(message = "Principal Context can not be null") PrincipalContext pcontext, @Valid @NotNull(message = "Resource Context can not be null") ResourceContext rcontext, Class<? extends UnversionedBaseModel> modelClass) {
+        List<Filter> filters = new ArrayList<>();
+        filters.addAll(ifilters);
+
+        SecurityCheckResponse response = this.checkRules(pcontext, rcontext);
+
+        if (response.getFinalEffect() != RuleEffect.ALLOW) {
+            throw new ForbiddenException(String.format(
+                    "Access denied: user=%s, area=%s, domain=%s, action=%s",
+                    pcontext.getUserId(),
+                    rcontext.getArea(),
+                    rcontext.getFunctionalDomain(),
+                    rcontext.getAction()));
+        }
+
+        MorphiaUtils.VariableBundle vars = resolveVariableBundle(pcontext, rcontext, modelClass);
+
+        List<SecurityCheckResponse.RuleFilterInfo> filterInfos = collectEffectiveAllowFilterInfos(response);
+
         for (SecurityCheckResponse.RuleFilterInfo info : filterInfos) {
 
-            // Try to convert filter strings, but skip this rule if variables can't be resolved
-            // This handles the case where a rule matches by area/domain/action but its filter
-            // string references variables that are only available for specific model classes.
-            // For example, a Location rule with ${accessibleLocationIds} should not apply
-            // to UserProfile queries even if they share the same area/domain/action.
-            boolean ruleFilterSkipped = false;
-
-            if (info.getAndFilterString() != null && !info.getAndFilterString().isEmpty()) {
-                try {
-                    andFilters.add(MorphiaUtils.convertToFilter(info.getAndFilterString(), vars, modelClass));
-                } catch (IllegalStateException e) {
-                    // Filter string contains unresolved variables - this rule doesn't apply to this model class
-                    if (e.getMessage() != null && e.getMessage().contains("Unresolved resolver variable")) {
-                        if (Log.isDebugEnabled()) {
-                            Log.debugf("Skipping rule '%s' filter for model class %s: %s",
-                                    info.getRuleName(), modelClass != null ? modelClass.getName() : "null", e.getMessage());
-                        }
-                        ruleFilterSkipped = true;
-                    } else {
-                        // Re-throw if it's a different IllegalStateException
-                        throw e;
-                    }
-                }
-            }
-
-            if (!ruleFilterSkipped && info.getOrFilterString() != null && !info.getOrFilterString().isEmpty()) {
-                try {
-                    orFilters.add(MorphiaUtils.convertToFilter(info.getOrFilterString(), vars, modelClass));
-                } catch (IllegalStateException e) {
-                    // Filter string contains unresolved variables - this rule doesn't apply to this model class
-                    if (e.getMessage() != null && e.getMessage().contains("Unresolved resolver variable")) {
-                        if (Log.isDebugEnabled()) {
-                            Log.debugf("Skipping rule '%s' filter for model class %s: %s",
-                                    info.getRuleName(), modelClass != null ? modelClass.getName() : "null", e.getMessage());
-                        }
-                        ruleFilterSkipped = true;
-                    } else {
-                        // Re-throw if it's a different IllegalStateException
-                        throw e;
-                    }
-                }
-            }
-
-            // Skip processing this rule's filters if they couldn't be resolved
-            // Clear any filters we may have added for this rule to avoid mixing with next rule's filters
-            if (ruleFilterSkipped) {
-                andFilters.clear();
-                orFilters.clear();
+            // FAIL CLOSED: a matched ALLOW rule's filter is a security constraint. If a variable it
+            // references cannot be resolved (missing, null, or its resolver threw), the rule
+            // contributes a filter that matches NOTHING. It is never dropped: dropping it would run
+            // the read with that rule's constraint removed.
+            java.util.Set<String> unresolvedVars = RuleFilterVariables.unresolved(
+                    vars, info.getAndFilterString(), info.getOrFilterString());
+            if (!unresolvedVars.isEmpty()) {
+                Log.warnf("Rule '%s' filter references unresolved variable(s) %s (resolver failed: %s) for model %s; "
+                                + "failing closed with a match-nothing filter (area=%s, domain=%s, action=%s)",
+                        info.getRuleName(), unresolvedVars, RuleFilterVariables.failed(vars, unresolvedVars),
+                        modelClass != null ? modelClass.getName() : "null",
+                        rcontext.getArea(), rcontext.getFunctionalDomain(), rcontext.getAction());
+                filters.add(RuleFilterVariables.matchNothing());
                 continue;
             }
 
-            if (!andFilters.isEmpty() && !orFilters.isEmpty()) {
+            // Each rule composes from its own and/or clauses only. Sharing these lists across rules
+            // let a rule with both clauses leave them behind, and a later rule's clause was then
+            // OR-ed into the earlier rule's and so dropped.
+            Filter ruleAnd = null;
+            Filter ruleOr = null;
+            try {
+                if (info.getAndFilterString() != null && !info.getAndFilterString().isEmpty()) {
+                    ruleAnd = MorphiaUtils.convertToFilter(info.getAndFilterString(), vars, modelClass);
+                }
+                if (info.getOrFilterString() != null && !info.getOrFilterString().isEmpty()) {
+                    ruleOr = MorphiaUtils.convertToFilter(info.getOrFilterString(), vars, modelClass);
+                }
+            } catch (IllegalStateException e) {
+                // Backstop: the converters also detect unresolved variables. Anything they flag the
+                // pre-check missed still fails closed for this rule only.
+                if (e.getMessage() != null && e.getMessage().contains("Unresolved resolver variable")) {
+                    Log.warnf("Rule '%s' filter has unresolved variable(s) for model %s; failing closed with a match-nothing filter",
+                            info.getRuleName(), modelClass != null ? modelClass.getName() : "null");
+                    filters.add(RuleFilterVariables.matchNothing());
+                    continue;
+                }
+                throw e;
+            }
+
+            if (ruleAnd != null && ruleOr != null) {
                 FilterJoinOp joinOp;
                 if (info.getJoinOp() != null && !info.getJoinOp().isBlank()) {
                     joinOp = FilterJoinOp.valueOf(info.getJoinOp());
@@ -2006,23 +2435,14 @@ public class RuleContext {
                     joinOp = FilterJoinOp.AND;
                 }
                 if (joinOp == FilterJoinOp.AND) {
-                    andFilters.add(Filters.or(orFilters.toArray(new Filter[orFilters.size()])));
-                    filters.add(Filters.and(andFilters.toArray(new Filter[andFilters.size()])));
+                    filters.add(Filters.and(ruleAnd, Filters.or(ruleOr)));
                 } else {
-                    orFilters.add(Filters.and(andFilters.toArray(new Filter[andFilters.size()])));
-                    // Correct OR combination should use Filters.or
-                    filters.add(Filters.or(orFilters.toArray(new Filter[orFilters.size()])));
+                    filters.add(Filters.or(ruleOr, Filters.and(ruleAnd)));
                 }
-            } else {
-                if (!andFilters.isEmpty()) {
-                    filters.addAll(andFilters);
-                    andFilters.clear();
-                } else {
-                    if (!orFilters.isEmpty()) {
-                        filters.add(Filters.or(orFilters.toArray(new Filter[orFilters.size()])));
-                        orFilters.clear();
-                    }
-                }
+            } else if (ruleAnd != null) {
+                filters.add(ruleAnd);
+            } else if (ruleOr != null) {
+                filters.add(Filters.or(ruleOr));
             }
         }
 
@@ -2030,7 +2450,7 @@ public class RuleContext {
         // Sucks that we have to do this but Filter does not implement equals there for
         // gets hosed if your using a set.
         List<Filter> rc = new ArrayList<>();
-        HashMap<String, Filter> filterMap = new HashMap<>();
+        java.util.LinkedHashMap<String, Filter> filterMap = new java.util.LinkedHashMap<>();
         filters.forEach(filter -> {
             filterMap.put(filter.toString(), filter);
         });

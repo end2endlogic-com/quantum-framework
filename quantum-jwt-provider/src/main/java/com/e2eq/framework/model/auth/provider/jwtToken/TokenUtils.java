@@ -45,6 +45,22 @@ public class TokenUtils {
         private static volatile String privateKeyLocation = DEFAULT_PRIVATE_KEY_LOCATION;
         private static volatile String publicKeyLocation = DEFAULT_PUBLIC_KEY_LOCATION;
 
+        // JWS "kid" written into signed tokens. When set (e.g. from auth.jwt.key-id), it MUST
+        // match the kid published in the JWKS so JWKS-based verifiers can resolve the key. When
+        // null, we fall back to the private key location for backward compatibility.
+        private static volatile String signingKeyId = null;
+        private static volatile boolean signingEnabled = true;
+
+        public static void configureSigningEnabled(boolean enabled) {
+                signingEnabled = enabled;
+        }
+
+        private static PrivateKey signingKey() throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+                if (!signingEnabled) throw new IllegalStateException("JWT_SIGNING_DISABLED");
+                return cachedPrivateKey != null ? cachedPrivateKey : readPrivateKey(privateKeyLocation);
+        }
+
+
         private static volatile PrivateKey cachedPrivateKey;
         private static volatile PublicKey cachedPublicKey;
         private static volatile JwtKeyResolver keyResolver = new DefaultJwtKeyResolver();
@@ -75,6 +91,25 @@ public class TokenUtils {
                                 publicKeyLocation = publicKeyLoc;
                         }
                 }
+        }
+
+        /**
+         * Configure the JWS key id ("kid") stamped into signed tokens. Set this to the same value
+         * the JWKS advertises (auth.jwt.key-id) so JWKS-based verifiers can resolve the signing key.
+         */
+        public static void configureSigningKeyId(String keyId) {
+                if (keyId != null && !keyId.isBlank()) {
+                        signingKeyId = keyId;
+                }
+        }
+
+        /**
+         * The kid to stamp into signed tokens: the configured signing key id when present, otherwise
+         * the private key location (legacy behavior).
+         */
+        private static String resolveSigningKeyId() {
+                String kid = signingKeyId;
+                return (kid != null && !kid.isBlank()) ? kid : privateKeyLocation;
         }
 
         /**
@@ -141,7 +176,7 @@ public class TokenUtils {
 			throw new ValidationException("Duration must be greater than" + REFRESH_ADDITIONAL_DURATION_SECONDS + " seconds");
 		}
 
-                PrivateKey privateKey = cachedPrivateKey != null ? cachedPrivateKey : readPrivateKey(privateKeyLocation);
+                PrivateKey privateKey = signingKey();
 
 		JwtClaimsBuilder claimsBuilder = Jwt.claims();
 		long currentTimeInSecs = currentTimeInSecs();
@@ -162,12 +197,200 @@ public class TokenUtils {
 		if (orgRefName != null && !orgRefName.isBlank()) claimsBuilder.claim("orgRefName", orgRefName);
 		if (accountNum != null && !accountNum.isBlank()) claimsBuilder.claim("accountNum", accountNum);
 
-		return claimsBuilder.jws().keyId(privateKeyLocation).sign(privateKey);
+		return claimsBuilder.jws().keyId(resolveSigningKeyId()).sign(privateKey);
+	}
+
+	/**
+	 * Generic authenticated-user token. Application admission is evaluated by
+	 * the application front door before this token is minted; it is deliberately
+	 * not bound to an application audience or requested resource.
+	 */
+	public static String generateAuthenticatedUserToken(String subject,
+											 String userId,
+											 Set<String> groups,
+											 String realm,
+											 String tenantId,
+											 String orgRefName,
+											 String accountNum,
+											 String realmBoundary,
+											 long expiresAt,
+											 String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+		Objects.requireNonNull(subject, "subject cannot be null");
+		Objects.requireNonNull(issuer, "Issuer cannot be null");
+		if (expiresAt <= REFRESH_ADDITIONAL_DURATION_SECONDS) {
+			throw new ValidationException("Duration must be greater than" + REFRESH_ADDITIONAL_DURATION_SECONDS + " seconds");
+		}
+
+		PrivateKey privateKey = signingKey();
+		JwtClaimsBuilder claimsBuilder = Jwt.claims();
+		long currentTimeInSecs = currentTimeInSecs();
+		claimsBuilder.issuer(issuer);
+		claimsBuilder.subject(subject);
+		claimsBuilder.issuedAt(currentTimeInSecs);
+		claimsBuilder.expiresAt(expiresAt);
+		claimsBuilder.groups(groups);
+		claimsBuilder.claim("scope", AUTH_SCOPE);
+		addPrincipalClaims(claimsBuilder, userId, realm, tenantId, orgRefName, accountNum);
+		if (realmBoundary != null && !realmBoundary.isBlank()) {
+			claimsBuilder.claim("realmRegEx", realmBoundary.trim());
+		}
+		return claimsBuilder.jws().keyId(resolveSigningKeyId()).sign(privateKey);
+	}
+
+	/**
+	 * Trusted service identity. User delegation is carried separately in the
+	 * request, never by reusing the interactive user's bearer token.
+	 */
+	public static String generateServiceToken(String subject,
+										 Set<String> groups,
+										 long expiresAt,
+										 String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+		return generateServiceToken(subject, groups, null, expiresAt, issuer);
+	}
+
+	/**
+	 * Trusted service identity scoped to the application selected by the
+	 * authenticated minting session. The application is authorization context
+	 * ({@code azp}), not a resource audience, so service tokens remain free of an
+	 * {@code aud} claim.
+	 */
+	public static String generateServiceToken(String subject,
+										 Set<String> groups,
+										 String activeApplication,
+										 long expiresAt,
+										 String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+		Objects.requireNonNull(subject, "subject cannot be null");
+		Objects.requireNonNull(issuer, "Issuer cannot be null");
+		if (expiresAt <= REFRESH_ADDITIONAL_DURATION_SECONDS) {
+			throw new ValidationException("Duration must be greater than" + REFRESH_ADDITIONAL_DURATION_SECONDS + " seconds");
+		}
+
+		PrivateKey privateKey = signingKey();
+		long currentTimeInSecs = currentTimeInSecs();
+		JwtClaimsBuilder claimsBuilder = Jwt.claims()
+				.issuer(issuer)
+				.subject(subject)
+				.issuedAt(currentTimeInSecs)
+				.expiresAt(expiresAt)
+				.groups(groups)
+				.claim("scope", AUTH_SCOPE)
+				.claim(com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.TOKEN_TYPE_CLAIM,
+						com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.SERVICE_TOKEN_TYPE);
+		if (activeApplication != null && !activeApplication.isBlank()) {
+			claimsBuilder.claim("azp", activeApplication.trim());
+		}
+		return claimsBuilder.jws().keyId(resolveSigningKeyId()).sign(privateKey);
+	}
+
+	/**
+	 * Application-scoped token: mints a MULTI-audience token whose {@code aud} is the
+	 * set of applications the user is authorized for in the active realm (multi-aud
+	 * SSO — each suite app accepts a token whose {@code aud} contains its own id), and
+	 * an {@code azp} claim naming the application actively being entered. Claims
+	 * otherwise mirror {@link #generateUserToken(String, Set, long, String)}.
+	 *
+	 * @param audiences         the authorized application set (becomes {@code aud}); must be non-empty
+	 * @param activeApplication the actively-entered application (becomes {@code azp}); may be null
+	 */
+	public static String generateUserToken(String subject,
+											Set<String> groups,
+											Set<String> audiences,
+											String activeApplication,
+											long expiresAt,
+											String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+		return generateUserToken(subject, null, groups, null, null, null, null,
+				audiences, activeApplication, expiresAt, issuer);
+	}
+
+	public static String generateUserToken(String subject,
+											String userId,
+											Set<String> groups,
+											String realm,
+											String tenantId,
+											String orgRefName,
+											String accountNum,
+											Set<String> audiences,
+											String activeApplication,
+											long expiresAt,
+											String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+		return generateUserToken(subject, userId, groups, realm, tenantId, orgRefName, accountNum,
+				audiences, activeApplication, null, expiresAt, issuer);
+	}
+
+	/**
+	 * Application-scoped token that also carries the credential's REALM BOUNDARY
+	 * ({@code realmRegEx} claim — {@code "*"} or a regex). Delegated-claims
+	 * validators use it to authorize X-Realm switches inside the boundary the
+	 * issuer signed, instead of pinning the session to the login realm.
+	 */
+	public static String generateUserToken(String subject,
+											String userId,
+											Set<String> groups,
+											String realm,
+											String tenantId,
+											String orgRefName,
+											String accountNum,
+											Set<String> audiences,
+											String activeApplication,
+											String realmBoundary,
+											long expiresAt,
+											String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+
+		Objects.requireNonNull(subject, "subject cannot be null");
+		Objects.requireNonNull(issuer, "Issuer cannot be null");
+		if (audiences == null || audiences.isEmpty()) {
+			throw new ValidationException("audiences cannot be empty for an application-scoped token");
+		}
+		if (expiresAt <= REFRESH_ADDITIONAL_DURATION_SECONDS) {
+			throw new ValidationException("Duration must be greater than" + REFRESH_ADDITIONAL_DURATION_SECONDS + " seconds");
+		}
+
+		PrivateKey privateKey = signingKey();
+
+		JwtClaimsBuilder claimsBuilder = Jwt.claims();
+		long currentTimeInSecs = currentTimeInSecs();
+		claimsBuilder.issuer(issuer);
+		claimsBuilder.subject(subject);
+		claimsBuilder.issuedAt(currentTimeInSecs);
+		claimsBuilder.audience(audiences);
+		claimsBuilder.expiresAt(expiresAt);
+		claimsBuilder.groups(groups);
+		claimsBuilder.claim("scope", AUTH_SCOPE);
+		addPrincipalClaims(claimsBuilder, userId, realm, tenantId, orgRefName, accountNum);
+		if (activeApplication != null && !activeApplication.isBlank()) {
+			claimsBuilder.claim("azp", activeApplication);
+		}
+		if (realmBoundary != null && !realmBoundary.isBlank()) {
+			claimsBuilder.claim("realmRegEx", realmBoundary.trim());
+		}
+		return claimsBuilder.jws().keyId(resolveSigningKeyId()).sign(privateKey);
 	}
 
 	public static String generateRefreshToken(String subject,  long durationInSeconds, String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+		return generateRefreshToken(subject, null, null, null, durationInSeconds, issuer);
+	}
 
-                PrivateKey privateKey = cachedPrivateKey != null ? cachedPrivateKey : readPrivateKey(privateKeyLocation);
+	public static String generateRefreshToken(String subject,
+											 String userId,
+											 String realm,
+											 String activeApplication,
+											 long durationInSeconds,
+											 String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+
+        return generateRefreshToken(subject, userId, realm, activeApplication, durationInSeconds, issuer, null);
+    }
+
+    /** OAuth client binding is distinct from the authorized application (azp). */
+    public static String generateRefreshToken(String subject, String userId, String realm,
+            String activeApplication, long durationInSeconds, String issuer, String oauthClientId)
+            throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+
+		Objects.requireNonNull(subject, "subject cannot be null");
+		Objects.requireNonNull(issuer, "Issuer cannot be null");
+		if (durationInSeconds <= 0) {
+			throw new ValidationException("Refresh-token duration must be greater than zero seconds");
+		}
+                PrivateKey privateKey = signingKey();
 		JwtClaimsBuilder claimsBuilder = Jwt.claims();
 		long currentTimeInSecs = currentTimeInSecs();
 		claimsBuilder.issuer(issuer);
@@ -176,7 +399,24 @@ public class TokenUtils {
 		claimsBuilder.audience("b2bi-api-client-refresh");
 		claimsBuilder.expiresAt(currentTimeInSecs + durationInSeconds + REFRESH_ADDITIONAL_DURATION_SECONDS);
 		claimsBuilder.claim("scope", REFRESH_SCOPE);
-		return claimsBuilder.jws().keyId(privateKeyLocation).sign(privateKey);
+        if (oauthClientId != null && !oauthClientId.isBlank()) claimsBuilder.claim("oauth_client_id", oauthClientId);
+		if (userId != null && !userId.isBlank()) claimsBuilder.claim("userId", userId);
+		if (realm != null && !realm.isBlank()) claimsBuilder.claim("realm", realm);
+		if (activeApplication != null && !activeApplication.isBlank()) claimsBuilder.claim("azp", activeApplication);
+		return claimsBuilder.jws().keyId(resolveSigningKeyId()).sign(privateKey);
+	}
+
+	private static void addPrincipalClaims(JwtClaimsBuilder claimsBuilder,
+										 String userId,
+										 String realm,
+										 String tenantId,
+										 String orgRefName,
+										 String accountNum) {
+		if (userId != null && !userId.isBlank()) claimsBuilder.claim("userId", userId);
+		if (realm != null && !realm.isBlank()) claimsBuilder.claim("realm", realm);
+		if (tenantId != null && !tenantId.isBlank()) claimsBuilder.claim("tenantId", tenantId);
+		if (orgRefName != null && !orgRefName.isBlank()) claimsBuilder.claim("orgRefName", orgRefName);
+		if (accountNum != null && !accountNum.isBlank()) claimsBuilder.claim("accountNum", accountNum);
 	}
 
         public static PrivateKey readPrivateKey(final String pemResName) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {

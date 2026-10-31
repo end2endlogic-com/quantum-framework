@@ -52,7 +52,7 @@ public class AccessListResolverStringLiteralTest extends BaseRepoTest {
 
         // Create a policy for identity "user" that attaches an IN filter using the string-literal resolver variable
         Policy p = new Policy();
-        p.setRefName("resolver-policy-in-var-strings");
+        p.setRefName("RESOLVER_POLICY_IN_VAR_STRINGS");
         p.setDisplayName("Resolver Policy (Strings)");
         p.setPrincipalId("user");
         p.setDataDomain(securityUtils.getSystemDataDomain());
@@ -75,8 +75,10 @@ public class AccessListResolverStringLiteralTest extends BaseRepoTest {
                 .build();
         p.getRules().add(r);
 
-        policyRepo.save(realm, p);
-        ruleContext.reloadFromRepo(realm);
+        try (SecurityCallScope.Scope ignored = SecurityCallScope.openIgnoringRules()) {
+            policyRepo.save(realm, p);
+            ruleContext.reloadFromRepo(realm);
+        }
 
         // Build contexts that match the resolver's supports() and the rule
         PrincipalContext pc = new PrincipalContext.Builder()

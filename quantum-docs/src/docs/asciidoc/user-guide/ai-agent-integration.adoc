@@ -1,3 +1,7 @@
+ifndef::doc-root[]
+:doc-root: ..
+endif::[]
+
 // AI Agent Integration
 // Recommendations for framework APIs to support AI agents similar to
 // Palantir AIP / agentic enterprise patterns (e.g. AIPCon 6 – Agentic Operating System for the Enterprise).
@@ -36,7 +40,7 @@ For **CRUDL** (Create, Read, Update, Delete, List) over entity data, agents and 
 * **Optional agent layer** — A thin layer (`GET /api/agent/tools`, `POST /api/agent/execute`, `GET /api/agent/schema`) can sit on top of the gateway to provide tool discovery, unified execute, and schema for LLMs; implementation delegates to the gateway and does not duplicate logic.
 * **Domain REST resources** — Domain-specific resources (e.g. `BaseResource`/`OntologyAwareResource` subclasses with paths like `/orders`, `/shipments`) remain for human-driven UIs and workflows. Agents and MCP use the gateway for CRUDL unless a future design explicitly adds agent-only tools that call those resources.
 
-See xref:rest-crud.adoc[REST CRUD] and xref:planner-and-query-gateway.adoc[Planner and Query Gateway] for the gateway API and query syntax.
+See xref:{doc-root}/user-guide/rest-crud.adoc[REST CRUD] and xref:{doc-root}/user-guide/planner-and-query-gateway.adoc[Planner and Query Gateway] for the gateway API and query syntax.
 
 == Realistic Scenarios and Use Cases
 
@@ -50,7 +54,7 @@ The agent APIs and MCP bridge are abstract until you see how they are used in pr
 **Flow:**
 
 1. The AI client (or your app) connects to an MCP server that is configured to call your Quantum backend (`QUANTUM_BASE_URL`, `QUANTUM_AUTH_TOKEN`).
-2. The MCP server exposes six tools. The LLM chooses `query_find` and calls it with something like: `rootType: "Order"`, `query: "orderNumber:ORD-8842"`, `realm: "acme-corp"`.
+2. The default agent discovery surface exposes twelve gateway tools, including count, export, and the import lifecycle. The LLM chooses `query_find` and calls it with something like: `rootType: "Order"`, `query: "orderNumber:ORD-8842"`, `realm: "acme-corp"`.
 3. The bridge sends `POST /api/agent/execute` with `tool: "query_find"` and those `arguments`. The backend runs the query in the correct realm with your existing security and data scoping.
 4. The LLM gets back a list of matching orders (or none) and answers: “Order ORD-8842 is Shipped, delivered last Tuesday.”
 
@@ -134,7 +138,7 @@ Developers and agents need to know *what query string* to use for questions like
 
 * Answer: "What is the query string to retrieve locations in Atlanta?" → use `exampleQueries` (e.g. `city:Atlanta` or `address.city:Atlanta` for `rootType: Location`).
 * Suggest: "Did you know you could use the query gateway with expand on entity Order with relationship customer to get a combined result set?" → use `didYouKnow` (e.g. expand(customer) && status:ACTIVE).
-* Use ontology: When the app uses ontology edges (hasEdge, hasEdgeAny, notHasEdge), `queryGrammarSummary.ontologyEdges` and a did-you-know hint explain that ontology-aware list endpoints filter by relationship; for gateway find, use attribute filters.
+* Use ontology: When the app uses ontology edges (hasEdge, hasEdgeAny, notHasEdge), `queryGrammarSummary.ontologyEdges` and a did-you-know hint explain that ontology-aware list endpoints filter by relationship; gateway find also supports these predicates when the ontology Mongo provider is installed.
 
 **Response shape:**
 
@@ -156,8 +160,8 @@ Developers and agents need to know *what query string* to use for questions like
 
 === Expand and ontology in the same flow
 
-* **expand(path)** — Use in the *query string* passed to `query_find` or `query_plan`. The gateway parses expand(...) and selects AGGREGATION mode; execution (when enabled) returns a combined result set. See xref:query-expansion.adoc[Relationship hydration with expand(path)] and xref:planner-and-query-gateway.adoc[Planner and QueryGateway].
-* **Ontology edges (hasEdge, hasEdgeAny, notHasEdge)** — Used by ontology-aware list endpoints and permission rules (ListQueryRewriter). For the *generic* query gateway find, use normal attribute filters. For entities that have ontology list endpoints (e.g. GET /locations/ontology), those endpoints accept ontology constraints; the agent can point the user to the right endpoint or use query_find with attribute filters only.
+* **expand(path)** — Use in the *query string* passed to `query_find` or `query_plan`. The gateway parses expand(...) and selects AGGREGATION mode; execution (when enabled) returns a combined result set. See xref:{doc-root}/user-guide/query-expansion.adoc[Relationship hydration with expand(path)] and xref:{doc-root}/user-guide/planner-and-query-gateway.adoc[Planner and QueryGateway].
+* **Ontology edges (hasEdge, hasEdgeAny, notHasEdge)** — Used by ontology-aware list endpoints and permission rules (ListQueryRewriter). The generic query gateway also accepts these predicates when the ontology Mongo provider is installed; normal attribute filters remain available without that provider.
 
 In short: expose `GET /api/agent/query-hints` so developers and agents can ask "what query gets X?" and get "did you know you could use expand(...) to get a combined result set that looks like this...".
 
@@ -167,7 +171,7 @@ Agents and developers need to answer: *"Can role X perform this action on this E
 
 === Permission check API (single decision)
 
-**Endpoint:** `POST /system/permissions/check` (see xref:permissions.adoc[Permissions]).
+**Endpoint:** `POST /system/permissions/check` (see xref:{doc-root}/user-guide/permissions.adoc[Permissions]).
 
 **Purpose:** Determine whether a given identity (userId or role) is allowed to perform a given action in a given area/functionalDomain. The response includes the **winning rule** that determined the outcome, so when the decision is DENY you can answer "why not? — rule R caused it."
 
@@ -244,19 +248,19 @@ Agent integration is **multi-tenant**: each tenant (realm) has its own configura
   * _limits_ (optional): Per-tenant limits (e.g. max find limit).
 * **Caller permission** — The caller must be allowed to use the agent API for the target tenant; the actual execution runs under the tenant's runAs user (if configured) or the caller. Audit logs record both caller and runAs user when runAs is used.
 
-**Secrets (global vs tenant-level):** Application-wide secrets (e.g. JWT signing key, vault connection) are **global** and tenant-independent; they are resolved at startup. Per-tenant secrets (e.g. LLM API keys for hosted providers like OpenAI, Claude, or Gemini) are **tenant-level** and must be resolved per realm at request time—prefer a vault with realm-scoped paths or a tenant config store that references vault keys. See xref:secrets-and-vault.adoc[Secrets and Vault Configuration] for the two-level model and how to configure HashiCorp Vault or AWS Secrets Manager.
+**Secrets (global vs tenant-level):** Application-wide secrets (e.g. JWT signing key, vault connection) are **global** and tenant-independent; they are resolved at startup. Per-tenant secrets (e.g. LLM API keys for hosted providers like OpenAI, Claude, or Gemini) are **tenant-level** and must be resolved per realm at request time—prefer a vault with realm-scoped paths or a tenant config store that references vault keys. See xref:{doc-root}/user-guide/secrets-and-vault.adoc[Secrets and Vault Configuration] for the two-level model and how to configure HashiCorp Vault or AWS Secrets Manager.
 
-**Token consumption and allocation:** Per-tenant token pools can be assigned to different sets of APIs and Tools/LLM configurations for usage-based billing. Record LLM usage (by tenant and runAsUserId) and API call usage (by tenant and caller); allocate token types (API_CALL, LLM_REQUEST, LLM_INPUT_TOKENS, LLM_OUTPUT_TOKENS) scoped to API identifiers and/or tool names and LLM config keys. See xref:usage-and-token-allocation.adoc[Usage Metering and Token Allocation].
+**Token consumption and allocation:** Per-tenant token pools can be assigned to different sets of APIs and Tools/LLM configurations for usage-based billing. Record LLM usage (by tenant and runAsUserId) and API call usage (by tenant and caller); allocate token types (API_CALL, LLM_REQUEST, LLM_INPUT_TOKENS, LLM_OUTPUT_TOKENS) scoped to API identifiers and/or tool names and LLM config keys. See xref:{doc-root}/user-guide/usage-and-token-allocation.adoc[Usage Metering and Token Allocation].
 
 See the implementation design (`docs/design/AI_AGENT_INTEGRATION_DESIGN.md`) for the data model (e.g. AgentTenantConfig), storage options, and runAs resolution.
 
-== APIs to Add (Gateway-Centric)
+== Gateway-Centric Agent APIs
 
 === 1. Agent Tools / Capabilities (Discovery)
 
 **Purpose:** One endpoint that returns a machine-readable list of "tools" the agent can call—scoped to **Query Gateway operations** so the agent has a single, consistent CRUDL surface.
 
-**Suggested endpoint:** `GET /api/agent/tools` (or `GET /api/agent/capabilities`).
+**Endpoint:** `GET /api/agent/tools`. The default catalog contains the twelve tools below; realm-specific configuration can restrict the returned set.
 
 **Response shape (conceptual):**
 
@@ -277,8 +281,8 @@ See the implementation design (`docs/design/AI_AGENT_INTEGRATION_DESIGN.md`) for
 
 **Implementation notes:**
 
-* Implement by enumerating the six gateway operations (and their request DTOs) from `QueryGatewayResource`; no need to scan the rest of the REST API space.
-* Only include tools the current principal is allowed to use (e.g. permission for integration/query and the corresponding action).
+* `AgentToolsProvider` defines the discovery catalog and `AgentExecuteHandler` dispatches these gateway operations using their request DTOs.
+* Discovery is not an authorization grant. Each execution still requires the principal to pass the gateway action and realm checks.
 * Response format can align with OpenAI function calling or MCP tool definitions so agents and MCP bridges consume it directly.
 
 **Why:** Agents discover a single CRUDL surface (the gateway) instead of many domain endpoints; aligns with "Tools" in Palantir AIP while keeping integration simple.
@@ -390,7 +394,7 @@ MCP uses JSON-RPC over stdio (local) or HTTP (SSE / Streamable HTTP) for remote 
 
 ==== Option A: Native MCP (Recommended)
 
-Use the `quantum-mcp-server` module to expose the Query Gateway as a set of MCP tools and resources directly from your backend. This provides the most integrated experience and reuses your existing security, realm, and data-scoping logic. See xref:mcp-server-and-client.adoc[MCP Server and Client] for details.
+Use the `quantum-mcp-server` module to expose the Query Gateway as a set of MCP tools and resources directly from your backend. This provides the most integrated experience and reuses your existing security, realm, and data-scoping logic. See xref:{doc-root}/user-guide/mcp-server-and-client.adoc[MCP Server and Client] for details.
 
 ==== Option B: MCP Bridge Server
 
@@ -642,7 +646,7 @@ mvn -pl quantum-framework -Dtest=AgentMcpBridgeFlowIT test
 | `/api/agent/permission-hints` | GET | Permission check/evaluate API summary, area/domain/action mapping. |
 | `/api/agent/ontology` | GET | Optional: ontology summary for retrieval context. |
 | `/api/agent/execute` | POST | Execute one of the gateway tools by name + arguments (delegate to `QueryGatewayResource`). |
-| `/api/agent/config/*` | GET/POST/DELETE | CRUD for Agent configuration (LLM reference, prompt context, enabled tools). Realm-scoped. See xref:mcp-server-and-client.adoc#agent-config-api[Agent Configuration API]. |
+| `/api/agent/config/*` | GET/POST/DELETE | CRUD for Agent configuration (LLM reference, prompt context, enabled tools). Realm-scoped. See xref:{doc-root}/user-guide/mcp-server-and-client.adoc#agent-config-api[Agent Configuration API]. |
 | `/api/agent/context` | POST/GET | Optional: retrieval context (gateway find or optional ontology). |
 | (headers) | - | `X-Agent-Session-Id`, `X-Agent-Trace-Id` for audit and multi-turn. |
 

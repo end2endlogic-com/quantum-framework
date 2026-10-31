@@ -3,6 +3,8 @@ package com.e2eq.framework.model.persistent.morphia;
 import com.e2eq.framework.grammar.BIAPIQueryLexer;
 import com.e2eq.framework.grammar.BIAPIQueryParser;
 import com.e2eq.framework.model.persistent.base.*;
+import com.e2eq.framework.model.security.DataDomainResolution;
+import com.e2eq.framework.model.security.DataDomainResolver;
 import com.e2eq.framework.model.security.DomainContext;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
@@ -26,9 +28,19 @@ public class MorphiaUtils {
    public static class VariableBundle {
       public final Map<String, String> strings;
       public final Map<String, Object> objects;
+      /**
+       * Variable keys whose resolver threw while building this bundle. Such keys are
+       * deliberately absent from {@link #strings} and {@link #objects}; rule filters that
+       * reference them must fail closed (match nothing / deny), never be dropped.
+       */
+      public final java.util.Set<String> failedKeys;
       public VariableBundle(Map<String, String> strings, Map<String, Object> objects) {
+         this(strings, objects, java.util.Set.of());
+      }
+      public VariableBundle(Map<String, String> strings, Map<String, Object> objects, java.util.Set<String> failedKeys) {
          this.strings = strings;
          this.objects = objects;
+         this.failedKeys = (failedKeys == null) ? java.util.Set.of() : java.util.Set.copyOf(failedKeys);
       }
    }
 
@@ -122,28 +134,97 @@ public class MorphiaUtils {
            java.util.List<com.e2eq.framework.model.persistent.morphia.planner.LogicalPlan.SortSpec.Field> sortFields,
            java.util.Map<String, String> variableMap
    ) {
+      return convertToPlannedQuery(queryString, modelClass, limit, skip, sortFields, variableMap, null);
+   }
+
+   public static <T extends UnversionedBaseModel> com.e2eq.framework.model.persistent.morphia.planner.PlannedQuery convertToPlannedQuery(
+           String queryString,
+           Class<T> modelClass,
+           Integer limit,
+           Integer skip,
+           java.util.List<com.e2eq.framework.model.persistent.morphia.planner.LogicalPlan.SortSpec.Field> sortFields,
+           java.util.Map<String, String> variableMap,
+           java.util.Map<String, com.e2eq.framework.model.persistent.morphia.compiler.mongo.MongoAggregationCompiler.StagePolicy> stagePolicies
+   ) {
       com.e2eq.framework.model.persistent.morphia.planner.QueryPlanner planner =
               new com.e2eq.framework.model.persistent.morphia.planner.QueryPlanner();
-      return planner.plan(queryString, modelClass, limit, skip, sortFields, variableMap);
+      return planner.plan(queryString, modelClass, limit, skip, sortFields, variableMap, stagePolicies);
    }
 
    public static Map<String, String> createStandardVariableMapFrom(PrincipalContext pcontext, ResourceContext rcontext) {
-      Map<String, String> variableMap = new HashMap<>();
-      variableMap.put("principalId", pcontext.getUserId());
-      variableMap.put("pAccountId", pcontext.getDataDomain().getAccountNum());
-      variableMap.put("pTenantId", pcontext.getDataDomain().getTenantId());
-      variableMap.put("systemTenantId", pcontext.getDataDomain().getTenantId()); // fallback for legacy rules
-      variableMap.put("ownerId", pcontext.getDataDomain().getOwnerId());
-      variableMap.put("orgRefName", pcontext.getDataDomain().getOrgRefName());
-      variableMap.put("resourceId", rcontext.getResourceId());
+      return createStandardVariableMapFrom(pcontext, rcontext, null, null);
+   }
 
-      variableMap.put("action", rcontext.getAction());
-      variableMap.put("functionalDomain", rcontext.getFunctionalDomain());
-      variableMap.put("area", rcontext.getArea());
+   public static Map<String, String> createStandardVariableMapFrom(
+           PrincipalContext pcontext,
+           ResourceContext rcontext,
+           Class<?> modelClass,
+           DataDomainResolver resolver
+   ) {
+      Map<String, String> variableMap = new HashMap<>();
+      if (pcontext == null) {
+         return variableMap;
+      }
+      variableMap.put("principalId", pcontext.getUserId());
+
+      DataDomain effectiveDd = null;
+      if (resolver != null && rcontext != null) {
+         DataDomainResolution resolution = resolver.resolveForQuery(pcontext, rcontext.getArea(), rcontext.getFunctionalDomain(), modelClass);
+         if (resolution != null && resolution.isResolved()) {
+            effectiveDd = resolution.dataDomain();
+            if (resolution instanceof DataDomainResolution.Resolved resolved) {
+               if (resolved.policyFilter() != null) {
+                  variableMap.put("policyFilter", resolved.policyFilter());
+               }
+               if (resolved.facetFilters() != null && !resolved.facetFilters().isEmpty()) {
+                  resolved.facetFilters().forEach((k, v) -> {
+                     if (v != null) {
+                        String valStr = String.valueOf(v);
+                        variableMap.put(k, valStr);
+                        variableMap.put("facet." + k, valStr);
+                        variableMap.put("coord." + k, valStr);
+                     }
+                  });
+               }
+            }
+         }
+      }
+      if (effectiveDd == null) {
+         effectiveDd = pcontext.getDataDomain();
+      }
+
+      if (effectiveDd != null) {
+         variableMap.put("pAccountId", effectiveDd.getAccountNum());
+         variableMap.put("pTenantId", effectiveDd.getTenantId());
+         variableMap.put("pDataSegment", String.valueOf(effectiveDd.getDataSegment()));
+         variableMap.put("systemTenantId", effectiveDd.getTenantId()); // fallback for legacy rules
+         variableMap.put("ownerId", effectiveDd.getOwnerId());
+         variableMap.put("orgRefName", effectiveDd.getOrgRefName());
+
+         // Explicit tuple coordinate aliases
+         variableMap.put("dd.tenantId", effectiveDd.getTenantId());
+         variableMap.put("dd.accountNum", effectiveDd.getAccountNum());
+         variableMap.put("dd.dataSegment", String.valueOf(effectiveDd.getDataSegment()));
+         variableMap.put("dd.ownerId", effectiveDd.getOwnerId());
+         variableMap.put("dd.orgRefName", effectiveDd.getOrgRefName());
+      }
+
+      if (rcontext != null) {
+         variableMap.put("resourceId", rcontext.getResourceId());
+         variableMap.put("action", rcontext.getAction());
+         variableMap.put("functionalDomain", rcontext.getFunctionalDomain());
+         variableMap.put("area", rcontext.getArea());
+      }
       
       // Add defaultRealm so permission filters can dynamically scope by current realm
       // This is critical for X-Realm functionality - when realm switches, filters adapt automatically
       variableMap.put("defaultRealm", pcontext.getDefaultRealm());
+
+      // Add explicit principal identity variables
+      variableMap.put("principal.userId", pcontext.getUserId());
+      if (pcontext.getDefaultRealm() != null) {
+         variableMap.put("principal.defaultRealm", pcontext.getDefaultRealm());
+      }
 
       // Add DomainContext-sourced variables for richer realm context
       // These provide direct access to the domain context fields (which may differ from DataDomain when X-Realm is used)
@@ -161,11 +242,14 @@ public class MorphiaUtils {
       if (customProps != null && !customProps.isEmpty()) {
          for (Map.Entry<String, Object> entry : customProps.entrySet()) {
             Object value = entry.getValue();
-            if (value instanceof String) {
-               variableMap.put(entry.getKey(), (String) value);
+            if (value instanceof String sVal) {
+               variableMap.put(entry.getKey(), sVal);
+               variableMap.put("principal." + entry.getKey(), sVal);
             } else if (value != null) {
                // For collections and other objects, convert to string representation
-               variableMap.put(entry.getKey(), String.valueOf(value));
+               String sVal = String.valueOf(value);
+               variableMap.put(entry.getKey(), sVal);
+               variableMap.put("principal." + entry.getKey(), sVal);
             }
          }
       }
@@ -178,15 +262,48 @@ public class MorphiaUtils {
            ResourceContext rcontext,
            Map<String, Object> extraObjects
    ) {
-      Map<String, String> s = createStandardVariableMapFrom(pcontext, rcontext);
+      return buildVariableBundle(pcontext, rcontext, extraObjects, null, null);
+   }
+
+   public static VariableBundle buildVariableBundle(
+           PrincipalContext pcontext,
+           ResourceContext rcontext,
+           Map<String, Object> extraObjects,
+           Class<?> modelClass,
+           DataDomainResolver resolver
+   ) {
+      Map<String, String> s = createStandardVariableMapFrom(pcontext, rcontext, modelClass, resolver);
       Map<String, Object> o = new HashMap<>();
       o.putAll(s);
 
+      // If resolver provided facetFilters as typed objects, add them to o
+      if (resolver != null && pcontext != null && rcontext != null) {
+         DataDomainResolution resolution = resolver.resolveForQuery(pcontext, rcontext.getArea(), rcontext.getFunctionalDomain(), modelClass);
+         if (resolution instanceof DataDomainResolution.Resolved resolved) {
+            if (resolved.facetFilters() != null && !resolved.facetFilters().isEmpty()) {
+               resolved.facetFilters().forEach((k, v) -> {
+                  if (v != null) {
+                     o.put(k, v);
+                     o.put("facet." + k, v);
+                     o.put("coord." + k, v);
+                  }
+               });
+            }
+         }
+      }
+
       // Add custom properties to objects map (preserving their original types for typed filter construction)
       // This allows collections to be used directly in $in queries
-      Map<String, Object> customProps = pcontext.getCustomProperties();
-      if (customProps != null && !customProps.isEmpty()) {
-         o.putAll(customProps);
+      if (pcontext != null) {
+         Map<String, Object> customProps = pcontext.getCustomProperties();
+         if (customProps != null && !customProps.isEmpty()) {
+            o.putAll(customProps);
+            customProps.forEach((k, v) -> {
+               if (v != null) {
+                  o.put("principal." + k, v);
+               }
+            });
+         }
       }
 
       if (extraObjects != null) {
@@ -212,18 +329,56 @@ public class MorphiaUtils {
       return listener.getFilter();
    }
 
-   private static String normalizeOperators(String q) {
+   public static String normalizeOperators(String q) {
       if (q == null) return null;
       // Legacy normalization: historically ':=[' was used for IN. Normalize to the current ':^[' form.
-      // Keep this for backward compatibility with stored rules; all other operators are now handled by the grammar.
-      return q.replace(":=[", ":^[");
+      String normalized = q.replace(":=[", ":^[");
+
+      // Expand edges.@asOf(...) and @asOf(...)
+      java.util.regex.Matcher m = java.util.regex.Pattern.compile("(edges\\.)?@asOf\\s*\\(\\s*([^)]+)\\s*\\)").matcher(normalized);
+      if (m.find()) {
+         StringBuffer sb = new StringBuffer();
+         do {
+            boolean hasEdges = m.group(1) != null;
+            String arg = m.group(2).trim();
+            if ((arg.startsWith("\"") && arg.endsWith("\"")) || (arg.startsWith("'") && arg.endsWith("'"))) {
+               arg = arg.substring(1, arg.length() - 1);
+            }
+            String prefix = hasEdges ? "edges." : "";
+            String rep = "((" + prefix + "validFrom:<=" + arg + " || " + prefix + "validFrom:null) && (" + prefix + "validTo:>=" + arg + " || " + prefix + "validTo:null))";
+            m.appendReplacement(sb, java.util.regex.Matcher.quoteReplacement(rep));
+         } while (m.find());
+         m.appendTail(sb);
+         normalized = sb.toString();
+      }
+
+      // Expand edges.@minConfidence(...) and @minConfidence(...)
+      java.util.regex.Matcher mc = java.util.regex.Pattern.compile("(edges\\.)?@minConfidence\\s*\\(\\s*([^)]+)\\s*\\)").matcher(normalized);
+      if (mc.find()) {
+         StringBuffer sb = new StringBuffer();
+         do {
+            boolean hasEdges = mc.group(1) != null;
+            String arg = mc.group(2).trim();
+            if ((arg.startsWith("\"") && arg.endsWith("\"")) || (arg.startsWith("'") && arg.endsWith("'"))) {
+               arg = arg.substring(1, arg.length() - 1);
+            }
+            String prefix = hasEdges ? "edges." : "";
+            String rep = prefix + "confidence:>=" + arg;
+            mc.appendReplacement(sb, java.util.regex.Matcher.quoteReplacement(rep));
+         } while (mc.find());
+         mc.appendTail(sb);
+         normalized = sb.toString();
+      }
+
+      return normalized;
    }
 
 
    public static Filter convertToFilter(String queryString, @NotNull Map<String, String> variableMap, StringSubstitutor sub, Class<? extends UnversionedBaseModel> modelClass) {
       Objects.requireNonNull(modelClass, "Model class cannot be null");
       if (queryString != null && !queryString.isEmpty()) {
-         BIAPIQueryLexer lexer = new BIAPIQueryLexer(CharStreams.fromString(queryString));
+         String normalized = normalizeOperators(queryString);
+         BIAPIQueryLexer lexer = new BIAPIQueryLexer(CharStreams.fromString(normalized));
          BIAPIQueryParser parser = new BIAPIQueryParser(new CommonTokenStream(lexer));
          parser.addErrorListener(new BaseErrorListener() {
             @Override
@@ -255,7 +410,8 @@ public class MorphiaUtils {
          return Optional.empty();
       }
 
-      BIAPIQueryLexer lexer = new BIAPIQueryLexer(CharStreams.fromString(queryString));
+      String normalized = normalizeOperators(queryString);
+      BIAPIQueryLexer lexer = new BIAPIQueryLexer(CharStreams.fromString(normalized));
       BIAPIQueryParser parser = new BIAPIQueryParser(new CommonTokenStream(lexer));
       parser.addErrorListener(new BaseErrorListener() {
          @Override
@@ -268,6 +424,43 @@ public class MorphiaUtils {
       return Optional.of(parser.query());
    }
 
+
+   /**
+    * Strict form of {@link #validateQueryString}: the whole string must be one BIAPIQuery
+    * expression. {@code query} has no EOF anchor, so the lenient parse stops quietly at the first
+    * token that does not fit (for example a stray {@code ')'}) and ignores the rest; lexer errors
+    * are not reported either. Use this wherever a query string is composed from parts, so a part
+    * cannot close a group early and leave a governed clause unparsed.
+    *
+    * @throws IllegalArgumentException when the string is empty, does not lex, does not parse, or
+    *                                  has input left after the expression
+    */
+   public static void validateCompleteQueryString(String queryString) {
+      if (queryString == null || queryString.isBlank()) {
+         throw new IllegalArgumentException("Null or empty query string is not valid");
+      }
+      String normalized = normalizeOperators(queryString);
+      BaseErrorListener failing = new BaseErrorListener() {
+         @Override
+         public void syntaxError(Recognizer<?, ?> recognizer, Object offendingSymbol, int line,
+                                 int charPositionInLine, String msg, RecognitionException e) {
+            throw new IllegalArgumentException("syntax error in query string at position "
+                    + charPositionInLine + ": " + msg, e);
+         }
+      };
+      BIAPIQueryLexer lexer = new BIAPIQueryLexer(CharStreams.fromString(normalized));
+      lexer.removeErrorListeners();
+      lexer.addErrorListener(failing);
+      CommonTokenStream tokens = new CommonTokenStream(lexer);
+      BIAPIQueryParser parser = new BIAPIQueryParser(tokens);
+      parser.removeErrorListeners();
+      parser.addErrorListener(failing);
+      parser.query();
+      if (tokens.LA(1) != org.antlr.v4.runtime.Token.EOF) {
+         throw new IllegalArgumentException("query string has unparsed input after the expression at '"
+                 + tokens.LT(1).getText() + "'");
+      }
+   }
 
    public static Filter convertToFilterWContext(String queryString, PrincipalContext pcontext, ResourceContext rcontext, Class<? extends UnversionedBaseModel> modelClass)  {
       Objects.requireNonNull(modelClass, "Model class cannot be null");

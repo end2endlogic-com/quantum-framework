@@ -1,13 +1,21 @@
 package com.e2eq.framework.system.local;
 
+import com.e2eq.framework.api.system.RealmRegistrationConflictException;
 import com.e2eq.framework.api.system.SystemDirectory;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.model.persistent.morphia.RealmRepo;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
+import com.e2eq.framework.model.security.DomainContext;
 import com.e2eq.framework.model.security.Realm;
+import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import com.e2eq.framework.util.EnvConfigUtils;
+import org.jboss.logging.Logger;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 /**
  * {@link SystemDirectory} backed by the local system-realm database via the
@@ -26,6 +34,8 @@ import java.util.Optional;
  * to {@code quantum.system.directory.mode}.
  */
 public class LocalSystemDirectory implements SystemDirectory {
+
+    private static final Logger LOG = Logger.getLogger(LocalSystemDirectory.class);
 
     private final RealmRepo realmRepo;
     private final CredentialRepo credentialRepo;
@@ -56,7 +66,146 @@ public class LocalSystemDirectory implements SystemDirectory {
 
     @Override
     public Realm registerRealm(Realm realm) {
-        return realmRepo.save(systemRealmId(), realm);
+        // Catalog writes are framework directory operations. MorphiaRepo.save
+        // otherwise evaluates policy through QuantumAuthServiceAuthProvider, which
+        // handshakes the issuer's /contract-hash. Auth bootstrap publishes realms
+        // during StartupEvent, before that HTTP listener is up, so the handshake
+        // times out, registerRealm returns 500, bootstrap swallows it, and every
+        // later X-Realm mint fails with "Realm is not registered".
+        try (SecurityCallScope.Scope ignored = SecurityCallScope.openIgnoringRules()) {
+            return realmRepo.save(systemRealmId(), mergeIntoRecordedRealm(realm));
+        }
+    }
+
+    /**
+     * Registering a realm is keyed by refName. A write that arrives without an id
+     * (every control-plane PUT: the catalog contract carries no id) and names a
+     * realm that is already recorded is applied to that record instead of
+     * inserting a second document with the same refName.
+     *
+     * That upsert is deliberately narrow. It may set the display name, and the
+     * owning application only while the recorded realm has none (backfill). It
+     * never changes the fields that decide where and how the realm's data lives:
+     * database name, connection string, deployment type, tenancy mode, email
+     * domain, domain context and default admin. A write that asks for a
+     * different value in any of them is refused with
+     * {@link RealmRegistrationConflictException}. Writers round-trip the full
+     * catalog entry (read, modify, write): deployment type and tenancy mode are
+     * always compared, because the contract maps an absent value to
+     * DEDICATED / SINGLE_TENANT and cannot express "unchanged". The string
+     * fields and the domain context are compared only when the write carries
+     * them. The default admin is compared unless it is only the value
+     * {@link Realm#getDefaultAdminUserId()} derives from a missing email domain
+     * ("admin@null"), so an explicit admin without an email domain is still
+     * refused when it differs. Because the getter derives a value, a write that
+     * carries the email domain but no admin is compared as "admin@domain" and is
+     * refused when the recorded admin is explicit and different; full
+     * round-trip writers ({@code ControlPlaneRealmMapper.toEntry}) always send
+     * the recorded admin. Moving a realm to a different owner (compared ignoring case,
+     * as provisioning does) is refused too: a realm belongs to exactly one
+     * application.
+     *
+     * A write with no recorded realm is an insert. A racing duplicate insert in
+     * the same data domain is refused by the {@code idx_refIdUniqueInDomain}
+     * unique index rather than merged.
+     *
+     * Where earlier non-idempotent writes (or a database the unique index was
+     * never built on) already left several documents under one refName, the one
+     * with the lowest {@code _id} (the one every {@link RealmRepo} key lookup
+     * returns; a deterministic tie-break, not proof it was inserted first) is the
+     * recorded realm, and the others are named in a {@code REALM_DUPLICATE_RECORDS}
+     * warning. They are not deleted here: removing them is a reviewed cleanup, not
+     * a side effect of a registration.
+     */
+    Realm mergeIntoRecordedRealm(Realm incoming) {
+        if (incoming.getId() != null || incoming.getRefName() == null || incoming.getRefName().isBlank()) {
+            return incoming;
+        }
+        List<Realm> found = realmRepo.findAllByRefNameWithIgnoreRules(incoming.getRefName(), systemRealmId());
+        if (found == null || found.isEmpty()) {
+            return incoming;
+        }
+        Realm recorded = found.get(0);
+        if (found.size() > 1) {
+            LOG.warnf("REALM_DUPLICATE_RECORDS: realm '%s' has %d documents in %s; using the lowest _id %s"
+                    + " and leaving the duplicates %s untouched (remove them with a reviewed cleanup)",
+                incoming.getRefName(), found.size(), systemRealmId(), recorded.getId(),
+                found.subList(1, found.size()).stream()
+                    .map(realm -> String.valueOf(realm.getId()))
+                    .collect(Collectors.joining(", ", "[", "]")));
+        }
+        String recordedOwner = ownerOf(recorded);
+        String incomingOwner = ownerOf(incoming);
+        if (recordedOwner != null && incomingOwner != null && !recordedOwner.equalsIgnoreCase(incomingOwner)) {
+            throw new RealmRegistrationConflictException(
+                RealmRegistrationConflictException.Kind.REALM_OWNER_CONFLICT, incoming.getRefName(),
+                List.of("applicationRef"),
+                "belongs to '" + recordedOwner + "', not '" + incomingOwner + "'");
+        }
+        List<String> refused = restrictedChanges(recorded, incoming);
+        if (!refused.isEmpty()) {
+            throw new RealmRegistrationConflictException(
+                RealmRegistrationConflictException.Kind.REALM_RESTRICTED_FIELD_CHANGE, incoming.getRefName(),
+                refused,
+                "is already recorded; a catalog write may not change " + String.join(", ", refused));
+        }
+        if (recordedOwner == null && incomingOwner != null) {
+            recorded.setApplicationRef(incoming.getApplicationRef());
+        }
+        if (hasText(incoming.getDisplayName())) {
+            recorded.setDisplayName(incoming.getDisplayName());
+        }
+        return recorded;
+    }
+
+    private static List<String> restrictedChanges(Realm recorded, Realm incoming) {
+        List<String> fields = new ArrayList<>();
+        differs(fields, "databaseName", recorded.getDatabaseName(), incoming.getDatabaseName());
+        differs(fields, "connectionString", recorded.getConnectionString(), incoming.getConnectionString());
+        differs(fields, "emailDomain", recorded.getEmailDomain(), incoming.getEmailDomain());
+        String incomingAdmin = incoming.getDefaultAdminUserId();
+        boolean adminDerivedFromMissingDomain = !hasText(incoming.getEmailDomain())
+            && ("admin@" + incoming.getEmailDomain()).equals(incomingAdmin);
+        if (!adminDerivedFromMissingDomain) {
+            differs(fields, "defaultAdminUserId", recorded.getDefaultAdminUserId(), incomingAdmin);
+        }
+        if (incoming.getDeploymentType() != recorded.getDeploymentType()) {
+            fields.add("deploymentType");
+        }
+        if (incoming.getTenancyMode() != recorded.getTenancyMode()) {
+            fields.add("tenancyMode");
+        }
+        if (incoming.getDomainContext() != null
+                && !sameCatalogDomain(recorded.getDomainContext(), incoming.getDomainContext())) {
+            fields.add("domainContext");
+        }
+        return fields;
+    }
+
+    /** A value the write leaves empty is not a change; a different non-empty value is. */
+    private static void differs(List<String> fields, String name, String recorded, String incoming) {
+        if (hasText(incoming) && !incoming.equals(recorded)) {
+            fields.add(name);
+        }
+    }
+
+    /** Compares the domain-context fields the catalog contract carries. */
+    private static boolean sameCatalogDomain(DomainContext recorded, DomainContext incoming) {
+        return recorded != null
+            && Objects.equals(recorded.getTenantId(), incoming.getTenantId())
+            && Objects.equals(recorded.getOrgRefName(), incoming.getOrgRefName())
+            && Objects.equals(recorded.getAccountId(), incoming.getAccountId())
+            && recorded.getDataSegment() == incoming.getDataSegment();
+    }
+
+    private static String ownerOf(Realm realm) {
+        return realm.getApplicationRef() == null || !hasText(realm.getApplicationRef().getEntityRefName())
+            ? null
+            : realm.getApplicationRef().getEntityRefName();
+    }
+
+    private static boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 
     @Override

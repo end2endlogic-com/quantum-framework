@@ -11,6 +11,7 @@ import io.quarkus.logging.Log;
 import io.quarkus.test.junit.QuarkusTest;
 import io.smallrye.mutiny.Multi;
 import jakarta.annotation.PostConstruct;
+import com.e2eq.framework.util.SecurityUtils;
 import jakarta.inject.Inject;
 
 @QuarkusTest
@@ -24,6 +25,9 @@ public class BaseRepoTest {
 
     @Inject
     MigrationService migrationService;
+
+    @Inject
+    SecurityUtils baseSecurityUtils;
 
     protected String[] roles = {"admin", "user"};
     protected PrincipalContext pContext;
@@ -63,6 +67,18 @@ public class BaseRepoTest {
 
     }
 
+
+    /**
+     * Opens a security session as the configured system principal (role {@code system}, system realm and
+     * data domain), the identity the platform itself uses for control-plane writes such as realm catalog
+     * entries and system-domain policies. Fixtures that place records in the system data domain must use
+     * it: {@link #pContext} is a tenant admin of the test tenant, and since rule filters are enforced on
+     * writes a tenant admin may not write into another tenant's data domain.
+     */
+    protected SecuritySession asSystem() {
+        return new SecuritySession(baseSecurityUtils.getSystemPrincipalContext(),
+                baseSecurityUtils.getSystemSecurityResourceContext());
+    }
 
     /* @BeforeEach
     protected void setUp() {

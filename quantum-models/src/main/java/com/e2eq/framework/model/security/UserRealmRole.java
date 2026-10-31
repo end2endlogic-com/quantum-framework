@@ -22,9 +22,28 @@ import java.util.List;
  *
  * Consumed at token issuance (the IdP unions these into per-realm role
  * claims) and by the tenant-plane routing registry (JWT claims → realm
- * datastore). The credential's flat roles[] remains the user's roles in
- * their default realm (compatibility); these assignments extend, never
- * replace, that behavior.
+ * datastore). The credential remains the authoritative realm-access boundary:
+ * an assignment can supply roles and application grants inside an authorized
+ * realm, but must never authorize a realm excluded by the credential's
+ * authorizedRealms/realmRegEx contract.
+ *
+ * Role scope: the credential's flat roles[] apply in every realm the user can
+ * access (by design). A UserRealmRole adds roles within its one realm only.
+ * Roles that must hold in a single realm (for example roles granted by an
+ * access invite) belong here, never on the credential's flat roles.
+ *
+ * Data domain: the assignment's own dataDomain is the user's default partition
+ * inside the realm. In a pooled realm, tenant selection builds the request
+ * partition from the tenant's RealmTenantMembership and, when this data domain
+ * is for the same tenant/org/account, carries over its dataSegment, locationId
+ * and businessTransactionId. An access invite accepted under the
+ * pooled-realm-tenant policy writes the inviter's partition here (owner = the
+ * invitee) for a new assignment and unions the tenant into authorizedTenantIds;
+ * an existing assignment keeps its default partition.
+ *
+ * There is at most one assignment per (userId, realmRefName). The unique index
+ * enforcing it is created by UserRealmRoleRepo.ensureUniqueAssignmentIndex
+ * (not declared here, so existing duplicates cannot break datastore start-up).
  */
 @Entity
 @RegisterForReflection
@@ -49,6 +68,47 @@ public class UserRealmRole extends BaseModel {
 
    /** Roles the user holds IN THAT REALM (e.g. admin, user, viewer). */
    protected List<String> roles;
+
+   /**
+    * Applications this user may authenticate for IN THIS REALM (application-scoped
+    * auth; nested (realm, application) grant). Values are {@code ApplicationDefinition.refName}s
+    * (the app registry lives in the enterprise layer, so these are held as plain
+    * refName strings here, not a typed reference). Semantics:
+    * <ul>
+    *   <li>{@code null}/empty — NOT configured: legacy behavior (single default
+    *       audience, no app scoping). Backward compatible.</li>
+    *   <li>a concrete list — the token's {@code aud} is the whole set (multi-aud
+    *       SSO across the suite); the active app is resolved into {@code azp}.</li>
+    *   <li>{@code "*"} — admin-only, audited "any app" grant. Because the installed
+    *       app set isn't enumerable from this layer, a {@code *} grant requires the
+    *       caller to name the applicationId; the token is scoped to that app.</li>
+    * </ul>
+    */
+   protected List<String> authorizedApplications;
+
+   /**
+    * The app to assume when the caller doesn't pass an applicationId and more than
+    * one is authorized. Must be one of {@link #authorizedApplications}. Optional.
+    */
+   protected String defaultApplication;
+
+   /**
+    * Tenants this user may select inside this realm. Required for explicit
+    * tenant selection in a MULTI_TENANT realm. A null/empty value does not
+    * grant access; legacy single-tenant realms continue to use the realm's
+    * default DomainContext.
+    */
+   protected List<String> authorizedTenantIds;
+
+   /**
+    * Optional full-string, case-insensitive tenant entitlement expression for
+    * shared realms. Explicit tenant ids and this expression are unioned; an
+    * invalid expression grants nothing. Dedicated realms ignore this field and
+    * expose only the tenant bound to the realm.
+    */
+   protected String authorizedTenantRegEx;
+
+   public static final String APPLICATION_WILDCARD = "*";
 
    /** Org within the realm that sponsored/invited this user (provenance). */
    protected String sponsoringOrgRefName;

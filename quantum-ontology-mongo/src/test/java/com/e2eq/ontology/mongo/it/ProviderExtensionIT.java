@@ -15,7 +15,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 @QuarkusTest
-public class ProviderExtensionIT {
+public class ProviderExtensionIT extends com.e2eq.ontology.mongo.PrivilegedOntologyFixture {
 
     private static final String TENANT = "test-system-com";
 
@@ -58,8 +58,8 @@ public class ProviderExtensionIT {
         writeHook.afterPersist(TENANT, s);
 
         // Then: both edges should exist explicitly for SRC-1
-        var edges = edgeRepo.findBySrc(testDataDomain, "SRC-1");
-        long annCount = edges.stream().filter(e -> !e.isInferred() && e.getP().equals("annRel") && e.getDst().equals("TGT-1")).count();
+        var edges = edgeRepo.findBySrc(testDataDomain, s.getId().toString());
+        long annCount = edges.stream().filter(e -> !e.isInferred() && e.getP().equals("annRel") && e.getDst().equals(t1.getId().toString())).count();
         long provCount = edges.stream().filter(e -> !e.isInferred() && e.getP().equals("provRel") && e.getDst().equals("TGT-2")).count();
         assertEquals(1, annCount, "Annotation-derived edge missing");
         assertEquals(1, provCount, "Provider-derived edge missing");

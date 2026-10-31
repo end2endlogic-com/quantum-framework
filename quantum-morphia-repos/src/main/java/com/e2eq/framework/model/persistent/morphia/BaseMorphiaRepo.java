@@ -49,6 +49,25 @@ public interface BaseMorphiaRepo<T extends UnversionedBaseModel> {
    MorphiaDatastore getMorphiaDataStore ();
 
    /**
+    * Extension point returning the MongoDB {@link com.mongodb.client.model.Collation}
+    * applied to server-side sorts (both {@code find().sort(...)} and aggregation
+    * {@code $sort} pipelines), or {@code null} to preserve upstream binary-order
+    * behavior.
+    *
+    * <p>Default returns {@code null} so upstream and existing implementers are
+    * unaffected. Downstream implementations (see
+    * {@link MorphiaRepo#getSortCollation()}) may source this from config or
+    * override with a fixed policy.
+    *
+    * <p>Callers on the aggregation side (e.g. {@code OntologyAwareResource})
+    * MUST delegate to this method rather than reading collation config directly,
+    * so an override picked up by the find path also applies to expand queries.
+    */
+   default com.mongodb.client.model.Collation getSortCollation() {
+      return null;
+   }
+
+   /**
     * Returns the logical database name backing this repository.
     *
     * @return the database name
@@ -269,6 +288,21 @@ public interface BaseMorphiaRepo<T extends UnversionedBaseModel> {
     * @return List of entities matching the given criteria
     */
    List<T> getListByQuery(@NotNull Datastore datastore, int skip, int limit, @Nullable String query, @Nullable List<SortField> sortFields, @Nullable List<ProjectionField> projectionFields);
+
+   /**
+    * Executes an expand/aggregation query with row, field, and relationship policy
+    * applied to both the root collection and every declared join target.
+    */
+   default List<org.bson.Document> getSecuredAggregationDocuments(
+           @Nullable String realmId,
+           int skip,
+           int limit,
+           @NotNull String query,
+           @Nullable List<SortField> sortFields,
+           @Nullable List<ProjectionField> projectionFields) {
+      throw new UnsupportedOperationException(
+              "Governed aggregation is not implemented by repository " + getClass().getName());
+   }
 
    /**
     * Returns entities based on the given filters and sort fields in the default realm.

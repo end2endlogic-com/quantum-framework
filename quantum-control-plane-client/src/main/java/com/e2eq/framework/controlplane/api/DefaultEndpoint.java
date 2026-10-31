@@ -34,15 +34,33 @@ public interface DefaultEndpoint {
     @PUT
     @Path("/control/realms/{refName}")
     @Consumes(MediaType.APPLICATION_JSON)
-    @Valid RealmCatalogEntry registerRealm(@Valid @NotNull RealmCatalogEntry body);
+    @Valid RealmCatalogEntry registerRealm(
+        @PathParam("refName") @NotNull String refName,
+        @Valid @NotNull RealmCatalogEntry body);
 
     @GET
     @Path("/control/realms/{refName}/members")
     @Consumes(MediaType.APPLICATION_JSON)
     @Valid List<RealmMembershipEntry> membersOfRealm(@PathParam("refName") @NotNull String refName);
 
+    @PUT
+    @Path("/control/realms/{refName}/members/{organizationRefName}")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Valid RealmMembershipEntry upsertRealmMembership(
+        @PathParam("refName") @NotNull String refName,
+        @PathParam("organizationRefName") @NotNull String organizationRefName,
+        @Valid @NotNull RealmMembershipEntry body);
+
     @GET
     @Path("/control/users/{userId}/realms")
     @Consumes(MediaType.APPLICATION_JSON)
     @Valid List<UserRealmRoleEntry> realmsForUser(@PathParam("userId") @NotNull String userId);
+
+    @PUT
+    @Path("/control/users/{userId}/realms/{realmRefName}")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Valid UserRealmRoleEntry upsertUserRealmRole(
+        @PathParam("userId") @NotNull String userId,
+        @PathParam("realmRefName") @NotNull String realmRefName,
+        @Valid @NotNull UserRealmRoleEntry body);
 }

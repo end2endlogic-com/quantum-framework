@@ -9,12 +9,19 @@ public class JoinSpec {
     public final String localIdExpr;
     public final String tenantField;
     public final boolean localIsArray;
+    public final Class<?> targetType;
 
     public JoinSpec(String fromCollection, String remoteIdField, String localIdExpr, String tenantField, boolean localIsArray) {
+        this(fromCollection, remoteIdField, localIdExpr, tenantField, localIsArray, null);
+    }
+
+    public JoinSpec(String fromCollection, String remoteIdField, String localIdExpr,
+                    String tenantField, boolean localIsArray, Class<?> targetType) {
         this.fromCollection = fromCollection;
         this.remoteIdField = remoteIdField;
         this.localIdExpr = localIdExpr;
         this.tenantField = tenantField;
         this.localIsArray = localIsArray;
+        this.targetType = targetType;
     }
 }

@@ -76,10 +76,11 @@ public class TestMigrationService extends BaseRepoTest {
         try (final SecuritySession ss = new SecuritySession(pContext, rContext)) {
 
             DatabaseVersionRepo dbVersionRepo = migrationService.getDatabaseVersionRepo();
-            MorphiaSession session = dbVersionRepo.startSession("test");
+            String migrationTestRealm = "test-migration-service";
+            MorphiaSession session = dbVersionRepo.startSession(migrationTestRealm);
             session.startTransaction();
 
-            Optional<DatabaseVersion> odbv1 = dbVersionRepo.findByRefName(session, "test");
+            Optional<DatabaseVersion> odbv1 = dbVersionRepo.findByRefName(session, migrationTestRealm);
             Log.infof("odbv1: %s", odbv1.isPresent() ? odbv1.get().toString() : "not found");
 
             DatabaseVersion dbVersion = migrationService.saveDatabaseVersion(session, "1.0.0");

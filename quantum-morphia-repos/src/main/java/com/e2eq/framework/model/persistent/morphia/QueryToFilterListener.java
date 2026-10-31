@@ -4,6 +4,7 @@ import com.e2eq.framework.grammar.BIAPIQueryBaseListener;
 import com.e2eq.framework.grammar.BIAPIQueryParser;
 
 import com.e2eq.framework.model.persistent.base.BaseModel;
+import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import dev.morphia.annotations.Reference;
 import dev.morphia.query.filters.Filter;
@@ -16,6 +17,7 @@ import org.antlr.v4.runtime.tree.ParseTreeWalker;
 import org.apache.commons.text.StringSubstitutor;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
+import com.e2eq.framework.model.securityrules.SecurityContext;
 import org.bson.types.ObjectId;
 
 
@@ -47,11 +49,208 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
     // MongoDB requires $text to be a top-level query operator
     private int notNestingDepth = 0;
     private int elemMatchNestingDepth = 0;
+    private int edgeFilterNestingDepth = 0;
+
+    public boolean isInsideEdgeFilter() {
+        return edgeFilterNestingDepth > 0;
+    }
+
+    private boolean isRootEdgeField(String name) {
+        if (name == null) return false;
+        switch (name) {
+            case "src":
+            case "srcType":
+            case "p":
+            case "dst":
+            case "dstType":
+            case "inferred":
+            case "derived":
+            case "props":
+            case "prov":
+            case "support":
+            case "ts":
+            case "dataDomain":
+            case "id":
+            case "_id":
+            case "created":
+            case "updated":
+            case "version":
+                return true;
+            default:
+                return name.startsWith("props.") || name.startsWith("dataDomain.") || name.startsWith("prov.");
+        }
+    }
+
+    private String resolveFieldName(String fieldName) {
+        if (edgeFilterNestingDepth > 0 && elemMatchNestingDepth == 0 && !isRootEdgeField(fieldName)) {
+            return "props." + fieldName;
+        }
+        return fieldName;
+    }
+
+    private static String cleanString(String s) {
+        if (s == null) return null;
+        String trimmed = s.trim();
+        if ((trimmed.startsWith("\"") && trimmed.endsWith("\"")) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+            if (trimmed.length() >= 2) {
+                return trimmed.substring(1, trimmed.length() - 1);
+            }
+        }
+        return trimmed;
+    }
 
     Map<String, String> variableMap = null;
     StringSubstitutor sub = null;
 
     Class<? extends UnversionedBaseModel> modelClass=null;
+
+    /**
+     * Resolve the complete data-domain boundary used by ontology relationship predicates.
+     * A tenant id alone is not sufficient because a realm may contain multiple org/account
+     * domains and business refNames are not guaranteed to be globally unique.
+     */
+    private DataDomain resolveOntologyDataDomain(String requestedTenantId) {
+        Optional<PrincipalContext> principalContext = SecurityContext.getPrincipalContext();
+        if (principalContext.isPresent()) {
+            DataDomain principalDataDomain = principalContext.get().getDataDomain();
+            if (principalDataDomain == null) {
+                throw new IllegalStateException(
+                    "Ontology relationship predicates require a principal DataDomain");
+            }
+            if (requestedTenantId != null && !requestedTenantId.isBlank()
+                && !Objects.equals(requestedTenantId, principalDataDomain.getTenantId())) {
+                throw new SecurityException(
+                    "Ontology relationship tenant does not match the authenticated principal DataDomain");
+            }
+            return principalDataDomain;
+        }
+
+        String tenantId = firstNonBlank(requestedTenantId, variable("pTenantId"), variable("tenantId"));
+        String orgRefName = firstNonBlank(variable("orgRefName"), variable("dcOrgRefName"));
+        String accountNum = firstNonBlank(variable("pAccountId"), variable("dcAccountId"));
+        String dataSegmentValue = firstNonBlank(variable("pDataSegment"), variable("dcDataSegment"));
+        if (tenantId == null || orgRefName == null || accountNum == null || dataSegmentValue == null) {
+            throw new IllegalStateException(
+                "Ontology relationship predicates require tenantId, orgRefName, accountId, and dataSegment");
+        }
+
+        final int dataSegment;
+        try {
+            dataSegment = Integer.parseInt(dataSegmentValue);
+        } catch (NumberFormatException e) {
+            throw new IllegalStateException(
+                "Ontology relationship dataSegment must be an integer", e);
+        }
+
+        DataDomain dataDomain = new DataDomain();
+        dataDomain.setTenantId(tenantId);
+        dataDomain.setOrgRefName(orgRefName);
+        dataDomain.setAccountNum(accountNum);
+        dataDomain.setDataSegment(dataSegment);
+        String ownerId = variable("ownerId");
+        if (ownerId != null && !ownerId.isBlank()) {
+            dataDomain.setOwnerId(ownerId);
+        }
+        return dataDomain;
+    }
+
+    private String variable(String name) {
+        return variableMap == null ? null : variableMap.get(name);
+    }
+
+    private static String firstNonBlank(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    @SuppressWarnings("unchecked")
+    protected Set<String> ontologySrcIdsByDst(DataDomain dataDomain, String predicate, String dst, Filter edgeFilter) {
+        try {
+            var cdi = jakarta.enterprise.inject.spi.CDI.current();
+            if (cdi == null) {
+                throw new IllegalStateException("CDI is not available");
+            }
+            Class<?> edgeRepoClass = Class.forName("com.e2eq.ontology.repo.OntologyEdgeRepo");
+            var selection = cdi.select(edgeRepoClass);
+            if (selection.isUnsatisfied()) {
+                throw new IllegalStateException("OntologyEdgeRepo bean is not available");
+            }
+            Object edgeRepo = selection.get();
+            Filter[] filters = (edgeFilter != null) ? new Filter[]{ edgeFilter } : new Filter[0];
+            try {
+                java.lang.reflect.Method method = edgeRepoClass.getMethod(
+                    "srcIdsByDst", DataDomain.class, String.class, String.class, Filter[].class);
+                Object result = method.invoke(edgeRepo, dataDomain, predicate, dst, (Object) filters);
+                if (!(result instanceof Set<?>)) {
+                    throw new IllegalStateException("OntologyEdgeRepo returned an invalid source-id result");
+                }
+                return (Set<String>) result;
+            } catch (NoSuchMethodException nsme) {
+                java.lang.reflect.Method method = edgeRepoClass.getMethod(
+                    "srcIdsByDst", DataDomain.class, String.class, String.class);
+                Object result = method.invoke(edgeRepo, dataDomain, predicate, dst);
+                if (!(result instanceof Set<?>)) {
+                    throw new IllegalStateException("OntologyEdgeRepo returned an invalid source-id result");
+                }
+                return (Set<String>) result;
+            }
+        } catch (ReflectiveOperationException | IllegalStateException e) {
+            throw new IllegalStateException(
+                "Unable to enforce ontology outgoing-edge predicate for DataDomain", e);
+        }
+    }
+
+    protected Set<String> ontologySrcIdsByDst(DataDomain dataDomain, String predicate, String dst) {
+        return ontologySrcIdsByDst(dataDomain, predicate, dst, null);
+    }
+
+    @SuppressWarnings("unchecked")
+    protected Set<String> ontologyDstIdsBySrc(DataDomain dataDomain, String predicate, String src, Filter edgeFilter) {
+        try {
+            var cdi = jakarta.enterprise.inject.spi.CDI.current();
+            if (cdi == null) {
+                throw new IllegalStateException("CDI is not available");
+            }
+            Class<?> edgeRepoClass = Class.forName("com.e2eq.ontology.repo.OntologyEdgeRepo");
+            var selection = cdi.select(edgeRepoClass);
+            if (selection.isUnsatisfied()) {
+                throw new IllegalStateException("OntologyEdgeRepo bean is not available");
+            }
+            Object edgeRepo = selection.get();
+            Filter[] filters = (edgeFilter != null) ? new Filter[]{ edgeFilter } : new Filter[0];
+            try {
+                java.lang.reflect.Method method = edgeRepoClass.getMethod(
+                    "dstIdsBySrc", DataDomain.class, String.class, String.class, Filter[].class);
+                Object result = method.invoke(edgeRepo, dataDomain, predicate, src, (Object) filters);
+                if (!(result instanceof Set<?>)) {
+                    throw new IllegalStateException("OntologyEdgeRepo returned an invalid destination-id result");
+                }
+                return (Set<String>) result;
+            } catch (NoSuchMethodException nsme) {
+                java.lang.reflect.Method method = edgeRepoClass.getMethod(
+                    "dstIdsBySrc", DataDomain.class, String.class, String.class);
+                Object result = method.invoke(edgeRepo, dataDomain, predicate, src);
+                if (!(result instanceof Set<?>)) {
+                    throw new IllegalStateException("OntologyEdgeRepo returned an invalid destination-id result");
+                }
+                return (Set<String>) result;
+            }
+        } catch (ReflectiveOperationException | IllegalStateException e) {
+            throw new IllegalStateException(
+                "Unable to enforce ontology incoming-edge predicate for DataDomain", e);
+        }
+    }
+
+    protected Set<String> ontologyDstIdsBySrc(DataDomain dataDomain, String predicate, String src) {
+        return ontologyDstIdsBySrc(dataDomain, predicate, src, null);
+    }
 
 
     public QueryToFilterListener(Map<String, String> variableMap, StringSubstitutor sub, Class<? extends UnversionedBaseModel> modelClass) {
@@ -154,7 +353,8 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
 
     private void registerTextClause() {
         if (textClauseSeen) {
-            throw new IllegalStateException("Multiple text(...) clauses are not supported in a single query.");
+            throw new IllegalStateException(
+                "Multiple text(...) clauses are not supported in a single query; MongoDB allows only one $text operator per query.");
         }
         // MongoDB requires $text to be a top-level query operator.
         // It cannot be nested inside $not/$nor or $elemMatch.
@@ -171,6 +371,11 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
                 "text(...) cannot be used inside an elemMatch expression. " +
                 "MongoDB requires $text to be a top-level query operator. " +
                 "Example invalid query: arrayField:{text(\"foo\")}");
+        }
+        if (edgeFilterNestingDepth > 0) {
+            throw new IllegalStateException(
+                "text(...) cannot be used inside an edgeFilter expression. " +
+                "MongoDB requires $text to be a top-level query operator. ");
         }
         textClauseSeen = true;
     }
@@ -217,10 +422,11 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
 
     @Override
     public void enterNullExpr(BIAPIQueryParser.NullExprContext ctx) {
+        String fieldName = resolveFieldName(ctx.field.getText());
         if (ctx.op.getType() == BIAPIQueryParser.EQ) {
-            filterStack.push(Filters.eq(ctx.field.getText(), null));
+            filterStack.push(Filters.eq(fieldName, null));
         } else if (ctx.op.getType() == BIAPIQueryParser.NEQ) {
-            filterStack.push(Filters.ne(ctx.field.getText(), null));
+            filterStack.push(Filters.ne(fieldName, null));
         }
     }
 
@@ -319,7 +525,7 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
     @Override
     public void enterReferenceExpr(BIAPIQueryParser.ReferenceExprContext ctx) {
         String oid = ctx.value.getText();
-        String fieldName = ctx.field.getText();
+        String fieldName = resolveFieldName(ctx.field.getText());
         Object reference = buildReference(fieldName, oid);
         if (ctx.op.getType() == BIAPIQueryParser.EQ) {
             filterStack.push(Filters.eq(fieldName, reference));
@@ -332,7 +538,7 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
 
     @Override
     public void enterRegexExpr(BIAPIQueryParser.RegexExprContext ctx) {
-        String field = ctx.field.getText();
+        String field = resolveFieldName(ctx.field.getText());
         boolean caseSensitive = isCaseSensitive(ctx.regex().caseMode());
 
         String escapedValue = escapeRegexChars(ctx.regex().value.getText());
@@ -538,10 +744,11 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
 
     @Override
     public void enterExistsExpr(BIAPIQueryParser.ExistsExprContext ctx) {
+        String fieldName = resolveFieldName(ctx.field.getText());
         if (Log.isDebugEnabled()) {
-            Log.debug("enterExists:" + ctx.field.getText() + ctx.op.getText());
+            Log.debug("enterExists:" + fieldName + ctx.op.getText());
         }
-        Filter f = Filters.exists(ctx.field.getText());
+        Filter f = Filters.exists(fieldName);
         filterStack.push(f);
     }
 
@@ -573,10 +780,11 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
             throw new IllegalArgumentException("Boolean value not recognized:" + ctx.value.getText());
         }
 
+        String fieldName = resolveFieldName(ctx.field.getText());
         if (ctx.op.getType() == BIAPIQueryParser.EQ) {
-            filterStack.push(Filters.eq(ctx.field.getText(), value));
+            filterStack.push(Filters.eq(fieldName, value));
         } else if (ctx.op.getType() == BIAPIQueryParser.NEQ) {
-            filterStack.push(Filters.ne(ctx.field.getText(), value));
+            filterStack.push(Filters.ne(fieldName, value));
         } else {
             throw new IllegalArgumentException("Operator not recognized:" + ctx.op.getText());
         }
@@ -584,7 +792,7 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
 
    @Override
    public void enterInExpr(BIAPIQueryParser.InExprContext ctx) {
-      String field = ctx.field.getText();
+      String field = resolveFieldName(ctx.field.getText());
 
       List<Object> values = new ArrayList<>();
       List<String> unresolvedVars = new ArrayList<>();
@@ -601,6 +809,7 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
                               .filter(c -> c instanceof org.antlr.v4.runtime.tree.TerminalNode tn &&
                                               switch (tn.getSymbol().getType()) {
                                                  case BIAPIQueryParser.STRING,
+                                                      BIAPIQueryParser.TEXT,
                                                       BIAPIQueryParser.QUOTED_STRING,
                                                       BIAPIQueryParser.VARIABLE,
                                                       BIAPIQueryParser.OID,
@@ -673,8 +882,10 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
                   values.add(coerceValue(new StringLiteral(tn.getText())));
                   break;
                }
-               case BIAPIQueryParser.STRING: {
+               case BIAPIQueryParser.STRING:
+               case BIAPIQueryParser.TEXT: {
                   // Allow coercion (numbers, booleans, dates, ObjectId, etc.)
+                  // TEXT is the keyword token for "text" used as an unquoted value.
                   values.add(coerceValue(tn.getText()));
                   break;
                }
@@ -810,7 +1021,7 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
             throw new IllegalStateException("elemMatch inner expression produced no filters");
         }
         Filter inner = filterStack.pop();
-        Filter f = Filters.elemMatch(ctx.field.getText(), inner);
+        Filter f = Filters.elemMatch(resolveFieldName(ctx.field.getText()), inner);
         filterStack.push(f);
         if (Log.isDebugEnabled()) {
             Log.debug("exitElemMatch: pushed elemMatch, filterDepthNow=" + filterStack.size());
@@ -832,6 +1043,7 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
     }
 
     protected Filter makeBasicFilter(Token field, Token op, Object value, boolean caseSensitive) {
+        String fieldName = resolveFieldName(field.getText());
         Filter filter = null;
         boolean caseInsensitiveStringEquality = false;
         CommonToken originalToken = value instanceof CommonToken tok ? tok : null;
@@ -859,11 +1071,15 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
         caseInsensitiveStringEquality = originalToken != null
                 && !caseSensitive
                 && (op.getType() == BIAPIQueryParser.EQ || op.getType() == BIAPIQueryParser.NEQ)
-                && (originalToken.getType() == BIAPIQueryParser.STRING || originalToken.getType() == BIAPIQueryParser.QUOTED_STRING);
+                && (originalToken.getType() == BIAPIQueryParser.STRING
+                        || originalToken.getType() == BIAPIQueryParser.TEXT
+                        || originalToken.getType() == BIAPIQueryParser.QUOTED_STRING);
 
         if (value instanceof CommonToken tok) {
             switch (tok.getType()) {
                 case BIAPIQueryParser.STRING:
+                case BIAPIQueryParser.TEXT:
+                    // TEXT is the keyword token for the literal "text" used as a field value.
                     value = tok.getText();
                     break;
                 case BIAPIQueryParser.QUOTED_STRING:
@@ -879,20 +1095,27 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
                     value = new ObjectId(tok.getText());
                     break;
                 case BIAPIQueryParser.VARIABLE: {
-                    String replaced = (sub != null) ? sub.replace(tok.getText()) : tok.getText();
-                    // Check if variable was not resolved (still contains ${...} pattern)
-                    // Only check when we have a substitutor - if no substitutor, variables are expected to remain unresolved
-                    if (sub != null && replaced != null && replaced.contains("${")) {
-                        Log.errorf("Unresolved variable '%s' for field '%s'. " +
-                                "This likely means the AccessListResolver's supports() method returned false for the current context, " +
-                                "or the variable is not provided by any resolver. " +
-                                "Ensure your resolver supports all area/functionalDomain/action combinations where this variable is used.",
-                                tok.getText(), field.getText());
-                        throw new IllegalStateException(
-                            "Unresolved resolver variable '" + tok.getText() + "' for field '" + field.getText() + "'. " +
-                            "The AccessListResolver's supports() method must return true for the current request context.");
+                    String varName = (tok.getText().startsWith("${") && tok.getText().endsWith("}"))
+                            ? tok.getText().substring(2, tok.getText().length() - 1)
+                            : tok.getText();
+                    if (objectVars != null && objectVars.containsKey(varName)) {
+                        value = objectVars.get(varName);
+                    } else {
+                        String replaced = (sub != null) ? sub.replace(tok.getText()) : tok.getText();
+                        // Check if variable was not resolved (still contains ${...} pattern)
+                        // Only check when we have a substitutor - if no substitutor, variables are expected to remain unresolved
+                        if (sub != null && replaced != null && replaced.contains("${")) {
+                            Log.errorf("Unresolved variable '%s' for field '%s'. " +
+                                    "This likely means the AccessListResolver's supports() method returned false for the current context, " +
+                                    "or the variable is not provided by any resolver. " +
+                                    "Ensure your resolver supports all area/functionalDomain/action combinations where this variable is used.",
+                                    tok.getText(), field.getText());
+                            throw new IllegalStateException(
+                                "Unresolved resolver variable '" + tok.getText() + "' for field '" + field.getText() + "'. " +
+                                "The AccessListResolver's supports() method must return true for the current request context.");
+                        }
+                        value = coerceValue(replaced);
                     }
-                    value = coerceValue(replaced);
                 }
                     break;
                 case BIAPIQueryParser.NUMBER: {
@@ -941,29 +1164,44 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
         switch (op.getType()) {
             case BIAPIQueryParser.EQ:
                 if (caseInsensitiveStringEquality) {
-                    filter = regexFilter(field.getText(), "^" + escapeRegexChars((String) value) + "$", false);
+                    filter = regexFilter(fieldName, "^" + escapeRegexChars((String) value) + "$", false);
                 } else {
-                    filter = Filters.eq(field.getText(), value);
+                    filter = Filters.eq(fieldName, value);
                 }
                 break;
             case BIAPIQueryParser.NEQ:
                 if (caseInsensitiveStringEquality) {
-                    filter = Filters.nor(regexFilter(field.getText(), "^" + escapeRegexChars((String) value) + "$", false));
+                    filter = Filters.nor(regexFilter(fieldName, "^" + escapeRegexChars((String) value) + "$", false));
                 } else {
-                    filter = Filters.ne(field.getText(), value);
+                    filter = Filters.ne(fieldName, value);
+                }
+                break;
+            case BIAPIQueryParser.IN:
+                if (value instanceof Iterable<?> iter) {
+                    filter = Filters.in(fieldName, iter);
+                } else if (value != null && value.getClass().isArray()) {
+                    filter = Filters.in(fieldName, java.util.Arrays.asList((Object[]) value));
+                } else if (value instanceof String s) {
+                    List<String> list = java.util.Arrays.stream(s.split(","))
+                            .map(String::trim)
+                            .filter(x -> !x.isEmpty())
+                            .toList();
+                    filter = Filters.in(fieldName, list);
+                } else {
+                    filter = Filters.in(fieldName, Collections.singletonList(value));
                 }
                 break;
             case BIAPIQueryParser.GT:
-                filter = Filters.gt(field.getText(), value);
+                filter = Filters.gt(fieldName, value);
                 break;
             case BIAPIQueryParser.GTE:
-                filter = Filters.gte(field.getText(), value);
+                filter = Filters.gte(fieldName, value);
                 break;
             case BIAPIQueryParser.LT:
-                filter = Filters.lt(field.getText(), value);
+                filter = Filters.lt(fieldName, value);
                 break;
             case BIAPIQueryParser.LTE:
-                filter = Filters.lte(field.getText(), value);
+                filter = Filters.lte(fieldName, value);
                 break;
             default:
                 throw new IllegalArgumentException("Operator invalid in this context:" + op.getText());
@@ -1009,16 +1247,96 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
         super.enterCompoundExpr(ctx);
     }
 
-    // Ontology function: hasEdge(predicate, dst)
+    // Ontology function: hasEdge(predicate, dst, { edgeFilter }?)
     // This method relies on the extended grammar; when ontology is not wired, it fails closed (no results)
     @Override
     public void enterHasEdgeExpr(BIAPIQueryParser.HasEdgeExprContext ctx) {
-        String predicate = ctx.predicate.getText();
-        String dst = ctx.dst.getText();
+        if (ctx.edgeFilter != null) {
+            opTypeMarkers.push(opTypeStack.size());
+            filterStackMarkers.push(filterStack.size());
+            edgeFilterNestingDepth++;
+        }
+    }
+
+    @Override
+    public void exitHasEdgeExpr(BIAPIQueryParser.HasEdgeExprContext ctx) {
+        Filter edgeFilter = null;
+        if (ctx.edgeFilter != null) {
+            edgeFilterNestingDepth--;
+            int startOp = opTypeMarkers.pop();
+            int startFilter = filterStackMarkers.pop();
+            buildCompositeSince(startOp, startFilter);
+            if (filterStack.size() > startFilter) {
+                edgeFilter = filterStack.pop();
+            }
+        }
+        processHasEdge(ctx.predicate, ctx.dst, edgeFilter);
+    }
+
+    // Ontology function: hasOutgoingEdge(predicate, dst, { edgeFilter }?) - alias for hasEdge
+    // This is provided for symmetry with hasIncomingEdge. It does the same thing as hasEdge.
+    @Override
+    public void enterHasOutgoingEdgeExpr(BIAPIQueryParser.HasOutgoingEdgeExprContext ctx) {
+        if (ctx.edgeFilter != null) {
+            opTypeMarkers.push(opTypeStack.size());
+            filterStackMarkers.push(filterStack.size());
+            edgeFilterNestingDepth++;
+        }
+    }
+
+    @Override
+    public void exitHasOutgoingEdgeExpr(BIAPIQueryParser.HasOutgoingEdgeExprContext ctx) {
+        Filter edgeFilter = null;
+        if (ctx.edgeFilter != null) {
+            edgeFilterNestingDepth--;
+            int startOp = opTypeMarkers.pop();
+            int startFilter = filterStackMarkers.pop();
+            buildCompositeSince(startOp, startFilter);
+            if (filterStack.size() > startFilter) {
+                edgeFilter = filterStack.pop();
+            }
+        }
+        processHasEdge(ctx.predicate, ctx.dst, edgeFilter);
+    }
+
+    // Ontology function: hasIncomingEdge(predicate, src, { edgeFilter }?)
+    // This finds entities that the given source has edges TO (inverse direction from hasEdge).
+    // Example: hasIncomingEdge(canSeeLocation, associateId, { role: 'PRIMARY' }) finds locations the associate can see.
+    // Edge direction: src --predicate--> dst, this function queries by src to find dst entities.
+    @Override
+    public void enterHasIncomingEdgeExpr(BIAPIQueryParser.HasIncomingEdgeExprContext ctx) {
+        if (ctx.edgeFilter != null) {
+            opTypeMarkers.push(opTypeStack.size());
+            filterStackMarkers.push(filterStack.size());
+            edgeFilterNestingDepth++;
+        }
+    }
+
+    @Override
+    public void exitHasIncomingEdgeExpr(BIAPIQueryParser.HasIncomingEdgeExprContext ctx) {
+        Filter edgeFilter = null;
+        if (ctx.edgeFilter != null) {
+            edgeFilterNestingDepth--;
+            int startOp = opTypeMarkers.pop();
+            int startFilter = filterStackMarkers.pop();
+            buildCompositeSince(startOp, startFilter);
+            if (filterStack.size() > startFilter) {
+                edgeFilter = filterStack.pop();
+            }
+        }
+        processHasIncomingEdge(ctx.predicate, ctx.src, edgeFilter);
+    }
+
+    private void processHasEdge(Token predicateToken, Token dstToken, Filter edgeFilter) {
+        String predicate = predicateToken.getText();
+        String dst = dstToken.getText();
         if (sub != null) {
             predicate = sub.replace(predicate);
             dst = sub.replace(dst);
         }
+        predicate = cleanString(predicate);
+        dst = cleanString(dst);
+
         String tenantId = null;
         if (variableMap != null) {
             tenantId = variableMap.get("pTenantId");
@@ -1059,159 +1377,21 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
             }
         } catch (Throwable ignored) { /* if ontology not wired, continue with best-effort behavior */ }
 
-        Set<String> ids = Collections.emptySet();
-        if (tenantId != null && !tenantId.isBlank()) {
-            try {
-                var cdi = jakarta.enterprise.inject.spi.CDI.current();
-                if (cdi != null) {
-                    Class<?> edgeIface = Class.forName("com.e2eq.ontology.repo.OntologyEdgeRepo");
-                    var sel = cdi.select(edgeIface);
-                    Object store = sel.isUnsatisfied() ? null : sel.get();
-                    if (store != null) {
-                        java.lang.reflect.Method m = edgeIface.getMethod("srcIdsByDst", String.class, String.class, String.class);
-                        Object result = m.invoke(store, tenantId, predicate, dst);
-                        if (result instanceof java.util.Set) {
-                            ids = (Set<String>) result;
-                        }
-                    }
-                }
-            } catch (Throwable t) {
-                // ignore and fail closed below
-            }
-        }
-        if (ids == null || ids.isEmpty()) {
-            filterStack.push(Filters.eq("_id", "__none__"));
-        } else {
-            // Edge ids may be ObjectId hex strings (annotation-extracted edges)
-            // or refNames (business-keyed edges): match each against the field
-            // it can actually equal.
-            List<Object> objectIds = new ArrayList<>();
-            List<String> refNames = new ArrayList<>();
-            for (String id : ids) {
-                try {
-                    objectIds.add(new ObjectId(id));
-                } catch (IllegalArgumentException e) {
-                    refNames.add(id);
-                }
-            }
-            if (!objectIds.isEmpty() && !refNames.isEmpty()) {
-                filterStack.push(Filters.or(Filters.in("_id", objectIds), Filters.in("refName", refNames)));
-            } else if (!refNames.isEmpty()) {
-                filterStack.push(Filters.in("refName", refNames));
-            } else {
-                filterStack.push(Filters.in("_id", objectIds));
-            }
-        }
+        DataDomain dataDomain = com.e2eq.framework.model.persistent.base.RuleEdgeScope.forRuleLookup(resolveOntologyDataDomain(tenantId));
+        Set<String> ids = ontologySrcIdsByDst(dataDomain, predicate, dst, edgeFilter);
+        pushIdFilter(ids);
     }
 
-    // Ontology function: hasOutgoingEdge(predicate, dst) - alias for hasEdge
-    // This is provided for symmetry with hasIncomingEdge. It does the same thing as hasEdge.
-    @Override
-    public void enterHasOutgoingEdgeExpr(BIAPIQueryParser.HasOutgoingEdgeExprContext ctx) {
-        // Delegate to the same logic as hasEdge - create a synthetic HasEdgeExprContext would be complex,
-        // so we just duplicate the core logic here
-        String predicate = ctx.predicate.getText();
-        String dst = ctx.dst.getText();
-        if (sub != null) {
-            predicate = sub.replace(predicate);
-            dst = sub.replace(dst);
-        }
-        String tenantId = null;
-        if (variableMap != null) {
-            tenantId = variableMap.get("pTenantId");
-            if (tenantId == null) tenantId = variableMap.get("tenantId");
-        }
-
-        // Try to canonicalize predicate using OntologyAliasResolver if available via CDI
-        try {
-            var cdi = jakarta.enterprise.inject.spi.CDI.current();
-            if (cdi != null) {
-                Class<?> aliasCls = Class.forName("com.e2eq.ontology.core.OntologyAliasResolver");
-                var aliasSel = cdi.select(aliasCls);
-                Object resolver = aliasSel.isUnsatisfied() ? null : aliasSel.get();
-                if (resolver != null) {
-                    java.lang.reflect.Method cm = aliasCls.getMethod("canonical", String.class);
-                    Object can = cm.invoke(resolver, predicate);
-                    if (can instanceof String s) predicate = s;
-                }
-            }
-        } catch (Throwable ignored) { /* continue if resolver not present */ }
-
-        // Optional safety: validate that the predicate's domain matches the current model class
-        try {
-            if (modelClass != null) {
-                var cdi = jakarta.enterprise.inject.spi.CDI.current();
-                if (cdi != null) {
-                    Class<?> regIface = Class.forName("com.e2eq.ontology.core.OntologyRegistry");
-                    var regSel = cdi.select(regIface);
-                    Object registry = regSel.isUnsatisfied() ? null : regSel.get();
-                    if (registry != null) {
-                        if (!isPredicateApplicableToModel(registry, regIface, predicate, modelClass)) {
-                            filterStack.push(Filters.eq("_id", "__none__"));
-                            return;
-                        }
-                    }
-                }
-            }
-        } catch (Throwable ignored) { /* if ontology not wired, continue with best-effort behavior */ }
-
-        Set<String> ids = Collections.emptySet();
-        if (tenantId != null && !tenantId.isBlank()) {
-            try {
-                var cdi = jakarta.enterprise.inject.spi.CDI.current();
-                if (cdi != null) {
-                    Class<?> edgeIface = Class.forName("com.e2eq.ontology.repo.OntologyEdgeRepo");
-                    var sel = cdi.select(edgeIface);
-                    Object store = sel.isUnsatisfied() ? null : sel.get();
-                    if (store != null) {
-                        java.lang.reflect.Method m = edgeIface.getMethod("srcIdsByDst", String.class, String.class, String.class);
-                        Object result = m.invoke(store, tenantId, predicate, dst);
-                        if (result instanceof java.util.Set) {
-                            ids = (Set<String>) result;
-                        }
-                    }
-                }
-            } catch (Throwable t) {
-                // ignore and fail closed below
-            }
-        }
-        if (ids == null || ids.isEmpty()) {
-            filterStack.push(Filters.eq("_id", "__none__"));
-        } else {
-            // Edge ids may be ObjectId hex strings (annotation-extracted edges)
-            // or refNames (business-keyed edges): match each against the field
-            // it can actually equal.
-            List<Object> objectIds = new ArrayList<>();
-            List<String> refNames = new ArrayList<>();
-            for (String id : ids) {
-                try {
-                    objectIds.add(new ObjectId(id));
-                } catch (IllegalArgumentException e) {
-                    refNames.add(id);
-                }
-            }
-            if (!objectIds.isEmpty() && !refNames.isEmpty()) {
-                filterStack.push(Filters.or(Filters.in("_id", objectIds), Filters.in("refName", refNames)));
-            } else if (!refNames.isEmpty()) {
-                filterStack.push(Filters.in("refName", refNames));
-            } else {
-                filterStack.push(Filters.in("_id", objectIds));
-            }
-        }
-    }
-
-    // Ontology function: hasIncomingEdge(predicate, src)
-    // This finds entities that the given source has edges TO (inverse direction from hasEdge).
-    // Example: hasIncomingEdge(canSeeLocation, associateId) finds locations the associate can see.
-    // Edge direction: src --predicate--> dst, this function queries by src to find dst entities.
-    @Override
-    public void enterHasIncomingEdgeExpr(BIAPIQueryParser.HasIncomingEdgeExprContext ctx) {
-        String predicate = ctx.predicate.getText();
-        String src = ctx.src.getText();
+    private void processHasIncomingEdge(Token predicateToken, Token srcToken, Filter edgeFilter) {
+        String predicate = predicateToken.getText();
+        String src = srcToken.getText();
         if (sub != null) {
             predicate = sub.replace(predicate);
             src = sub.replace(src);
         }
+        predicate = cleanString(predicate);
+        src = cleanString(src);
+
         String tenantId = null;
         if (variableMap != null) {
             tenantId = variableMap.get("pTenantId");
@@ -1253,57 +1433,12 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
             }
         } catch (Throwable ignored) { /* if ontology not wired, continue with best-effort behavior */ }
 
-        Set<String> ids = Collections.emptySet();
-        if (tenantId != null && !tenantId.isBlank()) {
-            try {
-                var cdi = jakarta.enterprise.inject.spi.CDI.current();
-                if (cdi != null) {
-                    Class<?> edgeIface = Class.forName("com.e2eq.ontology.repo.OntologyEdgeRepo");
-                    var sel = cdi.select(edgeIface);
-                    Object store = sel.isUnsatisfied() ? null : sel.get();
-                    if (store != null) {
-                        // Use dstIdsBySrc to get destination IDs where src has edges
-                        java.lang.reflect.Method m = edgeIface.getMethod("dstIdsBySrc",
-                            com.e2eq.framework.model.persistent.base.DataDomain.class, String.class, String.class);
+        DataDomain dataDomain = com.e2eq.framework.model.persistent.base.RuleEdgeScope.forRuleLookup(resolveOntologyDataDomain(tenantId));
+        Set<String> ids = ontologyDstIdsBySrc(dataDomain, predicate, src, edgeFilter);
+        pushIdFilter(ids);
+    }
 
-                        // Build DataDomain from tenantId - use defaults for testing
-                        com.e2eq.framework.model.persistent.base.DataDomain dd =
-                            new com.e2eq.framework.model.persistent.base.DataDomain();
-                        dd.setTenantId(tenantId);
-                        // Try to get org and account from security context
-                        try {
-                            var secCtxOpt = com.e2eq.framework.model.securityrules.SecurityContext.getPrincipalContext();
-                            if (secCtxOpt.isPresent()) {
-                                var pctx = secCtxOpt.get();
-                                if (pctx.getDataDomain() != null) {
-                                    dd = pctx.getDataDomain();
-                                }
-                            }
-                        } catch (Throwable ignored2) { }
-                        // Set fallback values if not set
-                        if (dd.getOrgRefName() == null) dd.setOrgRefName("ontology");
-                        if (dd.getAccountNum() == null) dd.setAccountNum("0000000000");
-                        if (dd.getTenantId() == null) dd.setTenantId(tenantId);
-                        dd.setDataSegment(0);
-
-                        if (Log.isDebugEnabled()) {
-                            Log.debugf("hasIncomingEdge: calling dstIdsBySrc with dd=%s, predicate=%s, src=%s", dd, predicate, src);
-                        }
-                        Object result = m.invoke(store, dd, predicate, src);
-                        if (result instanceof java.util.Set) {
-                            ids = (Set<String>) result;
-                            if (Log.isDebugEnabled()) {
-                                Log.debugf("hasIncomingEdge: dstIdsBySrc returned %d IDs: %s", ids.size(), ids);
-                            }
-                        }
-                    }
-                }
-            } catch (Throwable t) {
-                if (Log.isDebugEnabled()) {
-                    Log.debugf(t, "hasIncomingEdge: Exception while querying edges");
-                }
-            }
-        }
+    private void pushIdFilter(Set<String> ids) {
         if (ids == null || ids.isEmpty()) {
             filterStack.push(Filters.eq("_id", "__none__"));
         } else {

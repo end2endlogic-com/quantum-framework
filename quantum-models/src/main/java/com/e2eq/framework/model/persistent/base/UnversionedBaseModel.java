@@ -7,6 +7,7 @@ import com.e2eq.framework.rest.models.UIAction;
 import com.e2eq.framework.rest.models.UIActionList;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.mongodb.client.model.CollationStrength;
 import dev.morphia.annotations.*;
 import io.quarkus.runtime.annotations.RegisterForReflection;
@@ -109,9 +110,20 @@ public abstract  class UnversionedBaseModel {
     @Transient
     protected UIActionList actionList;
 
-    // purposefully not included in equals or hash as well
+    /**
+     * Server-side switch that bypasses data-domain resolution, bean validation and state-graph
+     * checks on persist. Only trusted code may set it programmatically; it is never bound from
+     * external JSON (REST bodies, QueryGateway saves, import sessions, seed records), or a caller
+     * could choose its own tenant placement. Clients that need to persist incomplete data use
+     * {@link com.e2eq.framework.model.general.interfaces.InvalidSavable#isCanSaveInvalid()}.
+     * Purposefully not included in equals or hash.
+     */
+    public static final String SKIP_VALIDATION_PROPERTY = "skipValidation";
+
     @Transient
     @Builder.Default
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    @Schema(readOnly = true, description = "Server-side only; ignored when sent by a client")
     protected boolean skipValidation=false;
 
     // purposefully not included in equals or hash as well

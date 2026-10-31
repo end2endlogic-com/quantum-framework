@@ -92,10 +92,17 @@ public class StateGraphManager {
         }
 
         field.setAccessible(true);
-        String currentState = (String) field.get(entity);
+        Object currentValue = field.get(entity);
+        String currentState = stateName(currentValue);
 
-        validateTransition(stateGraph.graphName(), currentState != null ? currentState : "", newState);
-        field.set(entity, newState);
+        validateTransition(stateGraph.graphName(), currentState, newState);
+        if (field.getType().isEnum()) {
+            @SuppressWarnings({"unchecked", "rawtypes"})
+            Object enumValue = Enum.valueOf((Class<? extends Enum>) field.getType(), newState);
+            field.set(entity, enumValue);
+        } else {
+            field.set(entity, newState);
+        }
     }
 
     /**
@@ -104,6 +111,13 @@ public class StateGraphManager {
      */
     public Map<String, StringState> getStateGraphs() {
         return Collections.unmodifiableMap(stateGraphs);
+    }
+
+    public static String stateName(Object value) {
+        if (value == null) {
+            return "";
+        }
+        return value instanceof Enum<?> enumValue ? enumValue.name() : value.toString();
     }
 
     /**

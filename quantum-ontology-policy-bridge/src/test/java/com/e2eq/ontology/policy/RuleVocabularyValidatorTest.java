@@ -66,6 +66,115 @@ class RuleVocabularyValidatorTest {
         assertTrue(failure.getMessage().contains("bad-rule"));
     }
 
+    private static OntologyRegistry registryWith(String... predicates) {
+        Map<String, OntologyRegistry.PropertyDef> properties = new java.util.HashMap<>();
+        for (String p : predicates) {
+            properties.put(p, new OntologyRegistry.PropertyDef(p,
+                    Optional.empty(), Optional.empty(), false, Optional.empty(),
+                    false, false, false, Set.of(), false));
+        }
+        return new InMemoryOntologyRegistry(new OntologyRegistry.TBox(Map.of(), properties, List.of()));
+    }
+
+    @Test
+    void admittedPredicateAccepted() {
+        // canSeeLocation declared AND admitted -> accepted.
+        RuleVocabularyValidator validator = new RuleVocabularyValidator(
+                registryWith("canSeeLocation", "ownsTerritory"), Set.of("canSeeLocation"));
+
+        List<RuleVocabularyValidator.Violation> violations = validator.validate(List.of(
+                new RuleVocabularyValidator.RuleSource("ok-rule",
+                        List.of("hasEdge(\"canSeeLocation\", x)"))));
+
+        assertEquals(List.of(), violations);
+    }
+
+    @Test
+    void declaredButNotAdmittedIsProvisionalWithPromoteMessage() {
+        // ownsTerritory declared but NOT in the admitted set -> PROVISIONAL.
+        RuleVocabularyValidator validator = new RuleVocabularyValidator(
+                registryWith("canSeeLocation", "ownsTerritory"), Set.of("canSeeLocation"));
+
+        List<RuleVocabularyValidator.Violation> violations = validator.validate(List.of(
+                new RuleVocabularyValidator.RuleSource("prov-rule",
+                        List.of("hasEdge(\"ownsTerritory\", x)"))));
+
+        assertEquals(1, violations.size());
+        RuleVocabularyValidator.Violation v = violations.get(0);
+        assertEquals("ownsTerritory", v.predicate());
+        assertEquals(RuleVocabularyValidator.Reason.PROVISIONAL, v.reason());
+        assertTrue(v.toString().contains("provisional"));
+        assertTrue(v.toString().contains(":promote"));
+        assertTrue(v.toString().contains("ownsTerritory"));
+        assertTrue(v.toString().contains("not admitted for policy use"));
+    }
+
+    @Test
+    void undeclaredIsAbsentRegardlessOfAdmittedSet() {
+        // renamedAway is not declared at all -> ABSENT (not PROVISIONAL).
+        RuleVocabularyValidator validator = new RuleVocabularyValidator(
+                registryWith("canSeeLocation"), Set.of("canSeeLocation"));
+
+        List<RuleVocabularyValidator.Violation> violations = validator.validate(List.of(
+                new RuleVocabularyValidator.RuleSource("absent-rule",
+                        List.of("hasEdge(\"renamedAway\", x)"))));
+
+        assertEquals(1, violations.size());
+        RuleVocabularyValidator.Violation v = violations.get(0);
+        assertEquals("renamedAway", v.predicate());
+        assertEquals(RuleVocabularyValidator.Reason.ABSENT, v.reason());
+        assertTrue(v.toString().contains("unknown ontology predicate"));
+    }
+
+    @Test
+    void legacyNullAdmittedSetAcceptsAllDeclared() {
+        // Single-arg ctor (admittedPredicates == null) -> every declared predicate accepted.
+        RuleVocabularyValidator validator = new RuleVocabularyValidator(
+                registryWith("canSeeLocation", "ownsTerritory"));
+
+        List<RuleVocabularyValidator.Violation> violations = validator.validate(List.of(
+                new RuleVocabularyValidator.RuleSource("legacy-rule",
+                        List.of("hasEdge(\"canSeeLocation\", x) || hasEdge(\"ownsTerritory\", y)"))));
+
+        assertEquals(List.of(), violations);
+
+        // ... but an undeclared predicate is still ABSENT under legacy.
+        List<RuleVocabularyValidator.Violation> undeclared = validator.validate(List.of(
+                new RuleVocabularyValidator.RuleSource("legacy-rule",
+                        List.of("hasEdge(\"nope\", x)"))));
+        assertEquals(1, undeclared.size());
+        assertEquals(RuleVocabularyValidator.Reason.ABSENT, undeclared.get(0).reason());
+    }
+
+    @Test
+    void provisionalPredicateStillResolvesForFactEdgePath_noDeadlock() {
+        // The fact/edge path (and reasoner) resolves predicates via registry.propertyOf,
+        // which is unaffected by the admitted-set tier: a declared-but-not-admitted
+        // predicate is fully resolvable for non-rule use. ONLY rule registration
+        // (validate(...)) enforces admission, so non-rule usage never deadlocks waiting
+        // on promotion.
+        OntologyRegistry registry = registryWith("canSeeLocation", "ownsTerritory");
+        Set<String> admitted = Set.of("canSeeLocation"); // ownsTerritory is provisional
+
+        // Edge/fact path: predicate resolves regardless of admission tier.
+        assertTrue(registry.propertyOf("ownsTerritory").isPresent(),
+                "provisional predicate must still resolve via propertyOf (edge/fact path)");
+
+        // Rule path: same provisional predicate IS flagged when referenced by a rule.
+        RuleVocabularyValidator validator = new RuleVocabularyValidator(registry, admitted);
+        List<RuleVocabularyValidator.Violation> ruleViolations = validator.validate(List.of(
+                new RuleVocabularyValidator.RuleSource("rule-using-prov",
+                        List.of("hasEdge(\"ownsTerritory\", x)"))));
+        assertEquals(1, ruleViolations.size());
+        assertEquals(RuleVocabularyValidator.Reason.PROVISIONAL, ruleViolations.get(0).reason());
+
+        // A RuleSource with no ontology helper calls (e.g. a plain fact/edge filter) is
+        // never flagged — admission is only consulted for actual rule predicate refs.
+        assertEquals(List.of(), validator.validate(List.of(
+                new RuleVocabularyValidator.RuleSource("non-rule-content",
+                        List.of("dataDomain.tenantId:${pTenantId}")))));
+    }
+
     @Test
     void ignoresNonOntologyScriptContent() {
         RuleVocabularyValidator validator = new RuleVocabularyValidator(registry());

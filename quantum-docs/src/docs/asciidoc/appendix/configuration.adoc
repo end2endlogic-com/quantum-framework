@@ -1,3 +1,7 @@
+ifndef::doc-root[]
+:doc-root: ..
+endif::[]
+
 [[configuration]]
 === Configuration Reference
 
@@ -107,7 +111,38 @@ aws.cognito.region=us-east-1
 aws.cognito.jwks.url=https://cognito-idp.${aws.cognito.region}.amazonaws.com/${aws.cognito.user-pool-id}/.well-known/jwks.json
 ----
 
-See xref:../user-guide/multiple-auth-providers.adoc[Multiple Authentication Providers] for details on configuring external identity providers.
+See xref:{doc-root}/user-guide/multiple-auth-providers.adoc[Multiple Authentication Providers] for details on configuring external identity providers.
+
+===== Application Registration (optional module)
+
+The `quantum-application-registration` module lets an application announce itself to its environment at startup, so first arrival can install, seed and migrate it. It is inert unless enabled, and requires an `ApplicationRegistrar` implementation on the classpath.
+
+[source,properties]
+----
+# Off by default; the framework starts identically without this.
+quantum.application-registration.enabled=false
+
+# Selects the registrar: matches its getName() OR its fully-qualified class name.
+quantum.application-registration.provider=system-manager
+
+# Required when enabled. Never inferred -- a service that guesses its
+# environment can register into the wrong one.
+quantum.application-registration.application-id=my-app
+quantum.application-registration.environment=production
+
+# Realms this application reads and writes, comma separated.
+quantum.application-registration.realms=my-app-P1
+
+# Build identity; participates in the already-registered fingerprint.
+quantum.application-registration.application-version=1.4.2
+
+# Whether a failed registration stops the service. Defaults to true.
+quantum.application-registration.fail-on-error=true
+----
+
+Registration is attempted once per fingerprint (application + version + environment + realms). On every later boot the registrar's cheap local check short-circuits it, so a restart costs one indexed read rather than a call to the control plane.
+
+See xref:{doc-root}/user-guide/application-registration.adoc[Application Registration] for the SPI and implementation rules.
 
 ===== OAuth Server (optional module)
 
@@ -115,7 +150,7 @@ The `quantum-oauth-server` module uses the same JWT configuration properties lis
 
 OAuth clients are registered in the `oauth_clients` MongoDB collection. Authorization codes are stored in `oauth_authorization_codes` with a 5-minute TTL index for automatic cleanup.
 
-See xref:../user-guide/oauth-server.adoc[OAuth Server Module] for client registration and integration examples.
+See xref:{doc-root}/user-guide/oauth-server.adoc[OAuth Server Module] for client registration and integration examples.
 
 ===== Email Templates (Postmark)
 [source,properties]
@@ -129,7 +164,7 @@ postmark.default-from-email-address=noreply@yourdomain.com
 
 If either property is missing, the `PostmarkEmailSender` logs an info message and skips delivery, allowing development environments to run without Postmark credentials.
 
-Classpath templates are loaded from `templates/email/{templateKey}/` with files `subject.txt`, `body.html`, and `body.txt`. See xref:../user-guide/email-templates.adoc[Email Templates] for details.
+Classpath templates are loaded from `templates/email/{templateKey}/` with files `subject.txt`, `body.html`, and `body.txt`. See xref:{doc-root}/user-guide/email-templates.adoc[Email Templates] for details.
 
 ===== Shared Link Signing
 [source,properties]
@@ -138,7 +173,7 @@ Classpath templates are loaded from `templates/email/{templateKey}/` with files 
 share.link.signing.secret=${SHARE_LINK_SECRET}
 ----
 
-If the secret is not configured, `LinkSigner.isEnabled()` returns `false` and link signing/verification is disabled. See xref:../user-guide/shared-links.adoc[Shared Links] for details.
+If the secret is not configured, `LinkSigner.isEnabled()` returns `false` and link signing/verification is disabled. See xref:{doc-root}/user-guide/shared-links.adoc[Shared Links] for details.
 
 ==== Quantum Framework Configuration
 
@@ -205,7 +240,7 @@ Bootstrap packs are not the same thing as seed packs.
 - Use seed packs for deterministic baseline data.
 - Use bootstrap packs for idempotent operational setup steps.
 
-See xref:../user-guide/bootstrap-packs.adoc[Bootstrap Packs] for details.
+See xref:{doc-root}/user-guide/bootstrap-packs.adoc[Bootstrap Packs] for details.
 ====
 
 ===== Security rules diagnostics
@@ -244,7 +279,7 @@ quantum.anonymousUserId=anonymous
 ==== See Also
 
 - https://quarkus.io/guides/config-reference[Quarkus Configuration Guide]
-- xref:../user-guide/auth.adoc[Authentication Configuration]
+- xref:{doc-root}/user-guide/auth.adoc[Authentication Configuration]
 
 
 ==== Ontology Configuration (optional)
@@ -281,19 +316,45 @@ Registry modes
 
 Edges collection and indexes
 
-- Create an edges collection (name of your choice) when enabling ontology. Ensure the following indexes:
-  - Compound: { tenantId:1, p:1, dst:1 }
-  - Compound: { tenantId:1, src:1, p:1 }
-- Optionally, add a TTL on ts for inferred edges if you plan periodic full recomputes.
+- The MongoDB `edges` collection (default name configured via `ontology.mongo.collection.edges`) supports open edge qualification via compound indexes:
+  - `idx_domain_p_dst_props`: `{ "dataDomain": 1, "p": 1, "dst": 1, "props": 1 }` -- optimizes `hasEdge` / `srcIdsByDst` lookups.
+  - `idx_domain_src_p_props`: `{ "dataDomain": 1, "src": 1, "p": 1, "props": 1 }` -- optimizes `hasIncomingEdge` / `dstIdsBySrc` lookups.
+- Inferred edges carry `inferred: true` with provenance and timestamp metadata for maintenance and TTL eviction.
 
 Materialization hooks
 
-- Use OntologyMaterializer to recompute inferred edges when entities change (sources and intermediates for your property chains).
+- Use `OntologyMaterializer` to recompute inferred edges when entities change (sources and intermediates for your property chains).
+
+==== Query Gateway Configuration
+
+[cols="2,1,3"]
+|===
+|Property |Default |Description
+
+|`feature.queryGateway.execution.enabled`
+|`false`
+|Guards execution of `POST /api/query/find` for `AGGREGATION`-mode queries. When `false`, aggregation queries return HTTP 501 (`ExecutionDisabled`). Must be set to `true` to allow the gateway to execute governed MongoDB aggregation pipelines (with inner-pipeline `$lookup` pushdown and multi-hop traversals).
+
+|`feature.queryGateway.maxPageSize`
+|`1000`
+|Maximum page size allowed for `/api/query/find` requests.
+
+|`ontology.mongo.database`
+|`quantum`
+|Default database name for the ontology edges collection when not overridden by realm context.
+
+|`ontology.mongo.collection.edges`
+|`edges`
+|Collection name storing ontology edge documents.
+|===
 
 See also
 
-- xref:../user-guide/ontology.adoc[Ontologies in Quantum]
-- xref:../user-guide/ontology.adoc#ontology-integration-morphia-permissions-section[Integrating Ontology]
+- xref:{doc-root}/user-guide/ontology.adoc[Ontologies in Quantum]
+- xref:{doc-root}/user-guide/ontology.adoc#ontology-facet-segmentation[Dynamic Edge Properties & Facet Segmentation]
+- xref:{doc-root}/user-guide/planner-and-query-gateway.adoc[Planner and Query Gateway]
+- xref:{doc-root}/user-guide/tenant-models.adoc#user-definable-facet-segmentation[User-Definable Facet Segmentation & Coordinate SPI]
+
 
 ==== Control-plane split (deployment mode)
 

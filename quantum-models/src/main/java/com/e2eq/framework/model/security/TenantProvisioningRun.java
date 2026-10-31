@@ -45,12 +45,17 @@ public class TenantProvisioningRun extends BaseModel {
     private String runtimeStatus;
 
     private String realmId;
+    private String tenantId;
+    private String deploymentTopology;
     private String tenantDisplayName;
     private String tenantEmailDomain;
     private String orgRefName;
     private String accountId;
     private String adminUserId;
+    private String adminDisplayName;
     private String adminSubject;
+    private CredentialType adminCredentialType;
+    private String applicationId;
 
     @Builder.Default
     private boolean overwriteAll = true;

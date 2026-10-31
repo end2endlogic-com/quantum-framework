@@ -41,9 +41,11 @@ public class TestRemoteMembershipClient {
         return new DefaultEndpoint() {
             @Override public RealmCatalogEntry findRealmByEmailDomain(String e) { return null; }
             @Override public RealmCatalogEntry findRealmByRefName(String r) { return null; }
-            @Override public RealmCatalogEntry registerRealm(RealmCatalogEntry b) { return b; }
+            @Override public RealmCatalogEntry registerRealm(String refName, RealmCatalogEntry b) { return b; }
             @Override public List<RealmMembershipEntry> membersOfRealm(String refName) { return members; }
+            @Override public RealmMembershipEntry upsertRealmMembership(String r, String o, RealmMembershipEntry b) { return b; }
             @Override public List<UserRealmRoleEntry> realmsForUser(String userId) { return roles; }
+            @Override public UserRealmRoleEntry upsertUserRealmRole(String u, String r, UserRealmRoleEntry b) { return b; }
         };
     }
 
@@ -73,11 +75,13 @@ public class TestRemoteMembershipClient {
         RemoteMembershipClient client = new RemoteMembershipClient(new DefaultEndpoint() {
             @Override public RealmCatalogEntry findRealmByEmailDomain(String e) { return null; }
             @Override public RealmCatalogEntry findRealmByRefName(String r) { return null; }
-            @Override public RealmCatalogEntry registerRealm(RealmCatalogEntry b) { return b; }
+            @Override public RealmCatalogEntry registerRealm(String refName, RealmCatalogEntry b) { return b; }
             @Override public List<RealmMembershipEntry> membersOfRealm(String refName) {
                 throw new ProcessingException("connection refused");
             }
+            @Override public RealmMembershipEntry upsertRealmMembership(String r, String o, RealmMembershipEntry b) { return b; }
             @Override public List<UserRealmRoleEntry> realmsForUser(String userId) { return List.of(); }
+            @Override public UserRealmRoleEntry upsertUserRealmRole(String u, String r, UserRealmRoleEntry b) { return b; }
         });
         Assertions.assertTrue(Assertions.assertThrows(IllegalStateException.class,
             () -> client.membersOfRealm("x")).getMessage().contains("no local fallback"));

@@ -41,6 +41,14 @@ public class CredentialRepo extends MorphiaRepo<CredentialUserIdPassword> {
    com.e2eq.framework.util.SecurityUtils securityUtils;
 
    @Override
+   protected void setDefaultValues(CredentialUserIdPassword credential) {
+      super.setDefaultValues(credential);
+      if (credential.getActiveStatus() == null) {
+         credential.setActiveStatus(ActiveStatus.ACTIVE);
+      }
+   }
+
+   @Override
    public String getDatabaseName () {
       //return morphiaDataStore.getDataStore(securityUtils.getSystemRealm()).getDatabase().getName();
       return envConfigUtils.getSystemRealm();
@@ -139,6 +147,33 @@ public class CredentialRepo extends MorphiaRepo<CredentialUserIdPassword> {
       return Optional.ofNullable(obj);
    }
 
+   public CredentialUserIdPassword saveApplicationRegExBySubject(
+           @NotNull String subject,
+           String applicationRegEx) {
+      if (subject.isBlank()) {
+         throw new IllegalArgumentException("Subject cannot be blank");
+      }
+      String normalizedPattern = applicationRegEx == null ? null : applicationRegEx.trim();
+      if (normalizedPattern != null && normalizedPattern.isEmpty()) {
+         throw new IllegalArgumentException("ApplicationRegEx cannot be blank");
+      }
+      if (normalizedPattern != null && !"*".equals(normalizedPattern)) {
+         try {
+            java.util.regex.Pattern.compile(normalizedPattern);
+         } catch (java.util.regex.PatternSyntaxException invalidPattern) {
+            throw new IllegalArgumentException(
+                    "ApplicationRegEx is invalid: " + invalidPattern.getDescription(),
+                    invalidPattern);
+         }
+      }
+      CredentialUserIdPassword credential = findBySubject(subject)
+              .orElseThrow(() -> new jakarta.ws.rs.NotFoundException(
+                      String.format("User with subject %s not found", subject)));
+      credential.setApplicationRegEx(normalizedPattern);
+      credential.setLastUpdate(new java.util.Date());
+      return save(credential);
+   }
+
 
    public Optional<CredentialUserIdPassword> findByUserId(@NotNull String userId)
    {
@@ -147,6 +182,25 @@ public class CredentialRepo extends MorphiaRepo<CredentialUserIdPassword> {
 
    public Optional<CredentialUserIdPassword> findByUserId( @NotNull String userId,  @NotNull String realmId) {
       return findByUserId( userId, realmId,false);
+   }
+
+   /**
+    * Finds a credential by userId using the same case-insensitive collation as the unique
+    * {@code userId} index (locale en, strength SECONDARY), bypassing security rules. Use this
+    * wherever an identity must be matched the way uniqueness is enforced, e.g. before deciding
+    * whether to create a new account for an identity.
+    */
+   public Optional<CredentialUserIdPassword> findByUserIdIgnoreCaseIgnoreRules(@NotNull String userId, @NotNull String realmId) {
+      if (userId == null || realmId == null) {
+         throw new IllegalArgumentException("userId and realmId are required");
+      }
+      return Optional.ofNullable(morphiaDataStoreWrapper.getDataStore(realmId)
+         .find(CredentialUserIdPassword.class)
+         .filter(Filters.eq("userId", userId))
+         .first(new dev.morphia.query.FindOptions().collation(com.mongodb.client.model.Collation.builder()
+            .locale("en")
+            .collationStrength(com.mongodb.client.model.CollationStrength.SECONDARY)
+            .build())));
    }
 
    public Optional<CredentialUserIdPassword> findByUserId( @NotNull String userId, @NotNull String realmId, boolean ignoreRules) {

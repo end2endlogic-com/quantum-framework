@@ -1,3 +1,7 @@
+ifndef::doc-root[]
+:doc-root: ..
+endif::[]
+
 [[query-language]]
 == Query Language Reference
 
@@ -37,8 +41,10 @@ Quantum uses an ANTLR-based query language (BIAPIQuery.g4) for filtering, search
 |Null |none |`description:null`
 |ObjectId |none |`id:507f1f77bcf86cd799439011`
 |Reference |`@@` |`parentId:@@507f1f77bcf86cd799439011`
-|Variable |`${...}` |`ownerId:${principalId}`
+|Variable |`${...}` |`ownerId:${principalId}`, `tier:^${facet.allowedTiers}`, `zone:${coord.salesZone}`
 |===
+
+NOTE: **Dotted Variable Identifiers & Single-Variable IN**: The query grammar admits dotted variable paths (`${facet.<key>}`, `${coord.<key>}`, `${principal.<attr>}`, `${dd.<attr>}`). When paired with the list membership operator (`:^`), a single variable resolving to a Java `Collection` or array (e.g. `allowedTiers = ["TIER_1", "TIER_2"]`) can be passed without brackets (`tier:^${facet.allowedTiers}`), and the query compiler will automatically unpack the elements into a native `$in` evaluation.
 
 ==== Logical Operators
 
@@ -80,13 +86,18 @@ text("priority escalation")
 
 # Combine text search with other filters
 text("priority escalation") && status:"OPEN"
+
+# Valid: top-level text AND a grouped OR of non-text predicates
+text("priority") && (status:"OPEN" || status:"PENDING")
 ----
 
 Notes:
 
 - `text(...)` maps to MongoDB `$text` queries and is case-insensitive by default.
 - MongoDB allows only one `text(...)` clause per query.
-- Text search must be backed by a text index on the target collection.
+- Text search must be backed by a text index on the target collection. If the collection has no text index, MongoDB returns an error (Quantum does not pre-check index existence).
+- The lexer keyword `text` is also accepted as a normal field name or unquoted value, so queries such as `type:text` and `text:active` remain valid.
+- In-memory evaluation (policy/tests) approximates `$text` with case-insensitive **whole-word** matching (tokenized contains-any). It does not implement stemming or stop words. Example: `text("cat")` matches `"the cat sat"` but not `"category"`.
 
 IMPORTANT: MongoDB requires `$text` to be a top-level query operator. The following usages are **not allowed** and will be rejected at parse time:
 
@@ -490,9 +501,9 @@ text("foo bar")
 
 ==== See Also
 
-- xref:rest-crud.adoc#querying[REST CRUD Querying]
-- xref:permissions.adoc[Permission Rules]
-- xref:domain-rule-context.adoc[Access Resolvers]
+- xref:{doc-root}/user-guide/rest-crud.adoc#querying[REST CRUD Querying]
+- xref:{doc-root}/user-guide/permissions.adoc[Permission Rules]
+- xref:{doc-root}/user-guide/domain-rule-context.adoc[Access Resolvers]
 
 
 ==== Execution engines and listeners
@@ -796,39 +807,135 @@ Option A: Variable from an AccessListResolver
 id:^${idsByPlacedInOrg}
 ----
 
-==== Ontology operators: hasEdge and hasIncomingEdge
+==== Ontology operators: hasEdge, hasOutgoingEdge, and hasIncomingEdge
 
-When the ontology module is enabled and edges are materialized, you can constrain results by semantic relationships using `hasEdge` and `hasIncomingEdge`.
+When the ontology module is enabled and edges are materialized in MongoDB, you can constrain results by semantic graph relationships using `hasEdge`, `hasOutgoingEdge`, and `hasIncomingEdge`.
 
-- Syntax: `hasEdge(predicate, dst)`
-  - Finds entities (sources) that have an edge with the specified `predicate` pointing TO the `dst`.
-- Syntax: `hasIncomingEdge(predicate, src)`
-  - Finds entities (targets) that have an edge with the specified `predicate` coming FROM the `src`.
-
-Arguments:
-- `predicate` can be an unquoted string, a quoted string, or a `${var}` placeholder.
-- `dst` / `src` can be a literal id, a variable like `${principalId}`, an ObjectId, or a reference literal `@@...`.
-
-Examples:
+===== Syntax
 
 [source]
 ----
-# Orders placed in a specific organization (find sources)
+# Standard 2-argument form (relationship existence)
+hasEdge(predicate, dst)
+hasOutgoingEdge(predicate, dst)
+hasIncomingEdge(predicate, src)
+
+# Qualified 3-argument form (relationship existence WITH edge property constraints)
+hasEdge(predicate, dst, { edgeFilter })
+hasOutgoingEdge(predicate, dst, { edgeFilter })
+hasIncomingEdge(predicate, src, { edgeFilter })
+----
+
+===== Arguments
+
+- `predicate`: Relationship identifier. Can be an unquoted identifier (`placedInOrg`), a quoted string (`"placedInOrg"`), or a variable expression (`${orgPredicate}`).
+- `dst` / `src`: Target or source entity coordinate. Can be a string literal (`"OrgA"`), an ObjectId, a reference literal (`@@507f1f77bcf86cd799439011`), or a variable placeholder (`${orgRefName}`, `${principalId}`).
+- `{ edgeFilter }`: (Optional) A bracketed sub-query containing filtering expressions evaluated directly against the properties of the matching edge in the `edges` collection.
+
+===== Edge Property Scoping and Mechanics
+
+When querying an edge with property constraints:
+
+1. **Automatic Field Scoping**: Any attribute referenced inside the `{ ... }` block that is not a reserved root edge attribute (`src`, `dst`, `p`, `dstType`, `dataDomain`, `_id`) is automatically rewritten to target dynamic edge properties stored under `props.<field>`. For example, `{ role:"PRIMARY" && active:true }` is compiled to `props.role == "PRIMARY" AND props.active == true`.
+2. **MongoDB Compound Index Utilization**: Edge property filters are pushed down directly into MongoDB queries on the `edges` collection. They take advantage of compound indexes:
+   - `idx_domain_p_dst_props`: `{"dataDomain": 1, "p": 1, "dst": 1, "props": 1}` (for `hasEdge` / `hasOutgoingEdge`)
+   - `idx_domain_src_p_props`: `{"dataDomain": 1, "src": 1, "p": 1, "props": 1}` (for `hasIncomingEdge`)
+3. **Supported Operators**: All standard BIAPI equality (`:`), inequality (`:!`), comparisons (`:>`, `:<`, `:>=`, `:<=`), list membership (`:^`, `:!^`), existence (`:~`), and logical compositions (`&&`, `||`, `!!`) are supported on edge properties.
+4. **Prohibited Operators**: Full-text search `text(...)` is prohibited inside `{ edgeFilter }` blocks because MongoDB does not permit `$text` inside embedded document conditions or sub-filters; queries containing `text(...)` within edge filters are rejected at query validation time.
+
+===== Defaults and Fallback Behavior
+
+[cols="1,2,3"]
+|===
+| Element | Default Behavior | Rationale
+
+| **Omitted `{ edgeFilter }`**
+| Matches any edge with the specified `predicate` and target/source, regardless of properties.
+| Preserves 100% backward compatibility for standard 2-argument calls.
+
+| **Missing Edge Properties**
+| Evaluates to `false` (no match). If an edge does not contain the queried property in its `props` map, the filter fails closed.
+| Predictable fail-closed semantics for dynamic schemas.
+
+| **Tenant Scoping & Missing Security Context**
+| Tenant ID is resolved from the active `SecurityContext` / `RuleContext` (`${pTenantId}`). If the query is executed without an active tenant or security context, the edge lookup returns empty results (`_id: "__none__"`).
+| Inviolate multi-tenant data isolation; queries never leak edge relationships across realms or unauthenticated callers.
+
+| **Dynamic Model Schema Validation**
+| When query schema validation is enabled (`ValidatingQueryToFilterListener`), edge property keys bypass static entity model field validation.
+| Edge properties are open and dynamic; static entity models do not need predefined getters or schema mappings for edge property names.
+|===
+
+===== Examples
+
+.Basic edge existence check (2-argument default)
+[source]
+----
+# Find orders placed in an organization (finds source Order entities)
 hasEdge("placedInOrg", ${orgRefName})
 
-# Tickets routed to a region by id
-hasEdge(routedToRegion, @@507f1f77bcf86cd799439011)
-
-# Find locations that an associate can access (find targets)
-# assumes an edge exists: Associate --canAccessLocation--> Location
+# Find locations accessible by a specific associate (finds target Location entities)
 hasIncomingEdge(canAccessLocation, ${principalId})
 ----
 
-Semantics:
+.Qualified edge filtering with exact property match
+[source]
+----
+# Find accounts where user has a PRIMARY role
+hasIncomingEdge("memberOf", ${principalId}, { role:"PRIMARY" })
 
-- These operators narrow the result set based on the existence of edges in the ontology edges collection.
-- They compose with other filters using `&&`, `||`, and `!!`.
-- Tenancy: edge resolution is always scoped by tenant/realm.
+# Find orders routed to a facility with an expedited service level
+hasEdge("routedToFacility", "FAC-901", { serviceLevel:"EXPEDITED" })
+----
+
+.Qualified edge filtering with multi-attribute constraints
+[source]
+----
+# Find suppliers with valid certified relationships and confidence >= 0.90
+hasEdge("suppliedBy", @@507f1f77bcf86cd799439011, { certified:true && confidence:>=##0.90 })
+
+# Find assets with active status and priority in high tiers
+hasEdge("assignedToTeam", "TEAM-ALPHA", { active:true && tier:^[#1, #2] })
+----
+
+.Combining edge traversal filters with root entity filters
+[source]
+----
+# Orders in pending state placed in ORG-1 with a high-priority edge tag
+hasEdge("placedInOrg", "ORG-1", { priority:"HIGH" }) && status:"PENDING" && total:>##500.00
+----
+
+===== Query Macros for Temporal & AI Confidence Governance
+
+To simplify complex temporal and probabilistic filtering, the query preprocessor recognizes two high-level macros:
+
+1. **`@asOf(timestamp)`**:
+   - Compiles to bitemporal range matching: `((validFrom:<=ts || validFrom:null) && (validTo:>=ts || validTo:null))` (or prefixed with `edges.` inside expansion/traversal contexts).
+   - Backed by compound index `idx_domain_temporal`.
+   - Strips surrounding quotes so ISO-8601 timestamps parse cleanly as ANTLR `DATE` / `DATETIME` tokens.
+   - *Business Scenario & Solution*: Point-in-time compliance audits (e.g. healthcare HIPAA audits or financial regulatory inquiries) can reproduce past authorization states without maintaining separate historical snapshot tables or running deletion cron jobs.
+
+2. **`@minConfidence(threshold)`**:
+   - Compiles to confidence threshold filtering: `confidence:>=threshold` (or `edges.confidence:>=threshold`).
+   - Backed by compound index `idx_domain_confidence`.
+   - *Business Scenario & Solution*: AI and LLM graph derivation governance (e.g. anti-money laundering beneficial ownership links). Mission-critical operations require human-certified links (`confidence: 1.0`), while exploratory analysis accepts AI-inferred relationships (`@minConfidence(0.80)`).
+
+.Query Macro Examples
+[source]
+----
+# Temporal Point-in-Time Audit: Did associate have active role on September 1st, 2026?
+hasEdge("assignedToBranch", "BRANCH-NY", { @asOf(2026-09-01T00:00:00Z) && role:"MANAGER" })
+
+# Probabilistic AI Governance: Only traverse high-confidence vendor relationships
+hasEdge("subsidiaryOf", "PARENT-CORP", { @minConfidence(0.85) && assertionMethod:"LLM_INFERENCE" })
+
+# Combining temporal validity, AI confidence, and security classification
+hasEdge("operatesInFacility", "FAC-901", {
+  @asOf(2026-09-20T00:00:00Z) &&
+  @minConfidence(0.90) &&
+  securityLabel:"CONFIDENTIAL"
+})
+----
 
 ==== Root projection recap: fields:[+…,-…]
 
@@ -850,4 +957,4 @@ fields:[+_id,+total,-internalNotes]
 expand(customer) && fields:[+_id,+customer,+total]
 ----
 
-For per-expansion projections and advanced traversal filters, see xref:query-expansion.adoc[Query Expansion].
+For per-expansion projections and advanced traversal filters, see xref:{doc-root}/user-guide/query-expansion.adoc[Query Expansion].

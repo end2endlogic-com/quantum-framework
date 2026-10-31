@@ -1,0 +1,1456 @@
+package com.e2eq.framework.service;
+
+import com.e2eq.framework.api.system.SystemDirectory;
+import com.e2eq.framework.api.tenant.TenantDeleteResult;
+import com.e2eq.framework.api.tenant.TenantDeploymentTopology;
+import com.e2eq.framework.api.tenant.TenantRealmNaming;
+import com.e2eq.framework.api.tenant.RealmArchiveProvider;
+import com.e2eq.framework.api.tenant.RealmDatabaseLifecycleProvider;
+import com.e2eq.framework.api.tenant.TenantAccessRevocationProvider;
+import com.e2eq.framework.api.tenant.TenantDataExpirationProvider;
+import com.e2eq.framework.api.tenant.TenantDecommissionRequest;
+import com.e2eq.framework.api.tenant.TenantDecommissionResult;
+import com.e2eq.framework.api.tenant.TenantDecommissionUnavailableException;
+import com.e2eq.framework.api.tenant.TenantDecommissionWorkflow;
+import com.e2eq.framework.api.tenant.TenantLifecycle;
+import com.e2eq.framework.api.tenant.TenantProvisionRequest;
+import com.e2eq.framework.api.tenant.TenantProvisionResult;
+import com.e2eq.framework.system.catalog.RealmCatalogService;
+import com.e2eq.framework.system.membership.RealmMembershipService;
+import com.e2eq.framework.model.persistent.base.DataDomain;
+import com.e2eq.framework.model.persistent.base.EntityReference;
+import com.e2eq.framework.model.persistent.migration.base.MigrationService;
+import com.e2eq.framework.model.persistent.morphia.ApplicationRepo;
+import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
+import com.e2eq.framework.model.persistent.morphia.OrganizationRepo;
+import com.e2eq.framework.model.persistent.morphia.RealmRepo;
+import com.e2eq.framework.model.persistent.morphia.RealmTenantMembershipRepo;
+import com.e2eq.framework.model.persistent.morphia.UserGroupRepo;
+import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
+import com.e2eq.framework.model.persistent.morphia.UserRealmRoleRepo;
+import com.e2eq.framework.model.security.CredentialUserIdPassword;
+import com.e2eq.framework.model.security.DomainContext;
+import com.e2eq.framework.model.security.Organization;
+import com.e2eq.framework.model.security.Application;
+import com.e2eq.framework.model.security.Realm;
+import com.e2eq.framework.model.security.RealmDeploymentType;
+import com.e2eq.framework.model.security.RealmTenancyMode;
+import com.e2eq.framework.model.security.RealmTenantMembership;
+import com.e2eq.framework.model.security.RealmSetupStatus;
+import com.e2eq.framework.model.security.UserGroup;
+import com.e2eq.framework.model.security.UserProfile;
+import com.e2eq.framework.model.security.UserRealmRole;
+import com.e2eq.framework.model.auth.AuthProviderFactory;
+import com.e2eq.framework.model.auth.UserManagement;
+import com.e2eq.framework.service.seed.*;
+import com.e2eq.framework.model.securityrules.PrincipalContext;
+import com.e2eq.framework.model.securityrules.ResourceContext;
+import com.e2eq.framework.model.securityrules.SecurityCallScope;
+import com.e2eq.framework.model.securityrules.SecurityContext;
+import com.e2eq.framework.util.EnvConfigUtils;
+import com.e2eq.framework.util.SecurityUtils;
+import com.mongodb.MongoCommandException;
+import dev.morphia.Datastore;
+import dev.morphia.query.filters.Filters;
+import io.quarkus.logging.Log;
+import io.smallrye.mutiny.subscription.MultiEmitter;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.inject.Instance;
+import jakarta.inject.Inject;
+import lombok.Builder;
+import lombok.Data;
+import org.eclipse.microprofile.config.ConfigProvider;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
+
+import java.io.IOException;
+import java.util.*;
+
+/**
+ * Service to provision a tenant into a dedicated realm or admit it into an
+ * existing pooled realm. Realm controls Mongo placement/lifecycle; DataDomain
+ * controls tenant visibility.
+ */
+@ApplicationScoped
+public class TenantProvisioningService implements TenantLifecycle {
+    private static final int DROP_PENDING_MAX_RETRIES = 12;
+    private static final int DROP_PENDING_RETRY_DELAY_MS = 500;
+    private static final String DEFAULT_DEMO_PASSWORD = "demo123!";
+    private static final String TENANT_ADMIN_GROUP_REF = "tenant-admin-users";
+    private static final String TENANT_ADMIN_GROUP_DISPLAY = "Tenant Admin Users";
+
+    @Inject RealmRepo realmRepo;
+    @Inject MigrationService migrationService;
+    @Inject AuthProviderFactory authProviderFactory;
+    @Inject EnvConfigUtils envConfigUtils;
+    // Realm catalog operations go through the control-plane catalog service;
+    // SystemDirectory is retained only for the credential (identity) lookup,
+    // which is not a catalog concern (it gets its own seam in Phase D).
+    @Inject RealmCatalogService realmCatalog;
+    @Inject SystemDirectory systemDirectory;
+    @Inject RealmMembershipService realmMembershipService;
+    @Inject SecurityUtils securityUtils;
+    @Inject CredentialRepo credentialRepo;
+    @Inject OrganizationRepo organizationRepo;
+    @Inject RealmTenantMembershipRepo realmTenantMembershipRepo;
+    @Inject UserProfileRepo userProfileRepo;
+    @Inject UserGroupRepo userGroupRepo;
+    @Inject UserRealmRoleRepo userRealmRoleRepo;
+    @Inject SeedLoaderService seedLoaderService;
+
+    @Inject SeedDiscoveryService seedDiscoveryService;
+
+    @Inject Instance<RealmArchiveProvider> realmArchiveProviders;
+    @Inject Instance<TenantAccessRevocationProvider> tenantAccessRevocationProviders;
+    @Inject Instance<RealmDatabaseLifecycleProvider> realmDatabaseLifecycleProviders;
+    @Inject Instance<TenantDataExpirationProvider> tenantDataExpirationProviders;
+
+    /**
+     * Compatibility escape hatch for legacy embedded deployments that projected
+     * user profile/group records into tenant realms. Default is false because
+     * credentials, organizations, groups, policies, and realm assignments are
+     * system-plane resources owned by the auth/system control plane.
+     */
+    @ConfigProperty(name = "quantum.tenant.provisioning.create-tenant-identity-projections", defaultValue = "false")
+    boolean createTenantIdentityProjections;
+
+    /**
+     * Every realm belongs to exactly one application; the realm catalog doubles
+     * as the application-usage registry. When a provision command names no
+     * application this default applies; with neither set, provisioning fails
+     * fast rather than creating an unowned realm.
+     */
+    @ConfigProperty(name = "quantum.tenant.provisioning.default-application")
+    Optional<String> defaultApplicationId;
+
+    /**
+     * Deployment default used when a command does not explicitly select a
+     * topology. Dedicated mode preserves the historical behavior.
+     */
+    @ConfigProperty(
+        name = "quantum.tenant.provisioning.deployment-topology",
+        defaultValue = "DEDICATED_REALM"
+    )
+    TenantDeploymentTopology defaultDeploymentTopology;
+
+    /**
+     * Existing realm used for pooled admission when the command does not name
+     * one. Required whenever the resolved topology is POOLED_REALM.
+     */
+    @ConfigProperty(name = "quantum.tenant.provisioning.pooled-realm")
+    Optional<String> defaultPooledRealmId;
+
+    /**
+     * Shared-realm pod used when topology is POOLED_REALM and neither the
+     * command nor configuration names a concrete pooled realm. The generated
+     * realm id is {applicationId}-P{pod}.
+     */
+    @ConfigProperty(name = "quantum.tenant.provisioning.default-pooled-realm-pod", defaultValue = "1")
+    int defaultPooledRealmPod;
+
+    @Inject ApplicationRepo applicationRepo;
+
+    public static class ProvisionResult {
+        public String realmId;
+        public String tenantId;
+        public TenantDeploymentTopology deploymentTopology;
+        public boolean realmCreated;
+        public boolean userCreated;
+        public List<String> appliedSeedArchetypes = new java.util.ArrayList<>();
+        public List<String> warnings = new java.util.ArrayList<>();
+        public void addWarning(String w) { if (w != null && !w.isBlank()) warnings.add(w); }
+    }
+
+    public static class DeleteResult {
+        public String realmId;
+        public boolean realmCatalogDeleted;
+        public boolean databaseDropped;
+        public int deletedCredentialCount;
+        public List<String> warnings = new java.util.ArrayList<>();
+        public void addWarning(String w) { if (w != null && !w.isBlank()) warnings.add(w); }
+    }
+
+    @Data
+    @Builder
+    public static class ProvisionTenantCommand {
+        private String tenantDisplayName;
+        private String tenantEmailDomain;
+        private String orgRefName;
+        private String accountId;
+        private String adminUserId;
+        private String adminDisplayName;
+        private String adminSubject;
+        private String adminPassword;
+        private com.e2eq.framework.model.security.CredentialType adminCredentialType;
+        /** Owning application for the realm; falls back to quantum.tenant.provisioning.default-application. */
+        private String applicationId;
+        /** Optional command override; otherwise the deployment configuration applies. */
+        private TenantDeploymentTopology deploymentTopology;
+        /** Existing target realm for POOLED_REALM; unused for DEDICATED_REALM. */
+        private String placementRealmId;
+        @Builder.Default
+        private List<String> archetypes = List.of();
+        @Builder.Default
+        private boolean overwriteAll = true;
+    }
+
+    @Data
+    @Builder
+    public static class ProvisioningContext {
+        private ProvisionTenantCommand command;
+        private ProvisionResult result;
+        private String systemRealm;
+        private String realmId;
+        private String tenantId;
+        private TenantDeploymentTopology deploymentTopology;
+        private String normalizedTenantDisplayName;
+        private DomainContext domainContext;
+        private DataDomain dataDomain;
+        private Realm desiredRealm;
+        private PrincipalContext tenantPrincipal;
+        private ResourceContext migrationResource;
+        private ResourceContext seedResource;
+        private MultiEmitter<String> emitter;
+        private Set<String> desiredRoles;
+        private String baselineAdminUserId;
+        private String demoUserId;
+        private String demoPassword;
+        private List<String> archetypes;
+    }
+
+    /**
+     * Provisions a new tenant.
+     *
+     * @param tenantEmailDomain e.g. "acme.com"
+     * @param orgRefName        e.g. "acme.com"
+     * @param accountId         e.g. initial account number for the tenant
+     * @param adminUserId       e.g. "admin@acme.com"
+     * @param adminSubject      the unique immutable identifier for this user
+     * @param adminPassword     plaintext password to be hashed and stored
+     * @return details about what happened and any warnings
+     */
+    public ProvisionResult provisionTenant(String tenantEmailDomain,
+                                           String orgRefName,
+                                           String accountId,
+                                           String adminUserId,
+                                           String adminSubject,
+                                           String adminPassword) {
+        return provisionTenant(null, tenantEmailDomain, orgRefName, accountId, adminUserId, adminSubject, adminPassword, java.util.List.of(), true);
+    }
+
+    /**
+     * Provisions a new tenant and applies the specified seed archetypes.
+     * @param archetypes list of archetype names to apply after migrations
+     */
+    public ProvisionResult provisionTenant(String tenantDisplayName,
+                                           String tenantEmailDomain,
+                                           String orgRefName,
+                                           String accountId,
+                                           String adminUserId,
+                                           String adminSubject,
+                                           String adminPassword,
+                                           List<String> archetypes,
+                                           boolean overwriteAll) {
+        return provisionTenant(ProvisionTenantCommand.builder()
+            .tenantDisplayName(tenantDisplayName)
+            .tenantEmailDomain(tenantEmailDomain)
+            .orgRefName(orgRefName)
+            .accountId(accountId)
+            .adminUserId(adminUserId)
+            .adminSubject(adminSubject)
+            .adminPassword(adminPassword)
+            .archetypes(archetypes == null ? List.of() : archetypes)
+            .overwriteAll(overwriteAll)
+            .build());
+    }
+
+    public ProvisionResult provisionTenant(ProvisionTenantCommand command) {
+        ProvisioningContext context = initializeContext(command);
+        ensureRealmCatalog(context);
+        ensureOrganizationDirectory(context);
+        ensureRealmMembership(context);
+        runRealmMigrations(context);
+        ensureTenantIdentities(context);
+        applyBaseSeedPacks(context);
+        applyRequestedArchetypes(context);
+        verifyRealmInitialization(context);
+        return context.getResult();
+    }
+
+    public ProvisioningContext initializeContext(ProvisionTenantCommand command) {
+        Objects.requireNonNull(command, "command cannot be null");
+        Objects.requireNonNull(command.getTenantEmailDomain(), "tenantEmailDomain cannot be null");
+        Objects.requireNonNull(command.getOrgRefName(), "orgRefName cannot be null");
+        Objects.requireNonNull(command.getAccountId(), "accountId cannot be null");
+        Objects.requireNonNull(command.getAdminUserId(), "adminUserId cannot be null");
+        Objects.requireNonNull(command.getAdminSubject(), "adminSubject cannot be null");
+
+        TenantDeploymentTopology deploymentTopology = resolveDeploymentTopology(command);
+        String tenantId = normalizeDataDomainIdentifier(command.getTenantEmailDomain());
+        String realmId = resolvePlacementRealmId(command, deploymentTopology, tenantId);
+        String normalizedTenantDisplayName = command.getTenantDisplayName() == null || command.getTenantDisplayName().isBlank()
+            ? tenantId
+            : command.getTenantDisplayName().trim();
+        String dataDomainOrgRefName = normalizeDataDomainIdentifier(command.getOrgRefName());
+
+        ProvisionResult result = new ProvisionResult();
+        result.realmId = realmId;
+        result.tenantId = tenantId;
+        result.deploymentTopology = deploymentTopology;
+
+        DomainContext dc = DomainContext.builder()
+            .tenantId(tenantId)
+            .orgRefName(dataDomainOrgRefName)
+            .accountId(command.getAccountId())
+            .defaultRealm(realmId)
+            .build();
+
+        DataDomain dataDomain = DataDomain.builder()
+            .orgRefName(dc.getOrgRefName())
+            .accountNum(dc.getAccountId())
+            .tenantId(dc.getTenantId())
+            .ownerId(command.getAdminUserId())
+            .build();
+
+        // NOTE: the owning application is resolved and attached in
+        // ensureRealmCatalog (the persistence step) so context initialization
+        // stays a pure computation.
+        Realm desiredRealm = Realm.builder()
+            .refName(realmId)
+            .displayName(normalizedTenantDisplayName)
+            .deploymentType(toRealmDeploymentType(deploymentTopology))
+            .tenancyMode(deploymentTopology == TenantDeploymentTopology.POOLED_REALM
+                ? RealmTenancyMode.MULTI_TENANT
+                : RealmTenancyMode.SINGLE_TENANT)
+            .emailDomain(command.getTenantEmailDomain())
+            .databaseName(realmId)
+            .domainContext(dc)
+            .dataDomain(dataDomain)
+            .defaultAdminUserId(command.getAdminUserId())
+            .defaultPerspective("TENANT_ADMIN")
+            .setupStatus(RealmSetupStatus.NOT_STARTED)
+            .setupCompletionPercent(0)
+            .configuredSolutionCount(0)
+            .readySolutionCount(0)
+            .pendingSeedPackCount(0)
+            .pendingMigrationCount(0)
+            .setupSummary("Tenant provisioned. Bootstrap a solution to finish setup.")
+            .setupLastUpdated(new Date())
+            .build();
+
+        PrincipalContext tenantPrincipal = new PrincipalContext.Builder()
+            .withDefaultRealm(realmId)
+            .withDataDomain(dataDomain)
+            .withUserId(command.getAdminUserId())
+            .withRoles(new String[]{"admin"})
+            .withScope("TenantProvisioning")
+            .build();
+
+        ResourceContext migrationResource = new ResourceContext.Builder()
+            .withRealm(realmId)
+            .withArea("MIGRATION")
+            .withFunctionalDomain("DB")
+            .withAction("APPLY")
+            .build();
+
+        ResourceContext seedResource = new ResourceContext.Builder()
+            .withRealm(realmId)
+            .withArea("SEED")
+            .withFunctionalDomain("SEED")
+            .withAction("APPLY")
+            .build();
+
+        return ProvisioningContext.builder()
+            .command(command)
+            .result(result)
+            .systemRealm(envConfigUtils.getSystemRealm())
+            .realmId(realmId)
+            .tenantId(tenantId)
+            .deploymentTopology(deploymentTopology)
+            .normalizedTenantDisplayName(normalizedTenantDisplayName)
+            .domainContext(dc)
+            .dataDomain(dataDomain)
+            .desiredRealm(desiredRealm)
+            .tenantPrincipal(tenantPrincipal)
+            .migrationResource(migrationResource)
+            .seedResource(seedResource)
+            .emitter(createEmitter())
+            .desiredRoles(Set.of("admin", "user"))
+            .baselineAdminUserId("admin@" + command.getTenantEmailDomain())
+            .demoUserId("demo@" + command.getTenantEmailDomain())
+            .demoPassword(ConfigProvider.getConfig()
+                .getOptionalValue("quantum.provisioning.default-demo-password", String.class)
+                .filter(value -> !value.isBlank())
+                .orElse(DEFAULT_DEMO_PASSWORD))
+            .archetypes(normalizeArchetypes(command.getArchetypes()))
+            .build();
+    }
+
+    private TenantDeploymentTopology resolveDeploymentTopology(ProvisionTenantCommand command) {
+        if (command.getDeploymentTopology() != null) {
+            return command.getDeploymentTopology();
+        }
+        return defaultDeploymentTopology == null
+            ? TenantDeploymentTopology.DEDICATED_REALM
+            : defaultDeploymentTopology;
+    }
+
+    private String resolvePlacementRealmId(ProvisionTenantCommand command,
+                                           TenantDeploymentTopology topology,
+                                           String tenantId) {
+        if (topology == TenantDeploymentTopology.DEDICATED_REALM) {
+            String generatedRealmId = generatedDedicatedRealmId(command, tenantId);
+            if (command.getPlacementRealmId() != null && !command.getPlacementRealmId().isBlank()
+                && !generatedRealmId.equals(command.getPlacementRealmId().trim())) {
+                throw new IllegalArgumentException(
+                    "placementRealmId cannot override the tenant-derived realm in DEDICATED_REALM mode");
+            }
+            return generatedRealmId;
+        }
+
+        String commandRealm = command.getPlacementRealmId();
+        Optional<String> configuredRealm = defaultPooledRealmId == null
+            ? Optional.empty()
+            : defaultPooledRealmId;
+        String realmId = commandRealm != null && !commandRealm.isBlank()
+            ? commandRealm.trim()
+            : configuredRealm.map(String::trim).filter(value -> !value.isBlank())
+                .orElseGet(() -> generatedPooledRealmIdOrNull(command));
+        if (realmId == null) {
+            throw new IllegalArgumentException(
+                "placementRealmId is required for POOLED_REALM tenant admission. "
+                    + "Pass it in the provision command or configure "
+                    + "quantum.tenant.provisioning.pooled-realm, or configure/pass "
+                    + "an applicationId so the default {applicationId}-P"
+                    + defaultPooledRealmPod + " realm can be derived.");
+        }
+        return realmId;
+    }
+
+    private String generatedDedicatedRealmId(ProvisionTenantCommand command, String tenantId) {
+        String applicationId = resolveApplicationIdOrNull(command);
+        if (applicationId == null) {
+            return tenantId;
+        }
+        return TenantRealmNaming.dedicatedRealm(applicationId, tenantId);
+    }
+
+    private String generatedPooledRealmIdOrNull(ProvisionTenantCommand command) {
+        String applicationId = resolveApplicationIdOrNull(command);
+        if (applicationId == null) {
+            return null;
+        }
+        return TenantRealmNaming.pooledRealm(applicationId, defaultPooledRealmPod);
+    }
+
+    /** Command applicationId, else the configured platform default, else null. */
+    private String resolveApplicationIdOrNull(ProvisionTenantCommand command) {
+        if (command.getApplicationId() != null && !command.getApplicationId().isBlank()) {
+            return command.getApplicationId().trim();
+        }
+        Optional<String> fallback = defaultApplicationId == null ? Optional.empty() : defaultApplicationId;
+        return fallback.map(String::trim).filter(value -> !value.isEmpty()).orElse(null);
+    }
+
+    private String requireApplicationId(ProvisionTenantCommand command) {
+        String applicationId = resolveApplicationIdOrNull(command);
+        if (applicationId == null) {
+            throw new IllegalArgumentException(
+                "applicationId is required: every realm belongs to exactly one application. "
+                    + "Pass applicationId in the provision command or configure "
+                    + "quantum.tenant.provisioning.default-application.");
+        }
+        return applicationId;
+    }
+
+    /** Idempotently registers the owning application in the global registry. */
+    private Application registerOwningApplication(String applicationId, String ownerUserId) {
+        return applicationRepo.ensureRegistered(
+            applicationId,
+            DataDomain.builder()
+                .orgRefName(envConfigUtils.getSystemOrgRefName())
+                .accountNum(envConfigUtils.getSystemAccountNumber())
+                .tenantId(envConfigUtils.getSystemTenantId())
+                .ownerId(ownerUserId)
+                .build());
+    }
+
+    private static String applicationRefName(Realm realm) {
+        return realm == null || realm.getApplicationRef() == null
+            ? null
+            : realm.getApplicationRef().getEntityRefName();
+    }
+
+    public void ensureRealmCatalog(ProvisioningContext context) {
+        Log.infof("  computed realmId: %s", context.getRealmId());
+        if (context.getDeploymentTopology() == TenantDeploymentTopology.POOLED_REALM) {
+            Realm poolRealm = realmCatalog.findByRefName(context.getRealmId())
+                .orElseThrow(() -> new IllegalStateException(
+                    "POOLED_REALM admission requires an existing realm catalog entry: "
+                        + context.getRealmId()));
+            if (poolRealm.getDeploymentType() != RealmDeploymentType.SHARED) {
+                throw new IllegalStateException(
+                    "POOLED_REALM admission requires realm '" + context.getRealmId()
+                        + "' to be explicitly marked SHARED; absent legacy values "
+                        + "are DEDICATED");
+            }
+            if (poolRealm.getDatabaseName() == null || poolRealm.getDatabaseName().isBlank()) {
+                throw new IllegalStateException(
+                    "POOLED_REALM target realm has no databaseName: " + context.getRealmId());
+            }
+            String requestedApplication = resolveApplicationIdOrNull(context.getCommand());
+            String poolApplication = applicationRefName(poolRealm);
+            if (requestedApplication != null
+                && !requestedApplication.equalsIgnoreCase(Objects.toString(poolApplication, ""))) {
+                throw new IllegalStateException(String.format(
+                    "POOLED_REALM application conflict: realm '%s' belongs to '%s', requested '%s'",
+                    context.getRealmId(), poolApplication, requestedApplication));
+            }
+            context.setDesiredRealm(poolRealm);
+            Log.infof("Resolved existing pooled realm %s for tenant %s",
+                context.getRealmId(), context.getTenantId());
+            return;
+        }
+
+        Optional<Realm> existingByEmailDomain = realmCatalog.findByEmailDomain(
+            context.getCommand().getTenantEmailDomain()
+        );
+        Optional<Realm> existingByRefName = realmCatalog.findByRefName(context.getRealmId());
+
+        if (existingByEmailDomain.isPresent() && existingByRefName.isPresent()
+            && !Objects.equals(existingByEmailDomain.get().getRefName(), existingByRefName.get().getRefName())) {
+            throw new IllegalStateException(String.format(
+                "Realm catalog conflict: email domain '%s' resolves to realm '%s', but computed realm id '%s' "
+                    + "resolves to a different catalog entry",
+                context.getCommand().getTenantEmailDomain(),
+                existingByEmailDomain.get().getRefName(),
+                context.getRealmId()
+            ));
+        }
+
+        // A realm id is derived from the tenant domain. Distinct historical domain spellings can
+        // collapse to the same id (for example, dots and hyphens). Always inspect both keys so a
+        // provisioning retry fails with explicit differences instead of attempting a second
+        // registration against the same realm/database identity.
+        Optional<Realm> existingOpt = existingByEmailDomain.isPresent()
+            ? existingByEmailDomain
+            : existingByRefName;
+
+        if (existingOpt.isPresent()) {
+            Log.warnf("Realm %s already exists in the configured realm catalog", context.getRealmId());
+            Realm existing = existingOpt.get();
+            List<String> diffs = new ArrayList<>();
+            if (existing.getDeploymentType() != RealmDeploymentType.DEDICATED) {
+                diffs.add(String.format("deploymentType: existing='%s', requested='DEDICATED'",
+                    existing.getDeploymentType()));
+            }
+            if (!Objects.equals(existing.getEmailDomain(), context.getDesiredRealm().getEmailDomain())) {
+                diffs.add(String.format("emailDomain: existing='%s', requested='%s'",
+                    existing.getEmailDomain(), context.getDesiredRealm().getEmailDomain()));
+            }
+            if (!Objects.equals(existing.getDatabaseName(), context.getDesiredRealm().getDatabaseName())) {
+                diffs.add(String.format("databaseName: existing='%s', requested='%s'",
+                    existing.getDatabaseName(), context.getDesiredRealm().getDatabaseName()));
+            }
+            if (!Objects.equals(existing.getDefaultAdminUserId(), context.getDesiredRealm().getDefaultAdminUserId())) {
+                diffs.add(String.format("defaultAdminUserId: existing='%s', requested='%s'",
+                    existing.getDefaultAdminUserId(), context.getDesiredRealm().getDefaultAdminUserId()));
+            }
+            if (!Objects.equals(existing.getDomainContext(), context.getDesiredRealm().getDomainContext())) {
+                diffs.add(String.format("domainContext: existing='%s', requested='%s'",
+                    existing.getDomainContext(), context.getDesiredRealm().getDomainContext()));
+            }
+            if (!Objects.equals(existing.getDefaultPerspective(), context.getDesiredRealm().getDefaultPerspective())) {
+                diffs.add(String.format("defaultPerspective: existing='%s', requested='%s'",
+                    existing.getDefaultPerspective(), context.getDesiredRealm().getDefaultPerspective()));
+            }
+            // A realm belongs to exactly ONE application: re-provisioning under a
+            // different application is a conflict, but a legacy realm without an
+            // application is backfilled below, not rejected.
+            String desiredApplication = resolveApplicationIdOrNull(context.getCommand());
+            String existingApplication = applicationRefName(existing);
+            if (existingApplication != null && desiredApplication != null
+                    && !existingApplication.equalsIgnoreCase(desiredApplication)) {
+                diffs.add(String.format("application: existing='%s', requested='%s'",
+                    existingApplication, desiredApplication));
+            }
+
+            if (!diffs.isEmpty()) {
+                throw new IllegalStateException("Realm already exists; differences detected: " + String.join("; ", diffs));
+            }
+            if (existingApplication == null && desiredApplication != null) {
+                Application application = registerOwningApplication(
+                    desiredApplication, context.getCommand().getAdminUserId());
+                existing.setApplicationRef(application.createEntityReference());
+                realmCatalog.register(existing);
+                context.getResult().addWarning(
+                    "Realm existed without an owning application; linked to '" + desiredApplication + "'.");
+                Log.infof("Backfilled application '%s' onto existing realm %s", desiredApplication, context.getRealmId());
+                return;
+            }
+            Log.warnf("Realm %s already exists in system catalog; proceeding idempotently.", context.getRealmId());
+            context.getResult().addWarning("Realm already exists; no catalog changes were made.");
+            return;
+        }
+
+        // New realm: resolve and register the owning application (fail-fast when
+        // neither the command nor the platform default names one), then attach it.
+        Application application = registerOwningApplication(
+            requireApplicationId(context.getCommand()),
+            context.getCommand().getAdminUserId());
+        context.getDesiredRealm().setApplicationRef(application.createEntityReference());
+        realmCatalog.register(context.getDesiredRealm());
+        Log.infof("Created realm catalog entry for %s (application %s)",
+            context.getRealmId(), application.getRefName());
+        context.getResult().realmCreated = true;
+    }
+
+    public void ensureOrganizationDirectory(ProvisioningContext context) {
+        if (organizationRepo == null) {
+            context.getResult().addWarning("Organization directory was not available; organization record was not reconciled.");
+            return;
+        }
+
+        String systemRealm = context.getSystemRealm();
+        String orgRefName = context.getDomainContext().getOrgRefName();
+        String displayName = context.getNormalizedTenantDisplayName();
+        DataDomain dataDomain = DataDomain.builder()
+            .orgRefName(orgRefName)
+            .accountNum(context.getDomainContext().getAccountId())
+            .tenantId(context.getDomainContext().getTenantId())
+            .ownerId(context.getCommand().getAdminUserId())
+            .build();
+
+        Optional<Organization> existing = organizationRepo.findByRefName(orgRefName, systemRealm);
+        if (existing.isPresent()) {
+            Organization organization = existing.get();
+            boolean changed = false;
+            if (organization.getDisplayName() == null || organization.getDisplayName().isBlank()) {
+                organization.setDisplayName(displayName);
+                changed = true;
+            }
+            if (organization.getDataDomain() == null) {
+                organization.setDataDomain(dataDomain);
+                changed = true;
+            }
+            if (changed) {
+                organizationRepo.save(systemRealm, organization);
+            }
+            return;
+        }
+
+        organizationRepo.createOrganization(
+            organizationRepo.getMorphiaDataStoreWrapper().getDataStore(systemRealm),
+            displayName,
+            orgRefName,
+            dataDomain
+        );
+    }
+
+    /**
+     * Runs a step that writes control-plane records for the tenant being provisioned
+     * (realm catalog, realm membership, the tenant administrator's identity). Those
+     * records carry the new tenant's data domain, which the caller's rules do not
+     * cover; the provisioning endpoint is the authorization decision, so the step runs
+     * as the system principal under the requested application. Tenant-realm steps
+     * (migrations, seed packs) run as the tenant principal instead.
+     */
+    public void runControlPlaneStep(ProvisioningContext context, Runnable step) {
+        Optional<PrincipalContext> caller = SecurityContext.getPrincipalContext();
+        ResourceContext systemResource = securityUtils.getSystemSecurityResourceContext();
+        String applicationId = Optional.ofNullable(resolveApplicationIdOrNull(context.getCommand()))
+            .or(() -> caller.map(PrincipalContext::getApplicationId))
+            .orElse(systemResource.getApplicationId());
+        ResourceContext resource = new ResourceContext.Builder()
+            .withRealm(systemResource.getRealm())
+            .withApplicationId(applicationId)
+            .withArea(systemResource.getArea())
+            .withFunctionalDomain(systemResource.getFunctionalDomain())
+            .withAction(systemResource.getAction())
+            .build();
+        Log.infof("Tenant provisioning %s: control-plane step runs as system on behalf of %s",
+            context.getTenantId(), caller.map(PrincipalContext::getUserId).orElse("<none>"));
+        SecurityCallScope.runWithContexts(securityUtils.getSystemPrincipalContext(), resource, step);
+    }
+
+    public void ensureRealmMembership(ProvisioningContext context) {
+        upsertRealmMembership(
+            context.getDesiredRealm(),
+            context.getDomainContext(),
+            context.getArchetypes(),
+            context.getDeploymentTopology(),
+            context.getNormalizedTenantDisplayName(),
+            context.getCommand().getAdminUserId()
+        );
+    }
+
+    public void runRealmMigrations(ProvisioningContext context) {
+        if (context.getDeploymentTopology() == TenantDeploymentTopology.POOLED_REALM) {
+            Log.infof("Skipping realm migrations for pooled tenant %s in existing realm %s",
+                context.getTenantId(), context.getRealmId());
+            return;
+        }
+        withDropPendingRetry(context.getRealmId(), "run migrations", () ->
+            SecurityCallScope.runWithContexts(context.getTenantPrincipal(), context.getMigrationResource(), () ->
+                migrationService.runAllUnRunMigrations(context.getRealmId(), context.getEmitter())
+            )
+        );
+    }
+
+    public void ensureTenantIdentities(ProvisioningContext context) {
+        boolean emailCredential = context.getCommand().getAdminCredentialType()
+            == com.e2eq.framework.model.security.CredentialType.EMAIL;
+        if (!emailCredential && (context.getCommand().getAdminPassword() == null || context.getCommand().getAdminPassword().isBlank())) {
+            throw new IllegalArgumentException("adminPassword cannot be null");
+        }
+
+        UserManagement userManagement = authProviderFactory.getUserManager();
+        boolean userExists = userManagement.userIdExists(context.getCommand().getAdminUserId());
+        if (!userExists) {
+            Log.warnf("Creating initial admin user %s with password provided, however since we are creating it the subject passed in %s will be ignored",
+                context.getCommand().getAdminUserId(),
+                context.getCommand().getAdminSubject());
+            if (emailCredential) {
+                userManagement.createEmailUser(context.getCommand().getAdminUserId(),
+                    context.getDesiredRoles(), context.getDomainContext(), context.getCommand().getApplicationId());
+            } else {
+            userManagement.createUser(
+                context.getCommand().getAdminUserId(),
+                context.getCommand().getAdminPassword(),
+                Boolean.FALSE,
+                context.getDesiredRoles(),
+                context.getDomainContext()
+            );
+            }
+            context.getResult().userCreated = true;
+        } else {
+            Optional<CredentialUserIdPassword> credOpt = credentialRepo.findByUserId(
+                context.getCommand().getAdminUserId(),
+                context.getSystemRealm(),
+                true
+            );
+            if (credOpt.isEmpty()) {
+                throw new IllegalStateException(String.format(
+                    "Admin user exists but credential with UserId: %s was not found in credential repo in realm: %s.",
+                    context.getCommand().getAdminUserId(),
+                    context.getSystemRealm()
+                ));
+            }
+            CredentialUserIdPassword cred = credOpt.get();
+            if (emailCredential && cred.getCredentialType() != com.e2eq.framework.model.security.CredentialType.EMAIL) {
+                throw new SecurityException("AUTHENTICATION_METHOD_NOT_ADMITTED");
+            }
+            Set<String> storedRoles = cred.getRoles() == null ? Collections.emptySet() : new HashSet<>(Arrays.asList(cred.getRoles()));
+            boolean subjectCompatible = cred.getSubject() != null && !cred.getSubject().isBlank();
+            boolean pooledAdmission =
+                context.getDeploymentTopology() == TenantDeploymentTopology.POOLED_REALM;
+            boolean attributesMatch = subjectCompatible
+                && Objects.equals(Boolean.FALSE, cred.getForceChangePassword())
+                && (pooledAdmission
+                    || (Objects.equals(storedRoles, context.getDesiredRoles())
+                        && Objects.equals(cred.getDomainContext(), context.getDomainContext())));
+            if (!attributesMatch) {
+                List<String> diffs = new ArrayList<>();
+                if (!subjectCompatible) {
+                    diffs.add("subject is blank");
+                }
+                if (!pooledAdmission && !Objects.equals(storedRoles, context.getDesiredRoles())) {
+                    diffs.add(String.format("roles: existing='%s', requested='%s'",
+                        storedRoles, context.getDesiredRoles()));
+                }
+                if (!Objects.equals(Boolean.FALSE, cred.getForceChangePassword())) {
+                    diffs.add(String.format("forceChangePassword: existing='%s', requested='%s'",
+                        cred.getForceChangePassword(), Boolean.FALSE));
+                }
+                if (!pooledAdmission
+                    && !Objects.equals(cred.getDomainContext(), context.getDomainContext())) {
+                    diffs.add(String.format("domainContext: existing='%s', requested='%s'",
+                        cred.getDomainContext(), context.getDomainContext()));
+                }
+                String text = String.format("Admin user already exists with different attributes. Diffs:%s",
+                    String.join(System.lineSeparator(), diffs));
+                if (!context.getCommand().isOverwriteAll()) {
+                    throw new IllegalStateException(text);
+                }
+                Log.warn(text);
+            }
+            Log.warnf("Admin user %s already exists in realm %s; proceeding idempotently.",
+                context.getCommand().getAdminUserId(),
+                context.getRealmId());
+            context.getResult().addWarning("Admin user already exists; no user changes were made.");
+        }
+
+        // The SYSTEM-realm directory profile is NOT optional and NOT a "projection":
+        // CustomTokenAuthProvider rejects a USER credential that has no profile in the system
+        // realm as a "half-created account", so provisioning without it yields an admin who
+        // cannot log in while every step still reports success. The tenant-realm projection
+        // below stays opt-in (createTenantIdentityProjections) because that is a genuine
+        // compatibility concern; this one is a login precondition.
+        ensureUserProfileInRealm(
+            context.getSystemRealm(),
+            context.getCommand().getAdminUserId(),
+            context.getCommand().getAdminUserId(),
+            context.getDesiredRoles(),
+            context.getDomainContext(),
+            context.getCommand().getAdminDisplayName()
+        );
+
+        ensureUserProfileProjectionIfEnabled(
+            context.getRealmId(),
+            context.getCommand().getAdminUserId(),
+            context.getCommand().getAdminUserId(),
+            context.getDesiredRoles(),
+            context.getDomainContext()
+        );
+        ensureUserRealmRole(
+            context.getSystemRealm(),
+            context.getRealmId(),
+            context.getCommand().getAdminUserId(),
+            context.getDesiredRoles(),
+            context.getDomainContext()
+        );
+
+        if (context.getDeploymentTopology() == TenantDeploymentTopology.POOLED_REALM) {
+            // Pooled admission creates only the requested administrator and its
+            // tenant-scoped realm assignment. Compatibility/demo identities are
+            // realm bootstrap data and must not be multiplied per tenant.
+            return;
+        }
+
+        if (!context.getBaselineAdminUserId().equalsIgnoreCase(context.getCommand().getAdminUserId())) {
+            ensureCredentialExists(
+                context.getRealmId(),
+                context.getBaselineAdminUserId(),
+                context.getCommand().getAdminPassword(),
+                context.getDesiredRoles(),
+                context.getDomainContext(),
+                context.getResult(),
+                "Baseline tenant admin user"
+            );
+            ensureUserProfileProjectionIfEnabled(
+                context.getRealmId(),
+                context.getBaselineAdminUserId(),
+                context.getBaselineAdminUserId(),
+                context.getDesiredRoles(),
+                context.getDomainContext()
+            );
+            ensureUserRealmRole(
+                context.getSystemRealm(),
+                context.getRealmId(),
+                context.getBaselineAdminUserId(),
+                context.getDesiredRoles(),
+                context.getDomainContext()
+            );
+        }
+
+        ensureCredentialExists(
+            context.getRealmId(),
+            context.getDemoUserId(),
+            context.getDemoPassword(),
+            Set.of("user"),
+            context.getDomainContext(),
+            context.getResult(),
+            "Demo tenant user"
+        );
+        ensureUserProfileProjectionIfEnabled(
+            context.getRealmId(),
+            context.getDemoUserId(),
+            context.getDemoUserId(),
+            Set.of("user"),
+            context.getDomainContext()
+        );
+        ensureUserRealmRole(
+            context.getSystemRealm(),
+            context.getRealmId(),
+            context.getDemoUserId(),
+            Set.of("user"),
+            context.getDomainContext()
+        );
+
+        ensureTenantAdminMembershipsIfEnabled(
+            context.getRealmId(),
+            context.getDomainContext(),
+            context.getBaselineAdminUserId(),
+            context.getCommand().getAdminUserId()
+        );
+    }
+
+    public void applyBaseSeedPacks(ProvisioningContext context) {
+        if (context.getDeploymentTopology() == TenantDeploymentTopology.POOLED_REALM) {
+            Log.infof("Skipping realm bootstrap seed packs for pooled tenant %s in existing realm %s",
+                context.getTenantId(), context.getRealmId());
+            return;
+        }
+        SeedContext seedContext = seedContext(context);
+        Map<String, SeedPackDescriptor> latestByPack;
+        try {
+            latestByPack = seedDiscoveryService.discoverLatestApplicable(seedContext, null);
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to discover seed packs: " + e.getMessage(), e);
+        }
+
+        List<SeedPackRef> baseRefs = latestByPack.values().stream()
+            .map(d -> SeedPackRef.exact(d.getManifest().getSeedPack(), d.getManifest().getVersion()))
+            .toList();
+        if (baseRefs.isEmpty()) {
+            return;
+        }
+
+        Log.infof("Applying %d base seed pack(s) (GLOBAL/unscoped/per-tenant) to realm %s", baseRefs.size(), context.getRealmId());
+        SecurityCallScope.runWithContexts(context.getTenantPrincipal(), context.getSeedResource(), () ->
+            seedLoaderService.applySeeds(seedContext, baseRefs)
+        );
+    }
+
+    public void applyRequestedArchetypes(ProvisioningContext context) {
+        if (context.getArchetypes() == null || context.getArchetypes().isEmpty()) {
+            Log.info("No Archetypes applicable");
+            return;
+        }
+        if (context.getDeploymentTopology() == TenantDeploymentTopology.POOLED_REALM) {
+            throw new IllegalStateException(
+                "Seed archetypes are not permitted during pooled tenant admission until "
+                    + "the seed contract explicitly proves every write is tenant-scoped.");
+        }
+
+        SeedContext seedContext = seedContext(context);
+        for (String archetype : context.getArchetypes()) {
+            String at = archetype == null ? null : archetype.trim();
+            if (at == null || at.isEmpty()) {
+                continue;
+            }
+            Log.infof("Applying seed archetype '%s' to realm %s", at, context.getRealmId());
+            SecurityCallScope.runWithContexts(context.getTenantPrincipal(), context.getSeedResource(), () ->
+                seedLoaderService.applyArchetype(seedContext, at)
+            );
+            if (!context.getResult().appliedSeedArchetypes.contains(at)) {
+                context.getResult().appliedSeedArchetypes.add(at);
+            }
+        }
+    }
+
+    public void verifyRealmInitialization(ProvisioningContext context) {
+        if (context.getDeploymentTopology() == TenantDeploymentTopology.DEDICATED_REALM) {
+            withDropPendingRetry(context.getRealmId(), "apply indexes and verify initialization", () ->
+                SecurityCallScope.runWithContexts(context.getTenantPrincipal(), context.getMigrationResource(), () -> {
+                    migrationService.applyIndexes(context.getRealmId());
+                    migrationService.checkInitialized(context.getRealmId());
+                })
+            );
+        } else {
+            Log.infof("Skipping realm index initialization for pooled tenant %s in existing realm %s",
+                context.getTenantId(), context.getRealmId());
+        }
+        verifyAdminIsLoginCapable(context);
+    }
+
+    /**
+     * A provisioned realm nobody can sign in to is not provisioned.
+     *
+     * <p>Database initialization was the only thing this step used to check, which is how a run
+     * could report COMPLETED while the admin had a credential but no directory profile — an
+     * account {@code CustomTokenAuthProvider} refuses as half-created. Verification now asserts
+     * the login PRECONDITIONS rather than authenticating (provisioning should not mint tokens):
+     * the credential exists in the system realm, and so does its directory profile.</p>
+     */
+    private void verifyAdminIsLoginCapable(ProvisioningContext context) {
+        String systemRealm = context.getSystemRealm();
+        String userId = context.getCommand().getAdminUserId();
+        List<String> missing = new ArrayList<>();
+
+        Optional<CredentialUserIdPassword> credential =
+            credentialRepo.findByUserId(userId, systemRealm, true);
+        if (credential.isEmpty()) {
+            missing.add("credential in realm " + systemRealm);
+        }
+        if (userProfileRepo.getByUserIdWithIgnoreRules(systemRealm, userId).isEmpty()) {
+            missing.add("directory profile (UserProfile) in realm " + systemRealm
+                + " — the login check requires one for USER accounts");
+        }
+
+        if (!missing.isEmpty()) {
+            throw new IllegalStateException(String.format(
+                "Realm %s is not usable: admin %s is missing %s. Provisioning must not report "
+                    + "success for an account that cannot authenticate.",
+                context.getRealmId(), userId, String.join("; ", missing)));
+        }
+        Log.infof("Verified admin %s is login-capable in realm %s", userId, context.getRealmId());
+    }
+
+    private void ensureCredentialExists(String realmId,
+                                        String userId,
+                                        String password,
+                                        Set<String> roles,
+                                        DomainContext domainContext,
+                                        ProvisionResult result,
+                                        String label) {
+        UserManagement userManagement = authProviderFactory.getUserManager();
+        if (userManagement.userIdExists(userId)) {
+            Log.infof("%s %s already exists for realm %s; provisioning will reuse it.", label, userId, realmId);
+            result.addWarning(label + " already exists; provisioning reused the existing identity.");
+            return;
+        }
+
+        userManagement.createUser(userId, password, Boolean.FALSE, roles, domainContext);
+        Log.infof("Created %s %s for realm %s", label.toLowerCase(Locale.ROOT), userId, realmId);
+    }
+
+    private SeedContext seedContext(ProvisioningContext context) {
+        return SeedContext.builder(context.getRealmId())
+            .tenantId(context.getDomainContext().getTenantId())
+            .orgRefName(context.getDomainContext().getOrgRefName())
+            .accountId(context.getDomainContext().getAccountId())
+            .ownerId(context.getCommand().getAdminUserId())
+            .variable("adminUserId", context.getCommand().getAdminUserId())
+            .variable("baselineAdminUserId", context.getBaselineAdminUserId())
+            .variable("demoUserId", context.getDemoUserId())
+            .build();
+    }
+
+    private void ensureUserProfileProjectionIfEnabled(String realmId,
+                                                      String userId,
+                                                      String email,
+                                                      Set<String> roles,
+                                                      DomainContext domainContext) {
+        if (!createTenantIdentityProjections) {
+            Log.debugf(
+                "Tenant identity projections are disabled; skipping UserProfile projection for user %s in tenant realm %s",
+                userId,
+                realmId
+            );
+            return;
+        }
+        ensureUserProfileInRealm(realmId, userId, email, roles, domainContext);
+    }
+
+    private void ensureTenantAdminMembershipsIfEnabled(String realmId,
+                                                       DomainContext domainContext,
+                                                       String baselineAdminUserId,
+                                                       String requestedAdminUserId) {
+        if (!createTenantIdentityProjections) {
+            Log.debugf(
+                "Tenant identity projections are disabled; skipping tenant-local admin UserGroup projection in realm %s",
+                realmId
+            );
+            return;
+        }
+        ensureTenantAdminMemberships(realmId, domainContext, baselineAdminUserId, requestedAdminUserId);
+    }
+
+    private void ensureUserProfileInRealm(String realmId,
+                                          String userId,
+                                          String email,
+                                          Set<String> roles,
+                                          DomainContext domainContext) {
+        ensureUserProfileInRealm(realmId, userId, email, roles, domainContext, null);
+    }
+
+    private void ensureUserProfileInRealm(String realmId, String userId, String email,
+                                          Set<String> roles, DomainContext domainContext, String displayName) {
+        Optional<CredentialUserIdPassword> credential = systemDirectory.findCredentialByUserId(userId);
+        if (credential.isEmpty()) {
+            throw new IllegalStateException("Credential was not found for provisioned userId: " + userId);
+        }
+
+        EntityReference credentialRef = credential.get().createEntityReference(realmCatalog.systemRealmId());
+        Optional<UserProfile> existing = userProfileRepo.getByUserId(realmId, userId);
+        if (existing.isPresent()) {
+            UserProfile profile = existing.get();
+            boolean changed = false;
+            if (!Objects.equals(profile.getCredentialUserIdPasswordRef(), credentialRef)) {
+                profile.setCredentialUserIdPasswordRef(credentialRef);
+                changed = true;
+            }
+            if (!Objects.equals(profile.getEmail(), email)) {
+                profile.setEmail(email);
+                changed = true;
+            }
+            if (!Objects.equals(profile.getUserId(), userId)) {
+                profile.setUserId(userId);
+                changed = true;
+            }
+            if (changed) {
+                userProfileRepo.save(realmId, profile);
+            }
+            return;
+        }
+
+        UserProfile profile = UserProfile.builder()
+                .refName(userId)
+                .displayName(displayName == null || displayName.isBlank() ? userId : displayName.trim())
+                .userId(userId)
+                .email(email)
+                .credentialUserIdPasswordRef(credentialRef)
+                .dataDomain(DataDomain.builder()
+                        .orgRefName(domainContext.getOrgRefName())
+                        .accountNum(domainContext.getAccountId())
+                        .tenantId(domainContext.getTenantId())
+                        .ownerId(userId)
+                        .build())
+                .build();
+        userProfileRepo.save(realmId, profile);
+    }
+
+    private void ensureTenantAdminMemberships(String realmId, DomainContext domainContext, String baselineAdminUserId, String requestedAdminUserId) {
+        Optional<UserGroup> tenantAdminGroup = userGroupRepo.findByRefName(TENANT_ADMIN_GROUP_REF, realmId);
+        UserGroup group = tenantAdminGroup.orElseGet(UserGroup::new);
+        if (group.getRefName() == null || group.getRefName().isBlank()) {
+            group.setRefName(TENANT_ADMIN_GROUP_REF);
+        }
+        if (group.getDisplayName() == null || group.getDisplayName().isBlank()) {
+            group.setDisplayName(TENANT_ADMIN_GROUP_DISPLAY);
+        }
+        if (group.getDataDomain() == null) {
+            group.setDataDomain(DataDomain.builder()
+                    .orgRefName(domainContext.getOrgRefName())
+                    .accountNum(domainContext.getAccountId())
+                    .tenantId(domainContext.getTenantId())
+                    .ownerId(baselineAdminUserId)
+                    .build());
+        }
+        List<String> roles = group.getRoles() == null
+                ? new ArrayList<>()
+                : new ArrayList<>(group.getRoles());
+        if (roles.stream().noneMatch(role -> "admin".equalsIgnoreCase(role))) {
+            roles.add("admin");
+            group.setRoles(roles);
+        }
+        List<EntityReference> members = group.getUserProfiles() == null
+                ? new ArrayList<>()
+                : new ArrayList<>(group.getUserProfiles());
+
+        upsertUserProfileReference(members, baselineAdminUserId);
+        if (requestedAdminUserId != null && !requestedAdminUserId.equalsIgnoreCase(baselineAdminUserId)) {
+            upsertUserProfileReference(members, requestedAdminUserId);
+        }
+
+        group.setUserProfiles(members);
+        userGroupRepo.save(realmId, group);
+    }
+
+    /**
+     * Reconciles the system-plane membership consumed by token issuance. Credentials are
+     * global identities; their flat roles describe only the compatibility/default realm.
+     * Every provisioned tenant therefore needs an explicit per-realm assignment or a login
+     * for that realm will correctly receive no tenant roles.
+     */
+    private void ensureUserRealmRole(String systemRealm,
+                                     String realmId,
+                                     String userId,
+                                     Set<String> roles,
+                                     DomainContext domainContext) {
+        String subject = authProviderFactory.getUserManager().getSubjectForUserId(userId)
+            .orElseThrow(() -> new IllegalStateException(
+                "Credential was not found while creating realm membership for userId: " + userId
+            ));
+
+        UserRealmRole assignment = realmMembershipService.realmsForUser(userId).stream()
+            .filter(existing -> realmId.equals(existing.getRealmRefName()))
+            .findFirst()
+            .orElseGet(() -> UserRealmRole.builder()
+                .refName("user-realm-role:" + userId + ":" + realmId)
+                .displayName(userId + " in " + realmId)
+                .userId(userId)
+                .realmRefName(realmId)
+                .build());
+
+        assignment.setUserId(userId);
+        assignment.setSubject(subject);
+        assignment.setRealmRefName(realmId);
+        assignment.setRoles(roles.stream().sorted(String.CASE_INSENSITIVE_ORDER).toList());
+        Set<String> authorizedTenantIds = new LinkedHashSet<>();
+        if (assignment.getAuthorizedTenantIds() != null) {
+            authorizedTenantIds.addAll(assignment.getAuthorizedTenantIds());
+        }
+        authorizedTenantIds.add(domainContext.getTenantId());
+        assignment.setAuthorizedTenantIds(List.copyOf(authorizedTenantIds));
+        assignment.setSponsoringOrgRefName(domainContext.getOrgRefName());
+        assignment.setStatus(UserRealmRole.STATUS_ACTIVE);
+        assignment.setDataDomain(DataDomain.builder()
+            .orgRefName(domainContext.getOrgRefName())
+            .accountNum(domainContext.getAccountId())
+            .tenantId(domainContext.getTenantId())
+            .ownerId(userId)
+            .build());
+
+        realmMembershipService.upsertUserRealmRole(assignment);
+    }
+
+    private void upsertUserProfileReference(List<EntityReference> members, String userId) {
+        if (userId == null || userId.isBlank()) {
+            return;
+        }
+
+        boolean exists = members.stream()
+                .filter(Objects::nonNull)
+                .anyMatch(ref -> userId.equalsIgnoreCase(ref.getEntityRefName()));
+        if (exists) {
+            return;
+        }
+
+        members.add(EntityReference.builder()
+                .entityRefName(userId)
+                .entityDisplayName(userId)
+                .entityType(UserProfile.class.getSimpleName())
+                .build());
+    }
+
+    private void upsertRealmMembership(Realm realm,
+                                       DomainContext dc,
+                                       List<String> archetypes,
+                                       TenantDeploymentTopology deploymentTopology,
+                                       String tenantDisplayName,
+                                       String tenantAdminUserId) {
+        String primaryArchetype = (archetypes != null && !archetypes.isEmpty()) ? archetypes.get(0) : null;
+        String provisioningMode = primaryArchetype == null
+                ? "CUSTOM"
+                : (primaryArchetype.toLowerCase().contains("demo") ? "DEMO" : "PRODUCTION");
+
+        String membershipRefName = String.join(":",
+                java.util.List.of(
+                        dc.getOrgRefName(),
+                        dc.getAccountId(),
+                        realm.getRefName()
+                ));
+
+        RealmTenantMembership membership = RealmTenantMembership.builder()
+                .refName(membershipRefName)
+                .displayName(tenantDisplayName)
+                .realmRefName(realm.getRefName())
+                .realmDisplayName(realm.getDisplayName())
+                .organizationRefName(dc.getOrgRefName())
+                .accountId(dc.getAccountId())
+                .tenantId(dc.getTenantId())
+                .realmEmailDomain(realm.getEmailDomain())
+                .defaultAdminUserId(tenantAdminUserId)
+                .realmEditionRefName(primaryArchetype)
+                .provisioningMode(provisioningMode)
+                .participationStatus("ACTIVE")
+                .membershipRole(deploymentTopology == TenantDeploymentTopology.POOLED_REALM
+                    ? RealmTenantMembership.MEMBERSHIP_ROLE_PARTICIPANT
+                    : RealmTenantMembership.MEMBERSHIP_ROLE_OWNER)
+                .setupStatus(realm.getSetupStatus() == null ? null : realm.getSetupStatus().name())
+                .setupCompletionPercent(realm.getSetupCompletionPercent())
+                .dataDomain(DataDomain.builder()
+                        .orgRefName(dc.getOrgRefName())
+                        .accountNum(dc.getAccountId())
+                        .tenantId(dc.getTenantId())
+                        .ownerId(tenantAdminUserId)
+                        .build())
+                .build();
+
+        realmMembershipService.upsertMembership(membership);
+    }
+
+    public DeleteResult deleteTenant(String realmId) {
+        Objects.requireNonNull(realmId, "realmId cannot be null");
+        String normalizedRealmId = realmId.trim();
+        if (normalizedRealmId.isBlank()) {
+            throw new IllegalArgumentException("realmId cannot be blank");
+        }
+        throw new UnsupportedOperationException(
+            "Direct destructive tenant deletion is disabled. Use the governed realm lifecycle "
+                + "decommission workflow; hard archive-and-drop is available only through its "
+                + "separately authorized system-administrator workflow."
+        );
+    }
+
+    @FunctionalInterface
+    interface ProvisioningAction {
+        void run() throws Exception;
+    }
+
+    @SuppressWarnings("unchecked")
+    private MultiEmitter<String> createEmitter() {
+        return (MultiEmitter<String>) java.lang.reflect.Proxy.newProxyInstance(
+            MultiEmitter.class.getClassLoader(),
+            new Class[]{MultiEmitter.class},
+            (proxy, method, args) -> {
+                String m = method.getName();
+                if ("emit".equals(m) && args != null && args.length == 1 && args[0] instanceof String s) {
+                    Log.infof("[TenantProvisioning] %s", s);
+                }
+                Class<?> rt = method.getReturnType();
+                if (rt == Void.TYPE) return null;
+                if (rt == boolean.class || rt == Boolean.class) return Boolean.FALSE;
+                if (rt == long.class || rt == Long.class) return 0L;
+                if (MultiEmitter.class.isAssignableFrom(rt)) return proxy;
+                return null;
+            }
+        );
+    }
+
+    private List<String> normalizeArchetypes(List<String> archetypes) {
+        if (archetypes == null || archetypes.isEmpty()) {
+            return List.of();
+        }
+        return archetypes.stream()
+            .filter(Objects::nonNull)
+            .map(String::trim)
+            .filter(value -> !value.isBlank())
+            .distinct()
+            .toList();
+    }
+
+    private static String normalizeDataDomainIdentifier(String value) {
+        String normalized = value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+        normalized = normalized.replaceAll("[^a-z0-9]+", "-").replaceAll("(^-|-$)", "");
+        if (normalized.isBlank()) {
+            throw new IllegalArgumentException("data-domain identifier cannot be blank");
+        }
+        return normalized;
+    }
+
+    private void withDropPendingRetry(String realmId, String operationName, ProvisioningAction action) {
+        for (int attempt = 1; attempt <= DROP_PENDING_MAX_RETRIES; attempt++) {
+            try {
+                action.run();
+                return;
+            } catch (Exception e) {
+                if (!isDatabaseDropPending(e) || attempt == DROP_PENDING_MAX_RETRIES) {
+                    throw asRuntimeException(e);
+                }
+                Log.warnf("Tenant provisioning for realm %s hit Mongo database drop pending while trying to %s (attempt %d/%d). Waiting %dms before retry.",
+                        realmId, operationName, attempt, DROP_PENDING_MAX_RETRIES, DROP_PENDING_RETRY_DELAY_MS);
+                sleepBeforeRetry();
+            }
+        }
+    }
+
+    private boolean isDatabaseDropPending(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            if (current instanceof MongoCommandException mongoCommandException && mongoCommandException.getErrorCode() == 215) {
+                return true;
+            }
+            String message = current.getMessage();
+            if (message != null && (message.contains("DatabaseDropPending") || message.contains("in the process of being dropped"))) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private void sleepBeforeRetry() {
+        try {
+            Thread.sleep(DROP_PENDING_RETRY_DELAY_MS);
+        } catch (InterruptedException interruptedException) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while waiting for database drop to complete", interruptedException);
+        }
+    }
+
+    private RuntimeException asRuntimeException(Exception exception) {
+        if (exception instanceof RuntimeException runtimeException) {
+            return runtimeException;
+        }
+        return new IllegalStateException(exception.getMessage(), exception);
+    }
+
+    // ---- TenantLifecycle: the control-plane contract over this embedded implementation ----
+
+    @Override
+    public TenantProvisionResult provision(TenantProvisionRequest request) {
+        return toContractResult(provisionTenant(toCommand(request)));
+    }
+
+    @Override
+    public TenantDeleteResult delete(String realmId) {
+        return toContractResult(deleteTenant(realmId));
+    }
+
+    @Override
+    public TenantDecommissionResult decommission(TenantDecommissionRequest request) {
+        Realm realm = realmCatalog.findByRefName(request.realmId())
+            .orElseThrow(() -> new TenantDecommissionUnavailableException(
+                "Realm catalog entry does not exist: " + request.realmId()));
+        TenantDeploymentTopology catalogTopology =
+            toTenantDeploymentTopology(realm.getDeploymentType());
+        if (request.deploymentTopology() != catalogTopology) {
+            throw new IllegalArgumentException(
+                "Decommission topology does not match realm catalog: realm '"
+                    + request.realmId() + "' is " + realm.getDeploymentType()
+                    + " but request specified " + request.deploymentTopology());
+        }
+        RealmArchiveProvider archiveProvider =
+            requiredProvider(realmArchiveProviders, "RealmArchiveProvider");
+        TenantAccessRevocationProvider accessProvider =
+            requiredProvider(
+                tenantAccessRevocationProviders,
+                "TenantAccessRevocationProvider");
+        RealmDatabaseLifecycleProvider databaseProvider =
+            request.deploymentTopology() == TenantDeploymentTopology.DEDICATED_REALM
+                ? requiredProvider(
+                    realmDatabaseLifecycleProviders,
+                    "RealmDatabaseLifecycleProvider")
+                : null;
+        TenantDataExpirationProvider expirationProvider =
+            request.deploymentTopology() == TenantDeploymentTopology.POOLED_REALM
+                ? requiredProvider(
+                    tenantDataExpirationProviders,
+                    "TenantDataExpirationProvider")
+                : null;
+        return TenantDecommissionWorkflow.execute(
+            request,
+            archiveProvider,
+            accessProvider,
+            databaseProvider,
+            expirationProvider);
+    }
+
+    private static RealmDeploymentType toRealmDeploymentType(
+        TenantDeploymentTopology topology
+    ) {
+        return topology == TenantDeploymentTopology.POOLED_REALM
+            ? RealmDeploymentType.SHARED
+            : RealmDeploymentType.DEDICATED;
+    }
+
+    private static TenantDeploymentTopology toTenantDeploymentTopology(
+        RealmDeploymentType deploymentType
+    ) {
+        return deploymentType == RealmDeploymentType.SHARED
+            ? TenantDeploymentTopology.POOLED_REALM
+            : TenantDeploymentTopology.DEDICATED_REALM;
+    }
+
+    private static <T> T requiredProvider(Instance<T> providers, String contractName) {
+        if (providers == null || providers.isUnsatisfied()) {
+            throw new TenantDecommissionUnavailableException(
+                "No " + contractName + " is installed");
+        }
+        if (providers.isAmbiguous()) {
+            throw new TenantDecommissionUnavailableException(
+                "More than one " + contractName + " is installed");
+        }
+        return providers.get();
+    }
+
+    static ProvisionTenantCommand toCommand(TenantProvisionRequest request) {
+        return ProvisionTenantCommand.builder()
+            .tenantDisplayName(request.tenantDisplayName())
+            .tenantEmailDomain(request.tenantEmailDomain())
+            .orgRefName(request.orgRefName())
+            .accountId(request.accountId())
+            .adminUserId(request.adminUserId())
+            .adminSubject(request.adminSubject())
+            .adminPassword(request.adminPassword())
+            .applicationId(request.applicationId())
+            .deploymentTopology(request.deploymentTopology())
+            .placementRealmId(request.placementRealmId())
+            .archetypes(request.archetypes())
+            .overwriteAll(request.overwriteAll())
+            .build();
+    }
+
+    static TenantProvisionResult toContractResult(ProvisionResult r) {
+        return new TenantProvisionResult(r.realmId, r.tenantId, r.deploymentTopology,
+            r.realmCreated, r.userCreated,
+            r.appliedSeedArchetypes, r.warnings);
+    }
+
+    static TenantDeleteResult toContractResult(DeleteResult r) {
+        return new TenantDeleteResult(r.realmId, r.realmCatalogDeleted, r.databaseDropped,
+            r.deletedCredentialCount, r.warnings);
+    }
+}

@@ -1,6 +1,7 @@
 package com.e2eq.ontology.core;
 
 import com.e2eq.ontology.core.OntologyRegistry.*;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import com.e2eq.ontology.annotations.RelationType;
@@ -20,9 +21,15 @@ public final class YamlOntologyLoader {
 
     // DTOs mirroring YAML (unknown root fields like openness/source are
     // tolerated so ontology pack files load directly)
-    public record YOntology(Integer version, List<YClass> classes, List<YProperty> properties, List<YChain> chains) {}
+    public record YOntology(Integer version, List<YClass> classes, List<YProperty> properties,
+                            List<YChain> chains, List<YComputed> computed) {}
     public record YClass(String id, List<String> parents, List<String> subClassOf,
                          String label, List<String> aliases, Map<String, Object> metadata) {}
+    public record YComputed(String id, String domain, String range, YVia via, List<YDependsOn> dependsOn) {}
+    public record YVia(YHierarchy hierarchy, YList list) {}
+    public record YHierarchy(String node, String from, String expand) {}
+    public record YList(String field, String mode) {}
+    public record YDependsOn(String type) {}
     public record YProperty(
             String id,
             String domain,
@@ -43,7 +50,7 @@ public final class YamlOntologyLoader {
     public record YChain(List<String> chain, String implies) {}
 
     private final ObjectMapper mapper = new ObjectMapper(new YAMLFactory())
-            .configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
     public TBox loadFromClasspath(String resourcePath) throws IOException {
         try (InputStream in = getClass().getResourceAsStream(resourcePath)) {
@@ -60,6 +67,62 @@ public final class YamlOntologyLoader {
 
     public TBox load(InputStream in) throws IOException {
         return toTBox(mapper.readValue(in, YOntology.class));
+    }
+
+    /**
+     * Parse out the {@code computed:} block from a YAML document. Returns an
+     * empty list if absent, so existing YAML files keep working.
+     */
+    public List<ComputedEdgeSpec> loadComputedSpecs(InputStream in) throws IOException {
+        return toComputedSpecs(mapper.readValue(in, YOntology.class));
+    }
+
+    public List<ComputedEdgeSpec> loadComputedSpecsFromClasspath(String resourcePath) throws IOException {
+        try (InputStream in = getClass().getResourceAsStream(resourcePath)) {
+            if (in == null) throw new IOException("Resource not found: " + resourcePath);
+            return loadComputedSpecs(in);
+        }
+    }
+
+    private List<ComputedEdgeSpec> toComputedSpecs(YOntology y) {
+        List<YComputed> raw = Optional.ofNullable(y.computed()).orElse(List.of());
+        List<ComputedEdgeSpec> out = new ArrayList<>(raw.size());
+        for (YComputed c : raw) {
+            ComputedEdgeSpec.Hierarchy h = null;
+            ComputedEdgeSpec.ListSpec l = null;
+            if (c.via() != null) {
+                if (c.via().hierarchy() != null) {
+                    com.e2eq.ontology.annotations.DependsOn.Expand expand =
+                            com.e2eq.ontology.annotations.DependsOn.Expand.NONE;
+                    String e = c.via().hierarchy().expand();
+                    if (e != null && !e.isBlank()) {
+                        try {
+                            expand = com.e2eq.ontology.annotations.DependsOn.Expand.valueOf(
+                                    e.trim().toUpperCase(Locale.ROOT));
+                        } catch (IllegalArgumentException iae) {
+                            throw new RuntimeException(
+                                    "Unknown hierarchy expand '" + e + "' for computed '" + c.id()
+                                    + "'. Expected one of NONE, ANCESTORS, DESCENDANTS.");
+                        }
+                    }
+                    h = new ComputedEdgeSpec.Hierarchy(
+                            c.via().hierarchy().node(),
+                            c.via().hierarchy().from(),
+                            expand);
+                }
+                if (c.via().list() != null) {
+                    l = new ComputedEdgeSpec.ListSpec(
+                            c.via().list().field(),
+                            c.via().list().mode() != null ? c.via().list().mode() : "auto");
+                }
+            }
+            List<String> deps = Optional.ofNullable(c.dependsOn()).orElse(List.of()).stream()
+                    .map(YDependsOn::type)
+                    .filter(Objects::nonNull)
+                    .toList();
+            out.add(new ComputedEdgeSpec(c.id(), c.domain(), c.range(), h, l, deps));
+        }
+        return out;
     }
 
     private TBox toTBox(YOntology y) {

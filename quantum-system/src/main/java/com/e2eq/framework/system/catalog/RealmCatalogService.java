@@ -4,6 +4,7 @@ import com.e2eq.framework.api.system.SystemDirectory;
 import com.e2eq.framework.model.security.Realm;
 import io.quarkus.logging.Log;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.event.Event;
 import jakarta.inject.Inject;
 
 import java.util.Optional;
@@ -29,6 +30,9 @@ public class RealmCatalogService {
 
     @Inject
     SystemDirectory systemDirectory;
+
+    @Inject
+    Event<RealmRegistered> realmRegistered;
 
     /** The deployment's configured system realm reference. */
     public String systemRealmId() {
@@ -59,7 +63,8 @@ public class RealmCatalogService {
     /**
      * Create or update a realm catalog entry. Idempotent at the catalog level:
      * callers (e.g. tenant provisioning) decide create-vs-update semantics; this
-     * method persists the desired state via the directory.
+     * method persists the desired state via the directory, then fires
+     * {@link RealmRegistered} so cached lookups of the realm are dropped.
      */
     public Realm register(Realm realm) {
         if (realm == null) {
@@ -69,8 +74,9 @@ public class RealmCatalogService {
             throw new IllegalArgumentException("realm.refName must be set before registration");
         }
         Realm saved = systemDirectory.registerRealm(realm);
-        Log.infof("RealmCatalogService: registered realm %s in system realm %s",
-                saved.getRefName(), systemRealmId());
+        Log.infof("RealmCatalogService: registered realm %s through the configured system directory",
+                saved.getRefName());
+        realmRegistered.fire(new RealmRegistered(saved.getRefName()));
         return saved;
     }
 }

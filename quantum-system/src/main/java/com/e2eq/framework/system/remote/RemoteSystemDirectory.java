@@ -9,7 +9,9 @@ import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.ProcessingException;
 import jakarta.ws.rs.WebApplicationException;
 
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 
 /**
@@ -31,15 +33,42 @@ import java.util.function.Supplier;
 public class RemoteSystemDirectory implements SystemDirectory {
 
     private final DefaultEndpoint client;
+    private final String baseUrl;
+    private final Supplier<Optional<String>> bearerTokenSupplier;
+
+    // Realm lookups run on EVERY delegated (X-Realm) request; without caching that is one
+    // control-plane HTTP round-trip per request. The realm catalog changes rarely, so a short
+    // positive-only TTL cache removes the per-request hop while keeping newly-provisioned realms
+    // resolvable immediately (misses are NOT cached, so a realm registered after a miss resolves
+    // on the very next lookup). registerRealm refreshes the entry. The realm record is
+    // caller-independent, so entries are safely shared across principals.
+    private static final long CACHE_TTL_NANOS = 60_000_000_000L; // 60s
+    private final Map<String, CachedRealm> byRefName = new ConcurrentHashMap<>();
+    private final Map<String, CachedRealm> byEmailDomain = new ConcurrentHashMap<>();
+
+    private record CachedRealm(Realm realm, long expiresAtNanos) {
+        boolean fresh(long nowNanos) {
+            return nowNanos - expiresAtNanos < 0;
+        }
+    }
 
     /** Production: build the SDK client (transport via MP Rest Client). */
     public RemoteSystemDirectory(String baseUrl, Optional<String> bearerToken) {
-        this(ControlPlaneClientFactory.build(baseUrl, bearerToken));
+        this(baseUrl, () -> bearerToken);
+    }
+
+    /** Production request-scoped bearer forwarding for authenticated catalog reads. */
+    public RemoteSystemDirectory(String baseUrl, Supplier<Optional<String>> bearerTokenSupplier) {
+        this.client = null;
+        this.baseUrl = baseUrl;
+        this.bearerTokenSupplier = bearerTokenSupplier;
     }
 
     /** Direct injection of the typed client (tests, alternate transports). */
     public RemoteSystemDirectory(DefaultEndpoint client) {
         this.client = client;
+        this.baseUrl = null;
+        this.bearerTokenSupplier = null;
     }
 
     @Override
@@ -52,23 +81,55 @@ public class RemoteSystemDirectory implements SystemDirectory {
 
     @Override
     public Optional<Realm> findRealmByEmailDomain(String emailDomain) {
-        return getRealm(() -> client.findRealmByEmailDomain(emailDomain), "realm by email domain " + emailDomain);
+        long now = System.nanoTime();
+        CachedRealm hit = byEmailDomain.get(emailDomain);
+        if (hit != null && hit.fresh(now)) {
+            return Optional.of(hit.realm());
+        }
+        Optional<Realm> resolved = getRealm(
+            () -> client().findRealmByEmailDomain(emailDomain), "realm by email domain " + emailDomain);
+        resolved.ifPresent(r -> cache(r, System.nanoTime()));
+        return resolved;
     }
 
     @Override
     public Optional<Realm> findRealmByRefName(String refName) {
-        return getRealm(() -> client.findRealmByRefName(refName), "realm " + refName);
+        long now = System.nanoTime();
+        CachedRealm hit = byRefName.get(refName);
+        if (hit != null && hit.fresh(now)) {
+            return Optional.of(hit.realm());
+        }
+        Optional<Realm> resolved = getRealm(() -> client().findRealmByRefName(refName), "realm " + refName);
+        resolved.ifPresent(r -> cache(r, System.nanoTime()));
+        return resolved;
     }
 
     @Override
     public Realm registerRealm(Realm realm) {
         try {
-            return fromEntry(client.registerRealm(toEntry(realm)));
+            if (realm.getRefName() == null || realm.getRefName().isBlank()) {
+                throw new IllegalArgumentException("registerRealm requires realm.refName");
+            }
+            Realm saved = ControlPlaneRealmMapper.fromEntry(
+                client().registerRealm(realm.getRefName(), ControlPlaneRealmMapper.toEntry(realm)));
+            cache(saved, System.nanoTime());
+            return saved;
         } catch (WebApplicationException e) {
-            throw new IllegalStateException("Control plane rejected realm registration for "
-                + realm.getRefName() + ": HTTP " + e.getResponse().getStatus(), e);
+            throw ControlPlaneException.rejected("registering realm " + realm.getRefName(),
+                e.getResponse().getStatus(), e);
         } catch (ProcessingException e) {
             throw unreachable("registering realm " + realm.getRefName(), e);
+        }
+    }
+
+    /** Refresh both lookup caches from a resolved/registered realm. */
+    private void cache(Realm realm, long nowNanos) {
+        CachedRealm entry = new CachedRealm(realm, nowNanos + CACHE_TTL_NANOS);
+        if (realm.getRefName() != null) {
+            byRefName.put(realm.getRefName(), entry);
+        }
+        if (realm.getEmailDomain() != null) {
+            byEmailDomain.put(realm.getEmailDomain(), entry);
         }
     }
 
@@ -84,20 +145,40 @@ public class RemoteSystemDirectory implements SystemDirectory {
 
     private Optional<Realm> getRealm(Supplier<RealmCatalogEntry> call, String what) {
         try {
-            return Optional.of(fromEntry(call.get()));
+            return Optional.of(ControlPlaneRealmMapper.fromEntry(call.get()));
         } catch (NotFoundException e) {
             return Optional.empty();
         } catch (WebApplicationException e) {
-            throw new IllegalStateException("Control plane returned HTTP "
-                + e.getResponse().getStatus() + " for " + what, e);
+            // Quarkus Rest Client maps HTTP 404 to WebApplicationException, not the
+            // server-side NotFoundException the in-process stub throws. A missing
+            // catalog row is Optional.empty(). Client errors (400/403) must stay
+            // 4xx — wrapping them as IllegalStateException becomes HTTP 500 and
+            // Helixor Code retries that as a cold start for 90s.
+            int status = e.getResponse() == null ? 0 : e.getResponse().getStatus();
+            if (status == 404) {
+                return Optional.empty();
+            }
+            if (status >= 400 && status < 500) {
+                throw e;
+            }
+            throw ControlPlaneException.rejected(what, status, e);
         } catch (ProcessingException e) {
             throw unreachable(what, e);
         }
     }
 
-    private static IllegalStateException unreachable(String what, Throwable cause) {
-        return new IllegalStateException(
-            "Control plane unreachable for " + what + " — failing loud, no local fallback.", cause);
+    private DefaultEndpoint client() {
+        if (client != null) {
+            return client;
+        }
+        Optional<String> bearerToken = bearerTokenSupplier == null
+            ? Optional.empty()
+            : bearerTokenSupplier.get();
+        return ControlPlaneClientFactory.build(baseUrl, bearerToken);
+    }
+
+    private static ControlPlaneException unreachable(String what, Throwable cause) {
+        return ControlPlaneException.unreachable(what, cause);
     }
 
     private static IllegalStateException credentialLookupsAreControlPlaneInternal() {
@@ -107,24 +188,4 @@ public class RemoteSystemDirectory implements SystemDirectory {
             + "(realm-membership ADR / B4). Port the calling path to JWT-claims-based identity.");
     }
 
-    /** Contract mapping: RealmCatalogEntry <-> Realm (catalog fields only). */
-    static Realm fromEntry(RealmCatalogEntry entry) {
-        Realm realm = new Realm();
-        realm.setRefName(entry.getRefName());
-        realm.setDisplayName(entry.getDisplayName());
-        realm.setDatabaseName(entry.getDatabaseName());
-        realm.setEmailDomain(entry.getEmailDomain());
-        realm.setConnectionString(entry.getConnectionString());
-        return realm;
-    }
-
-    static RealmCatalogEntry toEntry(Realm realm) {
-        RealmCatalogEntry entry = new RealmCatalogEntry();
-        entry.setRefName(realm.getRefName());
-        entry.setDisplayName(realm.getDisplayName());
-        entry.setDatabaseName(realm.getDatabaseName());
-        entry.setEmailDomain(realm.getEmailDomain());
-        entry.setConnectionString(realm.getConnectionString());
-        return entry;
-    }
 }
