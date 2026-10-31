@@ -643,19 +643,13 @@ The receiving service builds the same `PrincipalContext` the user would get: the
 
 [NOTE]
 ====
-* A receiver that enforces application admission (`quantum.auth.expected-audience`, `ApplicationTokenAdmissionFilter`) accepts a user token only if it was issued for that application (`aud` contains it and `azp` is absent or equal to it). A token the user got for application A is refused (403) by application B. Across applications, use the token exchange once it ships; until then, call B with your service token.
+* A receiver that enforces application admission (`quantum.auth.expected-audience`, `ApplicationTokenAdmissionFilter`) accepts a user token only if it was issued for that application (`aud` contains it and `azp` is absent or equal to it). A token the user got for application A is refused (403) by application B. Across applications, call B with your service token.
 * The forwarded token is the user's full-lifetime bearer. Forward it only within the application's own trust boundary, and never log it.
 ====
 
 ==== Why not a service token with `X-Acting-On-Behalf-Of-*`?
 
 `X-Acting-On-Behalf-Of-*` is for attribution only (see the permissions guide). With a service token the request still runs as your service: without `X-Realm` it runs in the system realm, the tenant comes from `X-Tenant-Id`, and your service's roles apply. Use it only when no user is present.
-
-==== Token exchange (planned)
-
-NOTE: Planned, not yet implemented. Design: `docs/design/USER_ACTOR_TOKEN_EXCHANGE_DESIGN.md`.
-
-For operations that must be performed by a specific service on a user's behalf, and for calls across applications, the service will exchange the user's access token at `POST /oauth/token` (`grant_type=urn:ietf:params:oauth:grant-type:token-exchange`, authenticated with the service's own token) for a short-lived token bound to one target application. That token's subject is the user (realm, tenant and roles unchanged) and its `act` claim names the calling service, so the target can require both: the user's permission and the right actor. Until it ships, such operations keep using the service token with explicit `X-Realm`/`X-Tenant-Id`.
 
 === Generating RSA Key Pairs
 
