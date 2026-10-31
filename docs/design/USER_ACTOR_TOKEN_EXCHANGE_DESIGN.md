@@ -139,7 +139,9 @@ service token instead.
    for some other application and reached it by other means.
 7. **Requested switch**: `realm`/`tenant_id`, when sent, pass the same checks a user-token
    `X-Realm`/`X-Tenant-Id` would (`realmRegEx`, tenant membership) against the subject's
-   credential; the issued token carries the switched realm and tenant.
+   credential, **and** check 3 runs again on the switched realm and tenant, so they must
+   also be within the actor's reach; the issued token carries the switched realm and
+   tenant.
 
 ### 4.3 Issued token
 
@@ -303,6 +305,7 @@ Issuer (phase 2), `OAuthTokenResource` / exchange service:
 | E12 | Tokens never appear in logs (log capture) | pass |
 | E13 | Subject token issued for another application (actor not in `aud`, not `azp`) | 400 `invalid_grant` |
 | E14 | `realm`/`tenant_id` the subject may switch to | issued token carries them; outside `realmRegEx`/membership → 400 `invalid_target` |
+| E16 | `realm`/`tenant_id` the subject may reach but the actor may not | 400 `invalid_target` |
 | E15 | Issued `azp` | equals the audience; actor only in `act.azp` |
 
 Receiver (phase 1), `SecurityFilter` / `RuleContext` / `AuditInterceptor`:
