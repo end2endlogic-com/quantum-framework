@@ -628,6 +628,9 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
    private LoginResponse loginInternal(String userId, String password, String applicationId,
                                        String requestedRealm, boolean verifiedEmail,
                                        String verifiedSubject, String oauthClientId) {
+      // Taken before the credential is read, so a password change that commits while this
+      // login is in flight still ends the session it creates.
+      long sessionStart = System.currentTimeMillis();
       try {
          String configuredRealm = envConfigUtils.getSystemRealm();
          Log.infof("CustomProvider: Checking for auth against %s realm", configuredRealm);
@@ -848,7 +851,6 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                   groups.addAll(userGroupRoles);
                   // The session starts now. A verified-subject mint (OAuth code exchange) did
                   // not witness the authentication, so its time is unknown, not "now".
-                  long sessionStart = System.currentTimeMillis();
                   Long authTime = verifiedSubject != null ? null : sessionStart / 1000;
                   String authToken = TokenUtils.generateUserToken(
                      subject,
@@ -1040,9 +1042,9 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
          Long authTime = claimLong(refreshJwt, TokenUtils.AUTH_TIME_CLAIM);
          Long sessionStart = claimLong(refreshJwt, TokenUtils.SESSION_START_CLAIM);
          if (sessionStart == null) {
-            // Legacy refresh token: its own issue second is the earliest start we can vouch for;
-            // counting the whole second as its start errs toward ending the session.
-            sessionStart = refreshJwt.getIssuedAtTime() * 1000 + 999;
+            // Legacy refresh token: the start of its issue second is the earliest start we can
+            // vouch for, which errs toward ending the session.
+            sessionStart = refreshJwt.getIssuedAtTime() * 1000;
          }
          if (endedByPasswordChange(credential, sessionStart)) {
             throw new SecurityException("SESSION_ENDED_BY_PASSWORD_CHANGE");

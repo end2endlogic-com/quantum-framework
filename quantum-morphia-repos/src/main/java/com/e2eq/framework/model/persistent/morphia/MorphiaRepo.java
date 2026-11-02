@@ -1993,8 +1993,21 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
          return entity;
      }
 
+     /**
+      * Fields only the owning code path may write (for example a password hash and its change
+      * stamp). Field-pair and bulk updates refuse them; ordinary saves are left to the repository.
+      */
+     protected java.util.Set<String> serverOwnedFields() {
+         return java.util.Set.of();
+     }
+
      private void assertFieldUpdateAllowed(String requestedPath) {
          RefNameContract.enforceOnFieldUpdate(getPersistentClass(), requestedPath);
+         for (String owned : serverOwnedFields()) {
+             if (pathsOverlap(requestedPath, owned)) {
+                 throw new SecurityException("Field '" + requestedPath + "' is server-owned and can't be updated");
+             }
+         }
          java.util.Set<String> excluded = securityFilterBuilder().buildExcludedFieldPaths();
          for (String excludedPath : excluded) {
              if (pathsOverlap(requestedPath, excludedPath)) {

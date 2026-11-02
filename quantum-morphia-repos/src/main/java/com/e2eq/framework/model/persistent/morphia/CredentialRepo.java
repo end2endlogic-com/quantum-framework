@@ -11,6 +11,7 @@ import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.Realm;
 import com.e2eq.framework.util.EnvConfigUtils;
 import dev.morphia.Datastore;
+import dev.morphia.transactions.MorphiaSession;
 import dev.morphia.query.Query;
 import dev.morphia.query.filters.Filter;
 import dev.morphia.query.filters.Filters;
@@ -274,6 +275,26 @@ public class CredentialRepo extends MorphiaRepo<CredentialUserIdPassword> {
          entities.forEach(entity -> keepPasswordChangedAt(datastore, entity));
       }
       return super.save(datastore, entities);
+   }
+
+   @Override
+   public CredentialUserIdPassword save (MorphiaSession session, CredentialUserIdPassword value) {
+      keepPasswordChangedAt(session, value);
+      return super.save(session, value);
+   }
+
+   @Override
+   public List<CredentialUserIdPassword> save (MorphiaSession session, List<CredentialUserIdPassword> entities) {
+      if (entities != null) {
+         entities.forEach(entity -> keepPasswordChangedAt(session, entity));
+      }
+      return super.save(session, entities);
+   }
+
+   /** The hash changes only through the credential's setter, which records the change. */
+   @Override
+   protected java.util.Set<String> serverOwnedFields () {
+      return java.util.Set.of("passwordHash", "passwordChangedAt");
    }
 
    private void keepPasswordChangedAt (Datastore datastore, CredentialUserIdPassword value) {
