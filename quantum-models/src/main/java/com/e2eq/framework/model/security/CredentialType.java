@@ -8,7 +8,11 @@ public enum CredentialType {
     /** Traditional userId/password credential used for interactive login. */
     PASSWORD,
 
-    /** Mailbox possession verified by an authority-owned single-use challenge; no password hash. */
+    /**
+     * Mailbox possession verified by an authority-owned single-use challenge. The holder may
+     * also set a password, which then admits password login as a second method; email login
+     * stays available. A PASSWORD credential never gains email login.
+     */
     EMAIL,
 
     /** Long-lived token credential for MCP servers, service accounts, and API integrations. */

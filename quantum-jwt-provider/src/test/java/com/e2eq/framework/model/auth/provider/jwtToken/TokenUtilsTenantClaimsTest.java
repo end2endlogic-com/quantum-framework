@@ -90,4 +90,23 @@ class TokenUtilsTenantClaimsTest {
         assertTrue(claims.contains("scheduler"), claims);
         assertTrue(claims.contains("reporting"), claims);
     }
+
+    @Test
+    void authTimeTravelsOnAccessAndRefreshTokensAndIsOmittedWhenUnknown() throws Exception {
+        TokenUtils.configure("privateKey.pem", "publicKey.pem");
+
+        String access = TokenUtils.generateUserToken(
+                "user-1", "user-1", Set.of("user"), "acme-com", "acme.com", "acme", "0010000101",
+                Set.of("app"), "app", null, 1_700_000_000L,
+                TokenUtils.expiresAt(3600), "https://auth.example.com");
+        String refresh = TokenUtils.generateRefreshToken(
+                "user-1", "user-1", "acme-com", "app", 3600, "https://auth.example.com", null, 1_700_000_000L);
+        String unknown = TokenUtils.generateUserToken(
+                "user-1", "user-1", Set.of("user"), "acme-com", "acme.com", "acme", "0010000101",
+                Set.of("app"), "app", null, TokenUtils.expiresAt(3600), "https://auth.example.com");
+
+        assertTrue(payloadJson(access).contains("\"auth_time\":1700000000"), payloadJson(access));
+        assertTrue(payloadJson(refresh).contains("\"auth_time\":1700000000"), payloadJson(refresh));
+        assertFalse(payloadJson(unknown).contains("auth_time"), payloadJson(unknown));
+    }
 }

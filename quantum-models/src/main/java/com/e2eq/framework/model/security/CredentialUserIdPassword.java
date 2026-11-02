@@ -84,6 +84,11 @@ public class CredentialUserIdPassword extends BaseModel {
    @ToString.Exclude
    protected String passwordHash;
    Boolean forceChangePassword;
+   /**
+    * When the password was last set or changed. Refresh tokens issued before it are refused,
+    * so a password change ends every earlier session once its access token expires.
+    */
+   protected Date passwordChangedAt;
    protected String[] roles; // can be set by identity provider or explictly here, code should union token roles and
    // this.
 
@@ -133,9 +138,6 @@ public class CredentialUserIdPassword extends BaseModel {
     */
    public void setPassword(String password) {
       if (password != null) {
-         if (credentialType == CredentialType.EMAIL) {
-            throw new IllegalStateException("EMAIL_CREDENTIAL_PASSWORD_FORBIDDEN");
-         }
          this.passwordHash = EncryptionUtils.hashPassword(password);
          this.hashingAlgorithm = EncryptionUtils.hashAlgorithm();
       }
@@ -159,9 +161,6 @@ public class CredentialUserIdPassword extends BaseModel {
    @Override
    public void validate () {
       super.validate();
-      if (credentialType == CredentialType.EMAIL && passwordHash != null) {
-         throw new IllegalArgumentException("EMAIL_CREDENTIAL_PASSWORD_FORBIDDEN");
-      }
       if (roles != null) {
          // check that roles array does not include null or empty strings
          for (String role : roles) {

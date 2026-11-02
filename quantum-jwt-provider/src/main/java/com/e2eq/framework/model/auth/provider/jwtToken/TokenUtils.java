@@ -35,6 +35,8 @@ import jakarta.validation.ValidationException;
 public class TokenUtils {
 
         public static final String REFRESH_SCOPE = "refreshToken";
+        /** OIDC {@code auth_time}: epoch seconds of the authentication the session came from. */
+        public static final String AUTH_TIME_CLAIM = "auth_time";
         public static final String AUTH_SCOPE = "authToken";
         public static final String AUDIENCE = "b2bi-api-client";
         public static final int REFRESH_ADDITIONAL_DURATION_SECONDS= 10;
@@ -335,6 +337,28 @@ public class TokenUtils {
 											String realmBoundary,
 											long expiresAt,
 											String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+		return generateUserToken(subject, userId, groups, realm, tenantId, orgRefName, accountNum,
+				audiences, activeApplication, realmBoundary, null, expiresAt, issuer);
+	}
+
+	/**
+	 * As above, plus {@code auth_time}: when the user actually authenticated (epoch seconds).
+	 * Unlike {@code iat} it does not move on refresh, so a relying party can tell a fresh
+	 * sign-in from a long-lived refreshed session. {@code null} omits the claim.
+	 */
+	public static String generateUserToken(String subject,
+											String userId,
+											Set<String> groups,
+											String realm,
+											String tenantId,
+											String orgRefName,
+											String accountNum,
+											Set<String> audiences,
+											String activeApplication,
+											String realmBoundary,
+											Long authTime,
+											long expiresAt,
+											String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
 
 		Objects.requireNonNull(subject, "subject cannot be null");
 		Objects.requireNonNull(issuer, "Issuer cannot be null");
@@ -363,6 +387,9 @@ public class TokenUtils {
 		if (realmBoundary != null && !realmBoundary.isBlank()) {
 			claimsBuilder.claim("realmRegEx", realmBoundary.trim());
 		}
+		if (authTime != null) {
+			claimsBuilder.claim(AUTH_TIME_CLAIM, authTime);
+		}
 		return claimsBuilder.jws().keyId(resolveSigningKeyId()).sign(privateKey);
 	}
 
@@ -384,6 +411,15 @@ public class TokenUtils {
     public static String generateRefreshToken(String subject, String userId, String realm,
             String activeApplication, long durationInSeconds, String issuer, String oauthClientId)
             throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+        return generateRefreshToken(subject, userId, realm, activeApplication, durationInSeconds,
+                issuer, oauthClientId, null);
+    }
+
+    /** Carries the session's original {@code auth_time} so refresh can pass it on unchanged. */
+    public static String generateRefreshToken(String subject, String userId, String realm,
+            String activeApplication, long durationInSeconds, String issuer, String oauthClientId,
+            Long authTime)
+            throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
 
 		Objects.requireNonNull(subject, "subject cannot be null");
 		Objects.requireNonNull(issuer, "Issuer cannot be null");
@@ -403,6 +439,7 @@ public class TokenUtils {
 		if (userId != null && !userId.isBlank()) claimsBuilder.claim("userId", userId);
 		if (realm != null && !realm.isBlank()) claimsBuilder.claim("realm", realm);
 		if (activeApplication != null && !activeApplication.isBlank()) claimsBuilder.claim("azp", activeApplication);
+		if (authTime != null) claimsBuilder.claim(AUTH_TIME_CLAIM, authTime);
 		return claimsBuilder.jws().keyId(resolveSigningKeyId()).sign(privateKey);
 	}
 

@@ -38,7 +38,7 @@ public class AuthCredentialService {
     /**
      * The user manager for a password operation (reset, change, resend temporary password).
      * The credential type is checked before any provider override, so a caller naming a
-     * provider cannot give a service-token, email or federated credential a password.
+     * provider cannot give a service-token or federated credential a password.
      */
     public UserManagement resolvePasswordManager(String userId, String requestedProvider) {
         Optional<CredentialUserIdPassword> credentialOptional = credentialRepo.findByUserId(userId);
@@ -84,11 +84,13 @@ public class AuthCredentialService {
     }
 
     /**
-     * Only PASSWORD credentials have passwords. (Password-based SERVICE accounts are still
-     * admitted at login, so they keep password management until that is retired.)
+     * PASSWORD credentials have passwords, and EMAIL credentials may add one as an optional
+     * second sign-in method. (Password-based SERVICE accounts are still admitted at login, so
+     * they keep password management until that is retired.)
      */
     static void requirePasswordManaged(CredentialUserIdPassword credential) {
-        if (credential.getCredentialType() != null && credential.getCredentialType() != CredentialType.PASSWORD) {
+        CredentialType type = credential.getCredentialType();
+        if (type != null && type != CredentialType.PASSWORD && type != CredentialType.EMAIL) {
             throw new IllegalArgumentException(String.format(
                     "Credential type %s does not support password management",
                     credential.getCredentialType()));

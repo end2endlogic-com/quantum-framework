@@ -1,7 +1,9 @@
 package com.e2eq.framework.model.auth.provider.jwtToken;
 
+import com.e2eq.framework.model.security.CredentialType;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.DomainContext;
+import com.e2eq.framework.util.EncryptionUtils;
 import com.e2eq.framework.util.SecurityUtils;
 import org.junit.jupiter.api.Test;
 
@@ -16,11 +18,49 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 class CustomTokenAuthProviderRealmTest {
 
     @Test
-    void emailCredentialsDoNotAcquireAPassword() {
+    void anEmailCredentialMayAddAPasswordAndStillValidates() {
+        var credential = emailCredential();
+        credential.setPassword("chosen-password-123");
+        assertTrue(EncryptionUtils.checkPassword("chosen-password-123", credential.getPasswordHash()));
+        credential.validate();
+    }
+
+    @Test
+    void emailCredentialAdmitsPasswordLoginOnlyOnceAPasswordIsSet() {
+        var credential = emailCredential();
+        assertTrue(CustomTokenAuthProvider.authenticationMethodAdmitted(credential, true));
+        assertFalse(CustomTokenAuthProvider.authenticationMethodAdmitted(credential, false));
+
+        credential.setPassword("chosen-password-123");
+        assertTrue(CustomTokenAuthProvider.authenticationMethodAdmitted(credential, false));
+        assertTrue(CustomTokenAuthProvider.authenticationMethodAdmitted(credential, true),
+            "setting a password keeps email sign-in");
+    }
+
+    @Test
+    void passwordCredentialNeverGainsEmailLogin() {
         var credential = new CredentialUserIdPassword();
-        credential.setCredentialType(com.e2eq.framework.model.security.CredentialType.EMAIL);
-        assertThrows(IllegalStateException.class, () -> credential.setPassword("not-an-email-proof"));
-        assertEquals(null, credential.getPasswordHash());
+        credential.setCredentialType(CredentialType.PASSWORD);
+        credential.setPassword("existing-password-123");
+        assertTrue(CustomTokenAuthProvider.authenticationMethodAdmitted(credential, false));
+        assertFalse(CustomTokenAuthProvider.authenticationMethodAdmitted(credential, true));
+    }
+
+    @Test
+    void refreshTokensIssuedBeforeAPasswordChangeNoLongerRefresh() {
+        var credential = emailCredential();
+        assertFalse(CustomTokenAuthProvider.endedByPasswordChange(credential, 1_000L));
+
+        credential.setPasswordChangedAt(new Date(2_000_000L));
+        assertTrue(CustomTokenAuthProvider.endedByPasswordChange(credential, 1_999L));
+        assertFalse(CustomTokenAuthProvider.endedByPasswordChange(credential, 2_000L));
+        assertFalse(CustomTokenAuthProvider.endedByPasswordChange(credential, 2_001L));
+    }
+
+    private static CredentialUserIdPassword emailCredential() {
+        var credential = new CredentialUserIdPassword();
+        credential.setCredentialType(CredentialType.EMAIL);
+        return credential;
     }
 
     @Test
