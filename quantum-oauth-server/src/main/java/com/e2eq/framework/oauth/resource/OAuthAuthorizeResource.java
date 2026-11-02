@@ -133,6 +133,11 @@ public class OAuthAuthorizeResource {
         }
 
         try {
+            // Read before authenticating: the revision then can only be older than the hash the
+            // login checks, never newer, so a reset racing this request still voids the code.
+            Long passwordRevisionBeforeLogin = credentialRepo.findByUserId(username, systemRealm, true)
+                    .map(CredentialUserIdPassword::currentPasswordRevision)
+                    .orElse(null);
             AuthProvider provider = authProviderFactory.getAuthProvider();
             AuthProvider.LoginResponse loginResponse = provider.login(username, password);
 
@@ -164,6 +169,7 @@ public class OAuthAuthorizeResource {
                     .clientId(clientId)
                     .subject(cred.getSubject())
                     .userId(cred.getUserId())
+                    .passwordRevision(passwordRevisionBeforeLogin)
                     .redirectUri(redirectUri)
                     .codeChallenge(codeChallenge)
                     .codeChallengeMethod(codeChallengeMethod)

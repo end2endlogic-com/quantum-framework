@@ -61,10 +61,11 @@ class OAuthTokenResourceTest {
             client.setAllowedGrantTypes(List.of("authorization_code","client_credentials","refresh_token"));
             when(resource.oauthClientRepo.findByClientId("system",id)).thenReturn(Optional.of(client));
         }
-        var code=new AuthorizationCode();code.setClientId("client-a");code.setSubject("subject");code.setRealm("realm");
+        code=new AuthorizationCode();code.setClientId("client-a");code.setSubject("subject");code.setRealm("realm");
         when(resource.authCodeRepo.findValidCode("system","code")).thenReturn(Optional.of(code));
         when(resource.authCodeRepo.consumeCode("system","code")).thenReturn(true);
     }
+    AuthorizationCode code;
     @AfterEach void restoreKey() throws Exception {
         var field=TokenUtils.class.getDeclaredField("cachedPrivateKey");field.setAccessible(true);field.set(null,previousKey);
     }
@@ -123,5 +124,13 @@ class OAuthTokenResourceTest {
         assertFalse(provider.loginWithVerifiedSubject("subject",null,"realm",null).authenticated());
         assertTrue(provider.loginWithVerifiedSubject("subject","app","realm",null).authenticated());
         assertFalse(provider.loginWithVerifiedSubject("subject","app","unregistered",null).authenticated());
+    }
+    @Test void aCodeObtainedBeforeAPasswordChangeCannotBeExchanged() {
+        code.setPasswordRevision(credential.currentPasswordRevision());
+        assertEquals(200,exchange("authorization_code","client-a",null).getStatus());
+        credential.setPassword("changed-after-the-code-was-issued");
+        assertEquals(400,exchange("authorization_code","client-a",null).getStatus());
+        code.setPasswordRevision(credential.currentPasswordRevision());
+        assertEquals(200,exchange("authorization_code","client-a",null).getStatus());
     }
 }

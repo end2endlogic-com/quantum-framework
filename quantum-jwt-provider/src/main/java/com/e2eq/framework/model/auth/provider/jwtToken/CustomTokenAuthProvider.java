@@ -616,18 +616,29 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
     */
    public LoginResponse loginWithVerifiedSubject(String subject, String applicationId,
                                                   String realm, String oauthClientId) {
+      return loginWithVerifiedSubject(subject, applicationId, realm, oauthClientId, null);
+   }
+
+   /**
+    * As above, for a subject verified earlier (an authorization code): {@code passwordRevision}
+    * is the credential's revision when it authenticated, and the mint is refused if a password
+    * change has moved it since. {@code null} skips the check (no revision was recorded).
+    */
+   public LoginResponse loginWithVerifiedSubject(String subject, String applicationId,
+                                                  String realm, String oauthClientId, Long passwordRevision) {
       if (subject == null || subject.isBlank()) throw new SecurityException("VERIFIED_SUBJECT_REQUIRED");
-      return loginInternal(null, null, applicationId, realm, false, subject, oauthClientId);
+      return loginInternal(null, null, applicationId, realm, false, subject, oauthClientId, passwordRevision);
    }
 
    private LoginResponse loginInternal(String userId, String password, String applicationId,
                                        String requestedRealm, boolean verifiedEmail) {
-      return loginInternal(userId, password, applicationId, requestedRealm, verifiedEmail, null, null);
+      return loginInternal(userId, password, applicationId, requestedRealm, verifiedEmail, null, null, null);
    }
 
    private LoginResponse loginInternal(String userId, String password, String applicationId,
                                        String requestedRealm, boolean verifiedEmail,
-                                       String verifiedSubject, String oauthClientId) {
+                                       String verifiedSubject, String oauthClientId,
+                                       Long verifiedAtPasswordRevision) {
       try {
          String configuredRealm = envConfigUtils.getSystemRealm();
          Log.infof("CustomProvider: Checking for auth against %s realm", configuredRealm);
@@ -697,6 +708,10 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
             }
             if (verifiedSubject == null && !authenticationMethodAdmitted(credential, verifiedEmail)) {
                throw new SecurityException("AUTHENTICATION_METHOD_NOT_ADMITTED");
+            }
+            if (verifiedAtPasswordRevision != null
+                  && verifiedAtPasswordRevision != credential.currentPasswordRevision()) {
+               throw new SecurityException("SESSION_ENDED_BY_PASSWORD_CHANGE");
             }
             String alg = credential.getHashingAlgorithm();
             if (verifiedSubject != null || verifiedEmail || (alg != null && (alg.equalsIgnoreCase("BCrypt.default") || alg.toLowerCase().startsWith("bcrypt") || alg.toLowerCase().equals(EncryptionUtils.hashAlgorithm().toLowerCase())))) {

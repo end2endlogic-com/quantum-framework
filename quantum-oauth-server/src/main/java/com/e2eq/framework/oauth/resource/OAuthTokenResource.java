@@ -154,7 +154,7 @@ public class OAuthTokenResource {
             return errorResponse("server_error", "User credential not found");
         }
 
-        return issueTokens(client, credOpt.get());
+        return issueTokens(client, credOpt.get(), authCode.getPasswordRevision());
     }
 
     private Response handleClientCredentials(OAuthClient client) {
@@ -194,10 +194,15 @@ public class OAuthTokenResource {
     }
 
     private Response issueTokens(OAuthClient client, CredentialUserIdPassword cred) {
+        return issueTokens(client, cred, null);
+    }
+
+    /** {@code passwordRevision}: the revision the user authenticated at, for a code exchange. */
+    private Response issueTokens(OAuthClient client, CredentialUserIdPassword cred, Long passwordRevision) {
         String application = applicationFor(client);
         try {
             var result = tokenProvider.loginWithVerifiedSubject(
-                    cred.getSubject(), application, client.getRealm(), client.getClientId());
+                    cred.getSubject(), application, client.getRealm(), client.getClientId(), passwordRevision);
             if (!result.authenticated() || result.positiveResponse() == null) {
                 return errorResponse("invalid_grant", "Credential is not authorized for the requested realm/application");
             }

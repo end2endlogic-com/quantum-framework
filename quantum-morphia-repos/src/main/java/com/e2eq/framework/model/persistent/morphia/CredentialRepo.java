@@ -260,34 +260,33 @@ public class CredentialRepo extends MorphiaRepo<CredentialUserIdPassword> {
 
    /**
     * {@code passwordChangedAt} and {@code passwordRevision} are server-owned and never travel
-    * over REST, so a save of a credential that arrived without them keeps the stored values
-    * instead of clearing them (which would make sessions ended by a password change
-    * refreshable again).
+    * over REST, so every save reconciles them against the stored credential instead of trusting
+    * the incoming copy (which could clear or roll them back and revive ended sessions).
     */
    @Override
    public CredentialUserIdPassword save (Datastore datastore, CredentialUserIdPassword value) {
-      keepPasswordChangedAt(datastore, value);
+      reconcilePasswordState(datastore, value);
       return super.save(datastore, value);
    }
 
    @Override
    public List<CredentialUserIdPassword> save (Datastore datastore, List<CredentialUserIdPassword> entities) {
       if (entities != null) {
-         entities.forEach(entity -> keepPasswordChangedAt(datastore, entity));
+         entities.forEach(entity -> reconcilePasswordState(datastore, entity));
       }
       return super.save(datastore, entities);
    }
 
    @Override
    public CredentialUserIdPassword save (MorphiaSession session, CredentialUserIdPassword value) {
-      keepPasswordChangedAt(session, value);
+      reconcilePasswordState(session, value);
       return super.save(session, value);
    }
 
    @Override
    public List<CredentialUserIdPassword> save (MorphiaSession session, List<CredentialUserIdPassword> entities) {
       if (entities != null) {
-         entities.forEach(entity -> keepPasswordChangedAt(session, entity));
+         entities.forEach(entity -> reconcilePasswordState(session, entity));
       }
       return super.save(session, entities);
    }
@@ -298,9 +297,13 @@ public class CredentialRepo extends MorphiaRepo<CredentialUserIdPassword> {
       return java.util.Set.of("passwordHash", "passwordChangedAt", "passwordRevision");
    }
 
-   private void keepPasswordChangedAt (Datastore datastore, CredentialUserIdPassword value) {
-      if (value == null || value.getId() == null
-            || (value.getPasswordChangedAt() != null && value.getPasswordRevision() != null)) {
+   /**
+    * The stored credential is the authority for the server-owned password state: an incoming
+    * copy's revision and stamp are never trusted. Unchanged hash: keep the stored revision and
+    * stamp. Changed hash (including a cleared one): one past the stored revision, stamped now.
+    */
+   private void reconcilePasswordState (Datastore datastore, CredentialUserIdPassword value) {
+      if (value == null || value.getId() == null) {
          return;
       }
       CredentialUserIdPassword stored = datastore.find(CredentialUserIdPassword.class)
@@ -309,11 +312,12 @@ public class CredentialRepo extends MorphiaRepo<CredentialUserIdPassword> {
       if (stored == null) {
          return;
       }
-      if (value.getPasswordChangedAt() == null && stored.getPasswordChangedAt() != null) {
-         value.setPasswordChangedAt(stored.getPasswordChangedAt());
-      }
-      if (value.getPasswordRevision() == null && stored.getPasswordRevision() != null) {
+      if (java.util.Objects.equals(stored.getPasswordHash(), value.getPasswordHash())) {
          value.setPasswordRevision(stored.getPasswordRevision());
+         value.setPasswordChangedAt(stored.getPasswordChangedAt());
+      } else {
+         value.setPasswordRevision(stored.currentPasswordRevision() + 1);
+         value.setPasswordChangedAt(new java.util.Date());
       }
    }
 
