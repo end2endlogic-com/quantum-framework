@@ -1,5 +1,6 @@
 package com.e2eq.framework.rest.resources;
 
+import com.e2eq.framework.annotations.FunctionalMapping;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.model.securityrules.SecurityContext;
@@ -32,6 +33,9 @@ import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
 import java.util.Optional;
 
+// The invite service saves invites as the caller, so the request needs a resource context:
+// without this mapping it is anonymous and every write is refused.
+@FunctionalMapping(area = "SECURITY", domain = "ACCESS_INVITE")
 @Path("/access/invites")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
@@ -47,7 +51,9 @@ public class AccessInviteResource {
 
     @GET
     @Operation(summary = "List access invites",
-        description = "Realm administrators (the system principal, or a caller that can access this realm and holds admin here as a flat or realm-scoped role) see every invite in the realm; other callers see only the invites they created. Invite tokens are never returned.")
+        description = "Realm administrators (the system principal, or a caller that can access this realm and holds admin here as a flat or realm-scoped role) see every invite in the realm, in a pooled realm only those of tenants their realm assignment authorizes. "
+            + "Membership administrators (a role listed in quantum.access-invites.membership-admin-roles, held in the realm assignment) see the invites of the tenant of the request; in a pooled realm only when their assignment authorizes that one tenant and no other. "
+            + "Other callers see only the invites they created. Invite tokens are never returned.")
     @APIResponses({
         @APIResponse(responseCode = "200", description = "Invites visible to the caller",
             content = @Content(mediaType = "application/json", schema = @Schema(implementation = AccessInviteResponse.class))),
@@ -65,7 +71,7 @@ public class AccessInviteResource {
 
     @GET
     @Path("{refName}")
-    @Operation(summary = "Get access invite", description = "Only the inviter or an administrator of this realm may read an invite. The token is never returned.")
+    @Operation(summary = "Get access invite", description = "Only the inviter, a realm administrator, or a membership administrator of the invite's tenant may read an invite. The token is never returned.")
     @APIResponses({
         @APIResponse(responseCode = "200", description = "Invite",
             content = @Content(mediaType = "application/json", schema = @Schema(implementation = AccessInviteResponse.class))),
@@ -88,6 +94,7 @@ public class AccessInviteResource {
         description = "An invite is for exactly one realm: the realm of this request (realm / X-Realm). To grant several realms, send one invite per realm; "
             + "a body realm naming another realm, a realms list with more than one realm, or a wildcard is refused (400 INVITE_SINGLE_REALM_REQUIRED). "
             + "The inviter must be able to access that realm by its own credential (authorizedRealms, a full-match realmRegEx where * means every realm, or its home realm); "
+            + "when quantum.access-invites.create-roles is set, it must also hold one of those roles in its realm assignment, or be a realm administrator (403 INVITE_NOT_AUTHORIZED otherwise); "
             + "the system realm is reserved for the framework system user (403 INVITE_REALM_NOT_ACCESSIBLE). "
             + "The inviter can grant only roles it holds in that same realm (flat plus realm-scoped roles), never system, and only applications it may grant there. "
             + "Granted roles and applications apply only in that realm: on acceptance they are written to the invitee's UserRealmRole for the realm, never to the credential's flat roles. "
@@ -121,7 +128,7 @@ public class AccessInviteResource {
 
     @POST
     @Path("{refName}/revoke")
-    @Operation(summary = "Revoke access invite", description = "Only the inviter or a realm administrator may revoke, and only while the invite is pending.")
+    @Operation(summary = "Revoke access invite", description = "Only the inviter, a realm administrator, or a membership administrator of the invite's tenant may revoke, and only while the invite is pending.")
     @APIResponses({
         @APIResponse(responseCode = "200", description = "Invite revoked",
             content = @Content(mediaType = "application/json", schema = @Schema(implementation = AccessInviteResponse.class))),
@@ -144,7 +151,7 @@ public class AccessInviteResource {
     @POST
     @Path("{refName}/resend")
     @Operation(summary = "Resend access invite",
-        description = "Only the inviter or a realm administrator may resend a pending invite. Issues a new token, renews the expiry, and notifies the invitee; the previous token stops working only after the notification succeeds. If delivery fails nothing is re-issued and the previous token still works. The new token is returned only when no delivery channel is configured.")
+        description = "Only the inviter, a realm administrator, or a membership administrator of the invite's tenant may resend a pending invite. Issues a new token, renews the expiry, and notifies the invitee; the previous token stops working only after the notification succeeds. If delivery fails nothing is re-issued and the previous token still works. The new token is returned only when no delivery channel is configured.")
     @SecurityRequirement(name = "bearerAuth")
     @APIResponses({
         @APIResponse(responseCode = "200", description = "Invite re-issued; inviteToken is present only when no delivery channel is configured",
