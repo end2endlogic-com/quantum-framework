@@ -53,6 +53,13 @@ public class AuthorizationCode extends BaseModel {
     /** The realm context for this authorization. */
     private String realm;
 
+    /**
+     * The credential's password revision when the user authenticated. Exchange refuses the code
+     * once it has moved on, so a code obtained with an old password dies with it. null = unknown
+     * (codes issued before the field existed).
+     */
+    private Long passwordRevision;
+
     /** Whether this code has been consumed (exchanged for tokens). */
     private boolean consumed;
 

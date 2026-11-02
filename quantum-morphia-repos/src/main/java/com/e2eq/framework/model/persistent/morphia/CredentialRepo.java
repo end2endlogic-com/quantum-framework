@@ -11,6 +11,7 @@ import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.Realm;
 import com.e2eq.framework.util.EnvConfigUtils;
 import dev.morphia.Datastore;
+import dev.morphia.transactions.MorphiaSession;
 import dev.morphia.query.Query;
 import dev.morphia.query.filters.Filter;
 import dev.morphia.query.filters.Filters;
@@ -255,6 +256,41 @@ public class CredentialRepo extends MorphiaRepo<CredentialUserIdPassword> {
    @Override
    public CredentialUserIdPassword save (CredentialUserIdPassword value) {
       return this.save(envConfigUtils.getSystemRealm(), value);
+   }
+
+   /** The hash changes only through the credential's setter, which records the change. */
+   @Override
+   protected java.util.Set<String> serverOwnedFields () {
+      return java.util.Set.of("passwordHash", "passwordChangedAt", "passwordRevision");
+   }
+
+   /**
+    * The stored credential is the authority for the server-owned password state on every save
+    * and merge: an incoming copy's revision and stamp are never trusted (they never travel over
+    * REST, and a copy could otherwise clear or roll them back and revive ended sessions).
+    * Unchanged hash: keep the stored revision and stamp. Changed hash (a replace that clears it
+    * counts): one past the stored revision, stamped now. A merge leaves a null hash as stored.
+    */
+   @Override
+   protected void reconcileServerOwnedState (Datastore datastore, CredentialUserIdPassword value, RefNameContract.WriteMode mode) {
+      if (value == null || value.getId() == null) {
+         return;
+      }
+      CredentialUserIdPassword stored = datastore.find(CredentialUserIdPassword.class)
+         .filter(Filters.eq("_id", value.getId()))
+         .first();
+      if (stored == null) {
+         return;
+      }
+      boolean unchanged = java.util.Objects.equals(stored.getPasswordHash(), value.getPasswordHash())
+         || (mode == RefNameContract.WriteMode.MERGE && value.getPasswordHash() == null);
+      if (unchanged) {
+         value.setPasswordRevision(stored.getPasswordRevision());
+         value.setPasswordChangedAt(stored.getPasswordChangedAt());
+      } else {
+         value.setPasswordRevision(stored.currentPasswordRevision() + 1);
+         value.setPasswordChangedAt(new java.util.Date());
+      }
    }
 
    @Override

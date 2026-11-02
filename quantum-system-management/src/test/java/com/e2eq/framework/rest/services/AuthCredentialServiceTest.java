@@ -121,7 +121,18 @@ class AuthCredentialServiceTest {
         AuthCredentialService service = service(factory, Optional.of(credential));
 
         assertSame(factory.defaultManager, service.resolveUserManager("alice", null));
-        assertThrows(IllegalArgumentException.class, () -> service.resolvePasswordManager("alice", null));
+    }
+
+    @Test
+    void emailCredentialCanSetAnOptionalPassword() {
+        TestAuthProviderFactory factory = new TestAuthProviderFactory();
+        factory.defaultManager = new TestUserManager("custom", "https://custom.example.com");
+        CredentialUserIdPassword credential = credential("alice");
+        credential.setCredentialType(CredentialType.EMAIL);
+        AuthCredentialService service = service(factory, Optional.of(credential));
+
+        assertSame(factory.defaultManager, service.resolvePasswordManager("alice", null));
+        service.resetPassword(resetPasswordRequest("alice", "newPassword123"), null);
     }
 
     @Test
