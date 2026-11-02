@@ -38,11 +38,11 @@ public class TokenUtils {
         /** OIDC {@code auth_time}: epoch seconds of the authentication the session came from. */
         public static final String AUTH_TIME_CLAIM = "auth_time";
         /**
-         * Refresh-token only: epoch MILLISECONDS the session began. Rotation copies it unchanged,
-         * so a password change can end the whole session, however often it was refreshed.
-         * Milliseconds, because a password set and a sign-in often fall in the same second.
+         * Refresh-token only: the credential's password revision the session's sign-in read.
+         * Rotation copies it unchanged, so a password change ends the whole session, however
+         * often it was refreshed.
          */
-        public static final String SESSION_START_CLAIM = "session_start_ms";
+        public static final String PASSWORD_REVISION_CLAIM = "pwd_rev";
         public static final String AUTH_SCOPE = "authToken";
         public static final String AUDIENCE = "b2bi-api-client";
         public static final int REFRESH_ADDITIONAL_DURATION_SECONDS= 10;
@@ -422,12 +422,12 @@ public class TokenUtils {
     }
 
     /**
-     * Carries the session's {@code auth_time} (when known) and {@code session_start} so refresh
+     * Carries the session's {@code auth_time} (when known) and {@code pwd_rev} so refresh
      * can pass both on unchanged. {@code null} omits a claim.
      */
     public static String generateRefreshToken(String subject, String userId, String realm,
             String activeApplication, long durationInSeconds, String issuer, String oauthClientId,
-            Long authTime, Long sessionStart)
+            Long authTime, Long passwordRevision)
             throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
 
 		Objects.requireNonNull(subject, "subject cannot be null");
@@ -449,7 +449,7 @@ public class TokenUtils {
 		if (realm != null && !realm.isBlank()) claimsBuilder.claim("realm", realm);
 		if (activeApplication != null && !activeApplication.isBlank()) claimsBuilder.claim("azp", activeApplication);
 		if (authTime != null) claimsBuilder.claim(AUTH_TIME_CLAIM, authTime);
-		if (sessionStart != null) claimsBuilder.claim(SESSION_START_CLAIM, sessionStart);
+		if (passwordRevision != null) claimsBuilder.claim(PASSWORD_REVISION_CLAIM, passwordRevision);
 		return claimsBuilder.jws().keyId(resolveSigningKeyId()).sign(privateKey);
 	}
 

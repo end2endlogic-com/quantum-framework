@@ -47,15 +47,27 @@ class CustomTokenAuthProviderRealmTest {
     }
 
     @Test
-    void sessionsStartedAtOrBeforeAPasswordChangeNoLongerRefresh() {
+    void aSessionEndsOnceThePasswordRevisionItSignedInWithMovesOn() {
         var credential = emailCredential();
-        assertFalse(CustomTokenAuthProvider.endedByPasswordChange(credential, 1_000L));
+        assertFalse(CustomTokenAuthProvider.sessionEndedByPasswordChange(credential, 0L, 1_000L));
+
+        credential.setPassword("first-password-123");
+        assertEquals(1L, credential.currentPasswordRevision());
+        assertTrue(CustomTokenAuthProvider.sessionEndedByPasswordChange(credential, 0L, 9_999_999L),
+            "a sign-in that read the old revision ends, whatever its clock says");
+        assertFalse(CustomTokenAuthProvider.sessionEndedByPasswordChange(credential, 1L, 1_000L));
+    }
+
+    @Test
+    void legacyTokensAreJudgedByTheirIssueSecond() {
+        var credential = emailCredential();
+        assertFalse(CustomTokenAuthProvider.sessionEndedByPasswordChange(credential, null, 1_000L));
 
         credential.setPasswordChangedAt(new Date(2_000_900L));
-        assertTrue(CustomTokenAuthProvider.endedByPasswordChange(credential, 2_000_000L));
-        assertTrue(CustomTokenAuthProvider.endedByPasswordChange(credential, 2_000_900L));
-        assertFalse(CustomTokenAuthProvider.endedByPasswordChange(credential, 2_000_901L),
-            "a sign-in just after the change, in the same second, keeps its session");
+        assertTrue(CustomTokenAuthProvider.sessionEndedByPasswordChange(credential, null, 1_999L));
+        assertTrue(CustomTokenAuthProvider.sessionEndedByPasswordChange(credential, null, 2_000L),
+            "the change's own second counts as before it");
+        assertFalse(CustomTokenAuthProvider.sessionEndedByPasswordChange(credential, null, 2_001L));
     }
 
     @Test
@@ -70,6 +82,7 @@ class CustomTokenAuthProviderRealmTest {
         credential.setPasswordChangedAt(new Date(0L));
         credential.setPasswordHash("hash-1");
         assertEquals(new Date(0L), credential.getPasswordChangedAt(), "an unchanged hash is not a change");
+        assertEquals(1L, credential.currentPasswordRevision());
 
         credential.setPassword("another-password-123");
         assertTrue(credential.getPasswordChangedAt().after(new Date(0L)));

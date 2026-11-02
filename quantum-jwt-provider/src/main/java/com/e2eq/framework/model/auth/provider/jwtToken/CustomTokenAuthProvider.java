@@ -628,9 +628,6 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
    private LoginResponse loginInternal(String userId, String password, String applicationId,
                                        String requestedRealm, boolean verifiedEmail,
                                        String verifiedSubject, String oauthClientId) {
-      // Taken before the credential is read, so a password change that commits while this
-      // login is in flight still ends the session it creates.
-      long sessionStart = System.currentTimeMillis();
       try {
          String configuredRealm = envConfigUtils.getSystemRealm();
          Log.infof("CustomProvider: Checking for auth against %s realm", configuredRealm);
@@ -849,9 +846,12 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                   java.util.Set<String> userGroupRoles = resolveUserGroupRoles(
                      subject, tokenRealm, appAuth.activeApplication());
                   groups.addAll(userGroupRoles);
-                  // The session starts now. A verified-subject mint (OAuth code exchange) did
-                  // not witness the authentication, so its time is unknown, not "now".
-                  Long authTime = verifiedSubject != null ? null : sessionStart / 1000;
+                  // A verified-subject mint (OAuth code exchange) did not witness the
+                  // authentication, so its time is unknown, not "now".
+                  Long authTime = verifiedSubject != null ? null : Long.valueOf(TokenUtils.currentTimeInSecs());
+                  // The revision of the credential this login authenticated against: a reset
+                  // that commits after the read moves it, and this session then stops refreshing.
+                  long passwordRevision = credential.currentPasswordRevision();
                   String authToken = TokenUtils.generateUserToken(
                      subject,
                      credential.getUserId(),
@@ -876,7 +876,7 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                      tokenRealm,
                      appAuth.resolved() ? appAuth.activeApplication() : null,
                      authToken,
-                     durationInSeconds, oauthClientId, authTime, sessionStart);
+                     durationInSeconds, oauthClientId, authTime, passwordRevision);
                   SecurityIdentity identity = validateAccessToken(authToken);
                   // Compute role provenance locally for login response: IDP + CREDENTIAL + USERGROUP
                   // Auth plugins do NOT need to do this; it's optional for login response only.
@@ -1040,15 +1040,13 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
             throw new SecurityException("Credential is no longer authorized");
          }
          Long authTime = claimLong(refreshJwt, TokenUtils.AUTH_TIME_CLAIM);
-         Long sessionStart = claimLong(refreshJwt, TokenUtils.SESSION_START_CLAIM);
-         if (sessionStart == null) {
-            // Legacy refresh token: the start of its issue second is the earliest start we can
-            // vouch for, which errs toward ending the session.
-            sessionStart = refreshJwt.getIssuedAtTime() * 1000;
-         }
-         if (endedByPasswordChange(credential, sessionStart)) {
+         Long tokenRevision = claimLong(refreshJwt, TokenUtils.PASSWORD_REVISION_CLAIM);
+         if (sessionEndedByPasswordChange(credential, tokenRevision, refreshJwt.getIssuedAtTime())) {
             throw new SecurityException("SESSION_ENDED_BY_PASSWORD_CHANGE");
          }
+         // A legacy token adopts the current revision: from here on its session ends with the
+         // next password change like any other.
+         long passwordRevision = tokenRevision != null ? tokenRevision : credential.currentPasswordRevision();
 
          Set<String> credentialRoles = credentialRolesForRealm(
             credential.getRoles(), credentialRealm, tokenRealm);
@@ -1097,7 +1095,7 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
          String newRefreshToken = generateRefreshToken(
             refreshSubject, userId, tokenRealm,
             appAuth.resolved() ? appAuth.activeApplication() : null,
-            newAuthToken, durationInSeconds, oauthClientId, authTime, sessionStart);
+            newAuthToken, durationInSeconds, oauthClientId, authTime, passwordRevision);
          SecurityIdentity identity = validateAccessToken(newAuthToken);
 
          java.util.List<RoleAssignment> roleAssignments = allRoles.stream()
@@ -1221,7 +1219,7 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                                         String activeApplication,
                                         String accessToken,
                                         long durationInSeconds, String oauthClientId,
-                                        Long authTime, Long sessionStart) throws IOException
+                                        Long authTime, Long passwordRevision) throws IOException
                                                                                                              ,
                                                                                                              NoSuchAlgorithmException, InvalidKeySpecException {
 
@@ -1231,7 +1229,7 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
          realm,
          activeApplication,
          durationInSeconds,
-         issuer, oauthClientId, authTime, sessionStart);
+         issuer, oauthClientId, authTime, passwordRevision);
 
       CredentialRefreshToken refreshToken1 = CredentialRefreshToken.builder()
                                                 .userId(userId)
@@ -1319,10 +1317,19 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
       return !emailCredential || hasPassword;
    }
 
-   /** A session that began at or before the credential's last password change no longer refreshes. */
-   static boolean endedByPasswordChange(CredentialUserIdPassword credential, long sessionStartMillis) {
+   /**
+    * Whether a refresh token's session was ended by a password change. A token that carries the
+    * password revision its sign-in read is ended once the credential's revision has moved on.
+    * A legacy token without one is judged by its issue second against the change time, counting
+    * the change's own second as before it.
+    */
+   static boolean sessionEndedByPasswordChange(CredentialUserIdPassword credential, Long tokenRevision,
+                                              long issuedAtSeconds) {
+      if (tokenRevision != null) {
+         return tokenRevision != credential.currentPasswordRevision();
+      }
       Date changedAt = credential.getPasswordChangedAt();
-      return changedAt != null && sessionStartMillis <= changedAt.getTime();
+      return changedAt != null && issuedAtSeconds * 1000 <= changedAt.getTime();
    }
 
    private static Long claimLong(org.eclipse.microprofile.jwt.JsonWebToken jwt, String claim) {

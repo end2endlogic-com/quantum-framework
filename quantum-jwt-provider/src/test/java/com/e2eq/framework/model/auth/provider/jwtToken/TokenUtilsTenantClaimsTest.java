@@ -101,15 +101,15 @@ class TokenUtilsTenantClaimsTest {
                 TokenUtils.expiresAt(3600), "https://auth.example.com");
         String refresh = TokenUtils.generateRefreshToken(
                 "user-1", "user-1", "acme-com", "app", 3600, "https://auth.example.com", null,
-                1_700_000_000L, 1_700_000_000_123L);
+                1_700_000_000L, 3L);
         String unknown = TokenUtils.generateUserToken(
                 "user-1", "user-1", Set.of("user"), "acme-com", "acme.com", "acme", "0010000101",
                 Set.of("app"), "app", null, TokenUtils.expiresAt(3600), "https://auth.example.com");
 
         assertTrue(payloadJson(access).contains("\"auth_time\":1700000000"), payloadJson(access));
         assertTrue(payloadJson(refresh).contains("\"auth_time\":1700000000"), payloadJson(refresh));
-        assertTrue(payloadJson(refresh).contains("\"session_start_ms\":1700000000123"), payloadJson(refresh));
-        assertFalse(payloadJson(access).contains("session_start"), payloadJson(access));
+        assertTrue(payloadJson(refresh).contains("\"pwd_rev\":3"), payloadJson(refresh));
+        assertFalse(payloadJson(access).contains("pwd_rev"), payloadJson(access));
         assertFalse(payloadJson(unknown).contains("auth_time"), payloadJson(unknown));
     }
 }

@@ -259,9 +259,10 @@ public class CredentialRepo extends MorphiaRepo<CredentialUserIdPassword> {
    }
 
    /**
-    * {@code passwordChangedAt} is server-owned and never travels over REST, so a save of a
-    * credential that arrived without it keeps the stored value instead of clearing it (which
-    * would make sessions ended by a password change refreshable again).
+    * {@code passwordChangedAt} and {@code passwordRevision} are server-owned and never travel
+    * over REST, so a save of a credential that arrived without them keeps the stored values
+    * instead of clearing them (which would make sessions ended by a password change
+    * refreshable again).
     */
    @Override
    public CredentialUserIdPassword save (Datastore datastore, CredentialUserIdPassword value) {
@@ -294,18 +295,25 @@ public class CredentialRepo extends MorphiaRepo<CredentialUserIdPassword> {
    /** The hash changes only through the credential's setter, which records the change. */
    @Override
    protected java.util.Set<String> serverOwnedFields () {
-      return java.util.Set.of("passwordHash", "passwordChangedAt");
+      return java.util.Set.of("passwordHash", "passwordChangedAt", "passwordRevision");
    }
 
    private void keepPasswordChangedAt (Datastore datastore, CredentialUserIdPassword value) {
-      if (value == null || value.getId() == null || value.getPasswordChangedAt() != null) {
+      if (value == null || value.getId() == null
+            || (value.getPasswordChangedAt() != null && value.getPasswordRevision() != null)) {
          return;
       }
       CredentialUserIdPassword stored = datastore.find(CredentialUserIdPassword.class)
          .filter(Filters.eq("_id", value.getId()))
          .first();
-      if (stored != null && stored.getPasswordChangedAt() != null) {
+      if (stored == null) {
+         return;
+      }
+      if (value.getPasswordChangedAt() == null && stored.getPasswordChangedAt() != null) {
          value.setPasswordChangedAt(stored.getPasswordChangedAt());
+      }
+      if (value.getPasswordRevision() == null && stored.getPasswordRevision() != null) {
+         value.setPasswordRevision(stored.getPasswordRevision());
       }
    }
 

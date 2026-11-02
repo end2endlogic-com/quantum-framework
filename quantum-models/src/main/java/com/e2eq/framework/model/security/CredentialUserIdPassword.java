@@ -92,6 +92,14 @@ public class CredentialUserIdPassword extends BaseModel {
    @JsonIgnore
    @ToString.Exclude
    protected Date passwordChangedAt;
+   /**
+    * Counts password-hash changes; server-owned like {@link #passwordChangedAt}. A session
+    * remembers the revision its sign-in read and stops refreshing once it moves, which holds
+    * even when a sign-in races a reset (no wall-clock ordering involved). null reads as 0.
+    */
+   @JsonIgnore
+   @ToString.Exclude
+   protected Long passwordRevision;
    protected String[] roles; // can be set by identity provider or explictly here, code should union token roles and
    // this.
 
@@ -154,8 +162,14 @@ public class CredentialUserIdPassword extends BaseModel {
    public void setPasswordHash(String passwordHash) {
       if (!java.util.Objects.equals(this.passwordHash, passwordHash)) {
          this.passwordChangedAt = new Date();
+         this.passwordRevision = currentPasswordRevision() + 1;
       }
       this.passwordHash = passwordHash;
+   }
+
+   /** The password revision, with an unset (legacy) revision reading as 0. */
+   public long currentPasswordRevision() {
+      return passwordRevision == null ? 0L : passwordRevision;
    }
 
    /** Distinguishes PASSWORD credentials from SERVICE_TOKEN, API_KEY, etc. */
