@@ -258,39 +258,6 @@ public class CredentialRepo extends MorphiaRepo<CredentialUserIdPassword> {
       return this.save(envConfigUtils.getSystemRealm(), value);
    }
 
-   /**
-    * {@code passwordChangedAt} and {@code passwordRevision} are server-owned and never travel
-    * over REST, so every save reconciles them against the stored credential instead of trusting
-    * the incoming copy (which could clear or roll them back and revive ended sessions).
-    */
-   @Override
-   public CredentialUserIdPassword save (Datastore datastore, CredentialUserIdPassword value) {
-      reconcilePasswordState(datastore, value);
-      return super.save(datastore, value);
-   }
-
-   @Override
-   public List<CredentialUserIdPassword> save (Datastore datastore, List<CredentialUserIdPassword> entities) {
-      if (entities != null) {
-         entities.forEach(entity -> reconcilePasswordState(datastore, entity));
-      }
-      return super.save(datastore, entities);
-   }
-
-   @Override
-   public CredentialUserIdPassword save (MorphiaSession session, CredentialUserIdPassword value) {
-      reconcilePasswordState(session, value);
-      return super.save(session, value);
-   }
-
-   @Override
-   public List<CredentialUserIdPassword> save (MorphiaSession session, List<CredentialUserIdPassword> entities) {
-      if (entities != null) {
-         entities.forEach(entity -> reconcilePasswordState(session, entity));
-      }
-      return super.save(session, entities);
-   }
-
    /** The hash changes only through the credential's setter, which records the change. */
    @Override
    protected java.util.Set<String> serverOwnedFields () {
@@ -298,11 +265,14 @@ public class CredentialRepo extends MorphiaRepo<CredentialUserIdPassword> {
    }
 
    /**
-    * The stored credential is the authority for the server-owned password state: an incoming
-    * copy's revision and stamp are never trusted. Unchanged hash: keep the stored revision and
-    * stamp. Changed hash (including a cleared one): one past the stored revision, stamped now.
+    * The stored credential is the authority for the server-owned password state on every save
+    * and merge: an incoming copy's revision and stamp are never trusted (they never travel over
+    * REST, and a copy could otherwise clear or roll them back and revive ended sessions).
+    * Unchanged hash: keep the stored revision and stamp. Changed hash (a replace that clears it
+    * counts): one past the stored revision, stamped now. A merge leaves a null hash as stored.
     */
-   private void reconcilePasswordState (Datastore datastore, CredentialUserIdPassword value) {
+   @Override
+   protected void reconcileServerOwnedState (Datastore datastore, CredentialUserIdPassword value, RefNameContract.WriteMode mode) {
       if (value == null || value.getId() == null) {
          return;
       }
@@ -312,7 +282,9 @@ public class CredentialRepo extends MorphiaRepo<CredentialUserIdPassword> {
       if (stored == null) {
          return;
       }
-      if (java.util.Objects.equals(stored.getPasswordHash(), value.getPasswordHash())) {
+      boolean unchanged = java.util.Objects.equals(stored.getPasswordHash(), value.getPasswordHash())
+         || (mode == RefNameContract.WriteMode.MERGE && value.getPasswordHash() == null);
+      if (unchanged) {
          value.setPasswordRevision(stored.getPasswordRevision());
          value.setPasswordChangedAt(stored.getPasswordChangedAt());
       } else {

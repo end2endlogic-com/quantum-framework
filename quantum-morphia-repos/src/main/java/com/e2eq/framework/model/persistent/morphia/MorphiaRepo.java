@@ -1917,6 +1917,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
          T restored = (datastore instanceof MorphiaSession session)
                  ? restorePolicyExcludedFields(session, entity)
                  : restorePolicyExcludedFields(datastore, entity);
+         reconcileServerOwnedState(datastore, restored, mode);
          RefNameContract.enforceOnWrite(datastore, restored, mode);
          return restored;
      }
@@ -1927,6 +1928,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
                          ? restorePolicyExcludedFields(session, entity)
                          : restorePolicyExcludedFields(datastore, entity))
                  .collect(Collectors.toCollection(ArrayList::new));
+         restored.forEach(entity -> reconcileServerOwnedState(datastore, entity, mode));
          RefNameContract.enforceOnWrites(datastore, restored, mode);
          return restored;
      }
@@ -1999,6 +2001,14 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
       */
      protected java.util.Set<String> serverOwnedFields() {
          return java.util.Set.of();
+     }
+
+     /**
+      * Runs on every save and merge, after field-policy restoration, so a repository can set its
+      * server-owned fields from the stored record rather than trust the incoming copy. The
+      * datastore may be a {@link MorphiaSession}. Default: nothing to reconcile.
+      */
+     protected void reconcileServerOwnedState(Datastore datastore, T entity, RefNameContract.WriteMode mode) {
      }
 
      private void assertFieldUpdateAllowed(String requestedPath) {
