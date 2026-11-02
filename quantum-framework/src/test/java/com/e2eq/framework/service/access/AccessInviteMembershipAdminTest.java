@@ -140,18 +140,58 @@ class AccessInviteMembershipAdminTest extends BaseRepoTest {
             as(asAdminA, () -> inviteService.revokeInvite(POOLED, inviteA.getRefName())).getStatus());
     }
 
+    /**
+     * Realm roles apply in every tenant an assignment authorizes, and the request may select any
+     * of them (X-Tenant-Id), so a membership-admin role held by someone in two tenants cannot say
+     * which one it was granted for: it grants nothing in either.
+     */
     @Test
-    void membershipAdministratorOfTwoTenantsManagesOnlyTheTenantOfItsToken() {
+    void membershipAdministratorRoleInATwoTenantAssignmentGrantsNothing() {
+        String adminA = member("admin-a2", List.of(TENANT_A), List.of(MEMBERSHIP_ADMIN, "viewer"));
         String adminB = member("admin-b2", List.of(TENANT_B), List.of(MEMBERSHIP_ADMIN, "viewer"));
+        AccessInviteResponse inviteA = create(adminA, TENANT_A, request(user("for-a2"), "viewer"));
         AccessInviteResponse inviteB = create(adminB, TENANT_B, request(user("for-b2"), "viewer"));
 
         String adminBoth = member("admin-both", List.of(TENANT_A, TENANT_B), List.of(MEMBERSHIP_ADMIN, "viewer"));
-        PrincipalContext tokenForA = signedIn(adminBoth, TENANT_A);
-        assertFalse(as(tokenForA, () -> inviteService.listInvites(POOLED)).stream()
-            .anyMatch(invite -> invite.getRefName().equals(inviteB.getRefName())));
-        assertRefused(Code.INVITE_NOT_AUTHORIZED, () -> as(tokenForA, () -> inviteService.getInvite(POOLED, inviteB.getRefName())));
-        assertEquals(inviteB.getRefName(),
-            as(signedIn(adminBoth, TENANT_B), () -> inviteService.getInvite(POOLED, inviteB.getRefName())).getRefName());
+        for (String tenant : List.of(TENANT_A, TENANT_B)) {
+            PrincipalContext request = signedIn(adminBoth, tenant);
+            List<String> listed = as(request, () -> inviteService.listInvites(POOLED)).stream()
+                .map(AccessInviteResponse::getRefName).toList();
+            assertFalse(listed.contains(inviteA.getRefName()) || listed.contains(inviteB.getRefName()),
+                "no tenant's invites are listed for a request for " + tenant);
+            assertRefused(Code.INVITE_NOT_AUTHORIZED, () -> as(request, () -> inviteService.getInvite(POOLED, inviteA.getRefName())));
+            assertRefused(Code.INVITE_NOT_AUTHORIZED, () -> as(request, () -> inviteService.getInvite(POOLED, inviteB.getRefName())));
+            assertRefused(Code.INVITE_NOT_AUTHORIZED, () -> as(request, () -> inviteService.listTenantMembers(POOLED, tenant)));
+            assertRefused(Code.INVITE_NOT_AUTHORIZED, () -> create(adminBoth, tenant, request(user("by-both-" + tenant), "viewer")));
+        }
+    }
+
+    @Test
+    void regexAssignmentGrantsNothing() {
+        String adminA = member("admin-a6", List.of(TENANT_A), List.of(MEMBERSHIP_ADMIN, "viewer"));
+        AccessInviteResponse inviteA = create(adminA, TENANT_A, request(user("for-a6"), "viewer"));
+
+        String operator = user("regex-admin");
+        createAccount(operator, Set.of("user"), home(TENANT_A));
+        writeAssignment(operator, List.of(MEMBERSHIP_ADMIN, "viewer"), List.of(TENANT_A), UserRealmRole.STATUS_ACTIVE, "*");
+        PrincipalContext asOperator = signedIn(operator, TENANT_A);
+
+        assertRefused(Code.INVITE_NOT_AUTHORIZED, () -> as(asOperator, () -> inviteService.getInvite(POOLED, inviteA.getRefName())));
+        assertRefused(Code.INVITE_NOT_AUTHORIZED, () -> as(asOperator, () -> inviteService.listTenantMembers(POOLED, TENANT_A)));
+        assertRefused(Code.INVITE_NOT_AUTHORIZED, () -> create(operator, TENANT_A, request(user("by-regex"), "viewer")));
+    }
+
+    @Test
+    void invitedAssignmentGrantsNothing() {
+        String adminA = member("admin-a7", List.of(TENANT_A), List.of(MEMBERSHIP_ADMIN, "viewer"));
+        AccessInviteResponse inviteA = create(adminA, TENANT_A, request(user("for-a7"), "viewer"));
+
+        String invited = member("invited-admin", List.of(TENANT_A), List.of(MEMBERSHIP_ADMIN, "viewer"));
+        writeAssignment(invited, List.of(MEMBERSHIP_ADMIN, "viewer"), List.of(TENANT_A), UserRealmRole.STATUS_INVITED);
+        PrincipalContext asInvited = signedIn(invited, TENANT_A);
+
+        assertRefused(Code.INVITE_NOT_AUTHORIZED, () -> as(asInvited, () -> inviteService.getInvite(POOLED, inviteA.getRefName())));
+        assertRefused(Code.INVITE_NOT_AUTHORIZED, () -> create(invited, TENANT_A, request(user("by-invited"), "viewer")));
     }
 
     @Test
@@ -214,12 +254,16 @@ class AccessInviteMembershipAdminTest extends BaseRepoTest {
         String adminA = member("list-admin-a", List.of(TENANT_A), List.of(MEMBERSHIP_ADMIN, "viewer"));
         String memberA = member("list-member-a", List.of(TENANT_A), List.of("viewer"));
         String memberB = member("list-member-b", List.of(TENANT_B), List.of("viewer"));
+        String operator = user("list-operator");
+        createAccount(operator, Set.of("user"), home(TENANT_B));
+        writeAssignment(operator, List.of("viewer"), List.of(TENANT_B), UserRealmRole.STATUS_ACTIVE, "*");
         PrincipalContext asAdminA = signedIn(adminA, TENANT_A);
 
         List<AccessMemberResponse> members = as(asAdminA, () -> inviteService.listTenantMembers(POOLED, null));
         List<String> memberIds = members.stream().map(AccessMemberResponse::getUserId).toList();
         assertTrue(memberIds.containsAll(List.of(adminA, memberA)), "the token tenant is the default: " + memberIds);
         assertFalse(memberIds.contains(memberB), "another tenant's member is not listed");
+        assertFalse(memberIds.contains(operator), "an assignment reaching the tenant only through a regex is not listed");
         assertTrue(members.stream().allMatch(member -> TENANT_A.equals(member.getTenantId())));
         assertRefused(Code.INVITE_NOT_AUTHORIZED, () -> as(asAdminA, () -> inviteService.listTenantMembers(POOLED, TENANT_B)));
     }
@@ -236,10 +280,11 @@ class AccessInviteMembershipAdminTest extends BaseRepoTest {
         String admin = member("list-realm-admin", List.of(TENANT_A), List.of("admin", "viewer"));
         String memberB = member("list-member-b2", List.of(TENANT_B), List.of("viewer"));
         PrincipalContext asAdmin = signedIn(admin, TENANT_A);
-        assertTrue(as(asAdmin, () -> inviteService.listTenantMembers(POOLED, TENANT_A)).stream()
-            .anyMatch(member -> admin.equals(member.getUserId())));
+        List<String> memberIds = as(asAdmin, () -> inviteService.listTenantMembers(POOLED, TENANT_A)).stream()
+            .map(AccessMemberResponse::getUserId).toList();
+        assertTrue(memberIds.contains(admin), "the administrator's own tenant is listed: " + memberIds);
+        assertFalse(memberIds.contains(memberB), "another tenant's member is not listed");
         assertRefused(Code.INVITE_NOT_AUTHORIZED, () -> as(asAdmin, () -> inviteService.listTenantMembers(POOLED, TENANT_B)));
-        assertFalse(memberB.isBlank());
     }
 
     // ---- fixtures ---------------------------------------------------------------------------
@@ -337,6 +382,10 @@ class AccessInviteMembershipAdminTest extends BaseRepoTest {
     }
 
     private void writeAssignment(String userId, List<String> roles, List<String> tenants, String status) {
+        writeAssignment(userId, roles, tenants, status, null);
+    }
+
+    private void writeAssignment(String userId, List<String> roles, List<String> tenants, String status, String tenantRegEx) {
         asSystem(() -> {
             UserRealmRole assignment = realmMembershipService.realmsForUser(userId).stream()
                 .filter(candidate -> POOLED.equals(candidate.getRealmRefName()))
@@ -350,6 +399,7 @@ class AccessInviteMembershipAdminTest extends BaseRepoTest {
             assignment.setRoles(new ArrayList<>(roles));
             assignment.setAuthorizedTenantIds(new ArrayList<>(tenants));
             assignment.setStatus(status);
+            assignment.setAuthorizedTenantRegEx(tenantRegEx);
             return realmMembershipService.upsertUserRealmRole(assignment);
         });
     }

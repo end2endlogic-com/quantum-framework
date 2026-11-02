@@ -243,8 +243,21 @@ public class AccessInviteService {
             .build();
 
         invite = inviteRepo.save(inviteRealm, invite);
-        for (AccessInviteNotificationService notificationService : notificationServices) {
-            notificationService.sendInviteNotification(realm, invite, rawToken);
+        try {
+            for (AccessInviteNotificationService notificationService : notificationServices) {
+                notificationService.sendInviteNotification(realm, invite, rawToken);
+            }
+        }
+        catch (RuntimeException e) {
+            // An undelivered invite must not stay pending: nobody holds its token, and a pending
+            // invite would block inviting the same person again.
+            AccessInvite undelivered = inviteRepo.findByRefNameIgnoreRules(inviteRealm, invite.getRefName()).orElse(invite);
+            undelivered.setStatus(AccessInvite.Status.REVOKED);
+            inviteRepo.save(inviteRealm, undelivered);
+            Log.errorf(e, "access-invite.create.notification-failed realm=%s invite=%s revoked=true",
+                realm, invite.getRefName());
+            throw failure(Code.INVITE_NOTIFICATION_FAILED,
+                "The invite could not be delivered, so it was not created. Try again later.");
         }
         return toResponse(invite, tokenForInviter(rawToken));
     }
@@ -271,8 +284,11 @@ public class AccessInviteService {
      * roles do not cross tenants: an administrator manages only invites whose scope tenant its own
      * realm assignment authorizes; an invite with no recorded scope only the system principal
      * manages. A membership administrator (see {@link #membershipAdminRoles}) manages only invites
-     * whose scope tenant is the tenant of its verified token, and in a pooled realm only when its
-     * realm assignment also authorizes that tenant. The system principal manages everything.
+     * whose scope tenant is the tenant of the request. In a pooled realm its assignment must also
+     * authorize exactly that one tenant: realm roles apply in every tenant an assignment
+     * authorizes, so a role held by someone in several tenants cannot say which one it was
+     * granted for, and it grants nothing (see {@link #soleTenant}). The system principal manages
+     * everything.
      */
     private record InviteManagement(boolean systemPrincipal, boolean admin, boolean membershipAdmin, boolean pooled,
                                     UserRealmRole assignment, String tokenTenant) {
@@ -301,7 +317,7 @@ public class AccessInviteService {
             if (!membershipAdmin || normalized == null || !normalized.equals(tokenTenant)) {
                 return false;
             }
-            return !pooled || com.e2eq.framework.model.auth.AccessibleTenantResolver.isAuthorized(assignment, normalized);
+            return !pooled || normalized.equals(soleTenant(assignment));
         }
     }
 
@@ -318,11 +334,13 @@ public class AccessInviteService {
     }
 
     /**
-     * The members of one tenant of {@code realm}: every realm assignment whose authorized tenants
-     * include it, whatever its status. {@code tenantId} defaults to the tenant of the caller's
-     * verified token. Allowed for the system principal, a realm administrator (in a pooled realm
-     * only for tenants its assignment authorizes) and a membership administrator of that tenant,
-     * the same rule as invite management. Credentials and tokens are never returned.
+     * The members of one tenant of {@code realm}, whatever their status. In a pooled realm a member
+     * is an assignment that names the tenant in its authorizedTenantIds; an assignment that reaches
+     * it only through authorizedTenantRegEx (an operator or platform grant) is not listed. In a
+     * dedicated realm every assignment of the realm is a member. {@code tenantId} defaults to the
+     * tenant of the request. Allowed for the system principal, a realm administrator (in a pooled
+     * realm only for tenants its assignment authorizes) and a membership administrator of that
+     * tenant, the same rule as invite management. Credentials and tokens are never returned.
      */
     public List<AccessMemberResponse> listTenantMembers(String realm, String tenantId) {
         PrincipalContext caller = requireCaller();
@@ -341,9 +359,11 @@ public class AccessInviteService {
             throw failure(Code.INVITE_NOT_AUTHORIZED, "Only an administrator of this tenant can list its members.");
         }
         String listed = tenant;
-        List<UserRealmRole> assignments = inSystemScope(() -> userRealmRoleRepo.findByRealmRefNameWithIgnoreRules(realm, systemRealm()));
+        boolean pooled = registeredRealm(realm).map(InviteAcceptancePolicies::pooled).orElse(true);
+        List<UserRealmRole> assignments = inSystemScope(() -> pooled
+            ? userRealmRoleRepo.findByRealmRefNameAndAuthorizedTenantWithIgnoreRules(realm, listed, systemRealm())
+            : userRealmRoleRepo.findByRealmRefNameWithIgnoreRules(realm, systemRealm()));
         return assignments.stream()
-            .filter(assignment -> com.e2eq.framework.model.auth.AccessibleTenantResolver.isAuthorized(assignment, listed))
             .map(assignment -> AccessMemberResponse.builder()
                 .userId(assignment.getUserId())
                 .realmRefName(assignment.getRealmRefName())
@@ -1096,7 +1116,7 @@ public class AccessInviteService {
 
     /**
      * A caller that can access {@code realm} and holds a configured membership-admin role in its
-     * realm assignment there. Flat credential roles do not count.
+     * active realm assignment there. Flat credential roles do not count.
      */
     private boolean isMembershipAdministrator(PrincipalContext caller, String realm) {
         return holdsRealmAssignmentRole(caller, realm, membershipAdminRoles);
@@ -1116,14 +1136,37 @@ public class AccessInviteService {
         if (!accessible) {
             return false;
         }
+        // Only an active assignment counts: an invited or suspended one grants none of these roles.
         Set<String> held = new LinkedHashSet<>();
-        activeAssignment(userId, realm).ifPresent(assignment -> addNormalized(held, assignment.getRoles()));
+        assignment(userId, realm)
+            .filter(assignment -> assignment.getStatus() == null || UserRealmRole.STATUS_ACTIVE.equals(assignment.getStatus()))
+            .ifPresent(assignment -> addNormalized(held, assignment.getRoles()));
         return held.stream().anyMatch(wanted::contains);
     }
 
     /**
+     * The one tenant an assignment authorizes, or null when it authorizes none, several, or any
+     * through authorizedTenantRegEx. A pooled-realm role is tied to a tenant only through this.
+     */
+    static String soleTenant(UserRealmRole assignment) {
+        if (assignment == null || trimToNull(assignment.getAuthorizedTenantRegEx()) != null
+            || assignment.getAuthorizedTenantIds() == null) {
+            return null;
+        }
+        Set<String> tenants = new LinkedHashSet<>();
+        for (String id : assignment.getAuthorizedTenantIds()) {
+            String tenant = trimToNull(id);
+            if (tenant != null) {
+                tenants.add(tenant);
+            }
+        }
+        return tenants.size() == 1 ? tenants.iterator().next() : null;
+    }
+
+    /**
      * When create roles are configured, the caller needs one of them in its realm assignment, or
-     * must be a realm administrator or the system principal.
+     * must be a realm administrator or the system principal. In a pooled realm a create role
+     * counts only for the one tenant its assignment authorizes, and only in a request for it.
      */
     private void requireCreateRole(PrincipalContext caller, String realm) {
         Set<String> configured = new LinkedHashSet<>();
@@ -1131,7 +1174,7 @@ public class AccessInviteService {
             addNormalized(configured, createRoles.get());
         }
         if (configured.isEmpty() || isSystemPrincipal(caller) || isRealmAdministrator(caller, realm)
-            || holdsRealmAssignmentRole(caller, realm, createRoles)) {
+            || (holdsRealmAssignmentRole(caller, realm, createRoles) && createRoleAppliesToRequestTenant(caller, realm))) {
             return;
         }
         Log.warnf(
@@ -1139,6 +1182,16 @@ public class AccessInviteService {
             sanitizeForLog(realm), sanitizeForLog(authenticatedUserId(caller))
         );
         throw failure(Code.INVITE_NOT_AUTHORIZED, "You are not allowed to invite users into this realm.");
+    }
+
+    private boolean createRoleAppliesToRequestTenant(PrincipalContext caller, String realm) {
+        boolean pooled = registeredRealm(realm).map(InviteAcceptancePolicies::pooled).orElse(true);
+        if (!pooled) {
+            return true;
+        }
+        String requestTenant = caller.getDataDomain() == null ? null : trimToNull(caller.getDataDomain().getTenantId());
+        return requestTenant != null
+            && requestTenant.equals(soleTenant(activeAssignment(authenticatedUserId(caller), realm).orElse(null)));
     }
 
     /** Loads an invite the caller may manage: the caller created it, or administers the realm. */

@@ -424,6 +424,23 @@ class AccessInviteServiceTest extends BaseRepoTest {
         assertEquals(invitee, anonymous(() -> inviteService.acceptInvite(fresh)).getUserId());
     }
 
+    @Test
+    void failedCreateDeliveryRevokesTheInviteAndAllowsInvitingAgain() {
+        String inviter = user("inviter");
+        String invitee = user("cr-fail");
+        java.util.concurrent.atomic.AtomicReference<String> attempted = new java.util.concurrent.atomic.AtomicReference<>();
+        notifications.onDelivery((sent, token) -> {
+            attempted.set(sent.getRefName());
+            throw new IllegalStateException("simulated mail outage");
+        });
+        assertRefused(Code.INVITE_NOTIFICATION_FAILED, () -> createInvite(inviter, invitee, null));
+        notifications.reset();
+
+        AccessInvite undelivered = as(pContext, () -> inviteRepo.findByRefNameIgnoreRules(realm, attempted.get()).orElseThrow());
+        assertEquals(AccessInvite.Status.REVOKED, undelivered.getStatus(), "an undelivered invite does not stay pending");
+        assertEquals(AccessInvite.Status.PENDING.name(), createInvite(inviter, invitee, null).getStatus());
+    }
+
     // ---- resend: delivery-safe rotation -----------------------------------------------------
 
     @Test

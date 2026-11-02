@@ -57,6 +57,17 @@ public class UserRealmRoleRepo extends MorphiaRepo<UserRealmRole> {
         }
     }
 
+    /** Assignments in {@code realmRefName} that name {@code tenantId} explicitly in authorizedTenantIds. */
+    public List<UserRealmRole> findByRealmRefNameAndAuthorizedTenantWithIgnoreRules(String realmRefName, String tenantId,
+                                                                                    String systemRealmId) {
+        MorphiaDatastore ds = morphiaDataStoreWrapper.getDataStore(systemRealmId);
+        try (var cursor = ds.find(UserRealmRole.class)
+                .filter(Filters.eq("realmRefName", realmRefName), Filters.eq("authorizedTenantIds", tenantId))
+                .iterator()) {
+            return cursor.toList();
+        }
+    }
+
     public List<UserRealmRole> findAllWithIgnoreRules(String systemRealmId) {
         MorphiaDatastore ds = morphiaDataStoreWrapper.getDataStore(systemRealmId);
         try (var cursor = ds.find(UserRealmRole.class).iterator()) {

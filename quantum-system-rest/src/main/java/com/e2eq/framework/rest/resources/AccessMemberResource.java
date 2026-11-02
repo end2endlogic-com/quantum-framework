@@ -1,5 +1,6 @@
 package com.e2eq.framework.rest.resources;
 
+import com.e2eq.framework.annotations.FunctionalMapping;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.model.securityrules.SecurityContext;
@@ -26,6 +27,7 @@ import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
 import java.util.Optional;
 
+@FunctionalMapping(area = "SECURITY", domain = "USER_REALM_ROLE")
 @Path("/access/members")
 @Produces(MediaType.APPLICATION_JSON)
 @RolesAllowed({"user", "admin", "system"})
@@ -40,11 +42,12 @@ public class AccessMemberResource {
 
     @GET
     @Operation(summary = "List the members of a tenant",
-        description = "Lists every realm assignment in this realm (realm / X-Realm) that authorizes the tenant, whatever its status. "
-            + "tenantId defaults to the tenant of the caller's verified token. Allowed for the system principal, a realm administrator "
+        description = "Lists the members of one tenant of this realm, whatever their status: in a pooled realm the assignments that name the "
+            + "tenant in authorizedTenantIds (not those that reach it only through authorizedTenantRegEx), in a dedicated realm every assignment. "
+            + "tenantId defaults to the tenant of the request. Allowed for the system principal, a realm administrator "
             + "(in a pooled realm only for tenants its realm assignment authorizes), and a membership administrator: a caller holding a role "
-            + "listed in quantum.access-invites.membership-admin-roles in its realm assignment, for the tenant of its verified token only. "
-            + "Credentials and tokens are never returned.")
+            + "listed in quantum.access-invites.membership-admin-roles in its active realm assignment, for the tenant of the request only; "
+            + "in a pooled realm the assignment must authorize that one tenant and no other. Credentials and tokens are never returned.")
     @APIResponses({
         @APIResponse(responseCode = "200", description = "Members of the tenant",
             content = @Content(mediaType = "application/json", schema = @Schema(type = SchemaType.ARRAY, implementation = AccessMemberResponse.class))),

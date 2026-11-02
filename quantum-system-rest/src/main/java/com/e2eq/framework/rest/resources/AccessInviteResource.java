@@ -1,5 +1,6 @@
 package com.e2eq.framework.rest.resources;
 
+import com.e2eq.framework.annotations.FunctionalMapping;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.model.securityrules.SecurityContext;
@@ -32,6 +33,9 @@ import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
 import java.util.Optional;
 
+// The invite service saves invites as the caller, so the request needs a resource context:
+// without this mapping it is anonymous and every write is refused.
+@FunctionalMapping(area = "SECURITY", domain = "ACCESS_INVITE")
 @Path("/access/invites")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
@@ -48,7 +52,7 @@ public class AccessInviteResource {
     @GET
     @Operation(summary = "List access invites",
         description = "Realm administrators (the system principal, or a caller that can access this realm and holds admin here as a flat or realm-scoped role) see every invite in the realm, in a pooled realm only those of tenants their realm assignment authorizes. "
-            + "Membership administrators (a role listed in quantum.access-invites.membership-admin-roles, held in the realm assignment) see the invites of the tenant of their verified token. "
+            + "Membership administrators (a role listed in quantum.access-invites.membership-admin-roles, held in the realm assignment) see the invites of the tenant of the request; in a pooled realm only when their assignment authorizes that one tenant and no other. "
             + "Other callers see only the invites they created. Invite tokens are never returned.")
     @APIResponses({
         @APIResponse(responseCode = "200", description = "Invites visible to the caller",
