@@ -165,7 +165,6 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
       // Normalize hashing algorithm to the canonical value and update hash
       cred.setHashingAlgorithm(EncryptionUtils.hashAlgorithm());
       cred.setPasswordHash(EncryptionUtils.hashPassword(newPassword));
-      cred.setPasswordChangedAt(new Date());
       cred.setForceChangePassword(forceChangePassword);
       cred.setAuthProviderName(getName());
       credentialRepo.save( cred);
@@ -193,7 +192,6 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
       CredentialUserIdPassword cred = ocred.get();
       cred.setHashingAlgorithm(EncryptionUtils.hashAlgorithm());
       cred.setPasswordHash(EncryptionUtils.hashPassword(newPassword));
-      cred.setPasswordChangedAt(new Date());
       cred.setForceChangePassword(forceChangePassword);
       cred.setAuthProviderName(getName());
       credentialRepo.save(cred);
@@ -848,7 +846,10 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                   java.util.Set<String> userGroupRoles = resolveUserGroupRoles(
                      subject, tokenRealm, appAuth.activeApplication());
                   groups.addAll(userGroupRoles);
-                  long authTime = TokenUtils.currentTimeInSecs();
+                  // The session starts now. A verified-subject mint (OAuth code exchange) did
+                  // not witness the authentication, so its time is unknown, not "now".
+                  long sessionStart = System.currentTimeMillis();
+                  Long authTime = verifiedSubject != null ? null : sessionStart / 1000;
                   String authToken = TokenUtils.generateUserToken(
                      subject,
                      credential.getUserId(),
@@ -873,7 +874,7 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                      tokenRealm,
                      appAuth.resolved() ? appAuth.activeApplication() : null,
                      authToken,
-                     durationInSeconds, oauthClientId, authTime);
+                     durationInSeconds, oauthClientId, authTime, sessionStart);
                   SecurityIdentity identity = validateAccessToken(authToken);
                   // Compute role provenance locally for login response: IDP + CREDENTIAL + USERGROUP
                   // Auth plugins do NOT need to do this; it's optional for login response only.
@@ -1036,10 +1037,16 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
             Log.warnf("Refresh rejected: credential %s has activeStatus=%s", userId, credential.getActiveStatus());
             throw new SecurityException("Credential is no longer authorized");
          }
-         if (endedByPasswordChange(credential, refreshJwt.getIssuedAtTime())) {
+         Long authTime = claimLong(refreshJwt, TokenUtils.AUTH_TIME_CLAIM);
+         Long sessionStart = claimLong(refreshJwt, TokenUtils.SESSION_START_CLAIM);
+         if (sessionStart == null) {
+            // Legacy refresh token: its own issue second is the earliest start we can vouch for;
+            // counting the whole second as its start errs toward ending the session.
+            sessionStart = refreshJwt.getIssuedAtTime() * 1000 + 999;
+         }
+         if (endedByPasswordChange(credential, sessionStart)) {
             throw new SecurityException("SESSION_ENDED_BY_PASSWORD_CHANGE");
          }
-         Long authTime = claimLong(refreshJwt, TokenUtils.AUTH_TIME_CLAIM);
 
          Set<String> credentialRoles = credentialRolesForRealm(
             credential.getRoles(), credentialRealm, tokenRealm);
@@ -1088,7 +1095,7 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
          String newRefreshToken = generateRefreshToken(
             refreshSubject, userId, tokenRealm,
             appAuth.resolved() ? appAuth.activeApplication() : null,
-            newAuthToken, durationInSeconds, oauthClientId, authTime);
+            newAuthToken, durationInSeconds, oauthClientId, authTime, sessionStart);
          SecurityIdentity identity = validateAccessToken(newAuthToken);
 
          java.util.List<RoleAssignment> roleAssignments = allRoles.stream()
@@ -1212,7 +1219,7 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                                         String activeApplication,
                                         String accessToken,
                                         long durationInSeconds, String oauthClientId,
-                                        Long authTime) throws IOException
+                                        Long authTime, Long sessionStart) throws IOException
                                                                                                              ,
                                                                                                              NoSuchAlgorithmException, InvalidKeySpecException {
 
@@ -1222,7 +1229,7 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
          realm,
          activeApplication,
          durationInSeconds,
-         issuer, oauthClientId, authTime);
+         issuer, oauthClientId, authTime, sessionStart);
 
       CredentialRefreshToken refreshToken1 = CredentialRefreshToken.builder()
                                                 .userId(userId)
@@ -1310,13 +1317,15 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
       return !emailCredential || hasPassword;
    }
 
-   /** A refresh token issued before the credential's last password change no longer refreshes. */
-   static boolean endedByPasswordChange(CredentialUserIdPassword credential, long refreshIssuedAtSeconds) {
+   /** A session that began at or before the credential's last password change no longer refreshes. */
+   static boolean endedByPasswordChange(CredentialUserIdPassword credential, long sessionStartMillis) {
       Date changedAt = credential.getPasswordChangedAt();
-      return changedAt != null && refreshIssuedAtSeconds < changedAt.getTime() / 1000;
+      return changedAt != null && sessionStartMillis <= changedAt.getTime();
    }
 
    private static Long claimLong(org.eclipse.microprofile.jwt.JsonWebToken jwt, String claim) {
+      // SmallRye answers 0 for an absent numeric claim; absent must stay unknown.
+      if (!jwt.containsClaim(claim)) return null;
       Object value = jwt.getClaim(claim);
       if (value instanceof Number number) return number.longValue();
       if (value instanceof jakarta.json.JsonNumber number) return number.longValue();

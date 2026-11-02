@@ -257,6 +257,37 @@ public class CredentialRepo extends MorphiaRepo<CredentialUserIdPassword> {
       return this.save(envConfigUtils.getSystemRealm(), value);
    }
 
+   /**
+    * {@code passwordChangedAt} is server-owned and never travels over REST, so a save of a
+    * credential that arrived without it keeps the stored value instead of clearing it (which
+    * would make sessions ended by a password change refreshable again).
+    */
+   @Override
+   public CredentialUserIdPassword save (Datastore datastore, CredentialUserIdPassword value) {
+      keepPasswordChangedAt(datastore, value);
+      return super.save(datastore, value);
+   }
+
+   @Override
+   public List<CredentialUserIdPassword> save (Datastore datastore, List<CredentialUserIdPassword> entities) {
+      if (entities != null) {
+         entities.forEach(entity -> keepPasswordChangedAt(datastore, entity));
+      }
+      return super.save(datastore, entities);
+   }
+
+   private void keepPasswordChangedAt (Datastore datastore, CredentialUserIdPassword value) {
+      if (value == null || value.getId() == null || value.getPasswordChangedAt() != null) {
+         return;
+      }
+      CredentialUserIdPassword stored = datastore.find(CredentialUserIdPassword.class)
+         .filter(Filters.eq("_id", value.getId()))
+         .first();
+      if (stored != null && stored.getPasswordChangedAt() != null) {
+         value.setPasswordChangedAt(stored.getPasswordChangedAt());
+      }
+   }
+
    @Override
    public CloseableIterator<CredentialUserIdPassword> getStreamByQuery (int skip, int limit, @Nullable String query, @Nullable List<SortField> sortFields, @Nullable List<ProjectionField> projectionFields) {
       return  super.getStreamByQuery(morphiaDataStoreWrapper.getDataStore(envConfigUtils.getSystemRealm()), skip, limit, query, sortFields, projectionFields);

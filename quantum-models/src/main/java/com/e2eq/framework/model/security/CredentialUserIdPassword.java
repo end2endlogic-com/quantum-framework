@@ -85,9 +85,12 @@ public class CredentialUserIdPassword extends BaseModel {
    protected String passwordHash;
    Boolean forceChangePassword;
    /**
-    * When the password was last set or changed. Refresh tokens issued before it are refused,
-    * so a password change ends every earlier session once its access token expires.
+    * When the password hash last changed; server-owned (never read from or written by REST).
+    * A session that started at or before it no longer refreshes, so a password change ends
+    * every earlier session once its access token expires.
     */
+   @JsonIgnore
+   @ToString.Exclude
    protected Date passwordChangedAt;
    protected String[] roles; // can be set by identity provider or explictly here, code should union token roles and
    // this.
@@ -138,11 +141,22 @@ public class CredentialUserIdPassword extends BaseModel {
     */
    public void setPassword(String password) {
       if (password != null) {
-         this.passwordHash = EncryptionUtils.hashPassword(password);
+         setPasswordHash(EncryptionUtils.hashPassword(password));
          this.hashingAlgorithm = EncryptionUtils.hashAlgorithm();
       }
    }
 
+
+   /**
+    * Every change of the hash, by any caller, records {@link #passwordChangedAt}, so no
+    * password write can leave earlier sessions refreshable.
+    */
+   public void setPasswordHash(String passwordHash) {
+      if (!java.util.Objects.equals(this.passwordHash, passwordHash)) {
+         this.passwordChangedAt = new Date();
+      }
+      this.passwordHash = passwordHash;
+   }
 
    /** Distinguishes PASSWORD credentials from SERVICE_TOKEN, API_KEY, etc. */
    @Builder.Default

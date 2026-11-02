@@ -47,14 +47,32 @@ class CustomTokenAuthProviderRealmTest {
     }
 
     @Test
-    void refreshTokensIssuedBeforeAPasswordChangeNoLongerRefresh() {
+    void sessionsStartedAtOrBeforeAPasswordChangeNoLongerRefresh() {
         var credential = emailCredential();
         assertFalse(CustomTokenAuthProvider.endedByPasswordChange(credential, 1_000L));
 
-        credential.setPasswordChangedAt(new Date(2_000_000L));
-        assertTrue(CustomTokenAuthProvider.endedByPasswordChange(credential, 1_999L));
-        assertFalse(CustomTokenAuthProvider.endedByPasswordChange(credential, 2_000L));
-        assertFalse(CustomTokenAuthProvider.endedByPasswordChange(credential, 2_001L));
+        credential.setPasswordChangedAt(new Date(2_000_900L));
+        assertTrue(CustomTokenAuthProvider.endedByPasswordChange(credential, 2_000_000L));
+        assertTrue(CustomTokenAuthProvider.endedByPasswordChange(credential, 2_000_900L));
+        assertFalse(CustomTokenAuthProvider.endedByPasswordChange(credential, 2_000_901L),
+            "a sign-in just after the change, in the same second, keeps its session");
+    }
+
+    @Test
+    void everyPasswordHashChangeRecordsWhenItHappened() {
+        var credential = new CredentialUserIdPassword();
+        assertEquals(null, credential.getPasswordChangedAt());
+
+        credential.setPasswordHash("hash-1");
+        Date first = credential.getPasswordChangedAt();
+        assertTrue(first != null);
+
+        credential.setPasswordChangedAt(new Date(0L));
+        credential.setPasswordHash("hash-1");
+        assertEquals(new Date(0L), credential.getPasswordChangedAt(), "an unchanged hash is not a change");
+
+        credential.setPassword("another-password-123");
+        assertTrue(credential.getPasswordChangedAt().after(new Date(0L)));
     }
 
     private static CredentialUserIdPassword emailCredential() {
