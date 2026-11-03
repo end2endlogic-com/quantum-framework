@@ -58,9 +58,6 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
    @ConfigProperty(name = "quantum.realmConfig.systemRealm", defaultValue = "system-com")
    String systemRealm;
 
-   @ConfigProperty(name = "quarkus.mongodb.connection-string")
-   String mongodbConnectionString;
-
    @Inject
    JWTParser jwtParser;
 
@@ -928,7 +925,7 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                         authToken,
                         refreshToken,
                         TokenUtils.currentTimeInSecs() + durationInSeconds,
-                        mongodbConnectionString,
+                        null, // never the service's database URL: it carries credentials
                         realm,
                         appAuth.resolved() ? appAuth.audiences() : null,
                         appAuth.resolved() ? appAuth.activeApplication() : null)
@@ -1133,7 +1130,7 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
               newAuthToken,
               newRefreshToken,
               TokenUtils.currentTimeInSecs() + durationInSeconds,
-              mongodbConnectionString,
+              null, // never the service's database URL: it carries credentials
               tokenRealm,
               appAuth.resolved() ? appAuth.audiences() : null,
               appAuth.resolved() ? appAuth.activeApplication() : null));

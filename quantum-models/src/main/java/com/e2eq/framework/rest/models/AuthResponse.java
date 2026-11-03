@@ -19,6 +19,11 @@ public class AuthResponse {
     protected String access_token;
     protected String refresh_token;
     protected long expires_at;
+    /**
+     * Never populated. It once carried the auth service's own MongoDB connection
+     * string, credentials included. Kept only so the published contract does not
+     * change; {@link JsonInclude.Include#NON_NULL} keeps it off the wire.
+     */
     protected String mongodburl;
     protected String realm;
     protected List<String> roles;
