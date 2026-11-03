@@ -6,6 +6,8 @@ import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.oauth.model.AuthorizationCode;
 import com.e2eq.framework.oauth.model.OAuthClient;
+import com.e2eq.framework.oauth.model.OAuthTokenResponse;
+import com.e2eq.framework.oauth.model.OAuthErrorResponse;
 import com.e2eq.framework.oauth.repo.AuthorizationCodeRepo;
 import com.e2eq.framework.oauth.repo.OAuthClientRepo;
 import com.e2eq.framework.util.EncryptionUtils;
@@ -18,6 +20,9 @@ import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
+import org.eclipse.microprofile.openapi.annotations.media.Content;
+import org.eclipse.microprofile.openapi.annotations.media.Schema;
+import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -52,6 +57,14 @@ public class OAuthTokenResource {
     @POST
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Produces(MediaType.APPLICATION_JSON)
+    @APIResponse(responseCode = "200", description = "OAuth access token and optional refresh token.",
+            content = @Content(schema = @Schema(implementation = OAuthTokenResponse.class)))
+    @APIResponse(responseCode = "400", description = "Invalid or unauthorized grant.",
+            content = @Content(schema = @Schema(implementation = OAuthErrorResponse.class)))
+    @APIResponse(responseCode = "401", description = "Client authentication failed.",
+            content = @Content(schema = @Schema(implementation = OAuthErrorResponse.class)))
+    @APIResponse(responseCode = "500", description = "Issuer could not complete the exchange.",
+            content = @Content(schema = @Schema(implementation = OAuthErrorResponse.class)))
     public Response token(
             @HeaderParam(HttpHeaders.AUTHORIZATION) String authHeader,
             @FormParam("grant_type") String grantType,
@@ -210,29 +223,19 @@ public class OAuthTokenResource {
 
     private Response tokenResponse(String accessToken, String refreshToken,
                                    long expiresIn, String tokenType) {
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("access_token", accessToken);
-        body.put("token_type", tokenType);
-        body.put("expires_in", expiresIn);
-        if (refreshToken != null) {
-            body.put("refresh_token", refreshToken);
-        }
-        return Response.ok(body)
+        return Response.ok(new OAuthTokenResponse(accessToken, tokenType, expiresIn, refreshToken))
                 .header("Cache-Control", "no-store")
                 .header("Pragma", "no-cache")
                 .build();
     }
 
     private Response errorResponse(String error, String description) {
-        Map<String, String> body = new LinkedHashMap<>();
-        body.put("error", error);
-        body.put("error_description", description);
         int status = switch (error) {
             case "invalid_client" -> 401;
             case "server_error" -> 500;
             default -> 400;
         };
-        return Response.status(status).entity(body)
+        return Response.status(status).entity(new OAuthErrorResponse(error, description))
                 .type(MediaType.APPLICATION_JSON)
                 .build();
     }

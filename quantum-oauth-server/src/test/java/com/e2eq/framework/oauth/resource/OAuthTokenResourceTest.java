@@ -71,7 +71,30 @@ class OAuthTokenResourceTest {
     Response exchange(String grant,String client,String refresh) {
         return resource.token(null,grant,"code",null,null,client,null,refresh,null);
     }
-    String token(Response response,String field) { assertEquals(200,response.getStatus(),String.valueOf(response.getEntity()));return (String)((Map<?,?>)response.getEntity()).get(field); }
+    String token(Response response,String field) {
+        assertEquals(200,response.getStatus(),String.valueOf(response.getEntity()));
+        var body=(OAuthTokenResponse)response.getEntity();
+        return "access_token".equals(field)?body.accessToken():body.refreshToken();
+    }
+
+    @Test void typedResponsesPreserveOAuthWireFieldsAndCacheHeaders() throws Exception {
+        var response=exchange("client_credentials","client-a",null);
+        var json=new com.fasterxml.jackson.databind.ObjectMapper();
+        var body=json.readTree(json.writeValueAsString(response.getEntity()));
+        assertEquals("Bearer",body.get("token_type").asText());
+        assertEquals(60,body.get("expires_in").asLong());
+        assertEquals(Set.of("app"),parser.parse(body.get("access_token").asText()).getAudience());
+        assertEquals("no-store",response.getHeaderString("Cache-Control"));
+        assertEquals("no-cache",response.getHeaderString("Pragma"));
+        var withoutRefresh=json.readTree(json.writeValueAsString(new OAuthTokenResponse("token","Bearer",60,null)));
+        assertFalse(withoutRefresh.has("refresh_token"));
+        var error=resource.token(null,"client_credentials",null,null,null,"unknown",null,null,null);
+        assertEquals(401,error.getStatus());
+        var errorJson=json.readTree(json.writeValueAsString(error.getEntity()));
+        assertEquals("invalid_client",errorJson.get("error").asText());
+        assertTrue(errorJson.has("error_description"));
+        assertEquals(2,errorJson.size());
+    }
     @Test void authorizationCodeRefreshPreservesIdentityRealmApplicationAndClient() throws Exception {
         var initial=exchange("authorization_code","client-a",null);
         String refresh=token(initial,"refresh_token");

@@ -18,6 +18,10 @@
 
     <dependencies>
         <dependency>
+            <groupId>org.eclipse.microprofile.openapi</groupId>
+            <artifactId>microprofile-openapi-api</artifactId>
+        </dependency>
+        <dependency>
             <groupId>com.end2endlogic</groupId>
             <artifactId>quantum-contract-core</artifactId>
             <version>${quantum.version}</version>
