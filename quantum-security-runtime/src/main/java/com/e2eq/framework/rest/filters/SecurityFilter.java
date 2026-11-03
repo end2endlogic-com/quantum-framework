@@ -554,7 +554,9 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         String authHeader = requestContext.getHeaderString(HttpHeaders.AUTHORIZATION);
 
         // Build context and track credentials for property resolvers
-        ContextBuildResult buildResult = buildBaseContextWithCredentials(authHeader, realm);
+        ContextBuildResult buildResult = buildBaseContextWithCredentials(authHeader,
+                baseRealmOverride(realm, trustTokenClaims, impersonationRequested(requestContext),
+                        envConfigUtils.getSystemRealm()));
         PrincipalContext baseContext = buildResult.context;
         CredentialUserIdPassword credentials = buildResult.credentials;
 
@@ -571,6 +573,27 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
 
         // Apply custom property resolvers
         return applyCustomProperties(requestContext, contextWithTenant, credentials);
+    }
+
+    private static boolean impersonationRequested(ContainerRequestContext requestContext) {
+        return requestContext.getHeaderString("X-Impersonate-Subject") != null
+                || requestContext.getHeaderString("X-Impersonate-UserId") != null;
+    }
+
+    /**
+     * The X-Realm the base (token holder's) context is built in. With delegated
+     * token claims, an impersonation request does not switch the token holder
+     * into X-Realm: the request runs as the impersonated credential in its own
+     * realm, and X-Realm only names the realm the impersonateFilterScript is asked
+     * about, with the impersonator's realm access checked against their stored
+     * credential in {@link #handleImpersonation}. The system realm is never
+     * dropped here, so the delegated path keeps refusing a switch into it.
+     */
+    static String baseRealmOverride(String realm, boolean trustTokenClaims, boolean impersonating, String systemRealm) {
+        if (trustTokenClaims && impersonating && realm != null && !realm.equalsIgnoreCase(systemRealm)) {
+            return null;
+        }
+        return realm;
     }
 
     /**
@@ -1205,7 +1228,13 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
             throw new IllegalStateException("Original user credential not found for impersonation");
         }
 
-        validateImpersonationPermissions(originalCreds.get(), requestContext.getHeaderString("X-Realm"));
+        String impersonationRealm = requestContext.getHeaderString("X-Realm");
+        if (trustTokenClaims) {
+            // The base context skipped the realm switch (baseRealmOverride); check the
+            // impersonator's own realm access (authorizedRealms, then realmRegEx) here.
+            validateRealmAccess(originalCreds.get(), impersonationRealm);
+        }
+        validateImpersonationPermissions(originalCreds.get(), impersonationRealm);
 
         Optional<CredentialUserIdPassword> targetCreds = findImpersonationTarget(impersonateSubject, impersonateUserId);
         if (!targetCreds.isPresent()) {
