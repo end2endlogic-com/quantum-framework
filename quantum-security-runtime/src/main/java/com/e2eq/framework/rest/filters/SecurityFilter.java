@@ -130,6 +130,18 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
     @ConfigProperty(name = "quantum.auth.trust-token-claims", defaultValue = "false")
     boolean trustTokenClaims;
 
+    // Application session (opt-in). The verified token only says who the user is; when these are
+    // set, a user's session runs as this application in this realm, whichever application or realm
+    // the token was minted for (for example a launch pad handoff). Roles resolve through
+    // IdentityRoleResolver for (userId, session realm, session application). An explicit X-Realm
+    // still applies with its own checks. Service tokens and anonymous requests are unchanged.
+    // Unset keeps the token's azp and realm.
+    @ConfigProperty(name = "quantum.security.session.application-id")
+    Optional<String> sessionApplicationId = Optional.empty();
+
+    @ConfigProperty(name = "quantum.security.session.realm")
+    Optional<String> sessionRealm = Optional.empty();
+
     @Inject
     com.e2eq.framework.security.runtime.RuleContext ruleContext;
 
@@ -549,9 +561,10 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
     protected PrincipalContext determinePrincipalContext(ContainerRequestContext requestContext) {
         validateContextInputs(requestContext);
 
-        String realm = requestContext.getHeaderString("X-Realm");
         String tenantId = requestContext.getHeaderString("X-Tenant-Id");
         String authHeader = requestContext.getHeaderString(HttpHeaders.AUTHORIZATION);
+        String realm = sessionRealmSelection(requestContext.getHeaderString("X-Realm"),
+                configured(sessionRealm), isUserPrincipal());
 
         // Build context and track credentials for property resolvers
         ContextBuildResult buildResult = buildBaseContextWithCredentials(authHeader,
@@ -562,6 +575,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
 
         PrincipalContext contextWithImpersonation = handleImpersonation(requestContext, baseContext);
         PrincipalContext contextWithRealm = applyRealmOverride(contextWithImpersonation, realm);
+        requireSessionApplicationAdmitted(contextWithRealm);
         // The signed tenant claim names a tenant of the realm the token was
         // issued for. It applies only while the request stays in that realm;
         // after an X-Realm switch the caller must select a tenant explicitly.
@@ -573,6 +587,34 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
 
         // Apply custom property resolvers
         return applyCustomProperties(requestContext, contextWithTenant, credentials);
+    }
+
+    /**
+     * The realm a request selects: an explicit X-Realm, otherwise the configured session realm for a
+     * user principal, otherwise none (the principal's own realm applies).
+     */
+    static String sessionRealmSelection(String headerRealm, String configuredRealm, boolean userPrincipal) {
+        if (headerRealm != null && !headerRealm.isBlank()) {
+            return headerRealm;
+        }
+        return userPrincipal && configuredRealm != null ? configuredRealm : headerRealm;
+    }
+
+    private static String configured(Optional<String> value) {
+        if (value == null) {
+            return null;
+        }
+        return value.map(String::trim).filter(v -> !v.isEmpty()).orElse(null);
+    }
+
+    /** A verified, non-service JWT or another authenticated, non-anonymous identity. */
+    private boolean isUserPrincipal() {
+        if (currentJwt() != null) {
+            return !com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.SERVICE_TOKEN_TYPE
+                    .equalsIgnoreCase(claimString(
+                            com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.TOKEN_TYPE_CLAIM));
+        }
+        return securityIdentity != null && !securityIdentity.isAnonymous();
     }
 
     private static boolean impersonationRequested(ContainerRequestContext requestContext) {
@@ -818,7 +860,10 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
             contextRealm = realmOverride;
             realmSwitched = true;
         }
-        String[] roles = realmSwitched
+        // A token minted for another application carries that application's roles. In an
+        // application session they are re-derived like a realm switch (flat credential roles
+        // that the token also names, plus the realm assignment's roles), never adopted.
+        String[] roles = realmSwitched || foreignApplicationToken(providerClaim(claims, "azp"))
                 ? delegatedRolesAfterRealmSwitch(sub, userId, claims.getTokenRoles(), contextRealm)
                 : claims.getTokenRoles().toArray(String[]::new);
 
@@ -862,7 +907,9 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
 
         PrincipalContext context = new PrincipalContext.Builder()
                 .withDefaultRealm(contextRealm)
-                .withApplicationId(providerClaim(claims, "azp"))
+                .withApplicationId(configured(sessionApplicationId) != null
+                        ? configured(sessionApplicationId)
+                        : providerClaim(claims, "azp"))
                 .withDataDomain(dataDomain)
                 .withUserId(userId)
                 .withRoles(roles)
@@ -931,7 +978,46 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         return s.isBlank() ? null : s;
     }
 
-    private String currentApplicationId() {
+    String currentApplicationId() {
+        String configuredApplication = configured(sessionApplicationId);
+        if (configuredApplication != null && isUserPrincipal()) {
+            return configuredApplication;
+        }
+        return tokenApplicationId();
+    }
+
+    /**
+     * In an application session, a token minted for another application says nothing about this
+     * application: the user must be admitted to it in the session realm (the realm's home
+     * application, or an authorized application on the user's realm assignment). The same-realm
+     * shortcut in {@link #applicationAdmittedInRealm} does not apply, since it trusts the token's
+     * own application/realm pair.
+     */
+    void requireSessionApplicationAdmitted(PrincipalContext context) {
+        if (!isUserPrincipal() || !foreignApplicationToken(tokenApplicationId())) {
+            return;
+        }
+        String applicationId = context.getApplicationId();
+        String realmRefName = context.getDefaultRealm();
+        Realm realm = systemDirectory.findRealmByRefName(realmRefName).orElse(null);
+        String realmApplicationId = realm == null || realm.getApplicationRef() == null
+                ? null
+                : realm.getApplicationRef().getEntityRefName();
+        if (realm == null || !applicationAdmittedInRealm(
+                context.getUserId(), realmRefName, applicationId, realmApplicationId, null)) {
+            throw new jakarta.ws.rs.ForbiddenException(String.format(
+                    "Signed in as %s, no access to application '%s' in realm '%s'",
+                    context.getUserId(), applicationId, realmRefName));
+        }
+    }
+
+    /** True when an application session is configured and the token was minted for another application. */
+    boolean foreignApplicationToken(String tokenApplication) {
+        String configuredApplication = configured(sessionApplicationId);
+        return configuredApplication != null && !configuredApplication.equalsIgnoreCase(tokenApplication);
+    }
+
+    private String tokenApplicationId() {
         String tokenApplication = claimString("azp");
         if (tokenApplication != null) {
             return tokenApplication;
@@ -1149,8 +1235,14 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         if (identityRoleResolver == null) {
             throw new IllegalStateException("IdentityRoleResolver is required to build an authenticated principal");
         }
+        // In an application session, a token minted for another application carries that
+        // application's roles; the session's roles then come only from the credential, the
+        // realm assignment and the session application's groups.
+        SecurityIdentity roleIdentity = credential != null && foreignApplicationToken(tokenApplicationId())
+                ? null
+                : identity;
         return identityRoleResolver.resolveEffectiveRoles(
-                identity, credential, authorityRealm, effectiveRealm, currentApplicationId());
+                roleIdentity, credential, authorityRealm, effectiveRealm, currentApplicationId());
     }
 
     private void validateRealmAccess(CredentialUserIdPassword creds, String realm) {
@@ -1290,55 +1382,8 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
     String[] delegatedRolesAfterRealmSwitch(String subject, String userId,
                                             java.util.Collection<String> tokenRoles,
                                             String targetRealm) {
-        java.util.Set<String> flatRoles = authoritativeFlatRoles(subject, userId);
-        java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>();
-        if (tokenRoles != null) {
-            for (String role : tokenRoles) {
-                if (role != null && flatRoles.contains(role.trim().toLowerCase(Locale.ROOT))) {
-                    out.add(role);
-                }
-            }
-        }
-        realmMembershipService.assignmentForUser(userId, targetRealm)
-                .map(com.e2eq.framework.model.security.UserRealmRole::getRoles)
-                .ifPresent(list -> list.stream().filter(java.util.Objects::nonNull).forEach(out::add));
-        if (out.isEmpty()) {
-            return new String[]{"ANONYMOUS"};
-        }
-        return out.toArray(String[]::new);
-    }
-
-    /**
-     * The flat (realm-independent) roles on the credential bound to {@code subject}, lower-cased;
-     * empty when no authoritative credential is available for this subject and userId.
-     */
-    private java.util.Set<String> authoritativeFlatRoles(String subject, String userId) {
-        if (subject == null || subject.isBlank() || systemDirectory == null) {
-            return java.util.Set.of();
-        }
-        // The lookup is not issuer-scoped. That adds no exposure: only a trusted issuer can mint
-        // these claims, and it can already assert any role in its signed realm without a switch.
-        Optional<CredentialUserIdPassword> credential;
-        try {
-            credential = systemDirectory.findCredentialBySubject(subject);
-        } catch (IllegalStateException e) {
-            // Remote control-plane mode: credential material never crosses the seam.
-            Log.debugf("Delegated realm switch: no authoritative flat roles for sub=%s (%s); "
-                    + "token roles are not carried", subject, e.getMessage());
-            return java.util.Set.of();
-        }
-        if (credential.isEmpty() || credential.get().getUserId() == null
-                || !credential.get().getUserId().equalsIgnoreCase(userId)
-                || credential.get().getRoles() == null) {
-            return java.util.Set.of();
-        }
-        java.util.Set<String> roles = new java.util.HashSet<>();
-        for (String role : credential.get().getRoles()) {
-            if (role != null && !role.isBlank()) {
-                roles.add(role.trim().toLowerCase(Locale.ROOT));
-            }
-        }
-        return roles;
+        return DelegatedSessionRoles.resolve(systemDirectory, realmMembershipService,
+                subject, userId, tokenRoles, targetRealm);
     }
 
     private PrincipalContext buildImpersonatedContext(CredentialUserIdPassword targetCreds, CredentialUserIdPassword originalCreds,
