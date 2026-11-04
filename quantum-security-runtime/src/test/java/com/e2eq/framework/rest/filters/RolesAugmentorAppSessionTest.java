@@ -51,6 +51,14 @@ class RolesAugmentorAppSessionTest {
     }
 
     @Test
+    void withoutASessionRealmRolesResolveInTheTokensSignedRealm() {
+        RolesAugmentor augmentor = augmentor("decision-intelligence");
+        augmentor.sessionRealm = Optional.empty();
+        augment(augmentor, Map.of("sub", "s1", "azp", "helixor-launchpad", "realm", "helixor-code-D1"));
+        assertEquals("helixor-code-D1", resolverRealm[0]);
+    }
+
+    @Test
     void sessionApplicationsOwnTokenKeepsItsGroups() {
         RolesAugmentor augmentor = augmentor("decision-intelligence");
         SecurityIdentity augmented = augment(augmentor, Map.of("sub", "s1", "azp", "decision-intelligence"));

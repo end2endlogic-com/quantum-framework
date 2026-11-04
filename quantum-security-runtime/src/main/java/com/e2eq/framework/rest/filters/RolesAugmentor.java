@@ -96,7 +96,7 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
             builder.addRoles(new HashSet<>(List.of(cred.getRoles())));
             if (foreignApplicationToken) {
                 // The session's roles, as SecurityFilter resolves them for the PrincipalContext.
-                builder.addRoles(new HashSet<>(List.of(sessionRoles(cred, requestedRealm))));
+                builder.addRoles(new HashSet<>(List.of(sessionRoles(identity, cred, requestedRealm))));
             }
 
             // 2) Expose preferred identity (userId) as an attribute without altering the JWT principal
@@ -125,19 +125,26 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
     }
 
     /**
-     * Roles for (credential, session realm, session application) without the token's roles. The
-     * session realm is an explicit X-Realm, else the configured session realm, else the
-     * credential's home realm.
+     * Roles for (credential, session realm, session application) without the token's roles, with
+     * SecurityFilter's realm precedence: an explicit X-Realm, else the configured session realm,
+     * else the token's signed realm, else the credential's home realm.
      */
-    private String[] sessionRoles(CredentialUserIdPassword cred, String requestedRealm) {
+    private String[] sessionRoles(SecurityIdentity identity, CredentialUserIdPassword cred, String requestedRealm) {
         String home = cred.getDomainContext() == null ? null : cred.getDomainContext().getDefaultRealm();
+        String signed = null;
+        if (identity.getPrincipal() instanceof org.eclipse.microprofile.jwt.JsonWebToken token) {
+            Object claim = token.getClaim("realm");
+            signed = claim == null || claim.toString().isBlank() ? null : claim.toString().trim();
+        }
+        String authorityRealm = signed != null ? signed : home;
         String realm = requestedRealm != null && !requestedRealm.isBlank()
                 ? requestedRealm.trim()
-                : configured(sessionRealm) != null ? configured(sessionRealm) : home;
+                : configured(sessionRealm) != null ? configured(sessionRealm) : authorityRealm;
         if (realm == null) {
             return new String[0];
         }
-        return identityRoleResolver.resolveEffectiveRoles(null, cred, home, realm, configured(sessionApplicationId));
+        return identityRoleResolver.resolveEffectiveRoles(
+                null, cred, authorityRealm, realm, configured(sessionApplicationId));
     }
 
     private static String configured(Optional<String> value) {
