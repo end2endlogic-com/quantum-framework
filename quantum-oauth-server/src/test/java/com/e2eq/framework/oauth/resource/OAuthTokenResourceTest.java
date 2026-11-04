@@ -111,6 +111,18 @@ class OAuthTokenResourceTest {
         var rotated=provider.refreshTokens(login.refreshToken()).positiveResponse();
         assertTrue(parser.parse(rotated.refreshToken()).getExpirationTime()-parser.parse(rotated.accessToken()).getExpirationTime()>6*24*3600);
     }
+    @Test void refreshingNeverOutlastsTheMaximumSession() throws Exception {
+        inject(provider,"refreshDurationInSeconds",Optional.of(70L));
+        inject(provider,"maxSessionDurationInSeconds",Optional.of(100L));
+        long now=TokenUtils.currentTimeInSecs();
+        String nearEnd=TokenUtils.generateRefreshToken("subject","user","realm","app",60,"https://issuer.invalid",null,now-80,null);
+        var rotated=provider.refreshTokens(nearEnd).positiveResponse();
+        long deadline=now-80+100;
+        assertTrue(parser.parse(rotated.accessToken()).getExpirationTime()<=deadline+1);
+        assertTrue(parser.parse(rotated.refreshToken()).getExpirationTime()<=deadline+1);
+        String pastEnd=TokenUtils.generateRefreshToken("subject","user","realm","app",60,"https://issuer.invalid",null,now-95,null);
+        assertThrows(SecurityException.class,()->provider.refreshTokens(pastEnd));
+    }
     @Test void unboundSessionCannotEnterOAuthExchange() {
         var login=provider.loginWithVerifiedSubject("subject","app","realm",null);
         assertTrue(login.authenticated());

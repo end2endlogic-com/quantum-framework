@@ -1071,13 +1071,15 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
          // A legacy token adopts the current revision: from here on its session ends with the
          // next password change like any other.
          long passwordRevision = tokenRevision != null ? tokenRevision : credential.currentPasswordRevision();
-         // Refreshing keeps a session alive only up to its maximum length from sign-in.
-         long sessionSecondsLeft = refreshLifetime().remainingSeconds(
-            authTime, refreshJwt.getIssuedAtTime(), TokenUtils.currentTimeInSecs());
-         if (sessionSecondsLeft <= 0) {
+         // Refreshing keeps a session alive only up to its maximum length from sign-in: neither
+         // new token may expire after that deadline (the minting overhang included).
+         long now = TokenUtils.currentTimeInSecs();
+         long sessionSecondsLeft = refreshLifetime().remainingSeconds(authTime, refreshJwt.getIssuedAtTime(), now);
+         long refreshSeconds = sessionSecondsLeft - TokenUtils.REFRESH_ADDITIONAL_DURATION_SECONDS;
+         if (refreshSeconds <= 0) {
             throw new SecurityException("SESSION_MAX_DURATION_REACHED");
          }
-         long accessSeconds = Math.min(durationInSeconds, sessionSecondsLeft);
+         long accessExpiresAt = Math.min(TokenUtils.expiresAt(durationInSeconds), now + sessionSecondsLeft);
 
          Set<String> credentialRoles = credentialRolesForRealm(
             credential.getRoles(), credentialRealm, tokenRealm);
@@ -1122,11 +1124,11 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
             tokenDomainContext.getTenantId(), tokenDomainContext.getOrgRefName(),
             tokenDomainContext.getAccountId(), appAuth.audiences(),
             appAuth.activeApplication(), credential.getRealmRegEx(), authTime,
-            TokenUtils.expiresAt(accessSeconds), issuer);
+            accessExpiresAt, issuer);
          String newRefreshToken = generateRefreshToken(
             refreshSubject, userId, tokenRealm,
             appAuth.resolved() ? appAuth.activeApplication() : null,
-            newAuthToken, sessionSecondsLeft, oauthClientId, authTime, passwordRevision);
+            newAuthToken, refreshSeconds, oauthClientId, authTime, passwordRevision);
          SecurityIdentity identity = validateAccessToken(newAuthToken);
 
          java.util.List<RoleAssignment> roleAssignments = allRoles.stream()
@@ -1148,7 +1150,7 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
               roleAssignments,
               newAuthToken,
               newRefreshToken,
-              TokenUtils.currentTimeInSecs() + accessSeconds,
+              accessExpiresAt,
               null, // never the service's database URL: it carries credentials
               tokenRealm,
               appAuth.resolved() ? appAuth.audiences() : null,
