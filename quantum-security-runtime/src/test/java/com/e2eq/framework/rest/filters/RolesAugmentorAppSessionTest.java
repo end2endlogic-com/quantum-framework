@@ -59,6 +59,32 @@ class RolesAugmentorAppSessionTest {
     }
 
     @Test
+    void delegatedForeignTokenWithoutLocalCredentialGetsTheRealmAssignmentRoles() {
+        RolesAugmentor augmentor = augmentor("decision-intelligence");
+        augmentor.credentialRepo = new CredentialRepo() {
+            @Override
+            public Optional<CredentialUserIdPassword> findBySubject(String subject, String realmId, boolean ignoreRules) {
+                return Optional.empty();
+            }
+        };
+        String[] assignmentRealm = new String[1];
+        augmentor.realmMembershipService = new com.e2eq.framework.system.membership.RealmMembershipService() {
+            @Override
+            public Optional<com.e2eq.framework.model.security.UserRealmRole> assignmentForUser(String userId, String realmRefName) {
+                assignmentRealm[0] = realmRefName;
+                com.e2eq.framework.model.security.UserRealmRole assignment = new com.e2eq.framework.model.security.UserRealmRole();
+                assignment.setRoles(java.util.List.of("admin"));
+                return "alice".equals(userId) ? Optional.of(assignment) : Optional.empty();
+            }
+        };
+        SecurityIdentity augmented = augment(augmentor,
+                Map.of("sub", "s1", "userId", "alice", "azp", "helixor-launchpad", "realm", "helixor-code-D1"));
+        // "system" from the launch pad token is not carried (no authoritative flat roles).
+        assertEquals(Set.of("admin", "user"), augmented.getRoles());
+        assertEquals("di-session-realm", assignmentRealm[0]);
+    }
+
+    @Test
     void sessionApplicationsOwnTokenKeepsItsGroups() {
         RolesAugmentor augmentor = augmentor("decision-intelligence");
         SecurityIdentity augmented = augment(augmentor, Map.of("sub", "s1", "azp", "decision-intelligence"));

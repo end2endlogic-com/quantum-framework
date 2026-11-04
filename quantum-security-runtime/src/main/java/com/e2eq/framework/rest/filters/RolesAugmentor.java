@@ -41,6 +41,12 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
     @Inject
     com.e2eq.framework.model.persistent.morphia.IdentityRoleResolver identityRoleResolver;
 
+    @Inject
+    com.e2eq.framework.api.system.SystemDirectory systemDirectory;
+
+    @Inject
+    com.e2eq.framework.system.membership.RealmMembershipService realmMembershipService;
+
     @Override
     public Uni<SecurityIdentity> augment(SecurityIdentity identity, AuthenticationRequestContext context) {
         return Uni.createFrom().item(build(identity));
@@ -114,6 +120,11 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
             builder.addAttribute("originalPrincipal", originalPrincipal);
         } else {
             Log.warnf("Could not find user %s in realm %s to augment roles", originalPrincipal, contextRealm);
+            if (foreignApplicationToken) {
+                // A delegated identity has no local credential: re-derive its roles as
+                // SecurityFilter does for the PrincipalContext.
+                builder.addRoles(new HashSet<>(List.of(delegatedSessionRoles(identity, requestedRealm))));
+            }
         }
 
         // Add user role by default if not present
@@ -145,6 +156,31 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
         }
         return identityRoleResolver.resolveEffectiveRoles(
                 null, cred, authorityRealm, realm, configured(sessionApplicationId));
+    }
+
+    private String[] delegatedSessionRoles(SecurityIdentity identity, String requestedRealm) {
+        if (!(identity.getPrincipal() instanceof org.eclipse.microprofile.jwt.JsonWebToken token)) {
+            return new String[0];
+        }
+        String realm = requestedRealm != null && !requestedRealm.isBlank()
+                ? requestedRealm.trim()
+                : configured(sessionRealm) != null ? configured(sessionRealm) : claim(token, "realm");
+        if (realm == null || realmMembershipService == null) {
+            return new String[0];
+        }
+        String subject = claim(token, "sub");
+        String userId = claim(token, "userId");
+        if (userId == null) userId = claim(token, "preferred_username");
+        if (userId == null) userId = token.getName();
+        if (userId == null) userId = subject;
+        String[] roles = DelegatedSessionRoles.resolve(systemDirectory, realmMembershipService,
+                subject, userId, token.getGroups(), realm);
+        return java.util.Arrays.stream(roles).filter(role -> !"ANONYMOUS".equals(role)).toArray(String[]::new);
+    }
+
+    private static String claim(org.eclipse.microprofile.jwt.JsonWebToken token, String name) {
+        Object value = token.getClaim(name);
+        return value == null || value.toString().isBlank() ? null : value.toString().trim();
     }
 
     private static String configured(Optional<String> value) {
