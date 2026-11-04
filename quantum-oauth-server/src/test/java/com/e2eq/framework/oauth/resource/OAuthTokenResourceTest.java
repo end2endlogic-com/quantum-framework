@@ -122,6 +122,7 @@ class OAuthTokenResourceTest {
         assertTrue(parser.parse(rotated.refreshToken()).getExpirationTime()<=deadline+1);
         String pastEnd=TokenUtils.generateRefreshToken("subject","user","realm","app",60,"https://issuer.invalid",null,now-95,null);
         assertThrows(SecurityException.class,()->provider.refreshTokens(pastEnd));
+        assertTrue(rotated.expirationTime()<=deadline+1, "the response reports the capped expiry");
     }
     @Test void unboundSessionCannotEnterOAuthExchange() {
         var login=provider.loginWithVerifiedSubject("subject","app","realm",null);
