@@ -103,6 +103,14 @@ class OAuthTokenResourceTest {
         credential.setPasswordHash("");
         assertFalse(provider.login("user","local-review-password","app","realm").authenticated());
     }
+    @Test void theRefreshTokenOutlivesItsAccessToken() throws Exception {
+        var login=provider.loginWithVerifiedSubject("subject","app","realm",null).positiveResponse();
+        long access=parser.parse(login.accessToken()).getExpirationTime();
+        long refresh=parser.parse(login.refreshToken()).getExpirationTime();
+        assertTrue(refresh-access>6*24*3600, "refresh token must outlive its 60s access token by days");
+        var rotated=provider.refreshTokens(login.refreshToken()).positiveResponse();
+        assertTrue(parser.parse(rotated.refreshToken()).getExpirationTime()-parser.parse(rotated.accessToken()).getExpirationTime()>6*24*3600);
+    }
     @Test void unboundSessionCannotEnterOAuthExchange() {
         var login=provider.loginWithVerifiedSubject("subject","app","realm",null);
         assertTrue(login.authenticated());
