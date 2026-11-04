@@ -19,6 +19,7 @@ import java.util.Optional;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 /**
  * In an application session ({@code quantum.security.session.application-id}) a token minted for
@@ -37,8 +38,11 @@ class RolesAugmentorAppSessionTest {
     void foreignApplicationTokenLosesItsRolesAndKeepsTheCredentialRoles() {
         RolesAugmentor augmentor = augmentor("decision-intelligence");
         SecurityIdentity augmented = augment(augmentor, Map.of("sub", "s1", "azp", "helixor-launchpad"));
-        assertEquals(Set.of("editor", "di-editor", "user"), augmented.getRoles());
+        // Session roles come from the resolver (which itself adds credential roles); the
+        // contextRealm credential's flat roles are not added separately.
+        assertEquals(Set.of("di-editor", "user"), augmented.getRoles());
         assertEquals("u1", augmented.getAttribute("userId"));
+        assertNull(resolverIdentity[0], "a foreign token's roles must not reach role resolution");
         assertEquals("decision-intelligence", resolverApplication[0]);
         assertEquals("di-session-realm", resolverRealm[0]);
     }
@@ -47,7 +51,7 @@ class RolesAugmentorAppSessionTest {
     void tokenWithoutAzpIsForeignInAnApplicationSession() {
         RolesAugmentor augmentor = augmentor("decision-intelligence");
         SecurityIdentity augmented = augment(augmentor, Map.of("sub", "s1"));
-        assertEquals(Set.of("editor", "di-editor", "user"), augmented.getRoles());
+        assertEquals(Set.of("di-editor", "user"), augmented.getRoles());
     }
 
     @Test
@@ -61,6 +65,7 @@ class RolesAugmentorAppSessionTest {
     @Test
     void delegatedForeignTokenWithoutLocalCredentialGetsTheRealmAssignmentRoles() {
         RolesAugmentor augmentor = augmentor("decision-intelligence");
+        augmentor.trustTokenClaims = true;
         augmentor.credentialRepo = new CredentialRepo() {
             @Override
             public Optional<CredentialUserIdPassword> findBySubject(String subject, String realmId, boolean ignoreRules) {
@@ -87,6 +92,7 @@ class RolesAugmentorAppSessionTest {
     @Test
     void delegatedForeignTokenWithoutAUserIdClaimGetsNoAssignmentRoles() {
         RolesAugmentor augmentor = augmentor("decision-intelligence");
+        augmentor.trustTokenClaims = true;
         augmentor.credentialRepo = new CredentialRepo() {
             @Override
             public Optional<CredentialUserIdPassword> findBySubject(String subject, String realmId, boolean ignoreRules) {
@@ -105,8 +111,62 @@ class RolesAugmentorAppSessionTest {
     }
 
     @Test
+    void delegatedForeignTokenUsesDelegatedRolesEvenWithALocalCredential() {
+        RolesAugmentor augmentor = augmentor("decision-intelligence");
+        augmentor.trustTokenClaims = true;
+        augmentor.realmMembershipService = new com.e2eq.framework.system.membership.RealmMembershipService() {
+            @Override
+            public Optional<com.e2eq.framework.model.security.UserRealmRole> assignmentForUser(String userId, String realmRefName) {
+                return Optional.empty();
+            }
+        };
+        SecurityIdentity augmented = augment(augmentor,
+                Map.of("sub", "s1", "userId", "u1", "azp", "helixor-launchpad", "realm", "helixor-code-D1"));
+        assertEquals(0, resolverCalls[0], "delegated sessions must not pick up local application groups");
+        assertEquals(Set.of("user"), augmented.getRoles());
+    }
+
+    @Test
+    void foreignTokenWithXRealmFindsTheSystemRealmCredential() {
+        RolesAugmentor augmentor = augmentor("decision-intelligence");
+        headers(augmentor, "tenant-realm");
+        SecurityIdentity augmented = augment(augmentor, Map.of("sub", "s1", "azp", "helixor-launchpad"));
+        assertEquals(Set.of("di-editor", "user"), augmented.getRoles());
+        assertEquals("tenant-realm", resolverRealm[0]);
+    }
+
+    @Test
+    void ownApplicationTokenMovedToTheSessionRealmGetsThatRealmsRoles() {
+        RolesAugmentor augmentor = augmentor("decision-intelligence");
+        SecurityIdentity augmented = augment(augmentor,
+                Map.of("sub", "s1", "azp", "decision-intelligence", "realm", "helixor-code-D1"));
+        assertEquals("di-session-realm", resolverRealm[0]);
+        assertEquals(1, resolverCalls[0]);
+        // Same application: the resolver gets the identity and drops its roles itself on a realm change.
+        assertEquals(Set.of("di-editor", "user"), augmented.getRoles());
+    }
+
+    @Test
+    void ownApplicationTokenInItsOwnRealmKeepsItsGroups() {
+        RolesAugmentor augmentor = augmentor("decision-intelligence");
+        augmentor.sessionRealm = Optional.of("helixor-code-D1");
+        SecurityIdentity augmented = augment(augmentor,
+                Map.of("sub", "s1", "azp", "decision-intelligence", "realm", "helixor-code-D1"));
+        assertEquals(0, resolverCalls[0]);
+        assertEquals(Set.of("system", "editor", "user"), augmented.getRoles());
+    }
+
+    private static void headers(RolesAugmentor augmentor, String realm) {
+        augmentor.httpHeaders = (HttpHeaders) Proxy.newProxyInstance(
+                HttpHeaders.class.getClassLoader(), new Class<?>[]{HttpHeaders.class},
+                (proxy, method, args) -> "getHeaderString".equals(method.getName()) && "X-Realm".equals(args[0])
+                        ? realm : null);
+    }
+
+    @Test
     void sessionApplicationsOwnTokenKeepsItsGroups() {
         RolesAugmentor augmentor = augmentor("decision-intelligence");
+        augmentor.sessionRealm = Optional.empty();
         SecurityIdentity augmented = augment(augmentor, Map.of("sub", "s1", "azp", "decision-intelligence"));
         assertEquals(Set.of("system", "editor", "user"), augmented.getRoles());
     }
@@ -131,19 +191,20 @@ class RolesAugmentorAppSessionTest {
     }
 
     private final String[] resolverApplication = new String[1];
+    private final SecurityIdentity[] resolverIdentity = new SecurityIdentity[1];
+    private final int[] resolverCalls = new int[1];
     private final String[] resolverRealm = new String[1];
 
     private RolesAugmentor augmentor(String sessionApplication) {
         RolesAugmentor augmentor = new RolesAugmentor();
         augmentor.sessionApplicationId = Optional.ofNullable(sessionApplication);
-        augmentor.sessionRealm = Optional.of("di-session-realm");
+        augmentor.sessionRealm = sessionApplication == null ? Optional.empty() : Optional.of("di-session-realm");
         augmentor.identityRoleResolver = new com.e2eq.framework.model.persistent.morphia.IdentityRoleResolver() {
             @Override
             public String[] resolveEffectiveRoles(SecurityIdentity identity, CredentialUserIdPassword credential,
                                                   String authorityRealm, String effectiveRealm, String applicationId) {
-                if (identity != null) {
-                    throw new AssertionError("token roles must not reach session role resolution");
-                }
+                resolverIdentity[0] = identity;
+                resolverCalls[0]++;
                 resolverApplication[0] = applicationId;
                 resolverRealm[0] = effectiveRealm;
                 return new String[]{"di-editor"};
@@ -160,6 +221,9 @@ class RolesAugmentorAppSessionTest {
         augmentor.credentialRepo = new CredentialRepo() {
             @Override
             public Optional<CredentialUserIdPassword> findBySubject(String subject, String realmId, boolean ignoreRules) {
+                if (!"system-com".equals(realmId)) {
+                    return Optional.empty();
+                }
                 return Optional.of(CredentialUserIdPassword.builder()
                         .userId("u1")
                         .subject(subject)
