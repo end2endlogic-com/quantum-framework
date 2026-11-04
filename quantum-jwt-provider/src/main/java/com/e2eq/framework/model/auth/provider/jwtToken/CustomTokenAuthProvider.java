@@ -1075,11 +1075,11 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
          // new token may expire after that deadline (the minting overhang included).
          long now = TokenUtils.currentTimeInSecs();
          long sessionSecondsLeft = refreshLifetime().remainingSeconds(authTime, refreshJwt.getIssuedAtTime(), now);
-         long refreshSeconds = sessionSecondsLeft - TokenUtils.REFRESH_ADDITIONAL_DURATION_SECONDS;
-         if (refreshSeconds <= 0) {
+         if (sessionSecondsLeft <= TokenUtils.REFRESH_ADDITIONAL_DURATION_SECONDS) {
             throw new SecurityException("SESSION_MAX_DURATION_REACHED");
          }
-         long accessExpiresAt = Math.min(TokenUtils.expiresAt(durationInSeconds), now + sessionSecondsLeft);
+         long refreshExpiresAt = now + sessionSecondsLeft;
+         long accessExpiresAt = Math.min(TokenUtils.expiresAt(durationInSeconds), refreshExpiresAt);
 
          Set<String> credentialRoles = credentialRolesForRealm(
             credential.getRoles(), credentialRealm, tokenRealm);
@@ -1125,10 +1125,10 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
             tokenDomainContext.getAccountId(), appAuth.audiences(),
             appAuth.activeApplication(), credential.getRealmRegEx(), authTime,
             accessExpiresAt, issuer);
-         String newRefreshToken = generateRefreshToken(
+         String newRefreshToken = TokenUtils.generateRefreshTokenExpiringAt(
             refreshSubject, userId, tokenRealm,
             appAuth.resolved() ? appAuth.activeApplication() : null,
-            newAuthToken, refreshSeconds, oauthClientId, authTime, passwordRevision);
+            refreshExpiresAt, issuer, oauthClientId, authTime, passwordRevision);
          SecurityIdentity identity = validateAccessToken(newAuthToken);
 
          java.util.List<RoleAssignment> roleAssignments = allRoles.stream()

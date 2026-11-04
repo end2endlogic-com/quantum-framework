@@ -429,20 +429,32 @@ public class TokenUtils {
             String activeApplication, long durationInSeconds, String issuer, String oauthClientId,
             Long authTime, Long passwordRevision)
             throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
-
-		Objects.requireNonNull(subject, "subject cannot be null");
-		Objects.requireNonNull(issuer, "Issuer cannot be null");
 		if (durationInSeconds <= 0) {
 			throw new ValidationException("Refresh-token duration must be greater than zero seconds");
 		}
+		return generateRefreshTokenExpiringAt(subject, userId, realm, activeApplication,
+				expiresAt(durationInSeconds), issuer, oauthClientId, authTime, passwordRevision);
+	}
+
+    /** As above, expiring at {@code expiresAtSeconds} (epoch seconds) rather than after a duration. */
+    public static String generateRefreshTokenExpiringAt(String subject, String userId, String realm,
+            String activeApplication, long expiresAtSeconds, String issuer, String oauthClientId,
+            Long authTime, Long passwordRevision)
+            throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+
+		Objects.requireNonNull(subject, "subject cannot be null");
+		Objects.requireNonNull(issuer, "Issuer cannot be null");
                 PrivateKey privateKey = signingKey();
 		JwtClaimsBuilder claimsBuilder = Jwt.claims();
 		long currentTimeInSecs = currentTimeInSecs();
+		if (expiresAtSeconds <= currentTimeInSecs) {
+			throw new ValidationException("Refresh-token expiry must be in the future");
+		}
 		claimsBuilder.issuer(issuer);
 		claimsBuilder.subject(subject);
 		claimsBuilder.issuedAt(currentTimeInSecs);
 		claimsBuilder.audience("b2bi-api-client-refresh");
-		claimsBuilder.expiresAt(currentTimeInSecs + durationInSeconds + REFRESH_ADDITIONAL_DURATION_SECONDS);
+		claimsBuilder.expiresAt(expiresAtSeconds);
 		claimsBuilder.claim("scope", REFRESH_SCOPE);
         if (oauthClientId != null && !oauthClientId.isBlank()) claimsBuilder.claim("oauth_client_id", oauthClientId);
 		if (userId != null && !userId.isBlank()) claimsBuilder.claim("userId", userId);
