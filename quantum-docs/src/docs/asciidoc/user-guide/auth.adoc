@@ -602,6 +602,8 @@ quantum.security.session.realm=di-realm
 
 With these set, a user's `PrincipalContext` (and `ResourceContext`) carries the configured application id, the request runs in the configured realm (the user must be allowed in it, exactly as for `X-Realm`), and roles resolve through `IdentityRoleResolver` for (userId, that realm, that application).
 How the user signed in does not matter.
+A token minted for another application carries that application's roles, so they are not adopted: the session's roles are re-derived from the credential, the realm assignment and the session application's user groups.
+With `quantum.auth.trust-token-claims=true` there is no local group catalog, so such a session gets the credential's flat roles the token also names plus the realm assignment's roles (as after a realm switch); application-scoped group roles are not added.
 An explicit `X-Realm` still applies with its own checks.
 Service tokens and anonymous requests are unchanged.
 Leave both unset to keep the token-derived behaviour.

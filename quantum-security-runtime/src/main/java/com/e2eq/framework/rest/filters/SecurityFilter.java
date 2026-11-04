@@ -859,7 +859,10 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
             contextRealm = realmOverride;
             realmSwitched = true;
         }
-        String[] roles = realmSwitched
+        // A token minted for another application carries that application's roles. In an
+        // application session they are re-derived like a realm switch (flat credential roles
+        // that the token also names, plus the realm assignment's roles), never adopted.
+        String[] roles = realmSwitched || foreignApplicationToken(providerClaim(claims, "azp"))
                 ? delegatedRolesAfterRealmSwitch(sub, userId, claims.getTokenRoles(), contextRealm)
                 : claims.getTokenRoles().toArray(String[]::new);
 
@@ -979,6 +982,16 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         if (configuredApplication != null && isUserPrincipal()) {
             return configuredApplication;
         }
+        return tokenApplicationId();
+    }
+
+    /** True when an application session is configured and the token was minted for another application. */
+    boolean foreignApplicationToken(String tokenApplication) {
+        String configuredApplication = configured(sessionApplicationId);
+        return configuredApplication != null && !configuredApplication.equalsIgnoreCase(tokenApplication);
+    }
+
+    private String tokenApplicationId() {
         String tokenApplication = claimString("azp");
         if (tokenApplication != null) {
             return tokenApplication;
@@ -1196,8 +1209,14 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         if (identityRoleResolver == null) {
             throw new IllegalStateException("IdentityRoleResolver is required to build an authenticated principal");
         }
+        // In an application session, a token minted for another application carries that
+        // application's roles; the session's roles then come only from the credential, the
+        // realm assignment and the session application's groups.
+        SecurityIdentity roleIdentity = credential != null && foreignApplicationToken(tokenApplicationId())
+                ? null
+                : identity;
         return identityRoleResolver.resolveEffectiveRoles(
-                identity, credential, authorityRealm, effectiveRealm, currentApplicationId());
+                roleIdentity, credential, authorityRealm, effectiveRealm, currentApplicationId());
     }
 
     private void validateRealmAccess(CredentialUserIdPassword creds, String realm) {

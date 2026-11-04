@@ -6,6 +6,8 @@ import com.e2eq.framework.model.auth.ClaimsAuthProvider;
 import com.e2eq.framework.model.auth.ProviderClaims;
 import com.e2eq.framework.model.persistent.morphia.IdentityRoleResolver;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
+import com.e2eq.framework.model.security.UserRealmRole;
+import com.e2eq.framework.system.membership.RealmMembershipService;
 import com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.util.EnvConfigUtils;
@@ -25,6 +27,7 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 
 /**
  * The application session settings ({@code quantum.security.session.application-id} and
@@ -123,6 +126,30 @@ class SecurityFilterAppSessionTest {
         assertArrayEquals(new String[]{"di-user"}, roles);
     }
 
+    @Test
+    void tokenRolesOfAnotherApplicationAreNotAdoptedInAnApplicationSession() throws Exception {
+        SecurityFilter filter = filterWithToken(Map.of("sub", "s1", "azp", LAUNCHPAD_TOKEN_APP));
+        filter.sessionApplicationId = Optional.of("decision-intelligence");
+        CapturingResolver resolver = new CapturingResolver();
+        filter.identityRoleResolver = resolver;
+
+        invokeResolveEffectiveRoles(filter, credential(), "helixor-code-D1");
+
+        assertNull(resolver.identity, "a launch pad token's roles must be re-derived, not carried over");
+    }
+
+    @Test
+    void tokenRolesOfTheSessionApplicationStillApply() throws Exception {
+        SecurityFilter filter = filterWithToken(Map.of("sub", "s1", "azp", "decision-intelligence"));
+        filter.sessionApplicationId = Optional.of("decision-intelligence");
+        CapturingResolver resolver = new CapturingResolver();
+        filter.identityRoleResolver = resolver;
+
+        invokeResolveEffectiveRoles(filter, credential(), "helixor-code-D1");
+
+        assertSame(filter.securityIdentity, resolver.identity);
+    }
+
     // --- delegated (trusted-issuer) principals ---
 
     @Test
@@ -136,14 +163,40 @@ class SecurityFilterAppSessionTest {
     void delegatedPrincipalRunsAsTheSessionApplicationWhenConfigured() throws Exception {
         SecurityFilter filter = delegatedFilter();
         filter.sessionApplicationId = Optional.of("doc-audit");
+        filter.realmMembershipService = membershipWithRoles("tenant-acme", "doc-reader");
         PrincipalContext context = buildDelegatedContext(filter);
         assertEquals("doc-audit", context.getApplicationId());
         assertEquals("alice", context.getUserId());
+        // The launch pad token's "scheduler-user" is not adopted; the realm assignment applies.
+        assertArrayEquals(new String[]{"doc-reader"}, context.getRoles());
+    }
+
+    @Test
+    void delegatedTokenOfTheSessionApplicationKeepsItsRoles() throws Exception {
+        SecurityFilter filter = delegatedFilter();
+        filter.sessionApplicationId = Optional.of(LAUNCHPAD_TOKEN_APP);
+        PrincipalContext context = buildDelegatedContext(filter);
+        assertArrayEquals(new String[]{"scheduler-user"}, context.getRoles());
+    }
+
+    private static RealmMembershipService membershipWithRoles(String realm, String... roles) {
+        return new RealmMembershipService() {
+            @Override
+            public Optional<UserRealmRole> assignmentForUser(String userId, String realmRefName) {
+                if (!realm.equals(realmRefName)) {
+                    return Optional.empty();
+                }
+                UserRealmRole assignment = new UserRealmRole();
+                assignment.setRoles(java.util.List.of(roles));
+                return Optional.of(assignment);
+            }
+        };
     }
 
     // --- helpers ---
 
     private static final class CapturingResolver extends IdentityRoleResolver {
+        SecurityIdentity identity;
         String applicationId;
         String effectiveRealm;
         String userId;
@@ -154,6 +207,7 @@ class SecurityFilterAppSessionTest {
                                               String authorityRealm,
                                               String effectiveRealm,
                                               String applicationId) {
+            this.identity = identity;
             this.applicationId = applicationId;
             this.effectiveRealm = effectiveRealm;
             this.userId = credential.getUserId();
