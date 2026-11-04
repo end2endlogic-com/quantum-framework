@@ -37,15 +37,17 @@ class RolesAugmentorAppSessionTest {
     void foreignApplicationTokenLosesItsRolesAndKeepsTheCredentialRoles() {
         RolesAugmentor augmentor = augmentor("decision-intelligence");
         SecurityIdentity augmented = augment(augmentor, Map.of("sub", "s1", "azp", "helixor-launchpad"));
-        assertEquals(Set.of("editor", "user"), augmented.getRoles());
+        assertEquals(Set.of("editor", "di-editor", "user"), augmented.getRoles());
         assertEquals("u1", augmented.getAttribute("userId"));
+        assertEquals("decision-intelligence", resolverApplication[0]);
+        assertEquals("di-session-realm", resolverRealm[0]);
     }
 
     @Test
     void tokenWithoutAzpIsForeignInAnApplicationSession() {
         RolesAugmentor augmentor = augmentor("decision-intelligence");
         SecurityIdentity augmented = augment(augmentor, Map.of("sub", "s1"));
-        assertEquals(Set.of("editor", "user"), augmented.getRoles());
+        assertEquals(Set.of("editor", "di-editor", "user"), augmented.getRoles());
     }
 
     @Test
@@ -74,9 +76,25 @@ class RolesAugmentorAppSessionTest {
         return augmentor.augment(identity, null).await().indefinitely();
     }
 
-    private static RolesAugmentor augmentor(String sessionApplication) {
+    private final String[] resolverApplication = new String[1];
+    private final String[] resolverRealm = new String[1];
+
+    private RolesAugmentor augmentor(String sessionApplication) {
         RolesAugmentor augmentor = new RolesAugmentor();
         augmentor.sessionApplicationId = Optional.ofNullable(sessionApplication);
+        augmentor.sessionRealm = Optional.of("di-session-realm");
+        augmentor.identityRoleResolver = new com.e2eq.framework.model.persistent.morphia.IdentityRoleResolver() {
+            @Override
+            public String[] resolveEffectiveRoles(SecurityIdentity identity, CredentialUserIdPassword credential,
+                                                  String authorityRealm, String effectiveRealm, String applicationId) {
+                if (identity != null) {
+                    throw new AssertionError("token roles must not reach session role resolution");
+                }
+                resolverApplication[0] = applicationId;
+                resolverRealm[0] = effectiveRealm;
+                return new String[]{"di-editor"};
+            }
+        };
         EnvConfigUtils env = new EnvConfigUtils();
         env.setSystemRealm("system-com");
         augmentor.envConfigUtils = env;

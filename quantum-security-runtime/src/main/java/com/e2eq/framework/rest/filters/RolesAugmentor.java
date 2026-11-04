@@ -35,6 +35,12 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
     @org.eclipse.microprofile.config.inject.ConfigProperty(name = "quantum.security.session.application-id")
     Optional<String> sessionApplicationId = Optional.empty();
 
+    @org.eclipse.microprofile.config.inject.ConfigProperty(name = "quantum.security.session.realm")
+    Optional<String> sessionRealm = Optional.empty();
+
+    @Inject
+    com.e2eq.framework.model.persistent.morphia.IdentityRoleResolver identityRoleResolver;
+
     @Override
     public Uni<SecurityIdentity> augment(SecurityIdentity identity, AuthenticationRequestContext context) {
         return Uni.createFrom().item(build(identity));
@@ -51,10 +57,12 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
                 : QuarkusSecurityIdentity.builder(identity);
         String originalPrincipal = identity.getPrincipal().getName();
         String contextRealm = null;
+        String requestedRealm = null;
 
         // Check if HTTP request context is active
         try {
             contextRealm = httpHeaders.getHeaderString("X-Realm");
+            requestedRealm = contextRealm;
             Log.debugf("RoleAugmentor overriding realm with ContextRealm: %s", contextRealm);
         } catch (ContextNotActiveException e) {
             Log.debug("No HTTP request context available, falling back to default realm");
@@ -86,6 +94,10 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
             CredentialUserIdPassword cred = ocred.get();
             // 1) Add roles from credential
             builder.addRoles(new HashSet<>(List.of(cred.getRoles())));
+            if (foreignApplicationToken) {
+                // The session's roles, as SecurityFilter resolves them for the PrincipalContext.
+                builder.addRoles(new HashSet<>(List.of(sessionRoles(cred, requestedRealm))));
+            }
 
             // 2) Expose preferred identity (userId) as an attribute without altering the JWT principal
             String userId = cred.getUserId();
@@ -112,10 +124,28 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
         return builder::build;
     }
 
+    /**
+     * Roles for (credential, session realm, session application) without the token's roles. The
+     * session realm is an explicit X-Realm, else the configured session realm, else the
+     * credential's home realm.
+     */
+    private String[] sessionRoles(CredentialUserIdPassword cred, String requestedRealm) {
+        String home = cred.getDomainContext() == null ? null : cred.getDomainContext().getDefaultRealm();
+        String realm = requestedRealm != null && !requestedRealm.isBlank()
+                ? requestedRealm.trim()
+                : configured(sessionRealm) != null ? configured(sessionRealm) : home;
+        if (realm == null) {
+            return new String[0];
+        }
+        return identityRoleResolver.resolveEffectiveRoles(null, cred, home, realm, configured(sessionApplicationId));
+    }
+
+    private static String configured(Optional<String> value) {
+        return value == null ? null : value.map(String::trim).filter(v -> !v.isEmpty()).orElse(null);
+    }
+
     boolean foreignApplicationToken(SecurityIdentity identity) {
-        String configured = sessionApplicationId == null
-                ? null
-                : sessionApplicationId.map(String::trim).filter(v -> !v.isEmpty()).orElse(null);
+        String configured = configured(sessionApplicationId);
         if (configured == null
                 || !(identity.getPrincipal() instanceof org.eclipse.microprofile.jwt.JsonWebToken token)) {
             return false;
