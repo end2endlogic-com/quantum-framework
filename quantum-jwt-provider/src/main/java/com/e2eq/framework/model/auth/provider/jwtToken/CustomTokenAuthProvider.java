@@ -55,6 +55,14 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
    @ConfigProperty(name = "com.b2bi.jwt.duration")
    Long durationInSeconds;
 
+   /** The refresh token's own lifetime; unset keeps {@link RefreshTokenLifetime#DEFAULT_REFRESH_SECONDS}. */
+   @ConfigProperty(name = "quantum.auth.refresh-token.duration")
+   Optional<Long> refreshDurationInSeconds = Optional.empty();
+
+   /** Longest a session may be refreshed, from sign-in; unset keeps {@link RefreshTokenLifetime#DEFAULT_MAX_SESSION_SECONDS}. */
+   @ConfigProperty(name = "quantum.auth.session.max-duration")
+   Optional<Long> maxSessionDurationInSeconds = Optional.empty();
+
    @ConfigProperty(name = "quantum.realmConfig.systemRealm", defaultValue = "system-com")
    String systemRealm;
 
@@ -888,7 +896,7 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                      tokenRealm,
                      appAuth.resolved() ? appAuth.activeApplication() : null,
                      authToken,
-                     durationInSeconds, oauthClientId, authTime, passwordRevision);
+                     refreshLifetime().refreshSeconds(), oauthClientId, authTime, passwordRevision);
                   SecurityIdentity identity = validateAccessToken(authToken);
                   // Compute role provenance locally for login response: IDP + CREDENTIAL + USERGROUP
                   // Auth plugins do NOT need to do this; it's optional for login response only.
@@ -1051,7 +1059,11 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
             Log.warnf("Refresh rejected: credential %s has activeStatus=%s", userId, credential.getActiveStatus());
             throw new SecurityException("Credential is no longer authorized");
          }
-         Long authTime = claimLong(refreshJwt, TokenUtils.AUTH_TIME_CLAIM);
+         // A token without a known auth_time (issued before it was carried, or from a verified
+         // subject's sign-in, which carries 0) counts its session from its own issue, and passes
+         // that on, so rotating it cannot stretch the session past its maximum length.
+         Long tokenAuthTime = claimLong(refreshJwt, TokenUtils.AUTH_TIME_CLAIM);
+         Long authTime = tokenAuthTime != null && tokenAuthTime > 0 ? tokenAuthTime : refreshJwt.getIssuedAtTime();
          Long tokenRevision = claimLong(refreshJwt, TokenUtils.PASSWORD_REVISION_CLAIM);
          if (sessionEndedByPasswordChange(credential, tokenRevision, refreshJwt.getIssuedAtTime())) {
             throw new SecurityException("SESSION_ENDED_BY_PASSWORD_CHANGE");
@@ -1059,6 +1071,15 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
          // A legacy token adopts the current revision: from here on its session ends with the
          // next password change like any other.
          long passwordRevision = tokenRevision != null ? tokenRevision : credential.currentPasswordRevision();
+         // Refreshing keeps a session alive only up to its maximum length from sign-in: neither
+         // new token may expire after that deadline (the minting overhang included).
+         long now = TokenUtils.currentTimeInSecs();
+         long sessionSecondsLeft = refreshLifetime().remainingSeconds(authTime, refreshJwt.getIssuedAtTime(), now);
+         if (sessionSecondsLeft <= TokenUtils.REFRESH_ADDITIONAL_DURATION_SECONDS) {
+            throw new SecurityException("SESSION_MAX_DURATION_REACHED");
+         }
+         long refreshExpiresAt = now + sessionSecondsLeft;
+         long accessExpiresAt = Math.min(TokenUtils.expiresAt(durationInSeconds), refreshExpiresAt);
 
          Set<String> credentialRoles = credentialRolesForRealm(
             credential.getRoles(), credentialRealm, tokenRealm);
@@ -1103,11 +1124,11 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
             tokenDomainContext.getTenantId(), tokenDomainContext.getOrgRefName(),
             tokenDomainContext.getAccountId(), appAuth.audiences(),
             appAuth.activeApplication(), credential.getRealmRegEx(), authTime,
-            TokenUtils.expiresAt(durationInSeconds), issuer);
-         String newRefreshToken = generateRefreshToken(
+            accessExpiresAt, issuer);
+         String newRefreshToken = TokenUtils.generateRefreshTokenExpiringAt(
             refreshSubject, userId, tokenRealm,
             appAuth.resolved() ? appAuth.activeApplication() : null,
-            newAuthToken, durationInSeconds, oauthClientId, authTime, passwordRevision);
+            refreshExpiresAt, issuer, oauthClientId, authTime, passwordRevision);
          SecurityIdentity identity = validateAccessToken(newAuthToken);
 
          java.util.List<RoleAssignment> roleAssignments = allRoles.stream()
@@ -1129,7 +1150,7 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
               roleAssignments,
               newAuthToken,
               newRefreshToken,
-              TokenUtils.currentTimeInSecs() + durationInSeconds,
+              accessExpiresAt,
               null, // never the service's database URL: it carries credentials
               tokenRealm,
               appAuth.resolved() ? appAuth.audiences() : null,
@@ -1249,13 +1270,18 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                                                 .accessToken(accessToken)
                                                 .creationDate(new Date())
                                                 .lastRefreshDate(new Date())
-                                                .expirationDate(new Date(System.currentTimeMillis() + (durationInSeconds * 1000) + TokenUtils.REFRESH_ADDITIONAL_DURATION_SECONDS))
+                                                .expirationDate(new Date(System.currentTimeMillis() + (durationInSeconds + TokenUtils.REFRESH_ADDITIONAL_DURATION_SECONDS) * 1000))
                                                 .build();
 
       //credentialRefreshTokenRepo.save(refreshToken1);
 
 
       return refreshToken;
+   }
+
+   RefreshTokenLifetime refreshLifetime() {
+      return RefreshTokenLifetime.of(durationInSeconds,
+         refreshDurationInSeconds.orElse(null), maxSessionDurationInSeconds.orElse(null));
    }
 
    private Optional<CredentialUserIdPassword> getCredentials (String realm, String userId) {

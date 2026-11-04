@@ -337,6 +337,10 @@ Response:
 ----
 
 The access token expires after the configured duration (`com.b2bi.jwt.duration` in seconds).
+The refresh token has its own, longer lifetime (`quantum.auth.refresh-token.duration`, 7 days by
+default), and each refresh returns a new one. Refreshing keeps a session going for at most
+`quantum.auth.session.max-duration` (30 days by default) after sign-in; then the user signs in again.
+Clients should refresh shortly before the access token expires.
 Use the refresh token to obtain a new access token without re-authenticating:
 
 [source,bash]
@@ -739,6 +743,14 @@ See xref:{doc-root}/user-guide/multiple-auth-providers.adoc#per-tenant-key-pairs
 | `com.b2bi.jwt.duration`
 | `10000`
 | Access token duration in seconds for the custom JWT provider.
+
+| `quantum.auth.refresh-token.duration`
+| `604800`
+| Refresh token duration in seconds. Never shorter than the access token's; each refresh issues a new refresh token.
+
+| `quantum.auth.session.max-duration`
+| `2592000`
+| Longest a session may be kept alive by refreshing, in seconds from sign-in. Must be at least the refresh token duration.
 
 | `auth.jwt.secret`
 | (required)

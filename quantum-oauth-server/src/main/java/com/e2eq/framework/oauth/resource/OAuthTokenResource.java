@@ -2,6 +2,7 @@ package com.e2eq.framework.oauth.resource;
 
 import com.e2eq.framework.model.auth.AuthProvider;
 import com.e2eq.framework.model.auth.provider.jwtToken.CustomTokenAuthProvider;
+import com.e2eq.framework.model.auth.provider.jwtToken.TokenUtils;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.oauth.model.AuthorizationCode;
@@ -178,8 +179,12 @@ public class OAuthTokenResource {
             AuthProvider.LoginResponse loginResponse = tokenProvider.refreshTokens(refreshToken, client.getClientId(), applicationFor(client), client.getRealm());
             if (loginResponse.authenticated() && loginResponse.positiveResponse() != null) {
                 var pos = loginResponse.positiveResponse();
+                // A refresh near the session's maximum length returns a shorter-lived token.
+                long expiresIn = pos.expirationTime() > 0
+                        ? Math.max(0, pos.expirationTime() - TokenUtils.currentTimeInSecs())
+                        : tokenDuration;
                 return tokenResponse(pos.accessToken(), pos.refreshToken(),
-                        tokenDuration, "Bearer");
+                        expiresIn, "Bearer");
             }
             return errorResponse("invalid_grant", "Refresh token is invalid or expired");
         } catch (Exception e) {
