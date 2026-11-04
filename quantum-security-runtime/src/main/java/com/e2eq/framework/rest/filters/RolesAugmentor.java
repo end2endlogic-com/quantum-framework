@@ -30,6 +30,11 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
     @Inject
     HttpHeaders httpHeaders;
 
+    // See SecurityFilter: in an application session a token minted for another application
+    // carries that application's roles, so its groups are not honored here either.
+    @org.eclipse.microprofile.config.inject.ConfigProperty(name = "quantum.security.session.application-id")
+    Optional<String> sessionApplicationId = Optional.empty();
+
     @Override
     public Uni<SecurityIdentity> augment(SecurityIdentity identity, AuthenticationRequestContext context) {
         return Uni.createFrom().item(build(identity));
@@ -40,7 +45,10 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
             return () -> identity;
         }
 
-        QuarkusSecurityIdentity.Builder builder = QuarkusSecurityIdentity.builder(identity);
+        boolean foreignApplicationToken = foreignApplicationToken(identity);
+        QuarkusSecurityIdentity.Builder builder = foreignApplicationToken
+                ? withoutTokenRoles(identity)
+                : QuarkusSecurityIdentity.builder(identity);
         String originalPrincipal = identity.getPrincipal().getName();
         String contextRealm = null;
 
@@ -63,7 +71,8 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
         // record. Without this, the coarse @RolesAllowed gate can't see the roles the token grants
         // (only the RuleContext policy engine, which reads the token directly, does), so it 403s.
         // Adding them here keeps both authz layers agreeing on the same role set.
-        if (identity.getPrincipal() instanceof org.eclipse.microprofile.jwt.JsonWebToken token) {
+        if (!foreignApplicationToken
+                && identity.getPrincipal() instanceof org.eclipse.microprofile.jwt.JsonWebToken token) {
             java.util.Set<String> groups = token.getGroups();
             if (groups != null && !groups.isEmpty()) {
                 builder.addRoles(new HashSet<>(groups));
@@ -96,10 +105,39 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
         }
 
         // Add user role by default if not present
-        if (!identity.getRoles().contains("user")) {
+        if (foreignApplicationToken || !identity.getRoles().contains("user")) {
             builder.addRole("user");
         }
 
         return builder::build;
+    }
+
+    boolean foreignApplicationToken(SecurityIdentity identity) {
+        String configured = sessionApplicationId == null
+                ? null
+                : sessionApplicationId.map(String::trim).filter(v -> !v.isEmpty()).orElse(null);
+        if (configured == null
+                || !(identity.getPrincipal() instanceof org.eclipse.microprofile.jwt.JsonWebToken token)) {
+            return false;
+        }
+        Object tokenType = token.getClaim(
+                com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.TOKEN_TYPE_CLAIM);
+        if (tokenType != null && com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.SERVICE_TOKEN_TYPE
+                .equalsIgnoreCase(tokenType.toString())) {
+            return false;
+        }
+        Object azp = token.getClaim("azp");
+        return azp == null || !configured.equalsIgnoreCase(azp.toString().trim());
+    }
+
+    /** The identity's principal, credentials and attributes, without the roles it arrived with. */
+    static QuarkusSecurityIdentity.Builder withoutTokenRoles(SecurityIdentity identity) {
+        QuarkusSecurityIdentity.Builder builder = QuarkusSecurityIdentity.builder()
+                .setPrincipal(identity.getPrincipal())
+                .addCredentials(identity.getCredentials())
+                .addAttributes(identity.getAttributes())
+                .setAnonymous(false);
+        // Permission checkers derived from the token's roles are dropped with them (fail closed).
+        return builder;
     }
 }

@@ -575,6 +575,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
 
         PrincipalContext contextWithImpersonation = handleImpersonation(requestContext, baseContext);
         PrincipalContext contextWithRealm = applyRealmOverride(contextWithImpersonation, realm);
+        requireSessionApplicationAdmitted(contextWithRealm);
         // The signed tenant claim names a tenant of the realm the token was
         // issued for. It applies only while the request stays in that realm;
         // after an X-Realm switch the caller must select a tenant explicitly.
@@ -983,6 +984,31 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
             return configuredApplication;
         }
         return tokenApplicationId();
+    }
+
+    /**
+     * In an application session, a token minted for another application says nothing about this
+     * application: the user must be admitted to it in the session realm (the realm's home
+     * application, or an authorized application on the user's realm assignment). The same-realm
+     * shortcut in {@link #applicationAdmittedInRealm} does not apply, since it trusts the token's
+     * own application/realm pair.
+     */
+    void requireSessionApplicationAdmitted(PrincipalContext context) {
+        if (!isUserPrincipal() || !foreignApplicationToken(tokenApplicationId())) {
+            return;
+        }
+        String applicationId = context.getApplicationId();
+        String realmRefName = context.getDefaultRealm();
+        Realm realm = systemDirectory.findRealmByRefName(realmRefName).orElse(null);
+        String realmApplicationId = realm == null || realm.getApplicationRef() == null
+                ? null
+                : realm.getApplicationRef().getEntityRefName();
+        if (realm == null || !applicationAdmittedInRealm(
+                context.getUserId(), realmRefName, applicationId, realmApplicationId, null)) {
+            throw new jakarta.ws.rs.ForbiddenException(String.format(
+                    "Signed in as %s, no access to application '%s' in realm '%s'",
+                    context.getUserId(), applicationId, realmRefName));
+        }
     }
 
     /** True when an application session is configured and the token was minted for another application. */

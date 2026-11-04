@@ -7,6 +7,9 @@ import com.e2eq.framework.model.auth.ProviderClaims;
 import com.e2eq.framework.model.persistent.morphia.IdentityRoleResolver;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.UserRealmRole;
+import com.e2eq.framework.model.security.Realm;
+import com.e2eq.framework.model.persistent.base.EntityReference;
+import com.e2eq.framework.api.system.SystemDirectory;
 import com.e2eq.framework.system.membership.RealmMembershipService;
 import com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
@@ -25,6 +28,9 @@ import java.util.Optional;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -150,6 +156,62 @@ class SecurityFilterAppSessionTest {
         assertSame(filter.securityIdentity, resolver.identity);
     }
 
+    // --- application admission ---
+
+    @Test
+    void foreignTokenIsRefusedWhenTheUserIsNotAdmittedToTheSessionApplication() {
+        SecurityFilter filter = filterWithToken(Map.of("sub", "s1", "azp", LAUNCHPAD_TOKEN_APP));
+        filter.sessionApplicationId = Optional.of("decision-intelligence");
+        filter.systemDirectory = directory(realm("helixor-code-D1", "helixor-code"));
+        // Same realm as the token, but the assignment only grants the launch pad.
+        filter.realmMembershipService = membershipWithApplications(LAUNCHPAD_TOKEN_APP);
+
+        jakarta.ws.rs.ForbiddenException refused = assertThrows(jakarta.ws.rs.ForbiddenException.class,
+                () -> filter.requireSessionApplicationAdmitted(principal("decision-intelligence", "helixor-code-D1")));
+        assertTrue(refused.getMessage().contains("Signed in as u1, no access to application 'decision-intelligence'"));
+    }
+
+    @Test
+    void foreignTokenIsAdmittedByTheRealmAssignment() {
+        SecurityFilter filter = filterWithToken(Map.of("sub", "s1", "azp", LAUNCHPAD_TOKEN_APP));
+        filter.sessionApplicationId = Optional.of("decision-intelligence");
+        filter.systemDirectory = directory(realm("di-realm", "helixor-code"));
+        filter.realmMembershipService = membershipWithApplications("decision-intelligence");
+
+        assertDoesNotThrow(() -> filter.requireSessionApplicationAdmitted(principal("decision-intelligence", "di-realm")));
+    }
+
+    @Test
+    void foreignTokenIsAdmittedByTheRealmHomeApplication() {
+        SecurityFilter filter = filterWithToken(Map.of("sub", "s1", "azp", LAUNCHPAD_TOKEN_APP));
+        filter.sessionApplicationId = Optional.of("decision-intelligence");
+        filter.systemDirectory = directory(realm("di-realm", "decision-intelligence"));
+        filter.realmMembershipService = membershipWithApplications();
+
+        assertDoesNotThrow(() -> filter.requireSessionApplicationAdmitted(principal("decision-intelligence", "di-realm")));
+    }
+
+    @Test
+    void foreignTokenIsRefusedInAnUnregisteredRealm() {
+        SecurityFilter filter = filterWithToken(Map.of("sub", "s1", "azp", LAUNCHPAD_TOKEN_APP));
+        filter.sessionApplicationId = Optional.of("decision-intelligence");
+        filter.systemDirectory = directory();
+
+        assertThrows(jakarta.ws.rs.ForbiddenException.class,
+                () -> filter.requireSessionApplicationAdmitted(principal("decision-intelligence", "di-realm")));
+    }
+
+    @Test
+    void admissionIsNotRecheckedWithoutAnApplicationSessionOrForTheSessionApplicationsOwnToken() {
+        // systemDirectory stays null: any lookup would fail the test.
+        SecurityFilter unset = filterWithToken(Map.of("sub", "s1", "azp", LAUNCHPAD_TOKEN_APP));
+        assertDoesNotThrow(() -> unset.requireSessionApplicationAdmitted(principal(LAUNCHPAD_TOKEN_APP, "helixor-code-D1")));
+
+        SecurityFilter own = filterWithToken(Map.of("sub", "s1", "azp", "decision-intelligence"));
+        own.sessionApplicationId = Optional.of("decision-intelligence");
+        assertDoesNotThrow(() -> own.requireSessionApplicationAdmitted(principal("decision-intelligence", "di-realm")));
+    }
+
     // --- delegated (trusted-issuer) principals ---
 
     @Test
@@ -177,6 +239,50 @@ class SecurityFilterAppSessionTest {
         filter.sessionApplicationId = Optional.of(LAUNCHPAD_TOKEN_APP);
         PrincipalContext context = buildDelegatedContext(filter);
         assertArrayEquals(new String[]{"scheduler-user"}, context.getRoles());
+    }
+
+    private static PrincipalContext principal(String applicationId, String realm) {
+        return new PrincipalContext.Builder()
+                .withDefaultRealm(realm)
+                .withApplicationId(applicationId)
+                .withDataDomain(new com.e2eq.framework.model.persistent.base.DataDomain("org1", "acct1", "t1", 0, "u1"))
+                .withUserId("u1")
+                .withRoles(new String[]{"user"})
+                .withScope("AUTHENTICATED")
+                .build();
+    }
+
+    private static Realm realm(String refName, String homeApplication) {
+        Realm realm = new Realm();
+        realm.setRefName(refName);
+        realm.setApplicationRef(EntityReference.builder().entityRefName(homeApplication).entityDisplayName(homeApplication).build());
+        return realm;
+    }
+
+    private static SystemDirectory directory(Realm... realms) {
+        Map<String, Realm> byRef = new HashMap<>();
+        for (Realm realm : realms) {
+            byRef.put(realm.getRefName(), realm);
+        }
+        return new SystemDirectory() {
+            @Override public String systemRealmId() { return "system"; }
+            @Override public Optional<Realm> findRealmByEmailDomain(String emailDomain) { return Optional.empty(); }
+            @Override public Optional<Realm> findRealmByRefName(String refName) { return Optional.ofNullable(byRef.get(refName)); }
+            @Override public Realm registerRealm(Realm realm) { throw new UnsupportedOperationException(); }
+            @Override public Optional<CredentialUserIdPassword> findCredentialBySubject(String subject) { return Optional.empty(); }
+            @Override public Optional<CredentialUserIdPassword> findCredentialByUserId(String userId) { return Optional.empty(); }
+        };
+    }
+
+    private static RealmMembershipService membershipWithApplications(String... applications) {
+        return new RealmMembershipService() {
+            @Override
+            public Optional<UserRealmRole> assignmentForUser(String userId, String realmRefName) {
+                UserRealmRole assignment = new UserRealmRole();
+                assignment.setAuthorizedApplications(java.util.List.of(applications));
+                return Optional.of(assignment);
+            }
+        };
     }
 
     private static RealmMembershipService membershipWithRoles(String realm, String... roles) {
