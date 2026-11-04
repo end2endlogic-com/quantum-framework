@@ -130,6 +130,18 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
     @ConfigProperty(name = "quantum.auth.trust-token-claims", defaultValue = "false")
     boolean trustTokenClaims;
 
+    // Application session (opt-in). The verified token only says who the user is; when these are
+    // set, a user's session runs as this application in this realm, whichever application or realm
+    // the token was minted for (for example a launch pad handoff). Roles resolve through
+    // IdentityRoleResolver for (userId, session realm, session application). An explicit X-Realm
+    // still applies with its own checks. Service tokens and anonymous requests are unchanged.
+    // Unset keeps the token's azp and realm.
+    @ConfigProperty(name = "quantum.security.session.application-id")
+    Optional<String> sessionApplicationId = Optional.empty();
+
+    @ConfigProperty(name = "quantum.security.session.realm")
+    Optional<String> sessionRealm = Optional.empty();
+
     @Inject
     com.e2eq.framework.security.runtime.RuleContext ruleContext;
 
@@ -549,9 +561,10 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
     protected PrincipalContext determinePrincipalContext(ContainerRequestContext requestContext) {
         validateContextInputs(requestContext);
 
-        String realm = requestContext.getHeaderString("X-Realm");
         String tenantId = requestContext.getHeaderString("X-Tenant-Id");
         String authHeader = requestContext.getHeaderString(HttpHeaders.AUTHORIZATION);
+        String realm = sessionRealmSelection(requestContext.getHeaderString("X-Realm"),
+                configured(sessionRealm), isUserPrincipal());
 
         // Build context and track credentials for property resolvers
         ContextBuildResult buildResult = buildBaseContextWithCredentials(authHeader,
@@ -573,6 +586,34 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
 
         // Apply custom property resolvers
         return applyCustomProperties(requestContext, contextWithTenant, credentials);
+    }
+
+    /**
+     * The realm a request selects: an explicit X-Realm, otherwise the configured session realm for a
+     * user principal, otherwise none (the principal's own realm applies).
+     */
+    static String sessionRealmSelection(String headerRealm, String configuredRealm, boolean userPrincipal) {
+        if (headerRealm != null && !headerRealm.isBlank()) {
+            return headerRealm;
+        }
+        return userPrincipal && configuredRealm != null ? configuredRealm : headerRealm;
+    }
+
+    private static String configured(Optional<String> value) {
+        if (value == null) {
+            return null;
+        }
+        return value.map(String::trim).filter(v -> !v.isEmpty()).orElse(null);
+    }
+
+    /** A verified, non-service JWT or another authenticated, non-anonymous identity. */
+    private boolean isUserPrincipal() {
+        if (currentJwt() != null) {
+            return !com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.SERVICE_TOKEN_TYPE
+                    .equalsIgnoreCase(claimString(
+                            com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.TOKEN_TYPE_CLAIM));
+        }
+        return securityIdentity != null && !securityIdentity.isAnonymous();
     }
 
     private static boolean impersonationRequested(ContainerRequestContext requestContext) {
@@ -862,7 +903,9 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
 
         PrincipalContext context = new PrincipalContext.Builder()
                 .withDefaultRealm(contextRealm)
-                .withApplicationId(providerClaim(claims, "azp"))
+                .withApplicationId(configured(sessionApplicationId) != null
+                        ? configured(sessionApplicationId)
+                        : providerClaim(claims, "azp"))
                 .withDataDomain(dataDomain)
                 .withUserId(userId)
                 .withRoles(roles)
@@ -931,7 +974,11 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         return s.isBlank() ? null : s;
     }
 
-    private String currentApplicationId() {
+    String currentApplicationId() {
+        String configuredApplication = configured(sessionApplicationId);
+        if (configuredApplication != null && isUserPrincipal()) {
+            return configuredApplication;
+        }
         String tokenApplication = claimString("azp");
         if (tokenApplication != null) {
             return tokenApplication;

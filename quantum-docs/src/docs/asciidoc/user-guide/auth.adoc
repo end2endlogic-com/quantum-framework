@@ -586,6 +586,26 @@ This translates to a `DataDomain` that is applied as query filters at the reposi
 
 These constraints are enforced automatically by Morphia repositories and cannot be bypassed by the token holder.
 
+[[application-session]]
+==== Application Session (`quantum.security.session.*`)
+
+A verified token says who the user is; it does not decide which application or realm the request runs as.
+By default `SecurityFilter` takes the session application from the token's `azp` and the realm from the token, so a token minted by another application (for example a launch pad handoff) is evaluated as that application in its realm.
+
+An application opts into its own session by setting:
+
+[source,properties]
+----
+quantum.security.session.application-id=decision-intelligence
+quantum.security.session.realm=di-realm
+----
+
+With these set, a user's `PrincipalContext` (and `ResourceContext`) carries the configured application id, the request runs in the configured realm (the user must be allowed in it, exactly as for `X-Realm`), and roles resolve through `IdentityRoleResolver` for (userId, that realm, that application).
+How the user signed in does not matter.
+An explicit `X-Realm` still applies with its own checks.
+Service tokens and anonymous requests are unchanged.
+Leave both unset to keep the token-derived behaviour.
+
 ==== Realm Override with `X-Realm`
 
 If the service token's credential has `authorizedRealms` or a matching `realmRegEx`, the caller can pass `X-Realm: <target-realm>` to operate in a different realm.
@@ -771,4 +791,12 @@ See xref:{doc-root}/user-guide/multiple-auth-providers.adoc#per-tenant-key-pairs
 | `quantum.jwt.public-key-location`
 | _(unset — defaults to classpath `publicKey.pem`)_
 | Path to the RSA public key for token verification. Same prefix conventions as the private key property. NOTE: also update `mp.jwt.verify.publickey.location` to match.
+
+| `quantum.security.session.application-id`
+| _(unset — token `azp`)_
+| Application a user's session runs as. See <<application-session,Application Session>>.
+
+| `quantum.security.session.realm`
+| _(unset — token realm)_
+| Realm a user's session runs in when the request sends no `X-Realm`.
 |===
