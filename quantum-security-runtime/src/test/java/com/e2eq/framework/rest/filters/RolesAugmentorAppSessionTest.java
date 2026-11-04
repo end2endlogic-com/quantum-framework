@@ -85,6 +85,26 @@ class RolesAugmentorAppSessionTest {
     }
 
     @Test
+    void delegatedForeignTokenWithoutAUserIdClaimGetsNoAssignmentRoles() {
+        RolesAugmentor augmentor = augmentor("decision-intelligence");
+        augmentor.credentialRepo = new CredentialRepo() {
+            @Override
+            public Optional<CredentialUserIdPassword> findBySubject(String subject, String realmId, boolean ignoreRules) {
+                return Optional.empty();
+            }
+        };
+        augmentor.realmMembershipService = new com.e2eq.framework.system.membership.RealmMembershipService() {
+            @Override
+            public Optional<com.e2eq.framework.model.security.UserRealmRole> assignmentForUser(String userId, String realmRefName) {
+                throw new AssertionError("no userId claim: the assignment must not be looked up by another name");
+            }
+        };
+        SecurityIdentity augmented = augment(augmentor,
+                Map.of("sub", "s1", "username", "alice", "azp", "helixor-launchpad"));
+        assertEquals(Set.of("user"), augmented.getRoles());
+    }
+
+    @Test
     void sessionApplicationsOwnTokenKeepsItsGroups() {
         RolesAugmentor augmentor = augmentor("decision-intelligence");
         SecurityIdentity augmented = augment(augmentor, Map.of("sub", "s1", "azp", "decision-intelligence"));

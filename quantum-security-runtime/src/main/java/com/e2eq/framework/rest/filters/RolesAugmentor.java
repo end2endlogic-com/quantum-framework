@@ -169,10 +169,13 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
             return new String[0];
         }
         String subject = claim(token, "sub");
+        // The claims SecurityFilter reads first for a delegated userId. Without them the provider's
+        // own username mapping decides there, which this layer cannot reproduce: add nothing.
         String userId = claim(token, "userId");
         if (userId == null) userId = claim(token, "preferred_username");
-        if (userId == null) userId = token.getName();
-        if (userId == null) userId = subject;
+        if (userId == null) {
+            return new String[0];
+        }
         String[] roles = DelegatedSessionRoles.resolve(systemDirectory, realmMembershipService,
                 subject, userId, token.getGroups(), realm);
         return java.util.Arrays.stream(roles).filter(role -> !"ANONYMOUS".equals(role)).toArray(String[]::new);
