@@ -5,7 +5,7 @@ endif::[]
 [[oauth-server]]
 === OAuth Server Module
 
-The `quantum-oauth-server` is an optional module that turns any Quantum application into a standalone OAuth 2.0 / OIDC authorization server. When added, your application exposes standard OAuth endpoints (`/oauth/authorize`, `/oauth/token`, `/oauth/jwks`, `/.well-known/openid-configuration`, `/oauth/userinfo`) so external clients can authenticate using industry-standard OAuth flows -- without requiring an external identity provider like Keycloak, Cognito, Auth0, or Okta.
+The `quantum-oauth-server` is an optional module that turns any Quantum application into an OAuth 2.0 authorization server with discovery and user-info endpoints. When added, your application exposes standard OAuth endpoints (`/oauth/authorize`, `/oauth/token`, `/oauth/jwks`, `/.well-known/openid-configuration`, `/oauth/userinfo`) so external clients can authenticate using industry-standard OAuth flows -- without requiring an external identity provider like Keycloak, Cognito, Auth0, or Okta.
 
 This is the complement to the OIDC/Cognito provider modules: those modules let Quantum *consume* tokens from an external IdP, while this module lets Quantum *issue* tokens itself.
 
@@ -334,9 +334,9 @@ Both follow standard Quantum patterns (`BaseModel`, realm-scoped, Morphia-manage
 * Store client secrets securely. The `clientSecretHash` uses bcrypt -- never store plaintext secrets.
 * Use HTTPS for all OAuth endpoints in production.
 * Register specific `redirectUris` per client -- never use wildcards.
-* PKCE (S256) is supported and recommended for all authorization code flows.
+* Public authorization-code clients must use S256 PKCE on both GET and form POST. Confidential clients retain the existing no-PKCE flow; any supplied challenge must use S256.
 * Authorization codes are single-use and expire after 5 minutes.
-* For public clients (SPAs), set `publicClient=true` and rely on PKCE for security.
+* Public clients (`publicClient=true`) cannot use `client_credentials`. Machine clients must be confidential and authenticate with a client secret.
 * The login form is minimal by design. For custom branding, override `OAuthAuthorizeResource` in your application.
 
 ==== See Also
@@ -350,6 +350,37 @@ Both follow standard Quantum patterns (`BaseModel`, realm-scoped, Morphia-manage
 
 Token issuance reuses the issuer's credential lifecycle, realm, and application authorization checks. Set `OAuthClient.applicationId` to the intended application; when unset, `clientId` is used as that application's identifier. This mapping requests an application, but does not grant access to it. The credential or its realm assignment must independently authorize the application and realm.
 
-OAuth refresh tokens carry a signed `oauth_client_id` distinct from `azp`. Exchange them only at `/oauth/token` with the issuing client. A different client, an unbound legacy refresh token, and the generic `/security` refresh path cannot refresh that OAuth session. Rotation retains the client binding and revalidates current application and realm grants. Existing unbound OAuth sessions must sign in again after upgrading.
+OAuth refresh tokens carry a signed `oauth_client_id` distinct from `azp`. Exchange them only at `/oauth/token` with the issuing client. A different client, an unbound legacy refresh token, and the generic `/security` refresh path cannot refresh that OAuth session. Refresh issuance retains the client binding and revalidates current application and realm grants. Existing unbound OAuth sessions must sign in again after upgrading.
 
 Password authentication rejects missing passwords and credentials with missing or blank password hashes as invalid credentials. Server-verified external identity flows use their separate verified-subject path; they do not make password login valid for a passwordless credential.
+
+
+==== Compatibility and implementation limits
+
+Public-client authorization requires an unpadded 43-character base64url S256
+challenge and `code_challenge_method=S256`. Code exchange requires a matching
+43–128 character verifier. Missing or invalid proof is rejected before user
+authentication or code consumption. The GET and POST paths use the same
+validation. Invalid public machine-grant registrations are refused, and token
+exchange also rejects previously stored public registrations requesting
+`client_credentials` with the existing `unauthorized_client` error shape.
+
+These are intentional security denial changes. Inventory affected clients before
+release; retaining Java signatures does not make unsafe callers compatible.
+Existing endpoint signatures, OAuth response records, error envelopes and
+confidential no-PKCE flows remain unchanged.
+
+The current token response does not contain an OIDC `id_token`, and the authorize
+path does not implement a reusable issuer browser session. Discovery advertising
+`openid` is not proof of complete OIDC or cross-application browser SSO. Likewise,
+issuing a replacement refresh token does not demonstrate atomic consumption of
+the previous token. Session-family rotation, replay protection and negotiated
+OIDC remain separate implementation work; do not claim them from these fixes.
+
+For changes to provider contracts, run the pinned released-provider binary probe
+in `compatibility/auth-provider/README.md`. It compiles against released 1.4.2
+and runs unchanged bytecode on the candidate. Its scope is provider linkage and
+login-response constructors, not the whole API/ABI or generated SDK matrix.
+Run `mvn -pl quantum-oauth-server test` for the resource and Quarkus HTTP checks.
+The HTTP fixture mocks the client repository; production persistence, affected
+registrations and mixed-version deployment still need their own verification.

@@ -19,3 +19,18 @@
 - Create flows should omit `id`; save/update flows should include the existing `id` so the backend performs an update/replace instead of accidentally creating a duplicate record.
 - `id` values are Mongo `ObjectId` values and must be preserved exactly as returned by the API.
 - The default pattern is: read all, modify the needed fields, then write all.
+
+## Auth compatibility and verification
+
+- For OAuth changes, read `quantum-docs/src/docs/asciidoc/user-guide/oauth-server.adoc`
+  and `compatibility/auth-provider/README.md` before editing.
+- Preserve existing provider method descriptors, overloads, response constructors
+  and wire shapes. A security denial change needs an explicit affected-client
+  assessment; binary compatibility alone does not prove behavioral compatibility.
+- Keep public-client grant and PKCE invariants shared across GET, form POST and
+  token exchange. Presentation or application policy must not bypass them.
+- Run the released-provider binary probe and OAuth tests, including
+  `OAuthHttpValidationTest`. Discovery metadata and replacement refresh tokens
+  do not prove complete OIDC, browser SSO or single-use refresh rotation.
+- Update these entry points and the documentation of record when behavior changes;
+  distinguish implemented, verified, activated and still-planned capabilities.
