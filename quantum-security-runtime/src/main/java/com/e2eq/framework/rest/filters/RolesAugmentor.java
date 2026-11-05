@@ -30,6 +30,9 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
     @Inject
     HttpHeaders httpHeaders;
 
+    @Inject
+    SessionSelectionCoordinator sessionSelection;
+
     // Application session (see SecurityFilter): when it moves a user token to another application
     // or realm, @RolesAllowed sees the session's roles, not the token's.
     @org.eclipse.microprofile.config.inject.ConfigProperty(name = "quantum.security.session.application-id")
@@ -52,28 +55,37 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
 
     @Override
     public Uni<SecurityIdentity> augment(SecurityIdentity identity, AuthenticationRequestContext context) {
-        return Uni.createFrom().item(build(identity));
+        return augment(identity, context, java.util.Map.of());
     }
 
-    private Supplier<SecurityIdentity> build(SecurityIdentity identity) {
-        if (identity.isAnonymous()) {
-            return () -> identity;
+    @Override
+    public Uni<SecurityIdentity> augment(SecurityIdentity identity, AuthenticationRequestContext context,
+                                         java.util.Map<String, Object> attributes) {
+        if (identity.isAnonymous()) return Uni.createFrom().item(identity);
+        var routing = io.quarkus.vertx.http.runtime.security.HttpSecurityUtils.getRoutingContextAttribute(attributes);
+        String requestedRealm;
+        if (routing != null) {
+            requestedRealm = routing.request().getHeader("X-Realm");
+        } else {
+            try { requestedRealm = httpHeaders.getHeaderString("X-Realm"); }
+            catch (ContextNotActiveException unavailable) { requestedRealm = null; }
         }
+        final String realm = requestedRealm;
+        Supplier<SecurityIdentity> work = () -> build(identity, realm, routing);
+        // Direct non-container callers historically pass null; Quarkus supplies the dispatch context.
+        return context == null ? Uni.createFrom().item(work) : context.runBlocking(work);
+    }
 
+    private SecurityIdentity build(SecurityIdentity identity, String contextRealm,
+                                   io.vertx.ext.web.RoutingContext routing) {
         String originalPrincipal = identity.getPrincipal().getName();
-        String contextRealm = null;
-
-        // Check if HTTP request context is active
-        try {
-            contextRealm = httpHeaders.getHeaderString("X-Realm");
-            Log.debugf("RoleAugmentor overriding realm with ContextRealm: %s", contextRealm);
-        } catch (ContextNotActiveException e) {
-            Log.debug("No HTTP request context available, falling back to default realm");
-        }
 
         // In an application session whose application or realm differs from the token's, the
         // session's roles replace the token's, derived exactly as SecurityFilter derives them.
-        java.util.Set<String> sessionRoles = applicationSessionRoles(identity, contextRealm);
+        java.util.Set<String> sessionRoles = applicationSessionRoles(identity, contextRealm, routing);
+        if (sessionSelection != null && sessionSelection.enabled()) {
+            contextRealm = sessionSelection.realm(routing, identity, contextRealm, configured(sessionRealm));
+        }
         QuarkusSecurityIdentity.Builder builder = sessionRoles != null
                 ? withoutTokenRoles(identity)
                 : QuarkusSecurityIdentity.builder(identity);
@@ -99,7 +111,9 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
             }
         }
 
-        Optional<CredentialUserIdPassword> ocred = credentialRepo.findBySubject(originalPrincipal, contextRealm, true);
+        // A delegated provider owns identity. Never consult a local credential store in this mode.
+        Optional<CredentialUserIdPassword> ocred = trustTokenClaims ? Optional.empty()
+                : credentialRepo.findBySubject(originalPrincipal, contextRealm, true);
         if (ocred.isPresent()) {
             CredentialUserIdPassword cred = ocred.get();
             // 1) Add roles from credential (session roles already carry the ones that apply)
@@ -120,6 +134,16 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
                 builder.addAttribute("sub", cred.getSubject());
             }
             builder.addAttribute("originalPrincipal", originalPrincipal);
+        } else if (trustTokenClaims && identity.getPrincipal() instanceof org.eclipse.microprofile.jwt.JsonWebToken token) {
+            String userId = claim(token, "userId");
+            if (userId == null) userId = claim(token, "preferred_username");
+            if (userId != null) builder.addAttribute("userId", userId);
+            String subject = claim(token, "sub");
+            if (subject != null) {
+                builder.addAttribute("subjectId", subject);
+                builder.addAttribute("sub", subject);
+            }
+            builder.addAttribute("originalPrincipal", originalPrincipal);
         } else {
             Log.warnf("Could not find user %s in realm %s to augment roles", originalPrincipal, contextRealm);
         }
@@ -133,7 +157,7 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
             builder.addRole("user");
         }
 
-        return builder::build;
+        return builder.build();
     }
 
     /**
@@ -146,8 +170,14 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
      * embedded ones {@code IdentityRoleResolver} on the system-realm credential.
      */
     java.util.Set<String> applicationSessionRoles(SecurityIdentity identity, String requestedRealm) {
+        return applicationSessionRoles(identity, requestedRealm, null);
+    }
+
+    private java.util.Set<String> applicationSessionRoles(SecurityIdentity identity, String requestedRealm,
+                                                         io.vertx.ext.web.RoutingContext routing) {
         String sessionApplication = configured(sessionApplicationId);
-        if (sessionApplication == null && configured(sessionRealm) == null) {
+        if (sessionApplication == null && configured(sessionRealm) == null
+                && (sessionSelection == null || !sessionSelection.enabled())) {
             return null;
         }
         if (!(identity.getPrincipal() instanceof org.eclipse.microprofile.jwt.JsonWebToken token)
@@ -156,9 +186,10 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
         }
         boolean foreign = foreignApplicationToken(identity);
         String signed = claim(token, "realm");
-        String selected = requestedRealm != null && !requestedRealm.isBlank()
-                ? requestedRealm.trim()
-                : configured(sessionRealm);
+        String selected = sessionSelection != null && sessionSelection.enabled()
+                ? sessionSelection.realm(routing, identity, requestedRealm, configured(sessionRealm))
+                : requestedRealm != null && !requestedRealm.isBlank()
+                    ? requestedRealm.trim() : configured(sessionRealm);
 
         if (trustTokenClaims) {
             String realm = selected != null ? selected : signed;
@@ -166,7 +197,7 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
             if (!foreign && !realmChanged) {
                 return null;
             }
-            return roleSet(delegatedSessionRoles(token, realm));
+            return roleSet(delegatedSessionRoles(token, realm, routing));
         }
 
         String subject = claim(token, "sub");
@@ -193,7 +224,8 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
                 foreign ? null : identity, cred, authorityRealm, realm, applicationId));
     }
 
-    private String[] delegatedSessionRoles(org.eclipse.microprofile.jwt.JsonWebToken token, String realm) {
+    private String[] delegatedSessionRoles(org.eclipse.microprofile.jwt.JsonWebToken token, String realm,
+                                            io.vertx.ext.web.RoutingContext routing) {
         if (realm == null || realmMembershipService == null) {
             return new String[0];
         }
@@ -205,8 +237,12 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
         if (userId == null) {
             return new String[0];
         }
-        return DelegatedSessionRoles.resolve(systemDirectory, realmMembershipService,
-                subject, userId, token.getGroups(), realm);
+        String resolvedUserId = userId;
+        String application = configured(sessionApplicationId) != null ? configured(sessionApplicationId) : claim(token, "azp");
+        return RequestRoleResolution.delegated(routing, claim(token, "iss"), subject, userId,
+                token.getGroups(), realm, application,
+                () -> DelegatedSessionRoles.resolve(systemDirectory, realmMembershipService,
+                        subject, resolvedUserId, token.getGroups(), realm));
     }
 
     private static java.util.Set<String> roleSet(String[] roles) {

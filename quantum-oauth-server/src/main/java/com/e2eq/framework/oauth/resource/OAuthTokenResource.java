@@ -109,9 +109,13 @@ public class OAuthTokenResource {
             return errorResponse("invalid_request", "grant_type is required");
         }
 
-        if (!client.getAllowedGrantTypes().contains(grantType)) {
+        if (client.getAllowedGrantTypes() == null || !client.getAllowedGrantTypes().contains(grantType)) {
             return errorResponse("unauthorized_client",
                     "This client is not authorized for grant_type: " + grantType);
+        }
+
+        if (client.isPublicClient() && "client_credentials".equals(grantType)) {
+            return errorResponse("unauthorized_client", "client_credentials requires a confidential client");
         }
 
         return switch (grantType) {
@@ -146,9 +150,14 @@ public class OAuthTokenResource {
             return errorResponse("invalid_grant", "redirect_uri mismatch");
         }
 
+        // Reject invalid/legacy public codes as well as newly malformed requests.
+        String pkceError = OAuthRequestValidation.pkceError(client.isPublicClient(),
+                authCode.getCodeChallenge(), authCode.getCodeChallengeMethod());
+        if (pkceError != null) return errorResponse("invalid_grant", pkceError);
+
         // Verify PKCE code_verifier
-        if (authCode.getCodeChallenge() != null) {
-            if (codeVerifier == null || codeVerifier.isBlank()) {
+        if (authCode.getCodeChallenge() != null && !authCode.getCodeChallenge().isBlank()) {
+            if (!OAuthRequestValidation.validVerifier(codeVerifier)) {
                 return errorResponse("invalid_request", "code_verifier is required for PKCE");
             }
             if (!verifyPkce(codeVerifier, authCode.getCodeChallenge())) {

@@ -805,3 +805,120 @@ See xref:{doc-root}/user-guide/multiple-auth-providers.adoc#per-tenant-key-pairs
 | _(unset — token realm)_
 | Realm a user's session runs in when the request sends no `X-Realm`.
 |===
+
+
+[[request-authorization-lifecycle]]
+== Request authorization lifecycle
+
+In `1.4.3-SNAPSHOT`, role augmentation performs blocking authority lookups on a
+Quarkus authentication worker. Delegated application sessions can reuse the
+same successful role resolution during REST admission in that HTTP request.
+Reuse requires matching issuer, subject, user ID, effective realm, application
+ID and token roles. A subsequent request resolves roles again, so this does
+not introduce a cross-request authorization cache.
+
+Provider validation and realm, application and tenant admission still run.
+An internal immutable principal projection is available only after principal
+admission; it is not a resource permission decision. Existing resource rules,
+public provider interfaces, response formats and embedded custom role resolvers
+retain their contracts. Embedded custom role resolution is not cached.
+
+When `quantum.auth.trust-token-claims=true`, augmentation and authenticated JWT
+migration checks do not consult local credentials. Without an explicit
+`X-Realm`, migration checks select the system realm for service tokens, or the
+configured session realm / signed realm for user sessions. A missing required
+signed realm is rejected. This selection does not authorize realm access.
+
+Applications should continue using existing provider and property/role resolver
+contracts. Request-state types remain internal. Realm selection also supports
+the optional proposal SPI described below. Full shared authority provenance, coarse/fine
+role parity and new session-policy extension contracts remain planned. See the
+security-runtime README for the lifecycle diagram and test boundaries.
+
+
+=== Application-specific realm proposals
+
+Implement `com.e2eq.framework.security.session.SessionSelectionPolicy` in an
+application CDI bean to choose between a fixed workspace and a requested one.
+Select its id and exact version using
+`quantum.security.session.selection-policy` and
+`quantum.security.session.selection-policy-version`. Both unset preserves legacy
+behavior. Explicit missing, duplicate or incompatible selections fail startup.
+
+The pure policy receives identity metadata and realm selectors and returns only
+a realm proposal. It cannot grant membership, roles or application access.
+Service and anonymous identities do not invoke it. Null realm means retain the
+principal's realm; null output or blank realm fails the request. The framework
+still admits the selected realm, application and tenant. See the security-runtime
+README for a complete policy example and the two HTTP conformance fixtures.
+
+
+=== Shared sign-in and independent application authorization
+
+Authentication establishes identity under the trusted issuer and audience.
+Each application still admits that identity using its own application binding,
+realm and tenant membership and resource permissions. Being signed in is not an
+application grant. A 401 indicates authentication failed; a valid identity may
+still receive 403 because authorization fails.
+
+The security-runtime cross-application HTTP tests send one unchanged signed
+fixture through two independently configured application boots. They verify
+foreign-application grant isolation, role revocation without token replacement, no local
+credential lookup, and issuer/audience/signature/expiry rejection. Their shared
+audience is explicit; do not broaden an application's audience to make a token
+portable. Different audiences can require different access tokens while still
+sharing an issuer sign-in session.
+
+Keep application selection in request context and mutable grants in authoritative
+services. Do not rewrite signed `azp` or add application-specific claim dialects
+for workspace selection. Existing supported token claims remain compatible.
+
+==== JWT compatibility and revocation boundary
+
+An app-A token in the same signed realm takes different paths at A and B.
+At A, existing delegated behavior retains signed token roles and signed-origin
+application admission while the provider still accepts the token. At B, an
+explicit application session re-resolves roles and checks application admission.
+Removing the current assignment's roles or application grants therefore does
+not establish immediate revocation at A. The cross-application tests now cover
+both paths with an unchanged app-A fixture; they preserve this existing behavior.
+Provider-specific revocation may reject a token earlier, but is not established
+by these mocked-provider tests.
+
+Do not change this default implicitly during an upgrade. Applications needing
+current-authority checks on every request need an explicit freshness contract
+covering both role gates and provider availability, with compatibility tests for
+existing token-based consumers. Keep that authority outside the token; additional
+per-app claims would not solve stale grants.
+
+For JWT-based sign-in, validate the existing login/refresh provider and frontend
+token handoff. Shared JWT identity does not require introducing OAuth browser
+sessions. Browser handoff, logout and production-provider revocation remain
+separate acceptance checks; these server HTTP tests do not prove them.
+OAuth/OIDC protocol completion is optional work when applications actually use
+those protocols, not a prerequisite for the JWT review.
+
+
+=== Stable core and application extension ownership
+
+The design intention is to let applications vary behavior without recurring
+framework edits. Existing interfaces remain the default path; proposed future
+features are not prerequisites for ordinary JWT authentication.
+
+[cols="1,2,2",options="header"]
+|===
+| Application variation | Existing seam | Core invariant
+| Login, validation, refresh | `AuthProvider`, `ClaimsAuthProvider`, factory configuration | Verified identity and existing provider/response compatibility
+| Fixed application or workspace | `quantum.security.session.application-id`, `.realm` | Effective request context never rewrites signed claims
+| Workspace choice beyond configuration | `SessionSelectionPolicy` | Proposal only; core membership/admission checks remain mandatory
+| Embedded role derivation | `IdentityRoleResolver` | Roles retain authority and application/realm scope
+| Delegated grants and membership | Existing directory/membership providers | No per-app credential store or authorization inferred from a selection callback
+| Resource, action and data access | Existing `RuleContext` and policy records | Authentication alone never grants access
+|===
+
+Change the owning seam only when an agreed application behavior cannot be
+expressed by the existing contract, demonstrated by a failing contract test.
+Keep authentication, context selection and authorization distinct. Avoid parallel
+validators, policy engines and token formats. No new extension is required merely
+to enumerate future possibilities. Preserve existing defaults; a change in role
+freshness or admission is an explicit behavioral change, not a transparent refactor.

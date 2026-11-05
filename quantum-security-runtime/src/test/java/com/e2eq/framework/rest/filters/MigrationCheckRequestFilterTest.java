@@ -85,6 +85,41 @@ class MigrationCheckRequestFilterTest {
         assertEquals(List.of("configured-default-realm", "system-com"), migrationService.checkedRealms);
     }
 
+    @Test
+    void delegatedMigrationSelectionUsesVerifiedTokenWithoutLocalCredentials() throws Exception {
+        var token = org.mockito.Mockito.mock(JsonWebToken.class);
+        var identity = io.quarkus.security.runtime.QuarkusSecurityIdentity.builder().setPrincipal(token).build();
+        var credentials = org.mockito.Mockito.mock(CredentialRepo.class);
+        var migrations = new TestMigrationService();
+        var filter = buildFilter(identity, testEnvConfig(), credentials, migrations, token);
+        filter.trustTokenClaims = true;
+        org.mockito.Mockito.when(token.getClaim("realm")).thenReturn("signed-realm");
+        var request = new StubRequestContext("/api/orders", "GET");
+        assertEquals("signed-realm", filter.resolveMigrationRealm(request));
+        filter.sessionRealm = Optional.of("session-realm");
+        filter.filter(request);
+        assertEquals(List.of("session-realm", "system-com"), migrations.checkedRealms);
+        org.mockito.Mockito.when(token.getClaim(
+                com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.TOKEN_TYPE_CLAIM))
+                .thenReturn(com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.SERVICE_TOKEN_TYPE);
+        assertEquals("system-com", filter.resolveMigrationRealm(request));
+        request.getHeaders().putSingle("X-Realm", "explicit-realm");
+        assertEquals("explicit-realm", filter.resolveMigrationRealm(request));
+        org.mockito.Mockito.verifyNoInteractions(credentials);
+    }
+
+    @Test
+    void delegatedMigrationSelectionRejectsMissingRealmWithoutLocalFallback() {
+        var token = org.mockito.Mockito.mock(JsonWebToken.class);
+        var identity = io.quarkus.security.runtime.QuarkusSecurityIdentity.builder().setPrincipal(token).build();
+        var credentials = org.mockito.Mockito.mock(CredentialRepo.class);
+        var filter = buildFilter(identity, testEnvConfig(), credentials, new TestMigrationService(), token);
+        filter.trustTokenClaims = true;
+        org.junit.jupiter.api.Assertions.assertThrows(jakarta.ws.rs.ForbiddenException.class,
+                () -> filter.resolveMigrationRealm(new StubRequestContext("/api/orders", "GET")));
+        org.mockito.Mockito.verifyNoInteractions(credentials);
+    }
+
     private static MigrationCheckRequestFilter buildFilter(
         SecurityIdentity identity,
         EnvConfigUtils envConfigUtils,

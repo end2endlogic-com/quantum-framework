@@ -81,6 +81,12 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
     SecurityIdentity securityIdentity;
 
     @Inject
+    io.vertx.ext.web.RoutingContext routingContext;
+
+    @Inject
+    SessionSelectionCoordinator sessionSelection;
+
+    @Inject
     RealmRepo realmRepo;
 
     @Inject
@@ -559,12 +565,15 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
     }
 
     protected PrincipalContext determinePrincipalContext(ContainerRequestContext requestContext) {
+        RequestAuthorizationState requestState = RequestAuthorizationState.from(routingContext);
+        if (requestState != null) requestState.beginAdmission();
         validateContextInputs(requestContext);
 
         String tenantId = requestContext.getHeaderString("X-Tenant-Id");
         String authHeader = requestContext.getHeaderString(HttpHeaders.AUTHORIZATION);
-        String realm = sessionRealmSelection(requestContext.getHeaderString("X-Realm"),
-                configured(sessionRealm), isUserPrincipal());
+        String realm = sessionSelection != null && sessionSelection.enabled()
+                ? sessionSelection.realm(routingContext, securityIdentity, requestContext.getHeaderString("X-Realm"), configured(sessionRealm))
+                : sessionRealmSelection(requestContext.getHeaderString("X-Realm"), configured(sessionRealm), isUserPrincipal());
 
         // Build context and track credentials for property resolvers
         ContextBuildResult buildResult = buildBaseContextWithCredentials(authHeader,
@@ -586,7 +595,10 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         PrincipalContext contextWithTenant = applyTenantSelection(contextWithRealm, tenantId, tokenTenantId);
 
         // Apply custom property resolvers
-        return applyCustomProperties(requestContext, contextWithTenant, credentials);
+        PrincipalContext completed = applyCustomProperties(requestContext, contextWithTenant, credentials);
+        if (requestState != null) requestState.complete(
+                ResolvedAuthorizationContext.from(claimString("iss"), claimString("sub"), completed));
+        return completed;
     }
 
     /**
@@ -864,7 +876,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         // application session they are re-derived like a realm switch (flat credential roles
         // that the token also names, plus the realm assignment's roles), never adopted.
         String[] roles = realmSwitched || foreignApplicationToken(providerClaim(claims, "azp"))
-                ? delegatedRolesAfterRealmSwitch(sub, userId, claims.getTokenRoles(), contextRealm)
+                ? delegatedRolesAfterRealmSwitch(claims.getIssuer(), sub, userId, claims.getTokenRoles(), contextRealm)
                 : claims.getTokenRoles().toArray(String[]::new);
 
         Log.infof("Delegated identity: principal from trusted-issuer token claims (iss=%s, sub=%s, userId=%s, realm=%s, roles=%s)",
@@ -1382,8 +1394,15 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
     String[] delegatedRolesAfterRealmSwitch(String subject, String userId,
                                             java.util.Collection<String> tokenRoles,
                                             String targetRealm) {
-        return DelegatedSessionRoles.resolve(systemDirectory, realmMembershipService,
-                subject, userId, tokenRoles, targetRealm);
+        return delegatedRolesAfterRealmSwitch(claimString("iss"), subject, userId, tokenRoles, targetRealm);
+    }
+
+    private String[] delegatedRolesAfterRealmSwitch(String issuer, String subject, String userId,
+                                                   java.util.Collection<String> tokenRoles, String targetRealm) {
+        return RequestRoleResolution.delegated(routingContext, issuer, subject, userId, tokenRoles,
+                targetRealm, currentApplicationId(),
+                () -> DelegatedSessionRoles.resolve(systemDirectory, realmMembershipService,
+                        subject, userId, tokenRoles, targetRealm));
     }
 
     private PrincipalContext buildImpersonatedContext(CredentialUserIdPassword targetCreds, CredentialUserIdPassword originalCreds,
