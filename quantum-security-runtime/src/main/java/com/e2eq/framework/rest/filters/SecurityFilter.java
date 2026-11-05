@@ -84,6 +84,9 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
     io.vertx.ext.web.RoutingContext routingContext;
 
     @Inject
+    SessionSelectionCoordinator sessionSelection;
+
+    @Inject
     RealmRepo realmRepo;
 
     @Inject
@@ -568,8 +571,9 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
 
         String tenantId = requestContext.getHeaderString("X-Tenant-Id");
         String authHeader = requestContext.getHeaderString(HttpHeaders.AUTHORIZATION);
-        String realm = sessionRealmSelection(requestContext.getHeaderString("X-Realm"),
-                configured(sessionRealm), isUserPrincipal());
+        String realm = sessionSelection != null && sessionSelection.enabled()
+                ? sessionSelection.realm(routingContext, securityIdentity, requestContext.getHeaderString("X-Realm"), configured(sessionRealm))
+                : sessionRealmSelection(requestContext.getHeaderString("X-Realm"), configured(sessionRealm), isUserPrincipal());
 
         // Build context and track credentials for property resolvers
         ContextBuildResult buildResult = buildBaseContextWithCredentials(authHeader,

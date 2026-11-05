@@ -45,3 +45,9 @@
 - Run `AuthorizationLifecycleHttpTest` as well as the runtime unit suite;
   verify denied admission and next-request role revocation. Its mocked
   directory/provider seams do not establish production service behavior.
+
+- Optional `SessionSelectionPolicy` is a realm proposal only. Pin both id and
+  version in existing session config; omission must retain legacy behavior.
+  Reject duplicate/missing/version-mismatched explicit selection at startup.
+  Never move identity, role or membership admission into a selection callback.
+  Run both workspace-policy HTTP fixtures when evolving this SPI.

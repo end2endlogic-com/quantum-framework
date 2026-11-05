@@ -30,6 +30,9 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
     @Inject
     HttpHeaders httpHeaders;
 
+    @Inject
+    SessionSelectionCoordinator sessionSelection;
+
     // Application session (see SecurityFilter): when it moves a user token to another application
     // or realm, @RolesAllowed sees the session's roles, not the token's.
     @org.eclipse.microprofile.config.inject.ConfigProperty(name = "quantum.security.session.application-id")
@@ -80,6 +83,9 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
         // In an application session whose application or realm differs from the token's, the
         // session's roles replace the token's, derived exactly as SecurityFilter derives them.
         java.util.Set<String> sessionRoles = applicationSessionRoles(identity, contextRealm, routing);
+        if (sessionSelection != null && sessionSelection.enabled()) {
+            contextRealm = sessionSelection.realm(routing, identity, contextRealm, configured(sessionRealm));
+        }
         QuarkusSecurityIdentity.Builder builder = sessionRoles != null
                 ? withoutTokenRoles(identity)
                 : QuarkusSecurityIdentity.builder(identity);
@@ -170,7 +176,8 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
     private java.util.Set<String> applicationSessionRoles(SecurityIdentity identity, String requestedRealm,
                                                          io.vertx.ext.web.RoutingContext routing) {
         String sessionApplication = configured(sessionApplicationId);
-        if (sessionApplication == null && configured(sessionRealm) == null) {
+        if (sessionApplication == null && configured(sessionRealm) == null
+                && (sessionSelection == null || !sessionSelection.enabled())) {
             return null;
         }
         if (!(identity.getPrincipal() instanceof org.eclipse.microprofile.jwt.JsonWebToken token)
@@ -179,9 +186,10 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
         }
         boolean foreign = foreignApplicationToken(identity);
         String signed = claim(token, "realm");
-        String selected = requestedRealm != null && !requestedRealm.isBlank()
-                ? requestedRealm.trim()
-                : configured(sessionRealm);
+        String selected = sessionSelection != null && sessionSelection.enabled()
+                ? sessionSelection.realm(routing, identity, requestedRealm, configured(sessionRealm))
+                : requestedRealm != null && !requestedRealm.isBlank()
+                    ? requestedRealm.trim() : configured(sessionRealm);
 
         if (trustTokenClaims) {
             String realm = selected != null ? selected : signed;

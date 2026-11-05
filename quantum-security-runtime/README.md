@@ -68,3 +68,51 @@ matching role read per request, async snapshot access, denied app/tenant access
 and revocation on the next request. The PEM files under test resources are
 public disposable fixtures only. These tests do not prove production directory
 availability, full rule-engine integration, OIDC or refresh rotation.
+
+## Optional session realm selection policy
+
+Applications may implement `com.e2eq.framework.security.session.SessionSelectionPolicy`
+as a CDI bean and explicitly select its stable `id()` and exact `version()`:
+
+```properties
+quantum.security.session.selection-policy=fixed-workspace
+quantum.security.session.selection-policy-version=1
+```
+
+Both settings omitted preserves the existing header/configuration/token behavior,
+even when policy beans are installed. An explicit missing, duplicate or mismatched
+selection fails startup with `SessionSelectionException` and a stable code. There
+is no CDI-priority winner or fallback to default after a policy failure.
+
+A policy receives immutable identity metadata, the untrusted requested realm,
+configured realm and application id. It returns only `Selection(realm)`: null
+realm means retain the principal's realm; a null result or blank realm is invalid.
+It cannot set roles, tenant, application, identity or grants. Policies must be
+pure and deterministic with no I/O. Only authenticated user identities invoke
+them; service and anonymous requests retain their existing behavior. Matching
+inputs reuse the proposal across augmentation, migration checks and REST admission
+within one request. The framework still validates the proposed realm and enforces
+application and tenant admission. Policy code is trusted installed application
+code, not a sandbox for untrusted scripts.
+
+```java
+@jakarta.enterprise.context.ApplicationScoped
+public class FixedWorkspace implements SessionSelectionPolicy {
+    public String id() { return "fixed-workspace"; }
+    public String version() { return "1"; }
+    public Selection select(Input input) {
+        return new Selection(input.configuredRealm());
+    }
+}
+```
+
+A workspace-selecting application can instead propose `input.requestedRealm()`
+when present, otherwise `input.configuredRealm()`. The tests
+`FixedWorkspaceHttpTest` and `RequestedWorkspaceHttpTest` exercise these two
+policies with the same runtime. They retain the baseline HTTP denial tests and
+prove that even an `editor` role cannot admit an unregistered realm. These are
+application-policy fixtures, not deployed reference applications.
+
+This additive SPI is limited to realm proposals. It is separate from internal
+`ResolvedAuthorizationContext`; it does not establish full authority provenance,
+new role sources, session lifetime policy, OIDC or refresh replay protection.

@@ -15,6 +15,15 @@ final class RequestAuthorizationState {
     private static final String KEY = RequestAuthorizationState.class.getName();
     private final Map<RoleKey, List<String>> roles = new HashMap<>();
     private ResolvedAuthorizationContext completed;
+    private final Map<com.e2eq.framework.security.session.SessionSelectionPolicy.Input,
+            com.e2eq.framework.security.session.SessionSelectionPolicy.Selection> selections = new HashMap<>();
+
+    synchronized com.e2eq.framework.security.session.SessionSelectionPolicy.Selection selectRealm(
+            com.e2eq.framework.security.session.SessionSelectionPolicy.Input input,
+            Supplier<com.e2eq.framework.security.session.SessionSelectionPolicy.Selection> resolver) {
+        return selections.computeIfAbsent(input, ignored -> resolver.get());
+    }
+
 
     static RequestAuthorizationState from(RoutingContext request) {
         if (request == null) return null; // Non-HTTP callers retain uncached resolution.

@@ -830,7 +830,24 @@ configured session realm / signed realm for user sessions. A missing required
 signed realm is rejected. This selection does not authorize realm access.
 
 Applications should continue using existing provider and property/role resolver
-contracts. The new request-state types are internal and are not a supported
-application customization API. Full shared authority provenance, coarse/fine
+contracts. Request-state types remain internal. Realm selection also supports
+the optional proposal SPI described below. Full shared authority provenance, coarse/fine
 role parity and new session-policy extension contracts remain planned. See the
 security-runtime README for the lifecycle diagram and test boundaries.
+
+
+=== Application-specific realm proposals
+
+Implement `com.e2eq.framework.security.session.SessionSelectionPolicy` in an
+application CDI bean to choose between a fixed workspace and a requested one.
+Select its id and exact version using
+`quantum.security.session.selection-policy` and
+`quantum.security.session.selection-policy-version`. Both unset preserves legacy
+behavior. Explicit missing, duplicate or incompatible selections fail startup.
+
+The pure policy receives identity metadata and realm selectors and returns only
+a realm proposal. It cannot grant membership, roles or application access.
+Service and anonymous identities do not invoke it. Null realm means retain the
+principal's realm; null output or blank realm fails the request. The framework
+still admits the selected realm, application and tenant. See the security-runtime
+README for a complete policy example and the two HTTP conformance fixtures.
