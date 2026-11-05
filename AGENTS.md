@@ -20,6 +20,15 @@
 - `id` values are Mongo `ObjectId` values and must be preserved exactly as returned by the API.
 - The default pattern is: read all, modify the needed fields, then write all.
 
+## Stable auth core and bounded changes
+
+Start with one requested application behavior and an acceptance check. Use
+`user-guide/auth.adoc`'s extension ownership table before editing shared auth.
+Reuse provider/configuration, session selection, role and policy seams. Add an
+abstraction only for a demonstrated gap in that behavior; preserve defaults and
+public interfaces. Do not promote adjacent review findings into new work.
+Stop when the agreed check, compatibility checks and guidance are complete.
+
 ## Auth compatibility and verification
 
 - For OAuth changes, read `quantum-docs/src/docs/asciidoc/user-guide/oauth-server.adoc`
@@ -59,4 +68,9 @@
 - Shared sign-in is not universal access-token portability. Preserve issuer and
   audience validation, signed `azp` and existing claim compatibility; use local
   request context for effective app/realm and authoritative grants for access.
-  Shared-token HTTP tests do not close the two-browser-app SSO acceptance gate.
+  Test both origin (`azp` equals app) and receiving-app paths: unchanged-origin
+  delegated sessions retain signed roles/admission while the provider accepts
+  the token. Receiving-app revocation tests do not prove origin revocation.
+- Route JWT reviews through `user-guide/auth.adoc`, the configured provider and
+  security runtime first. OAuth/OIDC completion is separate optional scope.
+  Server bearer tests do not prove frontend sign-in/handoff or provider revocation.

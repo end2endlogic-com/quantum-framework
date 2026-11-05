@@ -873,8 +873,52 @@ Keep application selection in request context and mutable grants in authoritativ
 services. Do not rewrite signed `azp` or add application-specific claim dialects
 for workspace selection. Existing supported token claims remain compatible.
 
-These tests do not yet prove browser SSO. Its release gate requires one issuer
-login followed by access to two browser applications without a second credential
-prompt, with independent grants, correct state/nonce/PKCE, redirects, audience
-binding, logout and issuer isolation. The current OAuth authorize endpoint still
-renders a login form; issuer-session reuse and complete OIDC remain open work.
+==== JWT compatibility and revocation boundary
+
+An app-A token in the same signed realm takes different paths at A and B.
+At A, existing delegated behavior retains signed token roles and signed-origin
+application admission while the provider still accepts the token. At B, an
+explicit application session re-resolves roles and checks application admission.
+Removing the current assignment's roles or application grants therefore does
+not establish immediate revocation at A. The cross-application tests now cover
+both paths with an unchanged app-A fixture; they preserve this existing behavior.
+Provider-specific revocation may reject a token earlier, but is not established
+by these mocked-provider tests.
+
+Do not change this default implicitly during an upgrade. Applications needing
+current-authority checks on every request need an explicit freshness contract
+covering both role gates and provider availability, with compatibility tests for
+existing token-based consumers. Keep that authority outside the token; additional
+per-app claims would not solve stale grants.
+
+For JWT-based sign-in, validate the existing login/refresh provider and frontend
+token handoff. Shared JWT identity does not require introducing OAuth browser
+sessions. Browser handoff, logout and production-provider revocation remain
+separate acceptance checks; these server HTTP tests do not prove them.
+OAuth/OIDC protocol completion is optional work when applications actually use
+those protocols, not a prerequisite for the JWT review.
+
+
+=== Stable core and application extension ownership
+
+The design intention is to let applications vary behavior without recurring
+framework edits. Existing interfaces remain the default path; proposed future
+features are not prerequisites for ordinary JWT authentication.
+
+[cols="1,2,2",options="header"]
+|===
+| Application variation | Existing seam | Core invariant
+| Login, validation, refresh | `AuthProvider`, `ClaimsAuthProvider`, factory configuration | Verified identity and existing provider/response compatibility
+| Fixed application or workspace | `quantum.security.session.application-id`, `.realm` | Effective request context never rewrites signed claims
+| Workspace choice beyond configuration | `SessionSelectionPolicy` | Proposal only; core membership/admission checks remain mandatory
+| Embedded role derivation | `IdentityRoleResolver` | Roles retain authority and application/realm scope
+| Delegated grants and membership | Existing directory/membership providers | No per-app credential store or authorization inferred from a selection callback
+| Resource, action and data access | Existing `RuleContext` and policy records | Authentication alone never grants access
+|===
+
+Change the owning seam only when an agreed application behavior cannot be
+expressed by the existing contract, demonstrated by a failing contract test.
+Keep authentication, context selection and authorization distinct. Avoid parallel
+validators, policy engines and token formats. No new extension is required merely
+to enumerate future possibilities. Preserve existing defaults; a change in role
+freshness or admission is an explicit behavioral change, not a transparent refactor.

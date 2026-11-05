@@ -51,7 +51,11 @@ abstract class CrossApplicationIdentityHttpContract {
     protected abstract String application();
 
     static String sharedToken() throws Exception {
-        try (var stream = CrossApplicationIdentityHttpContract.class.getResourceAsStream("/shared-identity-test.jwt")) {
+        return fixture("shared-identity-test.jwt");
+    }
+
+    private static String fixture(String name) throws Exception {
+        try (var stream = CrossApplicationIdentityHttpContract.class.getResourceAsStream("/" + name)) {
             return new String(java.util.Objects.requireNonNull(stream).readAllBytes(), StandardCharsets.UTF_8).trim();
         }
     }
@@ -124,6 +128,40 @@ abstract class CrossApplicationIdentityHttpContract {
     }
 
     @Test
+    void appIssuedTokenUsesSignedRolesAtItsOriginAndCurrentRolesAtTheReceiver() throws Exception {
+        String token = fixture("app-a-identity-test.jwt");
+        assertEquals("8e9294e43c77174a92a45dd08d483f30871dd0428504808d8a0f5decc5176393", sha256(token));
+        assertEquals("app-a", parser.parse(token).getClaim("azp"));
+        boolean issuingApplication = application().equals("app-a");
+        assertEquals(200, call("read", token).statusCode());
+        assertEquals(issuingApplication ? 200 : 403, call("admin", token).statusCode(),
+                "Signed origin roles must not become receiving-application roles");
+
+        assignment.setRoles(List.of());
+        var afterRevocation = call("read", token);
+        assertEquals(issuingApplication ? 200 : 403, afterRevocation.statusCode(), afterRevocation.body());
+        // Compatibility characterization, not a claim of immediate origin-role revocation:
+        // a trusted provider may still accept the original signed role snapshot at its origin.
+        assertEquals("shared-subject", parser.parse(token).getSubject());
+        assignment.setRoles(List.of("app-reader"));
+        assertEquals(200, call("read", token).statusCode());
+        verifyNoInteractions(credentials);
+    }
+
+    @Test
+    void appIssuedTokenRechecksReceivingApplicationGrantButRetainsOriginAdmission() throws Exception {
+        String token = fixture("app-a-identity-test.jwt");
+        assertEquals(200, call("read", token).statusCode());
+        assignment.setAuthorizedApplications(List.of());
+        var afterRevocation = call("read", token);
+        assertEquals(application().equals("app-a") ? 200 : 403,
+                afterRevocation.statusCode(), afterRevocation.body());
+        assignment.setAuthorizedApplications(List.of("app-a", "app-b"));
+        assertEquals(200, call("read", token).statusCode());
+        verifyNoInteractions(credentials);
+    }
+
+    @Test
     void authenticationEnforcesIssuerAudienceExpiryAndSignatureBeforeAuthority() throws Exception {
         String token = sharedToken();
         int signature = token.lastIndexOf('.') + 1;
@@ -170,6 +208,6 @@ abstract class CrossApplicationIdentityHttpContract {
         @GET @Path("admin") @RolesAllowed("admin")
         @com.e2eq.framework.annotations.FunctionalAction(value = "admin", bypassDataScoping = true)
         @io.smallrye.common.annotation.Blocking
-        public String admin() { return "must not execute for issuer-only admin"; }
+        public String admin() { return "authorized-admin"; }
     }
 }

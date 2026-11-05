@@ -144,13 +144,38 @@ mocked directory/membership/provider seams. Resource fixtures intentionally use
 prove the full rule/repository policy matrix. Application boots are sequential,
 not two simultaneous servers or browser sessions.
 
-Browser SSO remains a separate acceptance gate: authenticate once at the issuer,
-open A then B without another credential prompt, obtain correctly audience-bound
-application sessions, validate state/nonce/PKCE and redirects, deny B when its
-grant is absent while identity remains authenticated, and verify logout and
-issuer-environment isolation. The current OAuth authorize GET always renders a
-login form; these HTTP tests must not be reported as proof that issuer-cookie
-reuse or complete OIDC exists.
+### JWT review: issuing and receiving application behavior
+
+The same profiles also exercise `app-a-identity-test.jwt`, a disposable signed
+fixture with `azp=app-a`. Its trimmed SHA-256 is
+`8e9294e43c77174a92a45dd08d483f30871dd0428504808d8a0f5decc5176393`.
+The existing fixture remains unchanged. This adds the normal origin-to-receiver
+case to the third-application fixture above.
+
+| Same valid app-A JWT, same realm | App A (issuing application) | App B (receiving application) |
+| --- | --- | --- |
+| Signed admin, current assignment has reader only | Signed admin remains effective | Admin denied; reader admitted |
+| Current assignment roles removed | Signed reader remains effective | Reader denied on next request |
+| Current assignment application grants removed | Existing signed-origin admission remains | Application admission denied |
+
+These are compatibility characterization tests, not assertions that immediate
+origin revocation is implemented. `RolesAugmentor.applicationSessionRoles` and
+`SecurityFilter.buildDelegatedClaimsContext` retain signed roles for an unchanged
+application/realm. `requireSessionApplicationAdmitted` rechecks the foreign-app
+case. The mocked provider continues to accept the token: an actual provider may
+reject it earlier through its own validation/revocation contract. Consequently,
+next-request role/grant revocation is proven here only for the receiving app.
+Do not silently change the origin behavior: existing apps may rely on signed
+roles without a request-time membership authority. A future opt-in current-role
+policy must define authority availability, missing memberships, global roles and
+both coarse/fine authorization before activation; no new JWT claims are needed.
+
+For a JWT-based application, review its existing login/refresh provider, audience
+admission and application-session configuration first. OAuth browser login,
+OIDC nonce/PKCE and issuer cookies are separate optional protocol work, not
+prerequisites for these bearer-JWT paths. These tests do not prove frontend token
+handoff, production provider revocation, two simultaneous servers, or a browser
+login flow. Test the actual frontend handoff independently when it is in scope.
 
 Keep tokens simple: retain stable issuer/subject/audience and supported identity
 claims; keep mutable app grants and effective realm/tenant/roles in authoritative
