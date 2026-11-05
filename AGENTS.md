@@ -51,3 +51,12 @@
   Reject duplicate/missing/version-mismatched explicit selection at startup.
   Never move identity, role or membership admission into a selection callback.
   Run both workspace-policy HTTP fixtures when evolving this SPI.
+
+- Run `CrossApplicationAHttpTest` and `CrossApplicationBHttpTest` for identity,
+  application admission or token changes. Keep their single signed fixture
+  unchanged unless the supported contract intentionally changes. Prove valid
+  identity can be denied app access and role/grant changes need no token rewrite.
+- Shared sign-in is not universal access-token portability. Preserve issuer and
+  audience validation, signed `azp` and existing claim compatibility; use local
+  request context for effective app/realm and authoritative grants for access.
+  Shared-token HTTP tests do not close the two-browser-app SSO acceptance gate.

@@ -851,3 +851,30 @@ Service and anonymous identities do not invoke it. Null realm means retain the
 principal's realm; null output or blank realm fails the request. The framework
 still admits the selected realm, application and tenant. See the security-runtime
 README for a complete policy example and the two HTTP conformance fixtures.
+
+
+=== Shared sign-in and independent application authorization
+
+Authentication establishes identity under the trusted issuer and audience.
+Each application still admits that identity using its own application binding,
+realm and tenant membership and resource permissions. Being signed in is not an
+application grant. A 401 indicates authentication failed; a valid identity may
+still receive 403 because authorization fails.
+
+The security-runtime cross-application HTTP tests send one unchanged signed
+fixture through two independently configured application boots. They verify
+foreign-application grant isolation, role revocation without token replacement, no local
+credential lookup, and issuer/audience/signature/expiry rejection. Their shared
+audience is explicit; do not broaden an application's audience to make a token
+portable. Different audiences can require different access tokens while still
+sharing an issuer sign-in session.
+
+Keep application selection in request context and mutable grants in authoritative
+services. Do not rewrite signed `azp` or add application-specific claim dialects
+for workspace selection. Existing supported token claims remain compatible.
+
+These tests do not yet prove browser SSO. Its release gate requires one issuer
+login followed by access to two browser applications without a second credential
+prompt, with independent grants, correct state/nonce/PKCE, redirects, audience
+binding, logout and issuer isolation. The current OAuth authorize endpoint still
+renders a login form; issuer-session reuse and complete OIDC remain open work.

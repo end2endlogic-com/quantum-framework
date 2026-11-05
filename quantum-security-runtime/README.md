@@ -116,3 +116,46 @@ application-policy fixtures, not deployed reference applications.
 This additive SPI is limited to realm proposals. It is separate from internal
 `ResolvedAuthorizationContext`; it does not establish full authority provenance,
 new role sources, session lifetime policy, OIDC or refresh replay protection.
+
+## Cross-application identity and token stability coverage
+
+`CrossApplicationAHttpTest` and `CrossApplicationBHttpTest` boot separately with
+application IDs `app-a` and `app-b`. Both send the same byte-for-byte signed
+`shared-identity-test.jwt` fixture. It uses a disposable test key and deliberately
+fixed dates (not production lifetime guidance). SHA-256 of the trimmed fixture:
+`54106a6e665ddb5876c9972a55b179a033f044775538fc5146ccdd610c945f97`.
+Both applications explicitly trust its `shared-test-api` audience. This is a
+shared-audience test configuration, not permission to forward any application's
+token to any other service or weaken issuer/audience checks.
+
+| Boundary | Executable assertion |
+| --- | --- |
+| Shared identity | The same subject, signed `azp` and token bytes survive both application configurations; effective application differs only in request context. No login, refresh or token issuance occurs in either application. |
+| Application authorization | Revoking only A's application grant gives A a 403 while B remains admitted. Restoring the grant works with the original token. |
+| Role authorization | Issuer-client `admin` does not become target-app admin. Removing authoritative reader roles denies access even though the token still contains `app-reader`; restoring roles works without token replacement. |
+| Authentication | Wrong issuer, audience, signature and expired tokens produce 401 before provider/membership authorization calls. |
+| Remote identity boundary | Neither application reads local credentials. |
+
+These tests cover foreign-application sessions (`azp=identity-client` with
+effective app A/B), not same-application token-role revocation. They use real
+HTTP, JWT verification, augmentation and admission with
+mocked directory/membership/provider seams. Resource fixtures intentionally use
+`bypassDataScoping` to isolate admission and Jakarta role checks; they do not
+prove the full rule/repository policy matrix. Application boots are sequential,
+not two simultaneous servers or browser sessions.
+
+Browser SSO remains a separate acceptance gate: authenticate once at the issuer,
+open A then B without another credential prompt, obtain correctly audience-bound
+application sessions, validate state/nonce/PKCE and redirects, deny B when its
+grant is absent while identity remains authenticated, and verify logout and
+issuer-environment isolation. The current OAuth authorize GET always renders a
+login form; these HTTP tests must not be reported as proof that issuer-cookie
+reuse or complete OIDC exists.
+
+Keep tokens simple: retain stable issuer/subject/audience and supported identity
+claims; keep mutable app grants and effective realm/tenant/roles in authoritative
+services and request context. Do not rewrite `azp`, add per-app token dialects,
+copy authorization graphs into tokens, or mint a replacement token merely to
+switch request context. When audiences differ, use the issuer's supported flow
+for the appropriate audience; sharing sign-in does not require sharing an access
+token across incompatible audiences.
