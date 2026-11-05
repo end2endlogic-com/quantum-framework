@@ -88,9 +88,9 @@ public class OAuthAuthorizeResource {
             return errorPage("redirect_uri is not registered for this client.");
         }
 
-        if (codeChallengeMethod != null && !"S256".equals(codeChallengeMethod)) {
-            return redirectError(redirectUri, state, "invalid_request",
-                    "Only S256 code_challenge_method is supported");
+        String validationError = OAuthRequestValidation.authorizationError(client, codeChallenge, codeChallengeMethod);
+        if (validationError != null) {
+            return redirectError(redirectUri, state, "invalid_request", validationError);
         }
 
         // Render the login form
@@ -125,6 +125,11 @@ public class OAuthAuthorizeResource {
 
         if (!client.getRedirectUris().contains(redirectUri)) {
             return errorPage("redirect_uri mismatch.");
+        }
+
+        String validationError = OAuthRequestValidation.authorizationError(client, codeChallenge, codeChallengeMethod);
+        if (validationError != null) {
+            return redirectError(redirectUri, state, "invalid_request", validationError);
         }
 
         // Authenticate user via the default auth provider
