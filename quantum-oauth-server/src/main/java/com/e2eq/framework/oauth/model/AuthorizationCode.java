@@ -63,6 +63,10 @@ public class AuthorizationCode extends BaseModel {
     /** Whether this code has been consumed (exchanged for tokens). */
     private boolean consumed;
 
+    /** Optional opaque issuer-session binding; absent on all legacy non-browser codes. */
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    private String browserSessionHash;
+
     /** Expiration time. MongoDB TTL index auto-deletes expired documents. */
     @Indexed(options = @IndexOptions(expireAfterSeconds = 300))
     private Date expiresAt;

@@ -38,6 +38,9 @@ import java.util.*;
 public class OAuthTokenResource {
 
     @Inject
+    com.e2eq.framework.oauth.session.BrowserSignIn browserSignIn;
+
+    @Inject
     OAuthClientRepo oauthClientRepo;
 
     @Inject
@@ -168,6 +171,12 @@ public class OAuthTokenResource {
         // Consume the code (one-time use)
         if (!authCodeRepo.consumeCode(systemRealm, code)) {
             return errorResponse("invalid_grant", "Authorization code already consumed");
+        }
+
+        if (authCode.getBrowserSessionHash() != null
+                && (browserSignIn == null || !browserSignIn.codeSessionActive(authCode.getBrowserSessionHash(),
+                        authCode.getSubject(), authCode.getPasswordRevision()))) {
+            return errorResponse("invalid_grant", "Browser sign-in session ended");
         }
 
         // Look up the user's credential to get roles
