@@ -39,6 +39,12 @@ public class MigrationCheckRequestFilter implements ContainerRequestFilter {
     @ConfigProperty(name = "quantum.database.migration.enabled", defaultValue = "true")
     boolean migrationCheckEnabled;
 
+    @ConfigProperty(name = "quantum.auth.trust-token-claims", defaultValue = "false")
+    boolean trustTokenClaims;
+
+    @ConfigProperty(name = "quantum.security.session.realm")
+    Optional<String> sessionRealm = Optional.empty();
+
     @Override
     public void filter(ContainerRequestContext requestContext) throws IOException {
         boolean failRequest=false;
@@ -85,6 +91,22 @@ public class MigrationCheckRequestFilter implements ContainerRequestFilter {
         if (realmOverride != null && !realmOverride.isBlank()) {
             Log.debug("Realm override found: " + realmOverride);
             return realmOverride;
+        }
+
+        if (trustTokenClaims && identity != null && !identity.isAnonymous()
+                && identity.getPrincipal() instanceof JsonWebToken token) {
+            Object kind = token.getClaim(com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.TOKEN_TYPE_CLAIM);
+            if (kind != null && com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.SERVICE_TOKEN_TYPE
+                    .equalsIgnoreCase(kind.toString())) {
+                return envConfigUtils.getSystemRealm();
+            }
+            String selected = sessionRealm.map(String::trim).filter(value -> !value.isEmpty()).orElse(null);
+            if (selected != null) return selected;
+            Object signedRealm = token.getClaim("realm");
+            if (signedRealm == null || signedRealm.toString().isBlank()) {
+                throw new jakarta.ws.rs.ForbiddenException("Trusted-issuer token is missing the required realm claim");
+            }
+            return signedRealm.toString().trim();
         }
 
         String authenticatedRealm = resolveAuthenticatedPrincipalRealm();

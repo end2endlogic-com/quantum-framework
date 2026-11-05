@@ -34,3 +34,14 @@
   do not prove complete OIDC, browser SSO or single-use refresh rotation.
 - Update these entry points and the documentation of record when behavior changes;
   distinguish implemented, verified, activated and still-planned capabilities.
+
+- For request lifecycle changes, read `quantum-security-runtime/README.md` and
+  the request-lifecycle section of `user-guide/auth.adoc`. Keep blocking
+  authority calls inside `AuthenticationRequestContext.runBlocking`.
+- Request role reuse is internal and delegated-only: exact issuer, subject,
+  user, realm, application and token-role inputs, scoped to `RoutingContext`.
+  Never turn it into a permission cache or skip provider/admission validation.
+  Embedded custom role resolvers remain uncached. Preserve their contracts.
+- Run `AuthorizationLifecycleHttpTest` as well as the runtime unit suite;
+  verify denied admission and next-request role revocation. Its mocked
+  directory/provider seams do not establish production service behavior.

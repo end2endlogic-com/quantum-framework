@@ -66,12 +66,9 @@ class RolesAugmentorAppSessionTest {
     void delegatedForeignTokenWithoutLocalCredentialGetsTheRealmAssignmentRoles() {
         RolesAugmentor augmentor = augmentor("decision-intelligence");
         augmentor.trustTokenClaims = true;
-        augmentor.credentialRepo = new CredentialRepo() {
-            @Override
-            public Optional<CredentialUserIdPassword> findBySubject(String subject, String realmId, boolean ignoreRules) {
+        augmentor.credentialRepo = new TestCredentialRepo((subject, realmId) -> {
                 return Optional.empty();
-            }
-        };
+        });
         String[] assignmentRealm = new String[1];
         augmentor.realmMembershipService = new com.e2eq.framework.system.membership.RealmMembershipService() {
             @Override
@@ -93,12 +90,9 @@ class RolesAugmentorAppSessionTest {
     void delegatedForeignTokenWithoutAUserIdClaimGetsNoAssignmentRoles() {
         RolesAugmentor augmentor = augmentor("decision-intelligence");
         augmentor.trustTokenClaims = true;
-        augmentor.credentialRepo = new CredentialRepo() {
-            @Override
-            public Optional<CredentialUserIdPassword> findBySubject(String subject, String realmId, boolean ignoreRules) {
+        augmentor.credentialRepo = new TestCredentialRepo((subject, realmId) -> {
                 return Optional.empty();
-            }
-        };
+        });
         augmentor.realmMembershipService = new com.e2eq.framework.system.membership.RealmMembershipService() {
             @Override
             public Optional<com.e2eq.framework.model.security.UserRealmRole> assignmentForUser(String userId, String realmRefName) {
@@ -218,9 +212,7 @@ class RolesAugmentorAppSessionTest {
                 (proxy, method, args) -> {
                     throw new ContextNotActiveException();
                 });
-        augmentor.credentialRepo = new CredentialRepo() {
-            @Override
-            public Optional<CredentialUserIdPassword> findBySubject(String subject, String realmId, boolean ignoreRules) {
+        augmentor.credentialRepo = new TestCredentialRepo((subject, realmId) -> {
                 if (!"system-com".equals(realmId)) {
                     return Optional.empty();
                 }
@@ -232,9 +224,23 @@ class RolesAugmentorAppSessionTest {
                         .lastUpdate(new Date())
                         .roles(new String[]{"editor"})
                         .build());
-            }
-        };
+        });
         return augmentor;
+    }
+
+    /** Named and vetoed so these plain unit-test doubles are not HTTP application beans. */
+    @jakarta.enterprise.inject.Vetoed
+    private static final class TestCredentialRepo extends CredentialRepo {
+        private final java.util.function.BiFunction<String, String, Optional<CredentialUserIdPassword>> lookup;
+
+        TestCredentialRepo(java.util.function.BiFunction<String, String, Optional<CredentialUserIdPassword>> lookup) {
+            this.lookup = lookup;
+        }
+
+        @Override
+        public Optional<CredentialUserIdPassword> findBySubject(String subject, String realm, boolean ignoreRules) {
+            return lookup.apply(subject, realm);
+        }
     }
 
     private static JsonWebToken jwt(Map<String, Object> claims, Set<String> groups) {

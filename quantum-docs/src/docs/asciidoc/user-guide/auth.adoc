@@ -805,3 +805,32 @@ See xref:{doc-root}/user-guide/multiple-auth-providers.adoc#per-tenant-key-pairs
 | _(unset — token realm)_
 | Realm a user's session runs in when the request sends no `X-Realm`.
 |===
+
+
+[[request-authorization-lifecycle]]
+== Request authorization lifecycle
+
+In `1.4.3-SNAPSHOT`, role augmentation performs blocking authority lookups on a
+Quarkus authentication worker. Delegated application sessions can reuse the
+same successful role resolution during REST admission in that HTTP request.
+Reuse requires matching issuer, subject, user ID, effective realm, application
+ID and token roles. A subsequent request resolves roles again, so this does
+not introduce a cross-request authorization cache.
+
+Provider validation and realm, application and tenant admission still run.
+An internal immutable principal projection is available only after principal
+admission; it is not a resource permission decision. Existing resource rules,
+public provider interfaces, response formats and embedded custom role resolvers
+retain their contracts. Embedded custom role resolution is not cached.
+
+When `quantum.auth.trust-token-claims=true`, augmentation and authenticated JWT
+migration checks do not consult local credentials. Without an explicit
+`X-Realm`, migration checks select the system realm for service tokens, or the
+configured session realm / signed realm for user sessions. A missing required
+signed realm is rejected. This selection does not authorize realm access.
+
+Applications should continue using existing provider and property/role resolver
+contracts. The new request-state types are internal and are not a supported
+application customization API. Full shared authority provenance, coarse/fine
+role parity and new session-policy extension contracts remain planned. See the
+security-runtime README for the lifecycle diagram and test boundaries.
