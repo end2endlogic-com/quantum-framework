@@ -41,7 +41,8 @@ public class OAuthClient extends BaseModel {
 
     /** Allowed redirect URIs for the authorization code flow. */
     @NotNull
-    private List<String> redirectUris;
+    @lombok.Builder.Default
+    private List<String> redirectUris = List.of();
 
     /** Allowed OAuth grant types (e.g., authorization_code, client_credentials, refresh_token). */
     @NotNull
