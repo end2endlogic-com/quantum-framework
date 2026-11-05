@@ -30,6 +30,10 @@ public class SessionSelectionCoordinator {
     private SessionSelectionPolicy selected;
 
     void start(@Observes StartupEvent event) {
+        if (policyId.isEmpty() && policyVersion.isEmpty()) {
+            selected = null;
+            return; // Unselected extensions must not be instantiated or evaluated.
+        }
         selected = selectPolicy(policyId.orElse(null), policyVersion.orElse(null),
                 policies.stream().toList());
     }

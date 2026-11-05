@@ -17,6 +17,16 @@ import static com.e2eq.framework.security.session.SessionSelectionException.Code
 
 class SessionSelectionCoordinatorTest {
     @Test
+    @SuppressWarnings("unchecked")
+    void omittedSelectionDoesNotInstantiateInstalledPolicies() {
+        var coordinator = new SessionSelectionCoordinator();
+        coordinator.policies = mock(Instance.class);
+        coordinator.start(null);
+        assertFalse(coordinator.enabled());
+        verifyNoInteractions(coordinator.policies);
+    }
+
+    @Test
     void registryIsExplicitVersionPinnedAndNeverUsesImplicitPriority() {
         var p = policy("workspace", "1");
         assertNull(SessionSelectionCoordinator.selectPolicy(null, null, List.of(p)));
