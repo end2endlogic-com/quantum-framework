@@ -176,6 +176,26 @@ public class TokenUtils {
 											 String accountNum,
 											 long expiresAt,
 											 String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+		return generateUserToken(subject, userId, groups, realm, tenantId, orgRefName, accountNum,
+				expiresAt, issuer, null);
+	}
+
+	/**
+	 * Tenant-aware user token with a credential id ({@code jti}). The id is the
+	 * revocable credential record. The token stays a user token: it carries
+	 * {@code userId} and does not set {@code token_type=service}. A null or blank
+	 * credential id omits {@code jti}.
+	 */
+	public static String generateUserToken ( String subject,
+											 String userId,
+											 Set<String> groups,
+											 String realm,
+											 String tenantId,
+											 String orgRefName,
+											 String accountNum,
+											 long expiresAt,
+											 String issuer,
+											 String credentialId) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
 
 		Objects.requireNonNull(subject, "subject cannot be null");
 		Objects.requireNonNull(issuer, "Issuer cannot be null");
@@ -204,6 +224,7 @@ public class TokenUtils {
 		if (tenantId != null && !tenantId.isBlank())     claimsBuilder.claim("tenantId", tenantId);
 		if (orgRefName != null && !orgRefName.isBlank()) claimsBuilder.claim("orgRefName", orgRefName);
 		if (accountNum != null && !accountNum.isBlank()) claimsBuilder.claim("accountNum", accountNum);
+		if (credentialId != null && !credentialId.isBlank()) claimsBuilder.claim("jti", credentialId.trim());
 
 		return claimsBuilder.jws().keyId(resolveSigningKeyId()).sign(privateKey);
 	}
@@ -242,6 +263,50 @@ public class TokenUtils {
 		if (realmBoundary != null && !realmBoundary.isBlank()) {
 			claimsBuilder.claim("realmRegEx", realmBoundary.trim());
 		}
+		return claimsBuilder.jws().keyId(resolveSigningKeyId()).sign(privateKey);
+	}
+
+	/**
+	 * Token for one user and one service. {@code aud} and {@code azp} are that
+	 * service. The token carries the user's identity and {@code jti}, and it does
+	 * not set {@code token_type=service}. An identity-agnostic service token is
+	 * {@link #generateServiceToken(String, Set, String, long, String)} instead.
+	 */
+	public static String generateIdentityServiceToken(String subject,
+											 String userId,
+											 Set<String> groups,
+											 String realm,
+											 String tenantId,
+											 String orgRefName,
+											 String accountNum,
+											 String applicationRef,
+											 String credentialId,
+											 long expiresAt,
+											 String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+		Objects.requireNonNull(subject, "subject cannot be null");
+		Objects.requireNonNull(issuer, "Issuer cannot be null");
+		if (applicationRef == null || applicationRef.isBlank()) {
+			throw new ValidationException("applicationRef is required");
+		}
+		if (credentialId == null || credentialId.isBlank()) {
+			throw new ValidationException("credentialId is required");
+		}
+		if (expiresAt <= REFRESH_ADDITIONAL_DURATION_SECONDS) {
+			throw new ValidationException("Duration must be greater than" + REFRESH_ADDITIONAL_DURATION_SECONDS + " seconds");
+		}
+		String service = applicationRef.trim();
+		PrivateKey privateKey = signingKey();
+		JwtClaimsBuilder claimsBuilder = Jwt.claims();
+		claimsBuilder.issuer(issuer);
+		claimsBuilder.subject(subject);
+		claimsBuilder.issuedAt(currentTimeInSecs());
+		claimsBuilder.audience(Set.of(service));
+		claimsBuilder.expiresAt(expiresAt);
+		claimsBuilder.groups(groups);
+		claimsBuilder.claim("scope", AUTH_SCOPE);
+		claimsBuilder.claim("azp", service);
+		claimsBuilder.claim("jti", credentialId.trim());
+		addPrincipalClaims(claimsBuilder, userId, realm, tenantId, orgRefName, accountNum);
 		return claimsBuilder.jws().keyId(resolveSigningKeyId()).sign(privateKey);
 	}
 

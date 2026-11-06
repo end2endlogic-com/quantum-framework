@@ -434,20 +434,39 @@ Response:
 
 | `expirationSeconds`
 | long
-| No
-| Seconds until expiry. When `null`, the token is issued for approximately 100 years (effectively non-expiring).
+| For an identity-agnostic token, no. For a token bound to the caller, yes.
+| Seconds until expiry. When `null` on an identity-agnostic token, the token is issued for approximately 100 years. A token bound to the caller rejects a null duration and rejects a duration longer than 366 days.
 
 | `description`
 | string
 | No
 | Human-readable label for the credential (e.g., `"Nightly sync job"`, `"Claude MCP integration"`).
+
+| `userId`
+| string
+| No
+| The caller's own user id. When present, the issued JWT is that user's token for `applicationRef`. A value other than the caller's user id is refused.
+
+| `applicationRef`
+| string
+| For a token bound to the caller, yes. For an identity-agnostic token, no.
+| The one service the token is for. Launchpad uses it to resolve that service's identity and billing account. Omit it, and omit `userId`, to mint an identity-agnostic token.
 |===
+
+==== Who may mint
+
+Two permissions control this endpoint. They are roles on the caller's token. Neither is implied by `admin` or `user`, and neither implies the other.
+
+* `mint-own-service-token` — the caller may mint a token for their own user and one service (`applicationRef`). If `userId` is omitted, the token is still bound to the caller. The JWT carries that user, realm, and tenant, `aud` and `azp` set to that service, a finite `exp`, and a `jti` credential id. It does not set `token_type` to `service`. This mint does not require `mint-agnostic-service-token`.
+* `mint-agnostic-service-token` — required to mint an identity-agnostic service token, the credential for a multi-tenant or multi-user service. The request names neither a user nor one service. Holding this permission does not block a caller who also holds `mint-own-service-token` from minting an identity and service specific token, and it does not let the caller mint a token for someone else.
+
+A request that names a `userId` other than the caller's is refused. If `X-Acting-On-Behalf-Of-UserId` disagrees with the bound user, the mint is refused. The header does not choose the payer.
 
 ==== What Happens on the Backend
 
-When you call `POST /auth/service-token`, the framework:
+When you call `POST /security/service-token`, the auth service:
 
-1. **Validates the caller** -- the endpoint requires `admin` or `system` role (`@RolesAllowed({"admin", "system"})`). Only administrators can create service tokens.
+1. **Validates the caller** -- the endpoint allows `mint-own-service-token` or `mint-agnostic-service-token`. An identity-agnostic token requires the second permission. A token for the caller and one service requires the first, and names that service in `applicationRef`.
 2. **Looks up the caller's credential** -- from the JWT `sub` claim, the framework finds the caller's `CredentialUserIdPassword` in the system realm.
 3. **Creates a new `SERVICE_TOKEN` credential** with:
    * `userId`: `svc:<uuid>` (auto-generated, not user-controlled)
@@ -459,7 +478,7 @@ When you call `POST /auth/service-token`, the framework:
    * `issuer`: The configured `mp.jwt.verify.issuer`
 4. **Saves the credential** to MongoDB.
 5. **Links it to the caller's UserProfile** via `additionalCredentialRefs` so the token can be traced to its creator.
-6. **Signs and returns the JWT**.
+6. **Signs and returns the JWT**. For a token bound to the caller and one service, the stored credential id is signed as `jti`, the JWT subject and `userId` are the caller's, and `aud` and `azp` are that service. That JWT does not set `token_type` to `service`. An identity-agnostic token keeps the generated service subject and sets `token_type` to `service`.
 
 ==== Using a Service Token
 
@@ -472,7 +491,7 @@ curl -sS -X GET \
   http://localhost:8080/api/query/rootTypes
 ----
 
-The `SecurityFilter` validates the token, looks up the `SERVICE_TOKEN` credential by its `sub` claim, and builds a `PrincipalContext` with the credential's `DomainContext`, roles, and realm -- exactly as it would for a user token.
+The `SecurityFilter` validates the token. An identity-agnostic service token is looked up by its service `sub`. A token bound to the caller is that user's token: its `sub` and `userId` are the caller's, and its `jti` names the revocable credential record. A consumer that checks only the signature, issuer, and expiry accepts that token until `exp`; it does not see a later revocation of the credential record.
 
 ==== Example: Configuring an MCP Server with a Service Token
 
