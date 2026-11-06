@@ -151,8 +151,36 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
       }
    }
 
-
-
+   /**
+    * Long-lived token for one user and one service. The signed claims are that user's
+    * ({@code userId}, realm, tenant, org, account, and the granted roles) and the
+    * service as both {@code aud} and {@code azp}. It does not set {@code token_type=service}.
+    * {@code credentialId} is the revocable credential record and is signed as {@code jti}.
+    */
+   public String generateBoundUserToken(String subject,
+                                         String userId,
+                                         Set<String> roles,
+                                         String realm,
+                                         String tenantId,
+                                         String orgRefName,
+                                         String accountNum,
+                                         String applicationRef,
+                                         long expirationSeconds,
+                                         String credentialId) {
+      if (expirationSeconds <= 0) {
+         throw new IllegalArgumentException("expirationSeconds must be positive");
+      }
+      if (applicationRef == null || applicationRef.isBlank()) {
+         throw new IllegalArgumentException("applicationRef is required");
+      }
+      try {
+         return TokenUtils.generateIdentityServiceToken(
+                 subject, userId, roles, realm, tenantId, orgRefName, accountNum,
+                 applicationRef, credentialId, TokenUtils.expiresAt(expirationSeconds), issuer);
+      } catch (IOException | NoSuchAlgorithmException | InvalidKeySpecException e) {
+         throw new RuntimeException("Failed to generate bound user token", e);
+      }
+   }
 
    @Override
    public void changePassword(String userId, String oldPassword, String newPassword, Boolean forceChangePassword) {
