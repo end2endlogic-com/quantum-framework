@@ -27,11 +27,13 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set up JDK 23 and Maven authentication
+      - name: Set up pinned JDK 21 and Maven authentication
         uses: actions/setup-java@v4
         with:
           distribution: graalvm
-          java-version: '23'
+          # Match the validated runtime; floating GraalVM 23 installs a
+          # compiler newer than this branch's Polyglot 24.1.0 libraries.
+          java-version: '21.0.4'
           cache: maven
           server-id: central
           server-username: CENTRAL_USERNAME
