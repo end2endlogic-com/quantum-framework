@@ -1,0 +1,102 @@
+name: Build and publish framework snapshot
+
+on:
+  push:
+    branches: ['1.4.3-SNAPSHOT']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Keep queued pushes instead of replacing the previous pending publication.
+concurrency:
+  group: framework-snapshot-1.4.3
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  snapshot:
+    if: github.ref == 'refs/heads/1.4.3-SNAPSHOT'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      MONGODB_CONNECTION_STRING: mongodb://127.0.0.1:27017/?replicaSet=quantumTests
+    steps:
+      - name: Checkout pushed commit
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 23 and Maven authentication
+        uses: actions/setup-java@v4
+        with:
+          distribution: graalvm
+          java-version: '23'
+          cache: maven
+          server-id: central
+          server-username: CENTRAL_USERNAME
+          server-password: CENTRAL_PASSWORD
+
+      - name: Require the expected snapshot version
+        run: |
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+          ns = {'m': 'http://maven.apache.org/POM/4.0.0'}
+          root = ET.parse('pom.xml').getroot()
+          expected = '1.4.3-SNAPSHOT'
+          assert root.findtext('m:version', namespaces=ns) == expected, 'Unexpected parent version'
+          for module in root.findall('m:modules/m:module', ns):
+              path = Path(module.text) / 'pom.xml'
+              pom = ET.parse(path).getroot()
+              version = pom.findtext('m:version', namespaces=ns) or pom.findtext('m:parent/m:version', namespaces=ns)
+              assert version == expected, f'{path}: refusing to publish {version}'
+          PY
+
+      - name: Start disposable Mongo replica set
+        run: |
+          docker run --detach --name quantum-ci-mongo --publish 27017:27017 \
+            --entrypoint sleep mongo:7.0 infinity
+          # --fork returns only after mongod is listening; no readiness loop.
+          docker exec quantum-ci-mongo mongod --fork --logpath /tmp/mongod.log \
+            --bind_ip_all --replSet quantumTests
+          docker exec quantum-ci-mongo mongosh --quiet --eval \
+            'rs.initiate({_id:"quantumTests",members:[{_id:0,host:"127.0.0.1:27017"}]})'
+          # Replica-set server selection waits for the elected primary.
+          docker exec quantum-ci-mongo mongosh "$MONGODB_CONNECTION_STRING" \
+            --quiet --eval 'db.runCommand({ping:1})'
+
+      - name: Build and test snapshot artifacts
+        run: |
+          mvn -B -ntp -Poss-release -pl '!quantum-docs' clean verify \
+            -Dgpg.skip=true \
+            -Dquarkus.mongodb.devservices.enabled=false \
+            -Dquarkus.http.test-port=0 -Dquarkus.http.test-ssl-port=0 \
+            -Dquarkus.mongodb.connection-string="$MONGODB_CONNECTION_STRING" \
+            -Dquantum.test.mongo-uri="$MONGODB_CONNECTION_STRING" \
+            -Dquantum.review.mongo-uri="$MONGODB_CONNECTION_STRING"
+
+      - name: Publish verified snapshot to Central Portal
+        env:
+          CENTRAL_USERNAME: ${{ secrets.CENTRAL_USERNAME }}
+          CENTRAL_PASSWORD: ${{ secrets.CENTRAL_PASSWORD }}
+        run: |
+          : "${CENTRAL_USERNAME:?Set the CENTRAL_USERNAME repository secret to the Central token username}"
+          : "${CENTRAL_PASSWORD:?Set the CENTRAL_PASSWORD repository secret to the Central token password}"
+          mvn -B -ntp -Poss-release -pl '!quantum-docs' deploy \
+            -DskipTests -Dgpg.skip=true
+
+      - name: Retain test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            **/target/surefire-reports/**
+            **/target/failsafe-reports/**
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Remove disposable Mongo
+        if: always()
+        run: docker rm --force quantum-ci-mongo
