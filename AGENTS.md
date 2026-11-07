@@ -74,3 +74,10 @@ Stop when the agreed check, compatibility checks and guidance are complete.
 - Route JWT reviews through `user-guide/auth.adoc`, the configured provider and
   security runtime first. OAuth/OIDC completion is separate optional scope.
   Server bearer tests do not prove frontend sign-in/handoff or provider revocation.
+
+## Credential metadata updates
+
+Credential reads omit password secrets. Preserve stored password hash/revision/stamp
+on metadata save/merge when hash is absent. A non-null changed hash still advances
+revocation state. Use password change/reset and active-status operations for those
+behaviors; do not interpret an omitted hash as a password removal.
