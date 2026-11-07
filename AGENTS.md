@@ -138,3 +138,10 @@ Request migration gates must follow `SystemRealmOwnership`, matching startup. A
 remote service must not impose its application schema version on the shared system
 realm. Preserve embedded checks and outdated-application rejection in tests. Do not
 repair this mismatch by changing identity realm records or stamping database versions.
+
+## Credential metadata updates
+
+Credential reads omit password secrets. Preserve stored password hash/revision/stamp
+on metadata save/merge when hash is absent. A non-null changed hash still advances
+revocation state. Use password change/reset and active-status operations for those
+behaviors; do not interpret an omitted hash as a password removal.
