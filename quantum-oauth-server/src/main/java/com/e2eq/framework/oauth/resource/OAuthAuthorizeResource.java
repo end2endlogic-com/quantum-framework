@@ -49,6 +49,15 @@ public class OAuthAuthorizeResource {
     @Inject
     EnvConfigUtils envConfigUtils;
 
+    @Inject
+    com.e2eq.framework.oauth.session.BrowserSignIn browserSignIn;
+
+    @jakarta.ws.rs.core.Context
+    jakarta.ws.rs.core.HttpHeaders requestHeaders;
+
+    @jakarta.ws.rs.core.Context
+    jakarta.ws.rs.core.UriInfo uriInfo;
+
     /**
      * GET — Validate the authorization request and present a login form.
      */
@@ -93,6 +102,29 @@ public class OAuthAuthorizeResource {
             return redirectError(redirectUri, state, "invalid_request", validationError);
         }
 
+        if (browserSignIn != null && browserSignIn.applies(clientId)) {
+            browserSignIn.requireOrigin(uriInfo);
+            browserSignIn.validateScope(client, scope);
+            var request = new com.e2eq.framework.oauth.session.BrowserSignIn.Request(clientId, redirectUri, scope,
+                    state, codeChallenge, codeChallengeMethod);
+            var session = browserSignIn.resume(requestHeaders);
+            if (session.isPresent()) {
+                var authenticated = session.get();
+                return browserCode(client, request, authenticated.credential(), authenticated.revision(),
+                        authenticated.expiresAt(), com.e2eq.framework.oauth.session.BrowserSignIn.cookie(requestHeaders,
+                                com.e2eq.framework.oauth.session.BrowserSignIn.SESSION_COOKIE), false);
+            }
+            var form = browserSignIn.form(requestHeaders, request);
+            String html = buildLoginForm(clientId, redirectUri, scope == null ? "" : scope, state,
+                    codeChallenge, codeChallengeMethod).replace("<form method=", "<form autocomplete=\"on\" method=")
+                    .replace("<label for=\"username\">", "<input type=\"hidden\" name=\"csrf\" value=\"" + form.proof() + "\">\n<label for=\"username\">");
+            return browserHeaders(Response.ok(html, MediaType.TEXT_HTML))
+                    .header("Set-Cookie", com.e2eq.framework.oauth.session.BrowserSignIn.cookieHeader(
+                            com.e2eq.framework.oauth.session.BrowserSignIn.BROWSER_COOKIE, form.browser(), 300))
+                    .header("Set-Cookie", com.e2eq.framework.oauth.session.BrowserSignIn.cookieHeader(
+                            com.e2eq.framework.oauth.session.BrowserSignIn.SESSION_COOKIE, "", 0)).build();
+        }
+
         // Render the login form
         String html = buildLoginForm(clientId, redirectUri, scope, state, codeChallenge, codeChallengeMethod);
         return Response.ok(html, MediaType.TEXT_HTML).build();
@@ -101,9 +133,6 @@ public class OAuthAuthorizeResource {
     /**
      * POST — Authenticate the user and redirect with an authorization code.
      */
-    @POST
-    @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
-    @Produces(MediaType.TEXT_HTML)
     public Response login(
             @FormParam("username") String username,
             @FormParam("password") String password,
@@ -202,6 +231,76 @@ public class OAuthAuthorizeResource {
             Log.error("Authorization failed", e);
             return redirectError(redirectUri, state, "server_error", "Authentication failed");
         }
+    }
+
+    @POST
+    @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
+    @Produces(MediaType.TEXT_HTML)
+    public Response browserLogin(@FormParam("username") String username, @FormParam("password") String password,
+            @FormParam("client_id") String clientId, @FormParam("redirect_uri") String redirectUri,
+            @FormParam("scope") String scope, @FormParam("state") String state,
+            @FormParam("code_challenge") String challenge, @FormParam("code_challenge_method") String method,
+            @FormParam("csrf") String csrf) {
+        if (browserSignIn == null || !browserSignIn.applies(clientId))
+            return login(username, password, clientId, redirectUri, scope, state, challenge, method);
+        browserSignIn.requireOrigin(uriInfo);
+        var found = oauthClientRepo.findByClientId(envConfigUtils.getSystemRealm(), clientId);
+        if (found.isEmpty() || redirectUri == null || !found.get().getRedirectUris().contains(redirectUri))
+            return browserHeaders(Response.status(400).entity("Invalid client or redirect")).build();
+        OAuthClient client = found.get();
+        if (OAuthRequestValidation.authorizationError(client, challenge, method) != null)
+            return browserHeaders(Response.fromResponse(redirectError(redirectUri, state, "invalid_request", "Invalid authorization request"))).build();
+        browserSignIn.validateScope(client, scope);
+        var request = new com.e2eq.framework.oauth.session.BrowserSignIn.Request(clientId, redirectUri, scope, state, challenge, method);
+        browserSignIn.consumeLogin(requestHeaders, request, csrf);
+        if (username == null || username.isBlank() || password == null || password.isBlank())
+            return browserHeaders(Response.status(400).entity("Credentials required; restart authorization")).build();
+        String system = envConfigUtils.getSystemRealm();
+        var before = credentialRepo.findByUserId(username, system, true);
+        if (before.isEmpty()) return browserHeaders(Response.status(401).entity("Invalid credentials")).build();
+        String subject = before.get().getSubject();
+        long revision = before.get().currentPasswordRevision();
+        var provider = authProviderFactory.getAuthProvider();
+        String application = client.getApplicationId() == null || client.getApplicationId().isBlank()
+                ? client.getClientId() : client.getApplicationId();
+        var result = provider.login(username, password, application, client.getRealm());
+        if (!result.authenticated() || result.positiveResponse() == null)
+            return browserHeaders(Response.status(401).entity("Authentication or application admission failed; restart authorization")).build();
+        var after = credentialRepo.findBySubject(subject, system, true).orElseThrow(() -> new ForbiddenException("Credential changed"));
+        if (!after.getUserId().equals(result.positiveResponse().userId())) throw new ForbiddenException("Credential binding changed");
+        String cookie = browserSignIn.create(requestHeaders, after, revision, provider.getName());
+        var authenticated = browserSignIn.session(cookie).orElseThrow();
+        return browserCode(client, request, after, revision, authenticated.expiresAt(), cookie, true);
+    }
+
+    private Response browserCode(OAuthClient client, com.e2eq.framework.oauth.session.BrowserSignIn.Request request,
+            CredentialUserIdPassword credential, long revision, java.time.Instant sessionExpiresAt,
+            String sessionCookie, boolean newlyAuthenticated) {
+        String code = UUID.randomUUID().toString().replace("-", "");
+        java.time.Instant deadline = java.time.Instant.now().plusSeconds(300);
+        if (sessionExpiresAt.isBefore(deadline)) deadline = sessionExpiresAt;
+        var authCode = AuthorizationCode.builder().id(new ObjectId()).refName(code).displayName("OAuth authorization code")
+                .code(code).clientId(client.getClientId()).subject(credential.getSubject()).userId(credential.getUserId())
+                .passwordRevision(revision).redirectUri(request.redirect()).codeChallenge(request.challenge())
+                .codeChallengeMethod(request.method()).scopes(request.scope() == null || request.scope().isBlank()
+                        ? List.of() : Arrays.asList(request.scope().trim().split("\\s+")))
+                .realm(client.getRealm() == null ? envConfigUtils.getSystemRealm() : client.getRealm())
+                .browserSessionHash(com.e2eq.framework.oauth.session.BrowserSignIn.hash(sessionCookie))
+                .consumed(false).expiresAt(Date.from(deadline)).build();
+        morphiaDataStore(envConfigUtils.getSystemRealm()).save(authCode);
+        String redirect = request.redirect() + (request.redirect().contains("?") ? "&" : "?") + "code=" + encode(code)
+                + (request.state() == null ? "" : "&state=" + encode(request.state()));
+        var response = browserHeaders(Response.seeOther(URI.create(redirect)));
+        if (newlyAuthenticated) response.header("Set-Cookie", browserSignIn.sessionCookie(sessionCookie))
+                .header("Set-Cookie", com.e2eq.framework.oauth.session.BrowserSignIn.cookieHeader(
+                        com.e2eq.framework.oauth.session.BrowserSignIn.BROWSER_COOKIE, "", 0));
+        return response.build();
+    }
+
+    private static Response.ResponseBuilder browserHeaders(Response.ResponseBuilder response) {
+        return response.header("Cache-Control", "no-store").header("Pragma", "no-cache")
+                .header("Referrer-Policy", "no-referrer").header("X-Frame-Options", "DENY")
+                .header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
     }
 
     private dev.morphia.Datastore morphiaDataStore(String realm) {
