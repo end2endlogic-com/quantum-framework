@@ -19,3 +19,10 @@
 - Create flows should omit `id`; save/update flows should include the existing `id` so the backend performs an update/replace instead of accidentally creating a duplicate record.
 - `id` values are Mongo `ObjectId` values and must be preserved exactly as returned by the API.
 - The default pattern is: read all, modify the needed fields, then write all.
+
+## Migration ownership
+
+Request migration gates must follow `SystemRealmOwnership`, matching startup. A
+remote service must not impose its application schema version on the shared system
+realm. Preserve embedded checks and outdated-application rejection in tests. Do not
+repair this mismatch by changing identity realm records or stamping database versions.

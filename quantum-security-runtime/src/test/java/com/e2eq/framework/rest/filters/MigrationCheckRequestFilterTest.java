@@ -5,6 +5,9 @@ import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.DomainContext;
 import com.e2eq.framework.util.EnvConfigUtils;
+import com.e2eq.framework.system.config.SystemRealmOwnership;
+import com.e2eq.framework.system.config.QuantumModeConfig;
+import com.e2eq.framework.exceptions.DatabaseMigrationException;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.ws.rs.container.ContainerRequestContext;
 import jakarta.ws.rs.core.Cookie;
@@ -32,6 +35,7 @@ import java.util.Optional;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class MigrationCheckRequestFilterTest {
 
@@ -85,6 +89,44 @@ class MigrationCheckRequestFilterTest {
         assertEquals(List.of("configured-default-realm", "system-com"), migrationService.checkedRealms);
     }
 
+    @Test
+    void remoteModeDoesNotRequireApplicationVersionOnControlPlane() throws Exception {
+        TestMigrationService service = new TestMigrationService();
+        service.failedRealm = "system-com";
+        MigrationCheckRequestFilter filter = remoteFilter(service);
+        filter.filter(new StubRequestContext("/api/orders", "GET"));
+        assertEquals(List.of("tenant-home-realm"), service.checkedRealms);
+    }
+
+    @Test
+    void remoteModeStillRejectsAnOutdatedApplicationDatabase() {
+        TestMigrationService service = new TestMigrationService();
+        service.failedRealm = "tenant-home-realm";
+        MigrationCheckRequestFilter filter = remoteFilter(service);
+        assertThrows(DatabaseMigrationException.class,
+            () -> filter.filter(new StubRequestContext("/api/orders", "GET")));
+        assertEquals(List.of("tenant-home-realm"), service.checkedRealms);
+    }
+
+    @Test
+    void embeddedModeStillRejectsAnOutdatedSystemDatabase() {
+        TestMigrationService service = new TestMigrationService();
+        service.failedRealm = "system-com";
+        MigrationCheckRequestFilter filter = buildFilter(identity("user"), testEnvConfig(),
+            new TestCredentialRepo("user", "tenant-home-realm"), service, null);
+        assertThrows(DatabaseMigrationException.class,
+            () -> filter.filter(new StubRequestContext("/api/orders", "GET")));
+        assertEquals(List.of("tenant-home-realm", "system-com"), service.checkedRealms);
+    }
+
+    private static MigrationCheckRequestFilter remoteFilter(TestMigrationService service) {
+        var filter = buildFilter(identity("user"), testEnvConfig(),
+            new TestCredentialRepo("user", "tenant-home-realm"), service, null);
+        filter.systemRealmOwnership = SystemRealmOwnership.of(
+            QuantumModeConfig.of("remote", Optional.of("https://control.example")), filter.envConfigUtils);
+        return filter;
+    }
+
     private static MigrationCheckRequestFilter buildFilter(
         SecurityIdentity identity,
         EnvConfigUtils envConfigUtils,
@@ -95,6 +137,7 @@ class MigrationCheckRequestFilterTest {
         MigrationCheckRequestFilter filter = new MigrationCheckRequestFilter();
         filter.identity = identity;
         filter.envConfigUtils = envConfigUtils;
+        filter.systemRealmOwnership = SystemRealmOwnership.of(QuantumModeConfig.of("embedded", Optional.empty()), envConfigUtils);
         filter.credentialRepo = credentialRepo;
         filter.migrationService = migrationService;
         filter.jwt = jwt;
@@ -119,10 +162,12 @@ class MigrationCheckRequestFilterTest {
 
     static class TestMigrationService extends MigrationService {
         final java.util.List<String> checkedRealms = new java.util.ArrayList<>();
+        String failedRealm;
 
         @Override
         public void checkInitialized(String realm) {
             checkedRealms.add(realm);
+            if (realm.equals(failedRealm)) throw new DatabaseMigrationException("fixture schema requires migration");
         }
     }
 

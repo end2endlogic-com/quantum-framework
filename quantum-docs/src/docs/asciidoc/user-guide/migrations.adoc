@@ -50,6 +50,18 @@ The following MicroProfile config properties influence migrations:
 - quantum.defaultSystemPassword: initial password for the system user credential when created by the AddSystemUserCredential change set (default: `test123456`). Set in `application.properties`; the system user (quantum.realmConfig.systemUserId) is created in the credentials collection so login with that user works.
 - quantum.database.version: target schema version (e.g. 1.0.4). Must be at least 1.0.4 for the system user credential to be created during migration.
 
+== Control-plane ownership at request time
+
+In `quantum.mode=remote`, request migration checks apply to the application's
+selected realm, not the shared system realm. The control-plane service owns that
+realm's version and lifecycle. `MigrationCheckRequestFilter` uses the existing
+`SystemRealmOwnership` contract, as startup already does. Embedded mode retains
+both application and system schema checks. This does not alter authentication,
+application admission, tenant authorization, or the application's migration gate.
+Do not migrate the shared identity catalog merely to satisfy a remote application's
+schema version. A remote application's system realm may have a lower version than
+its application database without requiring an application-owned migration.
+
 == How change sets are discovered and executed
 
 - Discovery: MigrationService#getAllChangeSetBeans locates all CDI beans implementing ChangeSetBean.
