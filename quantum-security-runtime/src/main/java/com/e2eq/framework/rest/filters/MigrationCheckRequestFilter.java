@@ -5,6 +5,7 @@ import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.exceptions.DatabaseMigrationException;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.util.EnvConfigUtils;
+import com.e2eq.framework.system.config.SystemRealmOwnership;
 import io.quarkus.logging.Log;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.inject.Inject;
@@ -29,6 +30,9 @@ public class MigrationCheckRequestFilter implements ContainerRequestFilter {
 
     @Inject
     EnvConfigUtils envConfigUtils;
+
+    @Inject
+    SystemRealmOwnership systemRealmOwnership;
 
     @Inject
     CredentialRepo credentialRepo;
@@ -66,8 +70,8 @@ public class MigrationCheckRequestFilter implements ContainerRequestFilter {
 
         try {
             String effectiveRealm = resolveMigrationRealm(requestContext);
-            migrationService.checkInitialized(effectiveRealm);
-           migrationService.checkInitialized(envConfigUtils.getSystemRealm());
+            checkOwnedRealm(effectiveRealm);
+           checkOwnedRealm(envConfigUtils.getSystemRealm());
 
         } catch (DatabaseMigrationException e) {
             Log.warn("!! Migration check failed: " + e.getMessage());
@@ -79,7 +83,7 @@ public class MigrationCheckRequestFilter implements ContainerRequestFilter {
         if (failRequest && (requestContext.getUriInfo().getPath().contains("login") ||
                   requestContext.getUriInfo().getPath().contains("migration"))) {
             try {
-                migrationService.checkInitialized(envConfigUtils.getSystemRealm());
+                checkOwnedRealm(envConfigUtils.getSystemRealm());
             } catch (DatabaseMigrationException e) {
                 Log.warn("!! System Migration check failed: " + e.getMessage());
                 Log.warnf(" Execution of Request:%s caused this error", requestContext.getUriInfo().getPath());
@@ -90,6 +94,15 @@ public class MigrationCheckRequestFilter implements ContainerRequestFilter {
         if (failRequest) {
            throw ex;
         }
+    }
+
+    /** Remote services validate their application schema, not the control plane's schema. */
+    private void checkOwnedRealm(String realm) {
+        if (java.util.Objects.equals(realm, envConfigUtils.getSystemRealm())
+                && !systemRealmOwnership.ownedLocally()) {
+            return;
+        }
+        migrationService.checkInitialized(realm);
     }
 
     String resolveMigrationRealm(ContainerRequestContext requestContext) {
