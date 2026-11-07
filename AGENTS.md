@@ -1,5 +1,10 @@
 # Repository Notes
 
+## Active development branch
+
+Base and merge Quantum Framework changes against `1.4.3-SNAPSHOT`, never
+`main`. `1.4.2-SNAPSHOT` is frozen and must not receive new changes.
+
 ## Related Repositories
 
 - The framework Cognito provider source is located at `/Users/mingardia/dev/mrisys/end2endlogic/quantum/framework-cognito-provider`.
