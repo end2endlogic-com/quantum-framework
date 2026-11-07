@@ -19,3 +19,11 @@
 - Create flows should omit `id`; save/update flows should include the existing `id` so the backend performs an update/replace instead of accidentally creating a duplicate record.
 - `id` values are Mongo `ObjectId` values and must be preserved exactly as returned by the API.
 - The default pattern is: read all, modify the needed fields, then write all.
+
+## Migration applicability
+
+`getApplicableDatabases()` null and empty sets both mean unrestricted, as documented.
+Verify the real runner executes either form, respects non-empty restrictions, and
+rolls back failed work without advancing the target version. When correcting an
+older runner, audit previously skipped changes before enabling migration; an advanced
+database version alone is not evidence that every change set executed.

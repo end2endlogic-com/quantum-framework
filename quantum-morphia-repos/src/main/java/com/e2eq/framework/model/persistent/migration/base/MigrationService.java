@@ -680,6 +680,7 @@ public class MigrationService {
                if (shouldRun) {
 
                   if ((changeSetBean.getApplicableDatabases() == null) ||
+                         changeSetBean.getApplicableDatabases().isEmpty() ||
                          (changeSetBean.getApplicableDatabases() != null && changeSetBean.getApplicableDatabases().contains(realm))
                   ) {
                      Log.infof("Executing Change Set:%s", changeSetBean.getName());

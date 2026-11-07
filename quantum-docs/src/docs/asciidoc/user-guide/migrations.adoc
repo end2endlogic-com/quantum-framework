@@ -83,7 +83,15 @@ Optional targeting controls (provided by ChangeSetBase):
 
 - boolean isOverrideDatabase(): return true to execute against a specific database instead of the requested realm.
 - String getOverrideDatabaseName(): the concrete database name to use when overriding.
-- Set<String> getApplicableDatabases(): return a set of database names to which this change set should apply. Return null or an empty set to allow all.
+- Set<String> getApplicableDatabases(): return a set of database names to which this change set should apply. Return null or an empty set to allow all. Execution and readiness checks use the same interpretation. A non-empty set excludes every database it does not name.
+
+Before rolling out the empty-set execution correction, inspect existing change-set
+records and data. Older runners skipped empty sets during execution even though
+readiness checks treated them as unrestricted. A recorded database version alone
+does not prove those changes executed. The next migration can run previously
+skipped data changes; review their funding, ownership and index effects against a
+backup first. Do not combine this correction with an otherwise read-only request
+filter hotfix without that migration review.
 
 Logging helper:
 
