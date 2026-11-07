@@ -184,3 +184,8 @@ copy authorization graphs into tokens, or mint a replacement token merely to
 switch request context. When audiences differ, use the issuer's supported flow
 for the appropriate audience; sharing sign-in does not require sharing an access
 token across incompatible audiences.
+
+Request migration checks reuse `SystemRealmOwnership`: embedded deployments check
+the system schema; remote deployments leave that schema to the control-plane owner.
+Application schema checks still fail closed in either mode. This is independent of
+authentication and admission and does not grant access to a remote system database.
