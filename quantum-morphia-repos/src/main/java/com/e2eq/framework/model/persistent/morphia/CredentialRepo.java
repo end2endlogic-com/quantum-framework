@@ -261,15 +261,16 @@ public class CredentialRepo extends MorphiaRepo<CredentialUserIdPassword> {
    /** The hash changes only through the credential's setter, which records the change. */
    @Override
    protected java.util.Set<String> serverOwnedFields () {
-      return java.util.Set.of("passwordHash", "passwordChangedAt", "passwordRevision");
+      return java.util.Set.of("passwordHash", "hashingAlgorithm", "passwordChangedAt", "passwordRevision");
    }
 
    /**
     * The stored credential is the authority for the server-owned password state on every save
     * and merge: an incoming copy's revision and stamp are never trusted (they never travel over
     * REST, and a copy could otherwise clear or roll them back and revive ended sessions).
-    * Unchanged hash: keep the stored revision and stamp. Changed hash (a replace that clears it
-    * counts): one past the stored revision, stamped now. A merge leaves a null hash as stored.
+    * An omitted hash preserves the stored hash, revision and stamp on both replace and merge.
+    * Credential reads intentionally omit secrets; a metadata round trip is not a password reset.
+    * A non-null changed hash still advances the stored revision and stamp.
     */
    @Override
    protected void reconcileServerOwnedState (Datastore datastore, CredentialUserIdPassword value, RefNameContract.WriteMode mode) {
@@ -282,9 +283,12 @@ public class CredentialRepo extends MorphiaRepo<CredentialUserIdPassword> {
       if (stored == null) {
          return;
       }
-      boolean unchanged = java.util.Objects.equals(stored.getPasswordHash(), value.getPasswordHash())
-         || (mode == RefNameContract.WriteMode.MERGE && value.getPasswordHash() == null);
+      if (value.getPasswordHash() == null) {
+         value.setPasswordHash(stored.getPasswordHash());
+      }
+      boolean unchanged = java.util.Objects.equals(stored.getPasswordHash(), value.getPasswordHash());
       if (unchanged) {
+         value.setHashingAlgorithm(stored.getHashingAlgorithm());
          value.setPasswordRevision(stored.getPasswordRevision());
          value.setPasswordChangedAt(stored.getPasswordChangedAt());
       } else {
