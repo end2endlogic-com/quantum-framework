@@ -823,6 +823,10 @@ See xref:{doc-root}/user-guide/multiple-auth-providers.adoc#per-tenant-key-pairs
 | `quantum.security.session.realm`
 | _(unset — token realm)_
 | Realm a user's session runs in when the request sends no `X-Realm`.
+
+| `quantum.security.system-realm.authority-roles`
+| `system`
+| With `quantum.auth.trust-token-claims=true`, the signed roles that admit a token minted for the system realm. Such a request adopts the cross-tenant system data domain, so by default only `system` qualifies and any other token is refused with 403 "The system realm requires system authority in the signed token". A service that hosts a narrower control-plane identity (for example a registry reader whose rows are bounded by its own realm policies) names that role here as well, e.g. `system,registry-reader`. Blank entries are ignored; an empty setting keeps the default.
 |===
 
 
