@@ -16,6 +16,58 @@ Base and merge Quantum Framework changes against `1.4.3-SNAPSHOT`, never
 - `quantum-enterprise` is optional and commercially licensed, while this framework is open source.
 - Keep enterprise-specific behavior and integrations outside the framework unless they can remain fully optional and decoupled.
 
+## Tenancy, ownership and access control (read before adding a model, repo or resource)
+
+This framework defines the multi-tenancy vector and its enforcement. Every
+governed model, repository and resource must use it; never build a parallel
+one, here or in a dependent repository.
+
+- The vector is `DataDomain` on every row (`orgRefName`, `accountNum`,
+  `tenantId`, `dataSegment`, `ownerId`;
+  `quantum-models/.../persistent/base/DataDomain.java`) and `SecurityURIBody`
+  on rules (`realm:org:account:tenant:dataSegment:owner:resourceId`, `*` =
+  any; `quantum-models/.../securityrules/SecurityURIBody.java`).
+  `dataDomain.ownerId` is the creating principal, stamped by
+  `AuditInterceptor`; that is the platform's "private by default" convention,
+  not an audit-only field.
+- Enforcement is `RuleContext` (`package com.e2eq.framework.security.runtime`,
+  file `quantum-morphia-repos/.../securityrules/RuleContext.java`): rules
+  keyed on `(identity, area, functionalDomain, action)`, lower priority first,
+  `finalRule` stops evaluation, every matched ALLOW filter is AND-ed. Filter
+  strings run over `dataDomain.*` (and other row fields) with `${pTenantId}`,
+  `${orgRefName}`, `${ownerId}`, `${principal.<claim>}` and
+  `AccessListResolver` collections. The default system rule is
+  `dataDomain.tenantId:${pTenantId}`; org, owner and segment scoping are
+  authored rules. Every `MorphiaRepo` read applies the result through
+  `RepoSecurityFilterBuilder.getFilterArray`, writes through
+  `RuleContext.enforceWriteFilters`.
+- Never pass `ignoreRules=true`, or open `SecurityCallScope.openIgnoringRules()`,
+  to make an authorization decision in Java. That bypass is only for platform
+  jobs (migration, bootstrap, archive/restore) and must never be reachable from
+  request input. A service-layer read that needs rules for a different
+  functional domain pushes a `ResourceContext` with
+  `SecurityCallScope.openResourceOnly(...)` instead.
+- Do not add explicit `tenantId`/`orgRefName`/`ownerId` fields that mirror
+  `dataDomain`; a second vector drifts from the first and is invisible to realm
+  policies. If a model needs a row-level audience knob (private / tenant / org
+  / realm), add one field such as `visibility` and reference it from rule
+  filters (precedent: `WorkItemVisibility`); the owner then widens it through
+  an ordinary update that owner-scoped rules permit.
+- A module that needs rules of its own registers them in an `*AccessPolicy`
+  bean at startup, scoped to its area, functional domains and roles, final at
+  a domain-specific priority (100–499) so realm policies can still override
+  with an earlier rule. The framework rebuilds the rule base when realm
+  policies reload, so the policy must re-register on demand before each
+  governed operation and fail closed (503) if it cannot.
+- Pooled (shared-database) realms are safe only for models whose reads go
+  through governed repositories; realm means database placement, `DataDomain`
+  means row visibility. "Not found" is the correct answer to a cross-tenant
+  probe.
+- Documentation of record: `quantum-docs/src/docs/asciidoc/user-guide/
+  permissions.adoc` (variables, authoring, what is scoped by default),
+  `domain-rule-context.adoc`, `tenant-models.adoc`, `query-language.adoc`
+  (filter syntax). Keep them in step with any change to the rule engine.
+
 ## Save And Update Pattern
 
 - For update flows, read the existing record first and keep the full persisted payload in memory.
