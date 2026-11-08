@@ -148,6 +148,14 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
     @ConfigProperty(name = "quantum.security.session.realm")
     Optional<String> sessionRealm = Optional.empty();
 
+    // Delegated identity in the system realm: a token minted for the system realm adopts the
+    // cross-tenant system data domain, so it must carry one of these roles. The default,
+    // `system`, is the long-standing rule. A service that hosts a narrower control-plane identity
+    // (a registry reader whose rows are then scoped by realm policies) names that role here too;
+    // the data-domain adoption is unchanged, so the role's own policy rules still bound what it sees.
+    @ConfigProperty(name = "quantum.security.system-realm.authority-roles", defaultValue = "system")
+    List<String> systemRealmAuthorityRoles = List.of("system");
+
     @Inject
     com.e2eq.framework.security.runtime.RuleContext ruleContext;
 
@@ -651,6 +659,35 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
     }
 
     /**
+     * Whether a delegated token's roles admit it to the system realm. `authorityRoles` is
+     * `quantum.security.system-realm.authority-roles` (default `system`); names are compared
+     * ignoring case and blank entries are ignored, so an empty or malformed setting never
+     * widens the gate: with nothing valid configured only `system` admits.
+     */
+    static boolean hasSystemRealmAuthority(String[] roles, List<String> authorityRoles) {
+        if (roles == null || roles.length == 0) {
+            return false;
+        }
+        List<String> accepted = authorityRoles == null
+                ? List.of()
+                : authorityRoles.stream().filter(r -> r != null && !r.isBlank()).map(String::trim).toList();
+        if (accepted.isEmpty()) {
+            accepted = List.of("system");
+        }
+        for (String role : roles) {
+            if (role == null) {
+                continue;
+            }
+            for (String allowed : accepted) {
+                if (allowed.equalsIgnoreCase(role.trim())) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
      * Result holder for context building that includes both the context and credentials.
      */
     private static class ContextBuildResult {
@@ -888,9 +925,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         // fallback for an ordinary tenant user. Gated so services opt in explicitly.
         DataDomain dataDomain;
         if (contextRealm.equalsIgnoreCase(systemRealm)) {
-            boolean hasSystemAuthority = Arrays.stream(roles)
-                    .anyMatch(role -> "system".equalsIgnoreCase(role));
-            if (!hasSystemAuthority) {
+            if (!hasSystemRealmAuthority(roles, systemRealmAuthorityRoles)) {
                 throw new jakarta.ws.rs.ForbiddenException(
                         "The system realm requires system authority in the signed token");
             }
