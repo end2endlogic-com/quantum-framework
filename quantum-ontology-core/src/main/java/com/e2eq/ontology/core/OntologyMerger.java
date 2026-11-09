@@ -28,10 +28,7 @@ public final class OntologyMerger {
                 disjoint.addAll(oc.disjointWith());
                 Set<String> sameAs = new LinkedHashSet<>(bc.sameAs());
                 sameAs.addAll(oc.sameAs());
-                classes.put(id, new ClassDef(id, parents, disjoint, sameAs,
-                        mergeLabel(bc.label(), oc.label()),
-                        mergeAliases(bc.aliases(), oc.aliases()),
-                        mergeMetadata(bc.metadata(), oc.metadata())));
+                classes.put(id, mergeClass(bc, oc, parents, disjoint, sameAs));
             }
         });
 
@@ -72,6 +69,29 @@ public final class OntologyMerger {
         return merged;
     }
 
+    /**
+     * An external stub (see {@link OntologyReferenceCloser}) only stands in for a class another pack
+     * owns. When it meets a real declaration, the real class's label and metadata win outright, so the
+     * stub's id-label and {@code external=true} marker never leak onto a class someone declares.
+     */
+    private static ClassDef mergeClass(ClassDef base, ClassDef overlay,
+                                       Set<String> parents, Set<String> disjoint, Set<String> sameAs) {
+        boolean baseStub = OntologyReferenceCloser.isExternalStub(base);
+        boolean overlayStub = OntologyReferenceCloser.isExternalStub(overlay);
+        if (overlayStub && !baseStub) {
+            return new ClassDef(base.name(), parents, disjoint, sameAs, base.label(),
+                    mergeAliases(base.aliases(), overlay.aliases()), base.metadata());
+        }
+        if (baseStub && !overlayStub) {
+            return new ClassDef(overlay.name(), parents, disjoint, sameAs, overlay.label(),
+                    mergeAliases(base.aliases(), overlay.aliases()), overlay.metadata());
+        }
+        return new ClassDef(base.name(), parents, disjoint, sameAs,
+                mergeLabel(base.label(), overlay.label()),
+                mergeAliases(base.aliases(), overlay.aliases()),
+                mergeMetadata(base.metadata(), overlay.metadata()));
+    }
+
     private static String mergeLabel(String base, String overlay) {
         return overlay != null && !overlay.isBlank() ? overlay : base;
     }
@@ -79,12 +99,12 @@ public final class OntologyMerger {
     private static Set<String> mergeAliases(Set<String> base, Set<String> overlay) {
         Set<String> aliases = new LinkedHashSet<>(base);
         aliases.addAll(overlay);
-        return aliases;
+        return Collections.unmodifiableSet(aliases);
     }
 
     private static Map<String, Object> mergeMetadata(Map<String, Object> base, Map<String, Object> overlay) {
         Map<String, Object> metadata = new LinkedHashMap<>(base);
         metadata.putAll(overlay);
-        return metadata;
+        return Collections.unmodifiableMap(metadata);
     }
 }

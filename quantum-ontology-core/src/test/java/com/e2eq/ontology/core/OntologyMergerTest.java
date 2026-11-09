@@ -48,4 +48,25 @@ class OntologyMergerTest {
         assertEquals(Set.of("client", "buyer"), result.aliases());
         assertEquals(Map.of("resourceContext", "customers", "area", "sales"), result.metadata());
     }
+
+    @Test
+    void testExternalStubNeverOverridesARealClassInEitherOrder() {
+        ClassDef real = new ClassDef("Ontology", Set.of(), Set.of(), Set.of(),
+            "Ontology Pack", Set.of("pack"), Map.of("resourceContext", "ontologies"));
+        ClassDef stub = new ClassDef("Ontology", Set.of(), Set.of(), Set.of(),
+            "Ontology", Set.of(), Map.of(OntologyReferenceCloser.EXTERNAL_METADATA_KEY, Boolean.TRUE));
+
+        for (TBox[] order : List.of(
+                new TBox[] {tboxWith(real), tboxWith(stub)},
+                new TBox[] {tboxWith(stub), tboxWith(real)})) {
+            ClassDef result = OntologyMerger.merge(order[0], order[1]).classes().get("Ontology");
+            assertEquals("Ontology Pack", result.label());
+            assertEquals(Map.of("resourceContext", "ontologies"), result.metadata());
+            assertFalse(OntologyReferenceCloser.isExternalStub(result));
+        }
+    }
+
+    private static TBox tboxWith(ClassDef c) {
+        return new TBox(Map.of(c.name(), c), Map.of(), List.of());
+    }
 }

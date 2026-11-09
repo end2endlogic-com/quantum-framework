@@ -66,7 +66,8 @@ public final class OntologyValidator {
     /**
      * A chain may only produce edges its implied property admits: the first step's domain must be the
      * implied domain or a subclass of it, and the last step's range the implied range or a subclass of it.
-     * Undeclared types are left unchecked.
+     * Undeclared types, including external stubs added by {@link OntologyReferenceCloser} for classes
+     * another pack owns, are left unchecked.
      */
     private static void validateChainEndpointTypes(Map<String, ClassDef> classes, Map<String, PropertyDef> props,
                                                    PropertyChainDef ch) {
@@ -86,7 +87,7 @@ public final class OntologyValidator {
 
     private static boolean isSubclassOrSame(Map<String, ClassDef> classes, Optional<String> sub, Optional<String> sup) {
         if (sub.isEmpty() || sup.isEmpty() || sub.get().equals(sup.get())) return true;
-        if (!classes.containsKey(sub.get()) || !classes.containsKey(sup.get())) return true;
+        if (!isLocallyDeclared(classes, sub.get()) || !isLocallyDeclared(classes, sup.get())) return true;
         Set<String> visited = new HashSet<>();
         Deque<String> stack = new ArrayDeque<>();
         stack.push(sub.get());
@@ -102,6 +103,11 @@ public final class OntologyValidator {
             }
         }
         return false;
+    }
+
+    private static boolean isLocallyDeclared(Map<String, ClassDef> classes, String classId) {
+        ClassDef def = classes.get(classId);
+        return def != null && !OntologyReferenceCloser.isExternalStub(def);
     }
 
     private static void detectPropertyHierarchyCycles(Map<String, PropertyDef> props) {

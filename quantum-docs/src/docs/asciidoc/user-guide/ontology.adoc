@@ -1119,7 +1119,8 @@ chains:
 - the first step's `domain` must be the implied property's `domain` or a subclass of it;
 - the last step's `range` must be the implied property's `range` or a subclass of it.
 
-A side without a declared type is not checked. For example, this chain is valid: `hasPO` starts at
+A side without a declared type is not checked, and neither is a class another pack owns (an external
+stub added during the source build). For example, this chain is valid: `hasPO` starts at
 `Customer`, which is `hasShipment`'s own domain, and `lineShipment` ends at `Parcel`, a subclass of
 `Shipment`:
 
@@ -1129,6 +1130,8 @@ classes:
   - id: Party
   - id: Customer
     parents: [Party]
+  - id: PurchaseOrder
+  - id: PurchaseOrderLine
   - id: Shipment
   - id: Parcel
     parents: [Shipment]
@@ -1161,8 +1164,11 @@ Property chain [hasPO, hasLine, lineShipment] implies 'hasShipment': first step 
 A common mistake this catches is a chain that walks *against* a property's direction. For example,
 `[linkSourceDocument, linkTargetDeclaration]`, where both properties have `domain: EvidenceLink`,
 starts at the link rather than the document and can never produce `Document -> Declaration` edges.
-Declare an inverse such as `documentLinks` (`inverseOf: linkSourceDocument`) and chain
-`[documentLinks, linkTargetDeclaration]` instead.
+Write the chain in the direction its edges are stored. For example, give the document an explicit
+`documentLinks` property (`domain: Document`, `range: EvidenceLink`) and chain
+`[documentLinks, linkTargetDeclaration]`. Declaring `documentLinks` only as `inverseOf:
+linkSourceDocument` is not enough: the reasoner evaluates chains over explicit edges before it
+materializes inverses, so an inverse-only first step matches nothing.
 
 TIP: Several chains may imply the same property. That lets consumers query a stable relation such as
 `hasShipment` while the path beneath it changes, for example from `[hasPO, poShipment]` to
@@ -2185,9 +2191,11 @@ When the same class or property is declared on both sides, `OntologyMerger` comb
 | Union, with duplicate `(chain, implies)` pairs removed.
 |===
 
-The merged TBox is validated by `OntologyValidator`. If validation fails, the registry provider logs a
-`TBox validation failed` warning; a YAML overlay that fails to load or merge is skipped with a warning.
-Check the startup log after changing `ontology.yaml`.
+`OntologyMerger` validates the result of every merge with `OntologyValidator`. The registry is
+built in stages (annotations, then Morphia, then the YAML overlay), and if a stage fails to load or
+its merge fails validation, that **whole stage is skipped** with a warning (`Failed to load
+annotations…`, `Failed to load Morphia TBox…` or `Failed to load YAML overlay…`) and the registry is
+built without it. Check the startup log after changing annotations or `ontology.yaml`.
 
 === Materializing inferences from annotated models
 

@@ -150,4 +150,31 @@ class OntologyValidatorTest {
             () -> OntologyValidator.validate(shipmentChainTBox("Customer", "PurchaseOrder")));
         assertTrue(ex.getMessage().contains("last step 'lineShipment' range 'PurchaseOrder'"), ex.getMessage());
     }
+
+    @Test
+    void testChainEndpointOwnedByAnotherPackIsNotTypeChecked() {
+        // Party is referenced but declared by another pack; the source build stubs it before validating.
+        TBox tbox = OntologyReferenceCloser.closeClassReferences(withoutClass(shipmentChainTBox("Party", "Shipment"), "Party"));
+
+        assertDoesNotThrow(() -> OntologyValidator.validate(tbox));
+    }
+
+    @Test
+    void testChainMemberWithoutADeclaredDomainIsNotTypeChecked() {
+        TBox base = shipmentChainTBox("Customer", "Shipment");
+        Map<String, PropertyDef> props = new LinkedHashMap<>(base.properties());
+        props.put("hasPO", new PropertyDef("hasPO", Optional.empty(), Optional.of("PurchaseOrder"),
+            false, Optional.empty(), false, false, false, Set.of(), false));
+
+        assertDoesNotThrow(() -> OntologyValidator.validate(new TBox(base.classes(), props, base.propertyChains())));
+    }
+
+    private static TBox withoutClass(TBox tbox, String classId) {
+        Map<String, ClassDef> classes = new LinkedHashMap<>(tbox.classes());
+        classes.remove(classId);
+        Map<String, ClassDef> reparented = new LinkedHashMap<>();
+        classes.forEach((id, c) -> reparented.put(id, c.parents().contains(classId)
+            ? new ClassDef(id, Set.of(), c.disjointWith(), c.sameAs()) : c));
+        return new TBox(reparented, tbox.properties(), tbox.propertyChains());
+    }
 }
