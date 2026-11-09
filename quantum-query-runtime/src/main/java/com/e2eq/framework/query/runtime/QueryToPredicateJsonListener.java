@@ -1079,10 +1079,17 @@ public class QueryToPredicateJsonListener extends BIAPIQueryBaseListener {
         JsonNode lhsNode = getNodeAt(node, path);
         if (lhsNode == null || lhsNode.isMissingNode()) return false;
         if (lhsNode.isArray()) {
-            for (JsonNode el : lhsNode) if (compareScalar(coerceFromJsonNode(el), rhs, ignoreCase) == 0) return true;
+            for (JsonNode el : lhsNode) if (compareScalar(equalityValue(el, rhs), rhs, ignoreCase) == 0) return true;
             return false;
         }
-        return compareScalar(coerceFromJsonNode(lhsNode), rhs, ignoreCase) == 0;
+        return compareScalar(equalityValue(lhsNode, rhs), rhs, ignoreCase) == 0;
+    }
+
+    private Object equalityValue(JsonNode node, Object rhs) {
+        // A typed string operand must compare the stored text, including leading
+        // zeros. Explicit numeric/date operands keep their existing coercion.
+        return node != null && node.isTextual() && rhs instanceof String
+                ? node.textValue() : coerceFromJsonNode(node);
     }
 
     private boolean relational(JsonNode node, String path, Object rhs, String op) {
