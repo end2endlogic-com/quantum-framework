@@ -88,15 +88,23 @@ public final class OntologyValidator {
     private static boolean isSubclassOrSame(Map<String, ClassDef> classes, Optional<String> sub, Optional<String> sup) {
         if (sub.isEmpty() || sup.isEmpty() || sub.get().equals(sup.get())) return true;
         if (!isLocallyDeclared(classes, sub.get()) || !isLocallyDeclared(classes, sup.get())) return true;
+        // Parents are followed upward only; sameAs is an equivalence, so it is followed in both directions.
+        Map<String, Set<String>> equivalents = new HashMap<>();
+        for (ClassDef def : classes.values()) {
+            for (String other : def.sameAs()) {
+                equivalents.computeIfAbsent(def.name(), k -> new HashSet<>()).add(other);
+                equivalents.computeIfAbsent(other, k -> new HashSet<>()).add(def.name());
+            }
+        }
         Set<String> visited = new HashSet<>();
         Deque<String> stack = new ArrayDeque<>();
         stack.push(sub.get());
         visited.add(sub.get());
         while (!stack.isEmpty()) {
-            ClassDef def = classes.get(stack.pop());
-            if (def == null) continue;
-            List<String> related = new ArrayList<>(def.parents());
-            related.addAll(def.sameAs());
+            String current = stack.pop();
+            List<String> related = new ArrayList<>(equivalents.getOrDefault(current, Set.of()));
+            ClassDef def = classes.get(current);
+            if (def != null) related.addAll(def.parents());
             for (String next : related) {
                 if (next.equals(sup.get())) return true;
                 if (visited.add(next)) stack.push(next);

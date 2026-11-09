@@ -177,4 +177,14 @@ class OntologyValidatorTest {
             ? new ClassDef(id, Set.of(), c.disjointWith(), c.sameAs()) : c));
         return new TBox(reparented, tbox.properties(), tbox.propertyChains());
     }
+
+    @Test
+    void testSameAsDeclaredOnlyOnTheImpliedClassStillMatches() {
+        TBox base = shipmentChainTBox("Client", "Shipment");
+        Map<String, ClassDef> classes = new LinkedHashMap<>(base.classes());
+        classes.put("Client", new ClassDef("Client", Set.of(), Set.of(), Set.of()));
+        classes.put("Customer", new ClassDef("Customer", Set.of("Party"), Set.of(), Set.of("Client")));
+
+        assertDoesNotThrow(() -> OntologyValidator.validate(new TBox(classes, base.properties(), base.propertyChains())));
+    }
 }
