@@ -1111,6 +1111,68 @@ chains:
 - No backtracking or negation
 - Cannot involve **external data lookups** or **dynamic queries** during computation
 - Cannot handle **collection expansion** where one entity has a list that must be resolved
+- Chain endpoints must be **type-compatible** with the implied property (see below)
+
+**Chain endpoint typing.** A chain may only produce edges that its implied property admits, so
+`OntologyValidator` checks both ends of every chain:
+
+- the first step's `domain` must be the implied property's `domain` or a subclass of it;
+- the last step's `range` must be the implied property's `range` or a subclass of it.
+
+A side without a declared type is not checked, and neither is a class another pack owns (an external
+stub added during the source build). For example, this chain is valid: `hasPO` starts at
+`Customer`, which is `hasShipment`'s own domain, and `lineShipment` ends at `Parcel`, a subclass of
+`Shipment`:
+
+[source,yaml]
+----
+classes:
+  - id: Party
+  - id: Customer
+    parents: [Party]
+  - id: PurchaseOrder
+  - id: PurchaseOrderLine
+  - id: Shipment
+  - id: Parcel
+    parents: [Shipment]
+properties:
+  - id: hasPO
+    domain: Customer
+    range: PurchaseOrder
+  - id: hasLine
+    domain: PurchaseOrder
+    range: PurchaseOrderLine
+  - id: lineShipment
+    domain: PurchaseOrderLine
+    range: Parcel
+  - id: hasShipment
+    domain: Customer
+    range: Shipment
+    inferred: true
+chains:
+  - chain: [hasPO, hasLine, lineShipment]
+    implies: hasShipment
+----
+
+If `hasPO` were declared with `domain: Party`, a superclass of `Customer`, the chain could produce
+`hasShipment` edges from parties that are not customers, so validation fails with:
+
+----
+Property chain [hasPO, hasLine, lineShipment] implies 'hasShipment': first step 'hasPO' domain 'Party' is not 'hasShipment' domain 'Customer' or a subclass of it
+----
+
+A common mistake this catches is a chain that walks *against* a property's direction. For example,
+`[linkSourceDocument, linkTargetDeclaration]`, where both properties have `domain: EvidenceLink`,
+starts at the link rather than the document and can never produce `Document -> Declaration` edges.
+Write the chain in the direction its edges are stored. For example, give the document an explicit
+`documentLinks` property (`domain: Document`, `range: EvidenceLink`) and chain
+`[documentLinks, linkTargetDeclaration]`. Declaring `documentLinks` only as `inverseOf:
+linkSourceDocument` is not enough: the reasoner evaluates chains over explicit edges before it
+materializes inverses, so an inverse-only first step matches nothing.
+
+TIP: Several chains may imply the same property. That lets consumers query a stable relation such as
+`hasShipment` while the path beneath it changes, for example from `[hasPO, poShipment]` to
+`[hasPO, hasLine, lineShipment]`, without changing their queries.
 
 ===== ComputedEdgeProvider: Use for Complex Logic Beyond Sequential Paths
 
@@ -2101,6 +2163,39 @@ OntologyCoreProducers will try to overlay YAML on top of the Morphia-discovered 
 If found, it loads the YAML TBox and merges it with the base TBox from annotations using OntologyMerger, then validates using OntologyValidator.
 
 TIP: Keep overlays additive. If you need to override flags (e.g., mark an existing property as transitive), ensure your overlay defines the same predicate id with the desired traits; the merger will apply the union/override semantics where supported.
+
+When the same class or property is declared on both sides, `OntologyMerger` combines them as follows:
+
+[cols="1,3"]
+|===
+| Field | Merge rule
+
+| `domain`, `range`, `inverseOf`
+| The overlay's value wins when present; otherwise the base value is kept.
+
+| `transitive`, `symmetric`, `functional`, `inverse`, `inferred`
+| OR'd: true on either side means true.
+
+| `parents`, `disjointWith`, `sameAs`, `subPropertyOf`, `aliases`
+| Union of both sides.
+
+| `label`
+| The overlay's label wins when it is non-blank; otherwise the base label is kept.
+
+| `metadata`
+| Keys from both sides are kept; on a key conflict the overlay's value wins. ViewGateway join keys
+  (`joinFromField`, `joinToField`) and resource-context keys therefore survive an overlay that only
+  changes flags.
+
+| `chains`
+| Union, with duplicate `(chain, implies)` pairs removed.
+|===
+
+`OntologyMerger` validates the result of every merge with `OntologyValidator`. The registry is
+built in stages (annotations, then Morphia, then the YAML overlay), and if a stage fails to load or
+its merge fails validation, that **whole stage is skipped** with a warning (`Failed to load
+annotations…`, `Failed to load Morphia TBox…` or `Failed to load YAML overlay…`) and the registry is
+built without it. Check the startup log after changing annotations or `ontology.yaml`.
 
 === Materializing inferences from annotated models
 

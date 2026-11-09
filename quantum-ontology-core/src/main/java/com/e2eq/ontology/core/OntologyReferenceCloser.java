@@ -18,7 +18,8 @@ import java.util.Set;
  * {@code ApplicationPackVersion.usesOntology -> Ontology}, where {@code Ontology} is owned by a
  * different pack. {@link OntologyValidator} enforces LOCAL referential integrity and treats such a
  * dangling domain/range as fatal. That is correct for a hand-authored, self-contained TBox (and for
- * direct admission, which stays strict), but wrong for a <em>source build</em> assembled from
+ * direct admission of a {@code closed} pack, which stays strict), but wrong for a <em>source build</em>
+ * assembled from
  * annotations/Morphia/YAML: there a single external edge would otherwise abort the merge and discard
  * every real class the module does own.</p>
  *
@@ -55,6 +56,11 @@ public final class OntologyReferenceCloser {
             return tbox;
         }
         return new TBox(classes, tbox.properties(), tbox.propertyChains());
+    }
+
+    /** True when {@code def} is an external stub added by {@link #closeClassReferences}, not a class this pack declares. */
+    public static boolean isExternalStub(ClassDef def) {
+        return def != null && Boolean.TRUE.equals(def.metadata().get(EXTERNAL_METADATA_KEY));
     }
 
     private static void addStubIfMissing(Map<String, ClassDef> classes, String classId) {
