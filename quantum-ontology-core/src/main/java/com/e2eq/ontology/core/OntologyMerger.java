@@ -14,7 +14,8 @@ public final class OntologyMerger {
         if (base == null) return overlay;
         if (overlay == null) return base;
 
-        // Classes: union; merge parents/disjoint/sameAs using union semantics
+        // Classes: union; merge parents/disjoint/sameAs/aliases using union semantics; overlay wins for label
+        // and per metadata key
         Map<String, ClassDef> classes = new LinkedHashMap<>(base.classes());
         overlay.classes().forEach((id, oc) -> {
             ClassDef bc = classes.get(id);
@@ -27,11 +28,15 @@ public final class OntologyMerger {
                 disjoint.addAll(oc.disjointWith());
                 Set<String> sameAs = new LinkedHashSet<>(bc.sameAs());
                 sameAs.addAll(oc.sameAs());
-                classes.put(id, new ClassDef(id, parents, disjoint, sameAs));
+                classes.put(id, new ClassDef(id, parents, disjoint, sameAs,
+                        mergeLabel(bc.label(), oc.label()),
+                        mergeAliases(bc.aliases(), oc.aliases()),
+                        mergeMetadata(bc.metadata(), oc.metadata())));
             }
         });
 
-        // Properties: overlay wins for domain/range/inverseOf when present; flags are OR'd; subPropertyOf is union
+        // Properties: overlay wins for domain/range/inverseOf/label when present; flags are OR'd;
+        // subPropertyOf and aliases are unions; metadata keys merge with overlay winning
         Map<String, PropertyDef> props = new LinkedHashMap<>(base.properties());
         overlay.properties().forEach((id, op) -> {
             PropertyDef bp = props.get(id);
@@ -48,7 +53,10 @@ public final class OntologyMerger {
                 Set<String> supers = new LinkedHashSet<>(bp.subPropertyOf());
                 supers.addAll(op.subPropertyOf());
                 boolean inferred = op.inferred() || bp.inferred();
-                props.put(id, new PropertyDef(id, domain, range, inverse, inverseOf, transitive, symmetric, functional, supers, inferred));
+                props.put(id, new PropertyDef(id, domain, range, inverse, inverseOf, transitive, symmetric, functional, supers, inferred,
+                        mergeLabel(bp.label(), op.label()),
+                        mergeAliases(bp.aliases(), op.aliases()),
+                        mergeMetadata(bp.metadata(), op.metadata())));
             }
         });
 
@@ -62,5 +70,21 @@ public final class OntologyMerger {
         OntologyRegistry.TBox merged = new TBox(classes, props, chains);
         OntologyValidator.validate(merged);
         return merged;
+    }
+
+    private static String mergeLabel(String base, String overlay) {
+        return overlay != null && !overlay.isBlank() ? overlay : base;
+    }
+
+    private static Set<String> mergeAliases(Set<String> base, Set<String> overlay) {
+        Set<String> aliases = new LinkedHashSet<>(base);
+        aliases.addAll(overlay);
+        return aliases;
+    }
+
+    private static Map<String, Object> mergeMetadata(Map<String, Object> base, Map<String, Object> overlay) {
+        Map<String, Object> metadata = new LinkedHashMap<>(base);
+        metadata.putAll(overlay);
+        return metadata;
     }
 }

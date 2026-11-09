@@ -110,4 +110,44 @@ class OntologyValidatorTest {
             () -> OntologyValidator.validate(tbox));
         assertTrue(ex.getMessage().contains("at least 2 properties"));
     }
+
+    private static TBox shipmentChainTBox(String firstDomain, String lastRange) {
+        Map<String, ClassDef> classes = new LinkedHashMap<>();
+        classes.put("Party", new ClassDef("Party", Set.of(), Set.of(), Set.of()));
+        classes.put("Customer", new ClassDef("Customer", Set.of("Party"), Set.of(), Set.of()));
+        classes.put("PurchaseOrder", new ClassDef("PurchaseOrder", Set.of(), Set.of(), Set.of()));
+        classes.put("PurchaseOrderLine", new ClassDef("PurchaseOrderLine", Set.of(), Set.of(), Set.of()));
+        classes.put("Shipment", new ClassDef("Shipment", Set.of(), Set.of(), Set.of()));
+        classes.put("Parcel", new ClassDef("Parcel", Set.of("Shipment"), Set.of(), Set.of()));
+        Map<String, PropertyDef> props = new LinkedHashMap<>();
+        props.put("hasPO", new PropertyDef("hasPO", Optional.of(firstDomain), Optional.of("PurchaseOrder"),
+            false, Optional.empty(), false, false, false, Set.of(), false));
+        props.put("hasLine", new PropertyDef("hasLine", Optional.of("PurchaseOrder"), Optional.of("PurchaseOrderLine"),
+            false, Optional.empty(), false, false, false, Set.of(), false));
+        props.put("lineShipment", new PropertyDef("lineShipment", Optional.of("PurchaseOrderLine"), Optional.of(lastRange),
+            false, Optional.empty(), false, false, false, Set.of(), false));
+        props.put("hasShipment", new PropertyDef("hasShipment", Optional.of("Customer"), Optional.of("Shipment"),
+            false, Optional.empty(), false, false, false, Set.of(), true));
+        PropertyChainDef chain = new PropertyChainDef(List.of("hasPO", "hasLine", "lineShipment"), "hasShipment");
+        return new TBox(classes, props, List.of(chain));
+    }
+
+    @Test
+    void testChainWhoseEndpointsAreSubclassesOfTheImpliedTypesIsValid() {
+        assertDoesNotThrow(() -> OntologyValidator.validate(shipmentChainTBox("Customer", "Parcel")));
+    }
+
+    @Test
+    void testChainStartingOutsideTheImpliedDomainIsRejected() {
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+            () -> OntologyValidator.validate(shipmentChainTBox("Party", "Shipment")));
+        assertTrue(ex.getMessage().contains("first step 'hasPO' domain 'Party'"), ex.getMessage());
+    }
+
+    @Test
+    void testChainEndingOutsideTheImpliedRangeIsRejected() {
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+            () -> OntologyValidator.validate(shipmentChainTBox("Customer", "PurchaseOrder")));
+        assertTrue(ex.getMessage().contains("last step 'lineShipment' range 'PurchaseOrder'"), ex.getMessage());
+    }
 }
