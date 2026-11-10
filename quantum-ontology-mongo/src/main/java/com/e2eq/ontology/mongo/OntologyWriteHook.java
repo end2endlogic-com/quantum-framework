@@ -30,6 +30,7 @@ public class OntologyWriteHook implements PostPersistHook {
 
     @Inject AnnotatedEdgeExtractor extractor;
     @Inject OntologyMaterializer materializer;
+    @Inject ChainPropagator chainPropagator;
     @Inject CascadeExecutor cascadeExecutor;
     @Inject OntologyEdgeRepo edgeRepo;
     @Inject Instance<OntologyEdgeProvider> providers;
@@ -97,7 +98,9 @@ public class OntologyWriteHook implements PostPersistHook {
             java.util.List<OntologyEdge> priorAll = edgeRepo.findBySrc(dataDomain, srcId);
             for (OntologyEdge e : priorAll) if (!e.isInferred()) priorExplicit.add(e);
             // First, apply materialization so explicit edges are upserted and stale ones pruned
-            materializer.apply(realmId, dataDomain, srcId, entityType, explicit);
+            var changes = materializer.apply(realmId, dataDomain, srcId, entityType, explicit);
+            // Entities upstream whose chains pass through this one re-derive now, not on their next save
+            chainPropagator.propagate(realmId, dataDomain, srcId, changes);
         }
         // Then handle ORPHAN_REMOVE cascade based on prior vs new state and repo contents
         try { cascadeExecutor.onAfterPersist(realmId, dataDomain, srcId, entity, priorExplicit, explicit); } catch (Throwable ignored) {}

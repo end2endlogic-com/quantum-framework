@@ -985,6 +985,32 @@ public final class OntologyFilterHelper {
     - calls OntologyMaterializer to infer inverse, transitive, symmetric, and super-property edges and upsert them to the edges collection.
   - This is enabled by default. To disable temporarily (e.g., for bulk loads), set: ontology.auto-materialize=false
 
+[[chain-propagation]]
+==== Property chains stay current when a later hop changes
+
+A property chain such as `[hasPO, hasLine, lineShipment] => hasShipment` is stored on the entity at
+the head of the path: the Customer holds `Customer hasShipment Shipment`. Saving a Customer
+re-derives its chains. Since 1.4.3, a change further along the path also reaches the head, without
+the Customer being saved again:
+
+- After an entity is materialized (`OntologyWriteHook`) or deleted (`OntologyDeleteHook`), the
+  `ChainPropagator` takes the predicates of the edges that changed at that entity. For each chain that
+  uses one of them at hop k (after the first), it walks back over the incoming edges for hops
+  k-1 .. 1 to the chain heads, and re-derives each head from its stored edges. Inferred edges that are
+  no longer justified are pruned, so unlinking a POLine from its Shipment removes the Customer's
+  `hasShipment` edge.
+- A head whose own derived edges changed is propagated in turn, so chains built on derived
+  relations also stay current.
+- It runs only from writes: there is no polling or scheduled job.
+- The number of re-derivations per write is bounded by
+  `quantum.ontology.chain-propagation.max-rederivations` (default 1000). When the bound is reached,
+  the propagation stops and logs an ERROR naming the heads it did not reach. Their derived edges stay
+  stale until DriftRepairJob or a reindex runs.
+
+Not covered: reindex (`OntologyMaterializer.applyBulk`) and governed `ingestEdges` writes. A reindex
+re-derives every entity it touches anyway. After ingesting edges directly, run a reindex for the
+affected types.
+
 [[custom-edge-providers]]
 === Custom Edge Providers: OntologyEdgeProvider and HierarchyListEdgeProvider
 
