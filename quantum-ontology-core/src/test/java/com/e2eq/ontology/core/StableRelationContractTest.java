@@ -33,15 +33,34 @@ class StableRelationContractTest {
     }
 
     @Test
-    void unknownStabilityIsAnError() {
+    void unknownStabilityIsAnErrorQuotingTheNormalisedValue() {
         assertMessage("Property 'hasShipment' has unknown stability 'frozen': use stable or internal",
-                () -> RelationStability.parse("hasShipment", "frozen"));
+                () -> RelationStability.parse("hasShipment", " Frozen "));
     }
 
     @Test
-    void unknownDerivationIsAnError() {
+    void unknownDerivationIsAnErrorQuotingTheNormalisedValue() {
         assertMessage("Property 'hasShipment' has unknown derivation 'computed': use asserted or derived",
-                () -> RelationDerivation.parse("hasShipment", "computed"));
+                () -> RelationDerivation.parse("hasShipment", " Computed "));
+    }
+
+    @Test
+    void enumsReadTheirLowercaseJsonForm() throws Exception {
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        assertEquals("\"stable\"", mapper.writeValueAsString(RelationStability.STABLE));
+        assertEquals("\"derived\"", mapper.writeValueAsString(RelationDerivation.DERIVED));
+        assertEquals(RelationStability.STABLE, mapper.readValue("\"Stable\"", RelationStability.class));
+        assertEquals(RelationDerivation.ASSERTED, mapper.readValue("\"asserted\"", RelationDerivation.class));
+    }
+
+    @Test
+    void legacyHashChangesOnlyForStableRelations() {
+        TBox internal = new TBox(classes("A"), props(prop("p", "A", "A", false, RelationStability.INTERNAL)), List.of());
+        TBox stable = new TBox(classes("A"), props(prop("p", "A", "A", false, RelationStability.STABLE)), List.of());
+        TBox legacy = new TBox(classes("A"), props(new PropertyDef("p", Optional.of("A"), Optional.of("A"), false,
+                Optional.empty(), false, false, false, Set.of())), List.of());
+        assertEquals(TBoxHasher.computeHash(legacy), TBoxHasher.computeHash(internal));
+        assertFalse(TBoxHasher.computeHash(internal).equals(TBoxHasher.computeHash(stable)));
     }
 
     @Test
@@ -220,7 +239,7 @@ class StableRelationContractTest {
 
     @Test
     void yamlLoaderRejectsInvalidContractFieldsInNameOrder() {
-        assertMessage("Property 'hasShipment' has unknown stability 'Frozen': use stable or internal",
+        assertMessage("Property 'hasShipment' has unknown stability 'frozen': use stable or internal",
                 () -> loadYaml(HAS_SHIPMENT_YAML.replace("stability: stable", "stability: Frozen")));
         assertMessage("Property 'hasShipment' has unknown derivation 'maybe': use asserted or derived",
                 () -> loadYaml(HAS_SHIPMENT_YAML.replace("derivation: derived", "derivation: maybe")));
@@ -248,6 +267,7 @@ class StableRelationContractTest {
     @Test
     void annotationLoaderCarriesStabilityAndDerivation() {
         TBox tbox = new AnnotationOntologyLoader().loadFromPackages(List.of(StableFixtures.class.getPackageName() + ".stablefixtures"));
+        // ownedBy is declared on two classes, only one of them stable: stable wins whatever the scan order
         PropertyDef owner = tbox.properties().get("ownedBy");
         assertTrue(owner.isStable());
         assertFalse(owner.inferred());
@@ -274,9 +294,14 @@ class StableRelationContractTest {
         assertEquals("Explicit edge for stable derived relation 'hasShipment' is not allowed: its edges come only"
                 + " from its derivation", ex.getMessage());
         assertEquals(List.of("hasShipment"), ex.rejectedPredicates());
-        // An inferred edge for the same predicate is not explicit
-        Reasoner.Edge inferred = new Reasoner.Edge("c1", "Customer", "hasShipment", "s1", "Shipment", true, Optional.empty());
-        StableRelationGuard.requireExplicitEdgesAllowed(registry, List.of(inferred));
+        // Every edge in the explicit input is explicit, whatever its inferred flag
+        Reasoner.Edge flaggedInferred = new Reasoner.Edge("c1", "Customer", "hasShipment", "s1", "Shipment", true, Optional.empty());
+        assertThrows(StableRelationGuard.StableDerivedEdgeException.class,
+                () -> StableRelationGuard.requireExplicitEdgesAllowed(registry, List.of(flaggedInferred)));
+        // Only computed-provider edges are exempt
+        Reasoner.Edge computed = new Reasoner.Edge("c1", "Customer", "hasShipment", "s1", "Shipment", false,
+                Optional.of(new Reasoner.Provenance("computed", Map.of("providerId", "p"))));
+        StableRelationGuard.requireExplicitEdgesAllowed(registry, List.of(computed));
     }
 
     @Test

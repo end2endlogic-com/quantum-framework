@@ -109,13 +109,12 @@ public final class StableRelationDiff {
      * The active type is kept when the candidate type equals it or is a superclass of it in the
      * candidate's hierarchy (strict: parents upward, {@code sameAs} both ways). A candidate without a
      * type admits everything, so it never narrows. A stable relation without an active type already
-     * fails validation, so that side is skipped. An active type the candidate no longer declares as a
-     * class is reported as narrowed.
+     * fails validation, so that side is skipped. An undeclared class reaches only itself (and its
+     * {@code sameAs} partners), so an unchanged undeclared type is never narrowed.
      */
     private static boolean narrowed(Map<String, OntologyRegistry.ClassDef> candidateClasses,
                                     Optional<String> active, Optional<String> candidate) {
         if (active.isEmpty() || candidate.isEmpty()) return false;
-        if (!candidateClasses.containsKey(active.get())) return true;
         return !OntologyValidator.reachesClass(candidateClasses, active.get(), candidate.get());
     }
 }

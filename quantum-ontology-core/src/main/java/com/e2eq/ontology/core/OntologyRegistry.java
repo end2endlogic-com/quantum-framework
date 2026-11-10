@@ -1,6 +1,8 @@
 
 package com.e2eq.ontology.core;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 import java.util.*;
 import java.util.concurrent.Flow;
 
@@ -93,15 +95,19 @@ public interface OntologyRegistry {
                           boolean symmetric, boolean functional, Set<String> subPropertyOf) {
             this(name, domain, range, inverse, inverseOf, transitive, symmetric, functional, subPropertyOf, false);
         }
+        // Derived helpers are not JSON fields: only the stability component is serialized (lowercase).
         /** True when consumers may bind to this relation. */
+        @JsonIgnore
         public boolean isStable() {
             return stability == RelationStability.STABLE;
         }
         /** Derivation view over {@link #inferred()}: DERIVED when inferred, ASSERTED otherwise. */
+        @JsonIgnore
         public RelationDerivation derivation() {
             return RelationDerivation.of(inferred);
         }
         /** A stable relation whose edges come only from its derivation; explicit edges are refused. */
+        @JsonIgnore
         public boolean isStableDerived() {
             return isStable() && inferred;
         }

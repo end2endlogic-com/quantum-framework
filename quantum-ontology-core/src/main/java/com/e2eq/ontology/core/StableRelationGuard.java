@@ -19,7 +19,7 @@ import java.util.TreeSet;
  *       relations. This is a primitive; no consumer is wired to it yet, because every relation is
  *       internal today and enforcing it would break them.</li>
  *   <li><b>Explicit edges</b> ({@link #requireExplicitEdgesAllowed}): a stable derived relation gets
- *       its edges only from its derivation, so explicit (asserted) edges for it are refused. Internal
+ *       its edges only from its derivation, so explicit edges for it are refused. Internal
  *       derived relations keep today's behaviour and accept explicit edges.</li>
  * </ul>
  */
@@ -112,9 +112,18 @@ public final class StableRelationGuard {
         return new ArrayList<>(out);
     }
 
+    /** Provenance rule of edges produced by a {@code ComputedEdgeProvider}. */
+    public static final String COMPUTED_RULE = "computed";
+
+    /** True for an edge produced by a {@code ComputedEdgeProvider}: derived by the provider, not asserted. */
+    public static boolean isComputed(Reasoner.Edge edge) {
+        return edge != null && edge.prov().map(p -> COMPUTED_RULE.equals(p.rule())).orElse(false);
+    }
+
     /**
-     * Refuse explicit edges whose predicate is a stable derived relation. Edges flagged inferred are
-     * not explicit and are ignored.
+     * Refuse explicit edges whose predicate is a stable derived relation. Every edge in the explicit
+     * input counts as explicit, whatever its {@code inferred} flag; only computed-provider edges
+     * ({@link #isComputed}) are exempt. Checks the whole input before the caller writes anything.
      *
      * @throws StableDerivedEdgeException naming every refused predicate
      */
@@ -122,7 +131,7 @@ public final class StableRelationGuard {
         if (registry == null || explicitEdges == null || explicitEdges.isEmpty()) return;
         List<String> predicates = new ArrayList<>();
         for (Reasoner.Edge e : explicitEdges) {
-            if (e != null && !e.inferred()) predicates.add(e.p());
+            if (e != null && !isComputed(e)) predicates.add(e.p());
         }
         List<String> rejected = rejectedDerivedPredicates(registry, predicates);
         if (!rejected.isEmpty()) {

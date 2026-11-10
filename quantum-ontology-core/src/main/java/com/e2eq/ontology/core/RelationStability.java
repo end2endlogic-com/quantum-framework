@@ -1,5 +1,8 @@
 package com.e2eq.ontology.core;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonValue;
+
 import java.util.Locale;
 
 /**
@@ -20,9 +23,16 @@ public enum RelationStability {
         this.wireValue = wireValue;
     }
 
-    /** Lowercase pack/wire spelling ({@code stable} or {@code internal}). */
+    /** Lowercase pack/wire spelling, also the JSON form ({@code stable} or {@code internal}). */
+    @JsonValue
     public String wireValue() {
         return wireValue;
+    }
+
+    /** JSON form: the lowercase wire value (case-insensitive); unknown values fail. */
+    @JsonCreator
+    public static RelationStability fromJson(String value) {
+        return parse("<json>", value);
     }
 
     /**
@@ -40,7 +50,7 @@ public enum RelationStability {
         for (RelationStability s : values()) {
             if (s.wireValue.equals(normalized)) return s;
         }
-        throw new IllegalArgumentException("Property '" + propertyName + "' has unknown stability '" + value
+        throw new IllegalArgumentException("Property '" + propertyName + "' has unknown stability '" + normalized
                 + "': use stable or internal");
     }
 }

@@ -464,6 +464,19 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
 
     public void bulkUpsertEdgeRecords(String realmId, Collection<EdgeRecord> edges) {
         if (edges == null || edges.isEmpty()) return;
+        // Relation contract (P1): refuse the whole batch before writing if an explicit record (not
+        // inferred, not computed/derived, no support) names a stable derived relation
+        for (EdgeRecord e : edges) {
+            if (e == null || e.isInferred() || e.isDerived() || e.getSupport() != null) continue;
+            com.e2eq.ontology.core.DataDomainInfo ddi = e.getDataDomainInfo();
+            if (ddi == null) continue;
+            DataDomain dd = new DataDomain();
+            dd.setOrgRefName(ddi.orgRefName());
+            dd.setAccountNum(ddi.accountNum());
+            dd.setTenantId(ddi.tenantId());
+            dd.setDataSegment(ddi.dataSegment());
+            validateExplicitEdgeAllowed(dd, e.getP());
+        }
         List<WriteModel<OntologyEdge>> ops = new ArrayList<>(edges.size());
         Date now = new Date();
         for (EdgeRecord e : edges) {
@@ -541,6 +554,27 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
      */
     public void upsertMany(Collection<?> edgesOrDocs) {
         if (edgesOrDocs == null || edgesOrDocs.isEmpty()) return;
+        // Relation contract (P1): check the whole collection before writing anything, so a refused
+        // explicit edge for a stable derived relation never leaves the batch half-written
+        for (Object o : edgesOrDocs) {
+            if (o instanceof OntologyEdge e) {
+                if (e.getDataDomain() != null && !Boolean.TRUE.equals(e.isDerived()) && !e.isInferred()) {
+                    validateExplicitEdgeAllowed(e.getDataDomain(), e.getP());
+                }
+            } else if (o instanceof org.bson.Document d) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> ddDoc = (Map<String, Object>) d.get("dataDomain");
+                if (ddDoc != null && !Boolean.TRUE.equals(d.getBoolean("derived"))
+                        && !Boolean.TRUE.equals(d.getBoolean("inferred"))) {
+                    DataDomain dd = new DataDomain();
+                    dd.setOrgRefName((String) ddDoc.get("orgRefName"));
+                    dd.setAccountNum((String) ddDoc.get("accountNum"));
+                    dd.setTenantId((String) ddDoc.get("tenantId"));
+                    dd.setDataSegment(ddDoc.get("dataSegment") != null ? ((Number) ddDoc.get("dataSegment")).intValue() : 0);
+                    validateExplicitEdgeAllowed(dd, d.getString("p"));
+                }
+            }
+        }
         for (Object o : edgesOrDocs) {
             if (o instanceof OntologyEdge e) {
                 DataDomain dd = e.getDataDomain();

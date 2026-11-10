@@ -56,19 +56,8 @@ public class OntologyMaterializer {
         return v == null ? null : v.toString();
     }
 
-    /**
-     * A stable derived relation gets its edges only from its derivation (relation contract, P1), so an
-     * explicit edge for it is refused. Computed edges ({@code ComputedEdgeProvider}) are derived by
-     * the provider rather than asserted, so they are not explicit edges here.
-     */
-    private static void requireExplicitEdgesAllowed(OntologyRegistry registry, List<Reasoner.Edge> explicitEdges) {
-        if (explicitEdges == null || explicitEdges.isEmpty()) return;
-        List<Reasoner.Edge> asserted = new ArrayList<>(explicitEdges.size());
-        for (Reasoner.Edge e : explicitEdges) {
-            if (!e.prov().map(p -> "computed".equals(p.rule())).orElse(false)) asserted.add(e);
-        }
-        StableRelationGuard.requireExplicitEdgesAllowed(registry, asserted);
-    }
+    /** An entity left out of a bulk materialization because its explicit edges were refused. */
+    public record RejectedEntity(String entityId, String entityType, String message) {}
 
     /**
      * Apply materialization for an entity with full DataDomain scoping.
@@ -93,8 +82,9 @@ public class OntologyMaterializer {
 
         // Resolve registry for the given DataDomain
         OntologyRegistry registry = registryProvider.getRegistryForTenant(dataDomain);
-        // Refuse explicit edges for stable derived relations before anything is written
-        requireExplicitEdgesAllowed(registry, explicitEdges);
+        // Refuse explicit edges for stable derived relations (relation contract, P1) before anything
+        // is written; computed-provider edges are exempt
+        StableRelationGuard.requireExplicitEdgesAllowed(registry, explicitEdges);
 
         // Build an extended snapshot that includes neighbor edges for chain inference.
         // For each explicit edge A->B, fetch B's outgoing edges so chains like [refersToB, refersToC]
@@ -428,11 +418,42 @@ public class OntologyMaterializer {
      * This significantly improves performance for reindex operations by reducing DB round-trips.
      * Skips edges that already exist and haven't changed to avoid unnecessary writes.
      *
+     * <p>An entity whose explicit edges name a stable derived relation (relation contract, P1) is left
+     * out entirely (nothing written or pruned for it) and logged; the rest of the batch is
+     * materialized. Use {@link #applyBulk(List, Consumer)} to collect those entities.
+     *
      * @param entities list of entity edge contexts to process
      * @return combined EdgeChanges for all entities
      */
     public EdgeChanges applyBulk(List<EntityEdgeContext> entities) {
-        if (entities == null || entities.isEmpty()) {
+        return applyBulk(entities, r -> io.quarkus.logging.Log.warnf(
+                "OntologyMaterializer: skipped %s %s: %s", r.entityType(), r.entityId(), r.message()));
+    }
+
+    /**
+     * {@link #applyBulk(List)} reporting each entity left out because its explicit edges were refused.
+     */
+    public EdgeChanges applyBulk(List<EntityEdgeContext> input, java.util.function.Consumer<RejectedEntity> onRejected) {
+        if (input == null || input.isEmpty()) {
+            return EdgeChanges.empty();
+        }
+        // Check every entity before anything is written, and drop only the offending ones
+        List<EntityEdgeContext> entities = new ArrayList<>(input.size());
+        for (EntityEdgeContext ctx : input) {
+            if (ctx.dataDomain() != null) {
+                try {
+                    StableRelationGuard.requireExplicitEdgesAllowed(
+                            registryProvider.getRegistryForTenant(ctx.dataDomain()), ctx.explicitEdges());
+                } catch (StableRelationGuard.StableDerivedEdgeException rejected) {
+                    if (onRejected != null) {
+                        onRejected.accept(new RejectedEntity(ctx.entityId(), ctx.entityType(), rejected.getMessage()));
+                    }
+                    continue;
+                }
+            }
+            entities.add(ctx);
+        }
+        if (entities.isEmpty()) {
             return EdgeChanges.empty();
         }
 
@@ -475,7 +496,6 @@ public class OntologyMaterializer {
             List<Reasoner.Edge> explicitEdges = ctx.explicitEdges();
 
             OntologyRegistry registry = registryProvider.getRegistryForTenant(dataDomain);
-            requireExplicitEdgesAllowed(registry, explicitEdges);
             DataDomainInfo dataDomainInfo = DataDomainConverter.toInfo(dataDomain);
             Map<String, OntologyEdge> existingForEntity = existingEdgesByEntity.getOrDefault(entityId, Map.of());
 

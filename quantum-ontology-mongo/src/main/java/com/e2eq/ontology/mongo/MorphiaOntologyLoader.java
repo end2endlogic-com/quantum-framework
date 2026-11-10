@@ -97,6 +97,12 @@ public final class MorphiaOntologyLoader {
                         pid, domainOpt, rangeOpt, inverseOf.isPresent(), inverseOf, pa.transitive(), pa.symmetric(), functional, superProps,
                         inferred, null, Set.of(), Map.of(), stability
                 );
+                // Last declaration wins as before, but stability follows the merge rule (stable if any
+                // declaration says so) so it never depends on scan order.
+                OntologyRegistry.PropertyDef prior = props.get(pid);
+                if (prior != null && prior.isStable() && !def.isStable()) {
+                    def = def.withStability(RelationStability.STABLE);
+                }
                 props.put(pid, def);
             }
         }

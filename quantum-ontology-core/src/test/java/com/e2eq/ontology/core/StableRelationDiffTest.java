@@ -65,14 +65,19 @@ class StableRelationDiffTest {
     }
 
     @Test
-    void activeTypeTheCandidateNoLongerDeclaresIsNarrowed() {
+    void undeclaredTypesReachOnlyThemselves() {
         OntologyRegistry.TBox active = tbox(prop("hasShipment", "Customer", "Shipment", false, RelationStability.STABLE));
         Map<String, OntologyRegistry.ClassDef> classes = new LinkedHashMap<>(classes());
         classes.remove("Customer");
-        OntologyRegistry.TBox candidate = new OntologyRegistry.TBox(classes,
+        // Unchanged undeclared domain: equal means not narrowed
+        OntologyRegistry.TBox unchanged = new OntologyRegistry.TBox(classes,
                 Map.of("hasShipment", prop("hasShipment", "Customer", "Shipment", false, RelationStability.STABLE)), List.of());
-        assertEquals(List.of(StableRelationDiff.Code.STABLE_RELATION_DOMAIN_NARROWED),
-                StableRelationDiff.violations(active, candidate).stream().map(StableRelationDiff.Violation::code).toList());
+        assertTrue(StableRelationDiff.violations(active, unchanged).isEmpty());
+        // A different class is not reachable from an undeclared one
+        OntologyRegistry.TBox changed = new OntologyRegistry.TBox(classes,
+                Map.of("hasShipment", prop("hasShipment", "Party", "Shipment", false, RelationStability.STABLE)), List.of());
+        assertEquals(List.of("Stable relation 'hasShipment' domain narrowed from 'Customer' to 'Party'"),
+                StableRelationDiff.violations(active, changed).stream().map(StableRelationDiff.Violation::message).toList());
     }
 
     @Test

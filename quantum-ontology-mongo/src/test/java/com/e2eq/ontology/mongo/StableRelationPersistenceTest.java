@@ -55,6 +55,9 @@ public class StableRelationPersistenceTest {
     @Inject
     OntologyEdgeRepo edgeRepo;
 
+    @Inject
+    com.fasterxml.jackson.databind.ObjectMapper objectMapper;
+
     private DataDomain tenant;
     private SecurityCallScope.Scope ignoredRulesScope;
 
@@ -150,5 +153,70 @@ public class StableRelationPersistenceTest {
                 false, Optional.empty(), false, false, false, Set.of(), true, null, Set.of(), Map.of(),
                 RelationStability.STABLE));
         return new TBox(classes, props, List.of(new PropertyChainDef(List.of("hasPO", "poShipment"), "hasShipment")));
+    }
+
+    @Test
+    void propertyDefJsonCarriesOnlyLowercaseStability() throws Exception {
+        PropertyDef stable = ordersTBox().properties().get("hasShipment");
+        Map<?, ?> json = objectMapper.readValue(objectMapper.writeValueAsString(stable), Map.class);
+        assertEquals("stable", json.get("stability"));
+        assertFalse(json.containsKey("stable"));
+        assertFalse(json.containsKey("stableDerived"));
+        assertFalse(json.containsKey("derivation"));
+        assertEquals("internal", objectMapper.readValue(objectMapper.writeValueAsString(
+                ordersTBox().properties().get("hasPO")), Map.class).get("stability"));
+    }
+
+    @Test
+    void bulkMaterializationSkipsOnlyTheRefusedEntity() {
+        List<OntologyMaterializer.RejectedEntity> rejected = new java.util.ArrayList<>();
+        materializer.applyBulk(List.of(
+                new OntologyMaterializer.EntityEdgeContext(null, tenant, "c-bad", "Customer", List.of(
+                        new Reasoner.Edge("c-bad", "Customer", "hasShipment", "s1", "Shipment", false, Optional.empty()))),
+                new OntologyMaterializer.EntityEdgeContext(null, tenant, "c-good", "Customer", List.of(
+                        new Reasoner.Edge("c-good", "Customer", "hasPO", "po9", "PurchaseOrder", false, Optional.empty())))),
+                rejected::add);
+        assertEquals(List.of("c-bad"), rejected.stream().map(OntologyMaterializer.RejectedEntity::entityId).toList());
+        assertEquals(MESSAGE, rejected.get(0).message());
+        // A null realm id reads and writes the security-context realm, as applyBulk did
+        assertTrue(edgeRepo.findBySrc((String) null, tenant, "c-bad").isEmpty());
+        assertTrue(edgeRepo.findBySrc((String) null, tenant, "c-good").stream().anyMatch(e -> "hasPO".equals(e.getP())));
+    }
+
+    @Test
+    void repoBatchWritesCheckEverythingBeforeWriting() {
+        // bulkUpsertEdgeRecords writes to the tenant's realm, which setup does not clear: use fresh ids
+        String run = java.util.UUID.randomUUID().toString();
+        String batchSrc = "c-batch-" + run;
+        String bulkSrc = "c-bulk-" + run;
+        com.e2eq.ontology.model.OntologyEdge ok = edge(batchSrc, "hasPO", "po1", false);
+        com.e2eq.ontology.model.OntologyEdge bad = edge(batchSrc, "hasShipment", "s1", false);
+        assertThrows(StableRelationGuard.StableDerivedEdgeException.class, () -> edgeRepo.upsertMany(List.of(ok, bad)));
+        assertTrue(edgeRepo.findBySrc(tenant, batchSrc).isEmpty(), "upsertMany wrote part of a refused batch");
+
+        com.e2eq.ontology.core.DataDomainInfo ddi = DataDomainConverter.toInfo(tenant);
+        com.e2eq.ontology.core.EdgeRecord okRec = new com.e2eq.ontology.core.EdgeRecord(ddi, "Customer", bulkSrc, "hasPO",
+                "PurchaseOrder", "po1", false, Map.of(), new java.util.Date());
+        com.e2eq.ontology.core.EdgeRecord badRec = new com.e2eq.ontology.core.EdgeRecord(ddi, "Customer", bulkSrc, "hasShipment",
+                "Shipment", "s1", false, Map.of(), new java.util.Date());
+        assertThrows(StableRelationGuard.StableDerivedEdgeException.class,
+                () -> edgeRepo.bulkUpsertEdgeRecords(List.of(okRec, badRec)));
+        assertTrue(edgeRepo.findBySrc(tenant, bulkSrc).isEmpty(), "bulkUpsertEdgeRecords wrote part of a refused batch");
+        // Inferred records are the materializer's own output and pass
+        badRec.setInferred(true);
+        edgeRepo.bulkUpsertEdgeRecords(List.of(okRec, badRec));
+    }
+
+    private com.e2eq.ontology.model.OntologyEdge edge(String src, String p, String dst, boolean inferred) {
+        com.e2eq.ontology.model.OntologyEdge e = new com.e2eq.ontology.model.OntologyEdge();
+        e.setDataDomain(tenant);
+        e.setSrc(src);
+        e.setSrcType("Customer");
+        e.setP(p);
+        e.setDst(dst);
+        e.setDstType("hasPO".equals(p) ? "PurchaseOrder" : "Shipment");
+        e.setInferred(inferred);
+        e.setProv(Map.of());
+        return e;
     }
 }

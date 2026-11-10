@@ -153,6 +153,13 @@ public final class AnnotationOntologyLoader {
                 pid, domainOpt, rangeOpt, inverseOf.isPresent(), inverseOf, pa.transitive(), pa.symmetric(),
                 functional, superProps, inferred, null, Set.of(), propertyMetadata, stability
         );
+        // The same id may be declared on several members; the last one wins as before, except that
+        // stability follows the merge rule (stable if any declaration says so) so it never depends on
+        // scan order.
+        OntologyRegistry.PropertyDef prior = props.get(pid);
+        if (prior != null && prior.isStable() && !def.isStable()) {
+            def = def.withStability(RelationStability.STABLE);
+        }
         props.put(pid, def);
     }
 

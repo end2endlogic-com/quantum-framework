@@ -2231,10 +2231,14 @@ Every rule in this section is opt-in. A property that does not declare `stabilit
 |===
 
 The same fields exist on `@OntologyProperty` (`stability = "stable"`, `derivation = "derived"`) and
-on `PropertyDef` (`stability()`, `isStable()`, `derivation()`, `isStableDerived()`). In the
-canonical TBox hash a stable property adds `"stability": "stable"`; an internal one adds nothing.
+on `PropertyDef` (`stability()`, `isStable()`, `derivation()`, `isStableDerived()`). When the same
+property id is declared on several annotated members, it is stable if any declaration says so. In
+the canonical TBox hash (and the legacy `TBoxHasher` hash) a stable property adds
+`"stability": "stable"`; an internal one adds nothing. In JSON a `PropertyDef` carries
+`"stability"` in lowercase.
 
-Any other value is a load error; it never falls back to `internal` silently:
+Any other value is a load error; it never falls back to `internal` silently. The message quotes
+the value trimmed and lowercased:
 
 ----
 Property 'hasShipment' has unknown stability 'frozen': use stable or internal
@@ -2301,10 +2305,12 @@ Removing the `chains` block from the example above fails with the second message
 
 ==== Explicit edges are rejected
 
-A stable derived relation gets its edges only from its derivation. An explicit (asserted) edge for
-it is refused by `MaterializationEngine`, by `OntologyMaterializer` (before anything is written; edges
-from a `ComputedEdgeProvider` are not explicit edges) and by `OntologyEdgeRepo.upsert` for a
-non-inferred edge, so governed ingest quarantines such a row with the reason:
+A stable derived relation gets its edges only from its derivation. Every edge passed as explicit
+input naming it is refused, whatever its `inferred` flag; only edges from a `ComputedEdgeProvider`
+are exempt. The check runs in `MaterializationEngine`, in `OntologyMaterializer` (before anything is
+written) and in the `OntologyEdgeRepo` write paths for non-inferred edges (`upsert`, `upsertMany` and
+`bulkUpsertEdgeRecords`, which check the whole batch first), so governed ingest quarantines such a
+row with the reason:
 
 ----
 Explicit edge for stable derived relation 'hasShipment' is not allowed: its edges come only from its derivation
@@ -2313,7 +2319,9 @@ Explicit edge for stable derived relation 'hasShipment' is not allowed: its edge
 The exception is `StableRelationGuard.StableDerivedEdgeException`, whose `rejectedPredicates()` lists
 every refused predicate. Because the repository write hook materializes after the entity is saved, a
 refused edge is logged by the hook and that entity's edges are not materialized; the entity itself is
-saved. Do not mark a field that carries the edge with `derivation = "derived"` and
+saved. During a reindex, `OntologyMaterializer.applyBulk` leaves out only the refused entities and
+materializes the rest of the batch; the reindexer lists them in `failures()` and finishes with status
+`COMPLETED_WITH_ERRORS`. Do not mark a field that carries the edge with `derivation = "derived"` and
 `stability = "stable"`. Internal derived relations keep accepting explicit edges.
 
 ==== Admission diff
@@ -2336,8 +2344,8 @@ Enterprise TBox admission, not by the framework.
 
 | `stable_relation_domain_narrowed`
 | The active domain is neither the candidate domain nor a subclass of it in the candidate's class
-  hierarchy (parents transitively, `sameAs` both ways), or the candidate no longer declares the
-  active domain class. A candidate without a domain never narrows.
+  hierarchy (parents transitively, `sameAs` both ways). An undeclared class reaches only itself, so
+  an unchanged type never narrows. A candidate without a domain never narrows.
 | `Stable relation 'hasShipment' domain narrowed from 'Customer' to 'PremiumCustomer'`
 
 | `stable_relation_range_narrowed`

@@ -1,5 +1,8 @@
 package com.e2eq.ontology.core;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonValue;
+
 import java.util.Locale;
 
 /**
@@ -17,7 +20,8 @@ public enum RelationDerivation {
         this.wireValue = wireValue;
     }
 
-    /** Lowercase pack/wire spelling ({@code asserted} or {@code derived}). */
+    /** Lowercase pack/wire spelling, also the JSON form ({@code asserted} or {@code derived}). */
+    @JsonValue
     public String wireValue() {
         return wireValue;
     }
@@ -29,6 +33,12 @@ public enum RelationDerivation {
 
     public static RelationDerivation of(boolean inferred) {
         return inferred ? DERIVED : ASSERTED;
+    }
+
+    /** JSON form: the lowercase wire value (case-insensitive); unknown values fail. */
+    @JsonCreator
+    public static RelationDerivation fromJson(String value) {
+        return parse("<json>", value);
     }
 
     /**
@@ -45,7 +55,7 @@ public enum RelationDerivation {
         for (RelationDerivation d : values()) {
             if (d.wireValue.equals(normalized)) return d;
         }
-        throw new IllegalArgumentException("Property '" + propertyName + "' has unknown derivation '" + value
+        throw new IllegalArgumentException("Property '" + propertyName + "' has unknown derivation '" + normalized
                 + "': use asserted or derived");
     }
 
