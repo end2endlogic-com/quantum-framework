@@ -79,17 +79,9 @@ public class ChainPropagator {
      */
     public Result propagate(String realmId, DataDomain dataDomain, String nodeId, EdgeChanges changes) {
         Map<String, Set<String>> bySrc = new LinkedHashMap<>();
-        Map<String, String> srcTypes = new LinkedHashMap<>();
         bySrc.put(nodeId, changedPredicates(nodeId, changes));
-        if (changes != null) {
-            for (List<EdgeRecord> list : List.of(changes.added(), changes.modified(), changes.removed())) {
-                for (EdgeRecord rec : list) {
-                    if (rec == null || rec.getSrc() == null || rec.getSrc().equals(nodeId)) continue;
-                    bySrc.computeIfAbsent(rec.getSrc(), __ -> new LinkedHashSet<>()).add(rec.getP());
-                    srcTypes.putIfAbsent(rec.getSrc(), rec.getSrcType());
-                }
-            }
-        }
+        Map<String, String> srcTypes = new LinkedHashMap<>();
+        changesElsewhere(nodeId, changes, bySrc, srcTypes);
         return propagate(realmId, dataDomain, nodeId, bySrc, srcTypes);
     }
 
@@ -110,27 +102,24 @@ public class ChainPropagator {
             return new Result(0, 0, false, Set.of());
         }
         OntologyRegistry registry = registryProvider.getRegistryForTenant(dataDomain);
-        List<PropertyChainDef> chains = registry.propertyChains();
-        if (chains == null || chains.isEmpty()) {
-            return new Result(0, 0, false, Set.of());
-        }
+        List<PropertyChainDef> chains = registry.propertyChains() == null ? List.of() : registry.propertyChains();
 
         // Work queue of (node, predicates that changed at it). A head is queued once at a time; if
         // it changes again while queued, its predicates are merged.
         Map<String, Set<String>> pending = new LinkedHashMap<>();
         changedBySrc.forEach((node, ps) -> pending.put(node, new LinkedHashSet<>(ps)));
         Set<String> origin = Set.of(nodeId);
-        // Other nodes whose changed edge starts a chain were not materialized: they are heads themselves
+        // Other nodes whose edges changed (inverse and symmetric images) were not materialized: when a
+        // rule consumes a changed predicate there, they are re-derived themselves
         Map<String, String> selfHeads = new LinkedHashMap<>();
-        Set<String> firstSteps = new HashSet<>();
-        for (PropertyChainDef chain : chains) {
-            if (chain.chain() != null && !chain.chain().isEmpty()) firstSteps.add(chain.chain().get(0));
-        }
         changedBySrc.forEach((node, ps) -> {
-            if (!node.equals(nodeId) && ps.stream().anyMatch(firstSteps::contains)) {
+            if (!node.equals(nodeId) && ps.stream().anyMatch(q -> consumed(registry, chains, q))) {
                 selfHeads.put(node, otherTypes.get(node));
             }
         });
+        if (chains.isEmpty() && selfHeads.isEmpty()) {
+            return new Result(0, 0, false, Set.of());
+        }
         int rederived = 0;
         int changedEdges = 0;
 
@@ -168,6 +157,16 @@ public class ChainPropagator {
                 if (!headPredicates.isEmpty()) {
                     pending.computeIfAbsent(headId, __ -> new LinkedHashSet<>()).addAll(headPredicates);
                 }
+                // Images the head wrote on other nodes propagate from there
+                Map<String, Set<String>> elsewhere = new LinkedHashMap<>();
+                Map<String, String> elsewhereTypes = new LinkedHashMap<>();
+                changesElsewhere(headId, headChanges, elsewhere, elsewhereTypes);
+                elsewhere.forEach((node, ps) -> {
+                    pending.computeIfAbsent(node, __ -> new LinkedHashSet<>()).addAll(ps);
+                    if (!origin.contains(node) && ps.stream().anyMatch(q -> consumed(registry, chains, q))) {
+                        selfHeads.putIfAbsent(node, elsewhereTypes.get(node));
+                    }
+                });
             }
         }
         return new Result(rederived, changedEdges, false, Set.of());
@@ -201,6 +200,29 @@ public class ChainPropagator {
             }
         }
         return heads;
+    }
+
+    /** Whether some rule reads predicate {@code p}: a chain step, a sub-property, or a transitive property. */
+    private static boolean consumed(OntologyRegistry registry, List<PropertyChainDef> chains, String p) {
+        for (PropertyChainDef chain : chains) {
+            if (chain.chain() != null && chain.chain().contains(p)) return true;
+        }
+        return registry.propertyOf(p)
+                .map(def -> def.transitive() || (def.subPropertyOf() != null && !def.subPropertyOf().isEmpty()))
+                .orElse(false);
+    }
+
+    /** Changed edges whose source is not {@code nodeId}, grouped by source, with each source's type. */
+    private static void changesElsewhere(String nodeId, EdgeChanges changes, Map<String, Set<String>> bySrc,
+                                         Map<String, String> srcTypes) {
+        if (changes == null) return;
+        for (List<EdgeRecord> list : List.of(changes.added(), changes.modified(), changes.removed())) {
+            for (EdgeRecord rec : list) {
+                if (rec == null || rec.getSrc() == null || rec.getSrc().equals(nodeId)) continue;
+                bySrc.computeIfAbsent(rec.getSrc(), __ -> new LinkedHashSet<>()).add(rec.getP());
+                srcTypes.putIfAbsent(rec.getSrc(), rec.getSrcType());
+            }
+        }
     }
 
     private static Set<String> changedPredicates(String nodeId, EdgeChanges changes) {

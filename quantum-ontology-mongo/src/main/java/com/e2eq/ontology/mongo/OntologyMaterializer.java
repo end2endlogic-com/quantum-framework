@@ -87,7 +87,7 @@ public class OntologyMaterializer {
         StableRelationGuard.requireExplicitEdgesAllowed(registry, explicitEdges);
 
         List<OntologyEdge> existingAll = edgeRepo.findBySrc(realmId, dataDomain, entityId);
-        List<Reasoner.Edge> foreign = ownedElsewhere(existingAll, entityId);
+        List<Reasoner.Edge> foreign = ownedElsewhere(existingAll, entityId, explicitEdges);
         List<Reasoner.Edge> base = new ArrayList<>(explicitEdges != null ? explicitEdges : List.of());
         base.addAll(foreign);
 
@@ -142,7 +142,8 @@ public class OntologyMaterializer {
         }
 
         // 2) + 3) Upsert new INFERRED edges and prune inferred edges no longer justified
-        List<OntologyEdge> existingAfterUpsert = upsertAndPruneInferred(realmId, dataDomain, entityId, out, existingAll, changes);
+        List<OntologyEdge> existingAfterUpsert = upsertAndPruneInferred(realmId, dataDomain, entityId, out, existingAll,
+                assertedKeys(existingAll, explicitEdges), changes);
 
         // 4) Prune explicit edges that are no longer present in the entity snapshot
         // Determine all predicates that currently exist for this source
@@ -206,7 +207,39 @@ public class OntologyMaterializer {
             edgeRepo.deleteDerivedBySrcNotIn(realmId, dataDomain, entityId, pAbsent, Set.of());
         }
 
+        // 6) A dropped explicit edge may still be the image of the other end's own edge (B peerOf A
+        // implies A peerOf B): re-derive that end so its image comes back
+        rederiveMirrors(realmId, dataDomain, entityId, registry, changes);
+
         return changes;
+    }
+
+    /**
+     * Re-derive the far end of every explicit edge {@code entityId} dropped whose predicate has an
+     * inverse or is symmetric, merging the changes. An image is never written over an explicit edge,
+     * so once the explicit edge is gone the other end has to write its image again.
+     */
+    private void rederiveMirrors(String realmId, DataDomain dataDomain, String entityId, OntologyRegistry registry,
+                                 EdgeChanges changes) {
+        Map<String, String> ends = new LinkedHashMap<>();
+        for (EdgeRecord rec : List.copyOf(changes.removed())) {
+            if (rec.isInferred() || !Objects.equals(rec.getSrc(), entityId) || Objects.equals(rec.getDst(), entityId)) continue;
+            if (mirrored(registry, rec.getP())) ends.putIfAbsent(rec.getDst(), rec.getDstType());
+        }
+        for (Map.Entry<String, String> end : ends.entrySet()) {
+            EdgeChanges more = rederive(realmId, dataDomain, end.getKey(), end.getValue());
+            changes.added().addAll(more.added());
+            changes.modified().addAll(more.modified());
+            changes.removed().addAll(more.removed());
+        }
+    }
+
+    /** Whether edges of {@code p} have an image at the other end: it is symmetric or has an inverse. */
+    private static boolean mirrored(OntologyRegistry registry, String p) {
+        Optional<OntologyRegistry.PropertyDef> def = registry.propertyOf(p);
+        if (def.isPresent() && (def.get().symmetric() || def.get().inverseOf().isPresent())) return true;
+        return registry.properties().values().stream()
+                .anyMatch(q -> q.inverseOf().isPresent() && q.inverseOf().get().equals(p));
     }
 
     /**
@@ -280,7 +313,7 @@ public class OntologyMaterializer {
      */
     private List<OntologyEdge> upsertAndPruneInferred(String realmId, DataDomain dataDomain, String entityId,
                                                       Reasoner.InferenceResult out, List<OntologyEdge> existingAll,
-                                                      EdgeChanges changes) {
+                                                      Set<List<String>> asserted, EdgeChanges changes) {
         // 2) Collect new INFERRED edges. Most leave the entity; inverse and symmetric images of its
         // edges land on the other node and are owned by this entity all the same.
         Map<String, Set<String>> newByP = new HashMap<>();
@@ -289,10 +322,19 @@ public class OntologyMaterializer {
         DataDomainInfo dataDomainInfo = DataDomainConverter.toInfo(dataDomain);
         for (var e : out.addEdges()) {
             boolean own = Objects.equals(e.srcId(), entityId);
+            OntologyEdge existing;
             if (own) {
                 newByP.computeIfAbsent(e.p(), k -> new HashSet<>()).add(e.dstId());
+                // Asserted or computed here (the reasoner mirrors neighbour edges back): leave it as it is
+                if (asserted.contains(List.of(e.srcId(), e.p(), e.dstId()))) continue;
+                existing = existingAll.stream()
+                        .filter(ex -> Objects.equals(ex.getP(), e.p()) && Objects.equals(ex.getDst(), e.dstId()))
+                        .findFirst().orElse(null);
             } else {
                 newElsewhere.add(List.of(e.srcId(), e.p(), e.dstId()));
+                existing = findEdge(realmId, dataDomain, e.srcId(), e.p(), e.dstId());
+                // The other node asserts (or computes) this edge itself: leave it as it is
+                if (existing != null && !existing.isInferred()) continue;
             }
             Map<String,Object> prov = e.prov().map(p -> Map.<String,Object>of(
                     "rule", p.rule(),
@@ -301,13 +343,6 @@ public class OntologyMaterializer {
 
             EdgeRecord rec = new EdgeRecord(dataDomainInfo, e.srcType(), e.srcId(), e.p(), e.dstType(), e.dstId(), true, prov, new Date());
             upserts.add(rec);
-
-            // Check if inferred edge is already present for change tracking
-            OntologyEdge existing = own
-                    ? existingAll.stream()
-                        .filter(ex -> Objects.equals(ex.getP(), e.p()) && Objects.equals(ex.getDst(), e.dstId()))
-                        .findFirst().orElse(null)
-                    : findEdge(realmId, dataDomain, e.srcId(), e.p(), e.dstId());
 
             if (existing == null) {
                 changes.added().add(rec);
@@ -350,13 +385,51 @@ public class OntologyMaterializer {
         }
 
         // 4) Prune this entity's inverse and symmetric images on other nodes that it no longer justifies
+        pruneImagesElsewhere(realmId, dataDomain, entityId, newElsewhere, changes);
+        return existingAfterUpsert;
+    }
+
+    /**
+     * Delete the inverse and symmetric images {@code entityId} owns on other nodes, except those in
+     * {@code keep} (keys {@code [src, p, dst]}), recording each removal.
+     */
+    private void pruneImagesElsewhere(String realmId, DataDomain dataDomain, String entityId,
+                                      Set<List<String>> keep, EdgeChanges changes) {
         for (OntologyEdge e : edgeRepo.findByDst(realmId, dataDomain, entityId)) {
             if (!e.isInferred() || !entityId.equals(ownerOf(e)) || Objects.equals(e.getSrc(), entityId)) continue;
-            if (newElsewhere.contains(List.of(e.getSrc(), e.getP(), e.getDst()))) continue;
+            if (keep.contains(List.of(e.getSrc(), e.getP(), e.getDst()))) continue;
             changes.removed().add(toEdgeRecord(e, dataDomain));
             edgeRepo.deleteInferredEdge(realmId, dataDomain, e.getSrc(), e.getP(), e.getDst());
         }
-        return existingAfterUpsert;
+    }
+
+    /**
+     * Remove a deleted entity from the graph: its own edges and the inverse and symmetric images it
+     * owns on other nodes. Returns what was removed, so chain propagation can re-derive the nodes
+     * those images sat on.
+     */
+    public EdgeChanges removeNode(String realmId, DataDomain dataDomain, String entityId) {
+        EdgeChanges changes = new EdgeChanges();
+        for (OntologyEdge e : edgeRepo.findBySrc(realmId, dataDomain, entityId)) {
+            changes.removed().add(toEdgeRecord(e, dataDomain));
+        }
+        edgeRepo.deleteBySrc(realmId, dataDomain, entityId, false);
+        pruneImagesElsewhere(realmId, dataDomain, entityId, Set.of(), changes);
+        return changes;
+    }
+
+    /** Keys {@code [src, p, dst]} of the entity's asserted and computed edges, stored or being written. */
+    private static Set<List<String>> assertedKeys(Collection<OntologyEdge> existing, List<Reasoner.Edge> written) {
+        Set<List<String>> keys = new HashSet<>();
+        for (OntologyEdge e : existing) {
+            if (!e.isInferred()) keys.add(List.of(e.getSrc(), e.getP(), e.getDst()));
+        }
+        if (written != null) {
+            for (Reasoner.Edge e : written) {
+                if (!e.inferred()) keys.add(List.of(e.srcId(), e.p(), e.dstId()));
+            }
+        }
+        return keys;
     }
 
     /**
@@ -379,11 +452,18 @@ public class OntologyMaterializer {
      * of the entity's snapshot (a chain may start with one) but the entity neither re-derives nor
      * prunes them.
      */
-    private static List<Reasoner.Edge> ownedElsewhere(List<OntologyEdge> existing, String entityId) {
+    private static List<Reasoner.Edge> ownedElsewhere(Collection<OntologyEdge> existing, String entityId,
+                                                      List<Reasoner.Edge> asserted) {
+        Set<List<String>> assertedKeys = new HashSet<>();
+        if (asserted != null) {
+            for (Reasoner.Edge a : asserted) assertedKeys.add(List.of(a.srcId(), a.p(), a.dstId()));
+        }
         List<Reasoner.Edge> out = new ArrayList<>();
         for (OntologyEdge e : existing) {
             String owner = e.isInferred() ? ownerOf(e) : null;
             if (owner == null || owner.equals(entityId)) continue;
+            // The entity now asserts this edge itself, so it is no longer another node's
+            if (assertedKeys.contains(List.of(e.getSrc(), e.getP(), e.getDst()))) continue;
             out.add(new Reasoner.Edge(e.getSrc(), e.getSrcType(), e.getP(), e.getDst(), e.getDstType(), true,
                     Optional.of(new Reasoner.Provenance(String.valueOf(e.getProv().get("rule")), Map.of()))));
         }
@@ -434,13 +514,13 @@ public class OntologyMaterializer {
             base.add(new Reasoner.Edge(e.getSrc(), e.getSrcType(), e.getP(), e.getDst(), e.getDstType(), false,
                     Optional.empty()));
         }
-        List<Reasoner.Edge> foreign = ownedElsewhere(existingAll, entityId);
+        List<Reasoner.Edge> foreign = ownedElsewhere(existingAll, entityId, base);
         base.addAll(foreign);
         List<Reasoner.Edge> extendedEdges = chainSnapshotEdges(realmId, dataDomain, entityId, base, registry);
         var out = withoutImagesOf(
                 reasoner.infer(new Reasoner.EntitySnapshot(dataDomain.getTenantId(), entityId, entityType, extendedEdges), registry),
                 foreign);
-        upsertAndPruneInferred(realmId, dataDomain, entityId, out, existingAll, changes);
+        upsertAndPruneInferred(realmId, dataDomain, entityId, out, existingAll, assertedKeys(existingAll, base), changes);
         return changes;
     }
 
@@ -615,6 +695,7 @@ public class OntologyMaterializer {
         Map<String, Map<String, Set<String>>> entityExplicitByP = new HashMap<>();  // entityId -> predicate -> dstIds
         Map<String, Map<String, Set<String>>> entityComputedByP = new HashMap<>();
         Map<String, Map<String, Set<String>>> entityInferredByP = new HashMap<>();
+        Map<String, Set<List<String>>> entityImagesElsewhere = new HashMap<>();
 
         int skippedCount = 0;
 
@@ -633,8 +714,13 @@ public class OntologyMaterializer {
             DataDomainInfo dataDomainInfo = DataDomainConverter.toInfo(dataDomain);
             Map<String, OntologyEdge> existingForEntity = existingEdgesByEntity.getOrDefault(entityId, Map.of());
 
+            // Inverse and symmetric edges here that other nodes own join the snapshot (a chain may start
+            // with one) but are neither re-inverted nor pruned by this entity
+            List<Reasoner.Edge> foreign = ownedElsewhere(existingForEntity.values(), entityId, explicitEdges);
+
             // Build extended edges for chain inference (same logic as single apply)
             List<Reasoner.Edge> extendedEdges = new ArrayList<>(explicitEdges != null ? explicitEdges : List.of());
+            extendedEdges.addAll(foreign);
             if (explicitEdges != null && !registry.propertyChains().isEmpty()) {
                 Set<String> visitedNodes = new HashSet<>();
                 visitedNodes.add(entityId);
@@ -643,6 +729,9 @@ public class OntologyMaterializer {
                         .max().orElse(2);
                 Set<String> currentFrontier = new HashSet<>();
                 for (var edge : explicitEdges) {
+                    currentFrontier.add(edge.dstId());
+                }
+                for (var edge : foreign) {
                     currentFrontier.add(edge.dstId());
                 }
                 for (int depth = 0; depth < maxChainLength - 1 && !currentFrontier.isEmpty(); depth++) {
@@ -667,7 +756,7 @@ public class OntologyMaterializer {
 
             // Run reasoner to get inferred edges
             var snap = new Reasoner.EntitySnapshot(dataDomain.getTenantId(), entityId, entityType, extendedEdges);
-            var out = reasoner.infer(snap, registry);
+            var out = withoutImagesOf(reasoner.infer(snap, registry), foreign);
 
             // Collect explicit and computed edges - only if new or changed
             Map<String, Set<String>> explicitByP = new HashMap<>();
@@ -726,16 +815,26 @@ public class OntologyMaterializer {
 
             // Collect inferred edges - only if new or changed
             Map<String, Set<String>> inferredByP = new HashMap<>();
+            Set<List<String>> imagesElsewhere = new HashSet<>();
+            Set<List<String>> asserted = assertedKeys(existingForEntity.values(), explicitEdges);
             for (var e : out.addEdges()) {
-                inferredByP.computeIfAbsent(e.p(), k -> new HashSet<>()).add(e.dstId());
+                OntologyEdge existing;
+                if (Objects.equals(e.srcId(), entityId)) {
+                    inferredByP.computeIfAbsent(e.p(), k -> new HashSet<>()).add(e.dstId());
+                    if (asserted.contains(List.of(e.srcId(), e.p(), e.dstId()))) continue; // asserted here: leave it
+                    existing = existingForEntity.get(e.srcId() + "|" + e.p() + "|" + e.dstId());
+                } else {
+                    // An inverse or symmetric image on another node
+                    imagesElsewhere.add(List.of(e.srcId(), e.p(), e.dstId()));
+                    existing = findEdge(realmId, dataDomain, e.srcId(), e.p(), e.dstId());
+                    if (existing != null && !existing.isInferred()) continue; // asserted there: leave it
+                }
                 Map<String, Object> prov = e.prov().map(p -> Map.<String, Object>of(
                         "rule", p.rule(),
                         "inputs", p.inputs()
                 )).orElse(Map.of());
 
                 // Check if edge already exists with same properties
-                String edgeKey = e.srcId() + "|" + e.p() + "|" + e.dstId();
-                OntologyEdge existing = existingForEntity.get(edgeKey);
                 if (existing != null) {
                     boolean sameInferred = existing.isInferred() == true;
                     boolean sameProv = Objects.equals(existing.getProv(), prov);
@@ -755,6 +854,7 @@ public class OntologyMaterializer {
                 }
             }
             entityInferredByP.put(entityId, inferredByP);
+            entityImagesElsewhere.put(entityId, imagesElsewhere);
         }
 
         // Phase 2: Bulk upsert only new/changed edges
@@ -781,9 +881,14 @@ public class OntologyMaterializer {
             Set<String> existingComputedPreds = new HashSet<>();
             Set<String> existingInferredPreds = new HashSet<>();
 
+            Map<String, Set<String>> foreignByP = new HashMap<>();
             for (OntologyEdge e : existingMap.values()) {
                 if (e.isInferred()) {
                     existingInferredPreds.add(e.getP());
+                    String owner = ownerOf(e);
+                    if (owner != null && !owner.equals(entityId)) {
+                        foreignByP.computeIfAbsent(e.getP(), k -> new HashSet<>()).add(e.getDst());
+                    }
                 } else if (Boolean.TRUE.equals(e.isDerived())) {
                     existingComputedPreds.add(e.getP());
                 } else {
@@ -803,11 +908,16 @@ public class OntologyMaterializer {
                 edgeRepo.deleteDerivedBySrcNotIn(realmId, dataDomain, entityId, p, keep);
             }
 
-            // Prune inferred edges
+            // Prune inferred edges, keeping the ones other nodes own
             for (String p : existingInferredPreds) {
-                Set<String> keep = inferredByP.getOrDefault(p, Set.of());
+                Set<String> keep = new HashSet<>(inferredByP.getOrDefault(p, Set.of()));
+                keep.addAll(foreignByP.getOrDefault(p, Set.of()));
                 edgeRepo.deleteInferredBySrcNotIn(realmId, dataDomain, entityId, p, keep);
             }
+
+            // Prune this entity's images on other nodes that it no longer justifies
+            pruneImagesElsewhere(realmId, dataDomain, entityId,
+                    entityImagesElsewhere.getOrDefault(entityId, Set.of()), allChanges);
         }
 
         return allChanges;

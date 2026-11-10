@@ -126,6 +126,69 @@ public class InverseHeadChainTest {
         assertEquals(Set.of("decl1"), dsts("doc1", "documentSupports"));
     }
 
+    @Test
+    void anImageNeverTakesOverTheOtherEndsAssertion() {
+        write("docA", "Document", edge("docA", "Document", "peerOf", "docB", "Document"));
+        write("docB", "Document", edge("docB", "Document", "peerOf", "docA", "Document"));
+        write("docA", "Document", edge("docA", "Document", "peerOf", "docB", "Document"));
+
+        write("docA", "Document");
+
+        assertEquals(Set.of(false), inferredFlags("docB", "peerOf", "docA"), "docB's own assertion was lost or taken over");
+    }
+
+    @Test
+    void droppingAnAssertionKeepsTheImageOfTheOtherEndsAssertion() {
+        write("docA", "Document", edge("docA", "Document", "peerOf", "docB", "Document"));
+        write("docB", "Document", edge("docB", "Document", "peerOf", "docA", "Document"));
+
+        write("docA", "Document");
+
+        assertEquals(Set.of(true), inferredFlags("docA", "peerOf", "docB"), "docB peerOf docA no longer implies docA peerOf docB");
+    }
+
+    @Test
+    void aSubPropertyOfAForeignEdgeIsPrunedWithIt() {
+        write("link1", "EvidenceLink", edge("link1", "EvidenceLink", "linkSourceDocument", "doc1", "Document"));
+        assertEquals(Set.of("link1"), dsts("doc1", "documentRelated"));
+
+        write("link1", "EvidenceLink");
+
+        assertEquals(Set.of(), dsts("doc1", "documentRelated"));
+    }
+
+    @Test
+    void deletingTheLinkRemovesItsImagesAndWhatWasDerivedFromThem() {
+        write("link1", "EvidenceLink", edge("link1", "EvidenceLink", "linkSourceDocument", "doc1", "Document"),
+                edge("link1", "EvidenceLink", "linkTarget", "decl1", "Declaration"));
+
+        // What OntologyDeleteHook.afterDelete does
+        EdgeChanges removed = materializer.removeNode(null, tenant, "link1");
+        propagator.propagate(null, tenant, "link1", removed);
+
+        assertEquals(Set.of(), dsts("doc1", "documentHasLink"));
+        assertEquals(Set.of(), dsts("doc1", "documentSupports"));
+        assertEquals(Set.of(), dsts("doc1", "documentRelated"));
+    }
+
+    @Test
+    void aReindexOfTheDocumentKeepsWhatOtherNodesOwn() {
+        write("link1", "EvidenceLink", edge("link1", "EvidenceLink", "linkSourceDocument", "doc1", "Document"),
+                edge("link1", "EvidenceLink", "linkTarget", "decl1", "Declaration"));
+
+        materializer.applyBulk(List.of(new OntologyMaterializer.EntityEdgeContext(null, tenant, "doc1", "Document", List.of())));
+
+        assertEquals(Set.of("link1"), dsts("doc1", "documentHasLink"));
+        assertEquals(Set.of("decl1"), dsts("doc1", "documentSupports"));
+    }
+
+    private Set<Boolean> inferredFlags(String src, String p, String dst) {
+        return edgeRepo.findBySrc((String) null, tenant, src).stream()
+                .filter(e -> p.equals(e.getP()) && dst.equals(e.getDst()))
+                .map(e -> e.isInferred())
+                .collect(Collectors.toSet());
+    }
+
     private void write(String id, String type, Reasoner.Edge... edges) {
         EdgeChanges changes = materializer.apply(tenant, id, type, List.of(edges));
         propagator.propagate(null, tenant, id, changes);
@@ -151,7 +214,12 @@ public class InverseHeadChainTest {
         props.put("linkSourceDocument", new PropertyDef("linkSourceDocument", Optional.of("EvidenceLink"),
                 Optional.of("Document"), false, Optional.of("documentHasLink"), false, false, true, Set.of(), false));
         props.put("documentHasLink", new PropertyDef("documentHasLink", Optional.of("Document"),
-                Optional.of("EvidenceLink"), false, Optional.of("linkSourceDocument"), false, false, false, Set.of(), true));
+                Optional.of("EvidenceLink"), false, Optional.of("linkSourceDocument"), false, false, false,
+                Set.of("documentRelated"), true));
+        props.put("documentRelated", new PropertyDef("documentRelated", Optional.of("Document"),
+                Optional.of("EvidenceLink"), false, Optional.empty(), false, false, false, Set.of(), true));
+        props.put("peerOf", new PropertyDef("peerOf", Optional.of("Document"),
+                Optional.of("Document"), false, Optional.empty(), false, true, false, Set.of(), false));
         props.put("linkTarget", new PropertyDef("linkTarget", Optional.of("EvidenceLink"),
                 Optional.of("Declaration"), false, Optional.empty(), false, false, true, Set.of(), false));
         props.put("documentSupports", new PropertyDef("documentSupports", Optional.of("Document"),
