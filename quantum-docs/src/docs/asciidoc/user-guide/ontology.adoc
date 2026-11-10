@@ -1014,6 +1014,13 @@ the Customer being saved again:
   the propagation stops and logs an ERROR naming the heads it did not reach. Their derived edges stay
   stale until DriftRepairJob or a reindex runs.
 
+A chain may start with the inverse side of a relation. Under
+`[documentHasLink, linkTarget] => documentSupports`, with `documentHasLink` the inverse of the
+link's explicit `linkSourceDocument`, saving an EvidenceLink writes `Document documentHasLink link`
+at the document and derives `Document documentSupports Declaration` there. An inverse or symmetric
+edge belongs to the entity whose explicit edge produced it: that entity prunes it when the edge goes
+away, and re-saving the document keeps it.
+
 Known limit: in a cyclic graph under a recursive chain (its implied predicate is also one of its
 steps), two heads can keep each other's stale derived edge after the edge that supported both is
 removed. A reindex clears it.

@@ -74,11 +74,23 @@ public class ChainPropagator {
 
     /**
      * Propagate the edge changes {@code changes} made at {@code nodeId} to the chain heads upstream
-     * of it. Only changed edges whose source is {@code nodeId} start a walk.
+     * of it. Changed edges at other nodes (the inverse or symmetric images of {@code nodeId}'s edges)
+     * also start a walk there, and make that node a head itself when they start a chain.
      */
     public Result propagate(String realmId, DataDomain dataDomain, String nodeId, EdgeChanges changes) {
-        Set<String> predicates = changedPredicates(nodeId, changes);
-        return propagate(realmId, dataDomain, nodeId, predicates);
+        Map<String, Set<String>> bySrc = new LinkedHashMap<>();
+        Map<String, String> srcTypes = new LinkedHashMap<>();
+        bySrc.put(nodeId, changedPredicates(nodeId, changes));
+        if (changes != null) {
+            for (List<EdgeRecord> list : List.of(changes.added(), changes.modified(), changes.removed())) {
+                for (EdgeRecord rec : list) {
+                    if (rec == null || rec.getSrc() == null || rec.getSrc().equals(nodeId)) continue;
+                    bySrc.computeIfAbsent(rec.getSrc(), __ -> new LinkedHashSet<>()).add(rec.getP());
+                    srcTypes.putIfAbsent(rec.getSrc(), rec.getSrcType());
+                }
+            }
+        }
+        return propagate(realmId, dataDomain, nodeId, bySrc, srcTypes);
     }
 
     /**
@@ -86,7 +98,15 @@ public class ChainPropagator {
      * changed without an {@link EdgeChanges}, such as a delete that removed all of a node's edges.
      */
     public Result propagate(String realmId, DataDomain dataDomain, String nodeId, Set<String> changedPredicates) {
-        if (dataDomain == null || nodeId == null || changedPredicates == null || changedPredicates.isEmpty()) {
+        return propagate(realmId, dataDomain, nodeId,
+                changedPredicates == null ? Map.of() : Map.of(nodeId, changedPredicates), Map.of());
+    }
+
+    private Result propagate(String realmId, DataDomain dataDomain, String nodeId,
+                             Map<String, Set<String>> changedBySrc, Map<String, String> otherTypes) {
+        changedBySrc = new LinkedHashMap<>(changedBySrc);
+        changedBySrc.values().removeIf(Set::isEmpty);
+        if (dataDomain == null || nodeId == null || changedBySrc.isEmpty()) {
             return new Result(0, 0, false, Set.of());
         }
         OntologyRegistry registry = registryProvider.getRegistryForTenant(dataDomain);
@@ -98,8 +118,19 @@ public class ChainPropagator {
         // Work queue of (node, predicates that changed at it). A head is queued once at a time; if
         // it changes again while queued, its predicates are merged.
         Map<String, Set<String>> pending = new LinkedHashMap<>();
-        pending.put(nodeId, new LinkedHashSet<>(changedPredicates));
+        changedBySrc.forEach((node, ps) -> pending.put(node, new LinkedHashSet<>(ps)));
         Set<String> origin = Set.of(nodeId);
+        // Other nodes whose changed edge starts a chain were not materialized: they are heads themselves
+        Map<String, String> selfHeads = new LinkedHashMap<>();
+        Set<String> firstSteps = new HashSet<>();
+        for (PropertyChainDef chain : chains) {
+            if (chain.chain() != null && !chain.chain().isEmpty()) firstSteps.add(chain.chain().get(0));
+        }
+        changedBySrc.forEach((node, ps) -> {
+            if (!node.equals(nodeId) && ps.stream().anyMatch(firstSteps::contains)) {
+                selfHeads.put(node, otherTypes.get(node));
+            }
+        });
         int rederived = 0;
         int changedEdges = 0;
 
@@ -108,7 +139,11 @@ public class ChainPropagator {
             Map.Entry<String, Set<String>> next = it.next();
             it.remove();
 
-            Map<String, String> heads = headsUpstream(realmId, dataDomain, next.getKey(), next.getValue(), chains);
+            Map<String, String> heads = new LinkedHashMap<>();
+            if (selfHeads.containsKey(next.getKey())) {
+                heads.put(next.getKey(), selfHeads.remove(next.getKey()));
+            }
+            headsUpstream(realmId, dataDomain, next.getKey(), next.getValue(), chains).forEach(heads::putIfAbsent);
             Iterator<Map.Entry<String, String>> headIt = heads.entrySet().iterator();
             while (headIt.hasNext()) {
                 Map.Entry<String, String> head = headIt.next();

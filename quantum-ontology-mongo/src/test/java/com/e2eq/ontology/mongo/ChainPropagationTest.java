@@ -112,6 +112,21 @@ public class ChainPropagationTest {
     }
 
     @Test
+    void droppingThePurchaseOrderPrunesEveryDerivedShipment() {
+        write("po1", "PurchaseOrder", edge("po1", "PurchaseOrder", "hasLine", "l1", "POLine"),
+                edge("po1", "PurchaseOrder", "hasLine", "l2", "POLine"));
+        write("l1", "POLine", edge("l1", "POLine", "lineShipment", "s1", "Shipment"));
+        write("l2", "POLine", edge("l2", "POLine", "lineShipment", "s2", "Shipment"));
+        write("c1", "Customer", edge("c1", "Customer", "hasPO", "po1", "PurchaseOrder"));
+        assertTrue(hasShipment("c1", "s1") && hasShipment("c1", "s2"));
+
+        write("c1", "Customer");
+
+        assertFalse(hasShipment("c1", "s1"));
+        assertFalse(hasShipment("c1", "s2"), "only the first stale edge was deleted");
+    }
+
+    @Test
     void deletingALinePrunesTheDerivedEdge() {
         write("c1", "Customer", edge("c1", "Customer", "hasPO", "po1", "PurchaseOrder"));
         write("po1", "PurchaseOrder", edge("po1", "PurchaseOrder", "hasLine", "l1", "POLine"));
