@@ -140,10 +140,31 @@ public class RefNameContractIT extends BaseRepoTest {
     }
 
     @Test
-    void missingRefNameIsRejectedNotDefaultedToObjectId() {
-        RefNameViolationException ex = expectViolation(Code.REFNAME_REQUIRED,
-                () -> userGroupRepo.save(REALM, group(null)));
-        assertEquals("UserGroup", ex.getEntityType());
+    void missingRefNameDefaultsToTheObjectId() {
+        UserGroup saved = saveGroup(group(null));
+        assertEquals(saved.getId().toHexString(), saved.getRefName());
+
+        // Sending the record's own id is the same default; any other generated-looking id is still refused
+        ObjectId id = new ObjectId();
+        UserGroup ownId = group(id.toHexString());
+        ownId.setId(id);
+        assertEquals(id.toHexString(), saveGroup(ownId).getRefName());
+        expectViolation(Code.REFNAME_GENERATED_ID, () -> userGroupRepo.save(REALM, group(new ObjectId().toHexString())));
+    }
+
+    @Test
+    void aDefaultedRefNameStaysImmutableAndSurvivesAFullSave() {
+        UserGroup saved = saveGroup(group(null));
+
+        // A full save that omits refName stands for the same default, so it is unchanged
+        UserGroup resaved = group(null);
+        resaved.setId(saved.getId());
+        resaved.setVersion(saved.getVersion());
+        assertEquals(saved.getId().toHexString(), saveGroup(resaved).getRefName());
+
+        UserGroup renamed = group(unique("IT_NAMED_LATER"));
+        renamed.setId(saved.getId());
+        expectViolation(Code.REFNAME_IMMUTABLE, () -> userGroupRepo.save(REALM, renamed));
     }
 
     @Test
@@ -308,7 +329,7 @@ public class RefNameContractIT extends BaseRepoTest {
             assertEquals("merged display name", reloaded.getDisplayName());
         }
 
-        // A full replace without refName would persist a different value, so it is still a rename.
+        // A full replace without refName would persist the ObjectId default, a different value, so it is still a rename.
         UserGroup cleared = group(null);
         cleared.setId(saved.getId());
         expectViolation(Code.REFNAME_IMMUTABLE, () -> userGroupRepo.save(REALM, cleared));
@@ -323,13 +344,6 @@ public class RefNameContractIT extends BaseRepoTest {
                 .updateOne(new org.bson.Document("_id", stored.getId()),
                         new org.bson.Document("$unset", new org.bson.Document("refName", "")));
 
-        try (var scope = SecurityCallScope.openIgnoringRules()) {
-            UserGroup unnamed = userGroupRepo.findById(stored.getId().toHexString(), REALM).orElseThrow();
-            unnamed.setDisplayName("still unnamed");
-            UserGroup kept = userGroupRepo.save(REALM, unnamed);
-            assertEquals(null, kept.getRefName(), "a canonical type is never given a generated refName");
-        }
-
         UserGroup badName = group("not_canonical");
         badName.setId(stored.getId());
         expectViolation(Code.REFNAME_INVALID_FORMAT, () -> userGroupRepo.save(REALM, badName));
@@ -339,6 +353,23 @@ public class RefNameContractIT extends BaseRepoTest {
             UserGroup named = userGroupRepo.findById(stored.getId().toHexString(), REALM).orElseThrow();
             named.setRefName(refName);
             assertEquals(refName, userGroupRepo.save(REALM, named).getRefName());
+        }
+    }
+
+    @Test
+    void recordStoredWithoutRefNameGetsTheObjectIdDefaultWhenSavedUnnamed() {
+        UserGroup stored = saveGroup(group(unique("IT_NULL_DEFAULT")));
+        var ds = morphiaDataStoreWrapper.getDataStore(REALM);
+        ds.getDatabase()
+                .getCollection(ds.getMapper().getEntityModel(UserGroup.class).collectionName())
+                .updateOne(new org.bson.Document("_id", stored.getId()),
+                        new org.bson.Document("$unset", new org.bson.Document("refName", "")));
+
+        try (var scope = SecurityCallScope.openIgnoringRules()) {
+            UserGroup unnamed = userGroupRepo.findById(stored.getId().toHexString(), REALM).orElseThrow();
+            unnamed.setDisplayName("saved without a name");
+            assertEquals(stored.getId().toHexString(), userGroupRepo.save(REALM, unnamed).getRefName(),
+                    "a refName that is not given defaults to the ObjectId");
         }
     }
 

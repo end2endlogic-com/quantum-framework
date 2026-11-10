@@ -1114,9 +1114,8 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
             model.setId(new ObjectId());
         }
 
-        // Canonical refNames are never generated; RefNameContract has already required one on create.
-        if ((model.getRefName() == null || model.getRefName().trim().isEmpty())
-                && !RefNameContract.applies(model.getClass())) {
+        // A refName that is not given defaults to the ObjectId, canonical types included (RefNameContract allows it)
+        if (model.getRefName() == null || model.getRefName().trim().isEmpty()) {
             model.setRefName (model.getId().toString());
         }
 

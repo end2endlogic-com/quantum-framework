@@ -30,8 +30,9 @@ public class RefNameFieldCalculator implements FieldCalculator {
         ImportContext context
     ) {
         if (bean.getClass().isAnnotationPresent(CanonicalRefName.class)) {
-            // Canonical refNames are chosen by people, never generated; the repository rejects a
-            // missing or invalid one with a typed REFNAME_* error for this row.
+            // Canonical refNames are chosen by people or left to the repository, which defaults a
+            // missing one to the ObjectId and rejects an invalid one with a typed REFNAME_* error.
+            // A name generated from row data here could break the rule.
             return;
         }
         if (bean.getRefName() == null || bean.getRefName().isEmpty()) {

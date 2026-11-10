@@ -21,6 +21,7 @@ import jakarta.enterprise.inject.Any;
 import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 import org.bson.Document;
+import org.bson.types.ObjectId;
 import org.bson.conversions.Bson;
 
 import java.util.ArrayList;
@@ -146,7 +147,9 @@ public class CanonicalRefNameMigrator {
             continue;
          }
          occupants.computeIfAbsent(slot(row, refName), k -> new ArrayList<>()).add(row);
-         if (RefNameRule.check(refName).isPresent() && !legacy.contains(refName)) {
+         // A refName equal to the record's own ObjectId is the repository default, not a violation
+         boolean defaulted = row.get("_id") instanceof ObjectId oid && refName.equals(oid.toHexString());
+         if (!defaulted && RefNameRule.check(refName).isPresent() && !legacy.contains(refName)) {
             offending.add(row);
             String target = canonicalForm(refName);
             if (target != null) {
