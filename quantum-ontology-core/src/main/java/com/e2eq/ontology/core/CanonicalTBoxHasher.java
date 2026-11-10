@@ -65,7 +65,7 @@ public final class CanonicalTBoxHasher {
             properties.put(p.name(), propertyDict(p.name(),
                     p.domain().orElse(null), p.range().orElse(null),
                     p.inverseOf().orElse(null), p.transitive(), p.symmetric(), p.functional(),
-                    p.subPropertyOf(), p.inferred(), p.label(), p.aliases(), p.metadata()));
+                    p.subPropertyOf(), p.inferred(), p.label(), p.aliases(), p.metadata(), p.stability()));
         }
         root.put("properties", properties);
 
@@ -109,6 +109,18 @@ public final class CanonicalTBoxHasher {
         }
         root.put("classes", classes);
 
+        // Unknown stability/derivation values fail in property-name order, as in the Python runtime.
+        // A derivation/inferred conflict is a validation error, not a hashing one: inferred wins here.
+        Map<String, Map<String, Object>> byName = new TreeMap<>();
+        for (Map<String, Object> item : mappings(pack.get("properties"))) {
+            String name = defName(item);
+            if (name != null) byName.putIfAbsent(name, item);
+        }
+        byName.forEach((name, item) -> {
+            RelationStability.parse(name, item.get("stability"));
+            RelationDerivation.parse(name, item.get("derivation"));
+        });
+
         Map<String, Object> properties = new TreeMap<>();
         for (Map<String, Object> item : mappings(pack.get("properties"))) {
             String name = defName(item);
@@ -122,10 +134,12 @@ public final class CanonicalTBoxHasher {
                     Boolean.TRUE.equals(item.get("symmetric")),
                     functionalFlag(item),
                     firstList(item, "subPropertyOf", "sub_property_of"),
-                    Boolean.TRUE.equals(item.get("inferred")),
+                    // derivation is the authoring form of the inferred bit; it is never a hash key
+                    RelationDerivation.inferredBit(name, item.get("derivation"), inferredFlag(item.get("inferred"))),
                     optionalString(item.get("label")),
                     firstList(item, "aliases"),
-                    (Map<String, Object>) item.getOrDefault("metadata", Map.of())));
+                    (Map<String, Object>) item.getOrDefault("metadata", Map.of()),
+                    RelationStability.parse(name, item.get("stability"))));
         }
         root.put("properties", properties);
 
@@ -157,7 +171,7 @@ public final class CanonicalTBoxHasher {
                                                     String inverseOf, boolean transitive, boolean symmetric,
                                                     boolean functional, Collection<String> subPropertyOf,
                                                     boolean inferred, String label, Collection<String> aliases,
-                                                    Map<String, Object> metadata) {
+                                                    Map<String, Object> metadata, RelationStability stability) {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("name", name);
         data.put("domain", domain);
@@ -172,6 +186,10 @@ public final class CanonicalTBoxHasher {
         data.put("label", label);
         data.put("aliases", sorted(aliases));
         data.put("metadata", metadata);
+        // Omit-at-default: only a stable relation adds the key, so internal packs keep their hash.
+        if (stability == RelationStability.STABLE) {
+            data.put("stability", RelationStability.STABLE.wireValue());
+        }
         return data;
     }
 
@@ -201,6 +219,11 @@ public final class CanonicalTBoxHasher {
             return upper.equals("ONE_TO_ONE") || upper.equals("MANY_TO_ONE");
         }
         return Boolean.TRUE.equals(item.get("functional"));
+    }
+
+    /** Only a boolean {@code inferred} counts, as before; anything else reads as undeclared. */
+    private static Boolean inferredFlag(Object value) {
+        return value instanceof Boolean bool ? bool : null;
     }
 
     private static String defName(Map<String, Object> item) {

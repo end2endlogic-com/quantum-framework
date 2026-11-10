@@ -23,6 +23,20 @@ public @interface OntologyProperty {
     String range() default "";              // override inferred target class id
     String[] aliases() default {};           // optional synonyms/aliases for this property
 
+    /**
+     * Relation contract (P1): {@code "stable"} marks a relation consumers may bind to; {@code ""}
+     * (the default) or {@code "internal"} leaves it internal. Case-insensitive; any other value fails
+     * the ontology load rather than defaulting.
+     */
+    String stability() default "";
+
+    /**
+     * {@code "derived"} marks the property inferred (its edges come from a chain, inverse or
+     * sub-property); {@code ""} (the default) or {@code "asserted"} leaves it asserted. A stable
+     * derived property refuses explicit edges, so do not put it on a field that carries the edge.
+     */
+    String derivation() default "";
+
     // Relationship/edge semantics (optional)
     String ref() default "";                // target ontology type/class id (overrides range if set)
     RelationType relation() default RelationType.NONE; // multiplicity/cardinality

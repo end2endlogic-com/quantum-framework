@@ -1,6 +1,8 @@
 
 package com.e2eq.ontology.core;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 import java.util.*;
 import java.util.concurrent.Flow;
 
@@ -49,7 +51,9 @@ public interface OntologyRegistry {
             this(name, parents, disjointWith, sameAs, null, Set.of(), Map.of());
         }
     }
-    // Extended PropertyDef to support subPropertyOf, symmetric, functional, and inferred characteristics
+    // Extended PropertyDef to support subPropertyOf, symmetric, functional, and inferred characteristics.
+    // stability is the relation contract (P1): STABLE relations are what consumers may bind to; it is
+    // hashed only when STABLE, so packs that never opt in keep their canonical hash.
     record PropertyDef(String name,
                        Optional<String> domain,
                        Optional<String> range,
@@ -62,10 +66,20 @@ public interface OntologyRegistry {
                        boolean inferred,
                        String label,
                        Set<String> aliases,
-                       Map<String, Object> metadata){
+                       Map<String, Object> metadata,
+                       RelationStability stability){
         public PropertyDef {
             aliases = aliases != null ? aliases : Set.of();
             metadata = metadata != null ? metadata : Map.of();
+            stability = stability != null ? stability : RelationStability.INTERNAL;
+        }
+        // Backwards-compatible constructor without stability (INTERNAL)
+        public PropertyDef(String name, Optional<String> domain, Optional<String> range,
+                          boolean inverse, Optional<String> inverseOf, boolean transitive,
+                          boolean symmetric, boolean functional, Set<String> subPropertyOf,
+                          boolean inferred, String label, Set<String> aliases, Map<String, Object> metadata) {
+            this(name, domain, range, inverse, inverseOf, transitive, symmetric, functional,
+                    subPropertyOf, inferred, label, aliases, metadata, RelationStability.INTERNAL);
         }
         // Backwards-compatible constructor without presentation metadata
         public PropertyDef(String name, Optional<String> domain, Optional<String> range,
@@ -80,6 +94,27 @@ public interface OntologyRegistry {
                           boolean inverse, Optional<String> inverseOf, boolean transitive,
                           boolean symmetric, boolean functional, Set<String> subPropertyOf) {
             this(name, domain, range, inverse, inverseOf, transitive, symmetric, functional, subPropertyOf, false);
+        }
+        // Derived helpers are not JSON fields: only the stability component is serialized (lowercase).
+        /** True when consumers may bind to this relation. */
+        @JsonIgnore
+        public boolean isStable() {
+            return stability == RelationStability.STABLE;
+        }
+        /** Derivation view over {@link #inferred()}: DERIVED when inferred, ASSERTED otherwise. */
+        @JsonIgnore
+        public RelationDerivation derivation() {
+            return RelationDerivation.of(inferred);
+        }
+        /** A stable relation whose edges come only from its derivation; explicit edges are refused. */
+        @JsonIgnore
+        public boolean isStableDerived() {
+            return isStable() && inferred;
+        }
+        /** Copy of this definition with a different stability. */
+        public PropertyDef withStability(RelationStability newStability) {
+            return new PropertyDef(name, domain, range, inverse, inverseOf, transitive, symmetric, functional,
+                    subPropertyOf, inferred, label, aliases, metadata, newStability);
         }
     }
     record PropertyChainDef(List<String> chain, String implies){}

@@ -1172,7 +1172,8 @@ materializes inverses, so an inverse-only first step matches nothing.
 
 TIP: Several chains may imply the same property. That lets consumers query a stable relation such as
 `hasShipment` while the path beneath it changes, for example from `[hasPO, poShipment]` to
-`[hasPO, hasLine, lineShipment]`, without changing their queries.
+`[hasPO, hasLine, lineShipment]`, without changing their queries. Declare it `stability: stable` to
+make that a checked contract (see <<stable-relations>>).
 
 ===== ComputedEdgeProvider: Use for Complex Logic Beyond Sequential Paths
 
@@ -2176,6 +2177,10 @@ When the same class or property is declared on both sides, `OntologyMerger` comb
 | `transitive`, `symmetric`, `functional`, `inverse`, `inferred`
 | OR'd: true on either side means true.
 
+| `stability`
+| `stable` when either side declares it, so an overlay never silently drops a relation contract
+  (see <<stable-relations>>).
+
 | `parents`, `disjointWith`, `sameAs`, `subPropertyOf`, `aliases`
 | Union of both sides.
 
@@ -2196,6 +2201,191 @@ built in stages (annotations, then Morphia, then the YAML overlay), and if a sta
 its merge fails validation, that **whole stage is skipped** with a warning (`Failed to load
 annotations…`, `Failed to load Morphia TBox…` or `Failed to load YAML overlay…`) and the registry is
 built without it. Check the startup log after changing annotations or `ontology.yaml`.
+
+[[stable-relations]]
+=== Stable relations: a contract consumers can bind to
+
+A view, rule or integration that queries `Customer hasShipment Shipment` should keep working when the
+modelling underneath changes, for example when purchase orders gain lines and the path becomes
+PO -> line -> shipment. Declaring the relation *stable* makes that a contract: the pack may rewrite
+how the relation is derived, but it may not remove it, narrow it or change whether it is derived
+without bumping the pack version.
+
+Every rule in this section is opt-in. A property that does not declare `stability: stable` is
+`internal` and behaves exactly as before, and existing pack hashes are unchanged.
+
+==== Fields
+
+[cols="1,1,3"]
+|===
+| Field | Values | Meaning
+
+| `stability`
+| `stable` \| `internal` (default)
+| Whether consumers may bind to the relation. Case-insensitive; stored and hashed in lowercase.
+
+| `derivation`
+| `asserted` \| `derived`
+| Authoring form of the existing `inferred` flag: `derived` means `inferred: true`. Only the
+  `inferred` bit is kept, so `derivation` never adds a key to the canonical hash.
+|===
+
+The same fields exist on `@OntologyProperty` (`stability = "stable"`, `derivation = "derived"`) and
+on `PropertyDef` (`stability()`, `isStable()`, `derivation()`, `isStableDerived()`). When the same
+property id is declared on several annotated members, it is stable if any declaration says so. In
+the canonical TBox hash (and the legacy `TBoxHasher` hash) a stable property adds
+`"stability": "stable"`; an internal one adds nothing. In JSON a `PropertyDef` carries
+`"stability"` in lowercase.
+
+Any other value is a load error; it never falls back to `internal` silently. The message quotes
+the value trimmed and lowercased:
+
+----
+Property 'hasShipment' has unknown stability 'frozen': use stable or internal
+Property 'hasShipment' has unknown derivation 'computed': use asserted or derived
+Property 'hasShipment' declares derivation 'derived' but inferred is false
+----
+
+Properties are checked in name order, and the first error is reported.
+
+==== Example: rewriting the chain beneath `hasShipment`
+
+Version 1 of the pack derives `hasShipment` from `[hasPO, poShipment]`. Version 2 introduces
+purchase-order lines and derives it from `[hasPO, hasLine, lineShipment]` instead. The relation
+itself does not change, so consumers bound to it keep working, and the rewrite is admitted without
+a version bump:
+
+[source,yaml]
+----
+classes:
+  - id: Party
+  - id: Customer
+    parents: [Party]
+  - id: PurchaseOrder
+  - id: POLine
+  - id: Shipment
+properties:
+  - id: hasPO
+    domain: Customer
+    range: PurchaseOrder
+  - id: hasLine
+    domain: PurchaseOrder
+    range: POLine
+  - id: lineShipment
+    domain: POLine
+    range: Shipment
+  - id: hasShipment
+    domain: Customer
+    range: Shipment
+    stability: stable
+    derivation: derived
+chains:
+  - chain: [hasPO, hasLine, lineShipment]
+    implies: hasShipment
+----
+
+==== Validation rules
+
+`OntologyValidator` applies two rules to every stable property, in name order:
+
+. It must declare a domain and a range:
++
+----
+Stable relation 'hasShipment' must declare a domain and a range
+----
+. If it is derived, something must derive it: a property chain whose `implies` is it, an inverse
+(another property declaring `inverseOf` it, or it declaring `inverseOf` another property), or a
+sub-property (another property listing it in `subPropertyOf`):
++
+----
+Stable derived relation 'hasShipment' has no derivation: declare a property chain that implies it, an inverse, or a sub-property of it
+----
+
+Removing the `chains` block from the example above fails with the second message.
+
+==== Explicit edges are rejected
+
+A stable derived relation gets its edges only from its derivation. Every edge passed as explicit
+input naming it is refused, whatever its `inferred` flag; only edges from a `ComputedEdgeProvider`
+are exempt. The check runs in `MaterializationEngine`, in `OntologyMaterializer` (before anything is
+written) and in the `OntologyEdgeRepo` write paths for non-inferred edges (`upsert`, `upsertMany` and
+`bulkUpsertEdgeRecords`, which check the whole batch first), so governed ingest quarantines such a
+row with the reason:
+
+----
+Explicit edge for stable derived relation 'hasShipment' is not allowed: its edges come only from its derivation
+----
+
+The exception is `StableRelationGuard.StableDerivedEdgeException`, whose `rejectedPredicates()` lists
+every refused predicate. Because the repository write hook materializes after the entity is saved, a
+refused edge is logged by the hook and that entity's edges are not materialized; the entity itself is
+saved. During a reindex, `OntologyMaterializer.applyBulk` leaves out only the refused entities and
+materializes the rest of the batch; the reindexer lists them in `failures()` and finishes with status
+`COMPLETED_WITH_ERRORS`. Do not mark a field that carries the edge with `derivation = "derived"` and
+`stability = "stable"`. Internal derived relations keep accepting explicit edges.
+
+==== Admission diff
+
+`StableRelationDiff` compares the active TBox with a candidate for every relation that is stable in
+the active TBox. It is a pure function; refusing a non-admissible candidate is done by Quantum
+Enterprise TBox admission, not by the framework.
+
+[cols="2,3,3"]
+|===
+| Code | When | Message
+
+| `stable_relation_removed`
+| The candidate does not declare it.
+| `Stable relation 'hasShipment' was removed`
+
+| `stable_relation_demoted`
+| The candidate declares it internal.
+| `Stable relation 'hasShipment' was made internal`
+
+| `stable_relation_domain_narrowed`
+| The active domain is neither the candidate domain nor a subclass of it in the candidate's class
+  hierarchy (parents transitively, `sameAs` both ways). An undeclared class reaches only itself, so
+  an unchanged type never narrows. A candidate without a domain never narrows.
+| `Stable relation 'hasShipment' domain narrowed from 'Customer' to 'PremiumCustomer'`
+
+| `stable_relation_range_narrowed`
+| The same check for the range.
+| `Stable relation 'hasShipment' range narrowed from 'Shipment' to 'Parcel'`
+
+| `stable_relation_derivation_changed`
+| The derived/asserted bit changed, in either direction.
+| `Stable relation 'hasShipment' derivation changed from 'derived' to 'asserted'`
+|===
+
+Violations are listed in relation-name order, then in table order. A removed relation reports only
+its removal; otherwise every check runs. The candidate is *admissible* when there are no
+violations, or when its pack `version` is greater than the active `version`:
+
+[source,java]
+----
+StableRelationDiff.Result result = StableRelationDiff.diff(activeTBox, 1, candidateTBox, 1);
+result.violations();  // List<StableRelationDiff.Violation(relation, code, message)>
+result.admissible();
+----
+
+Allowed without a version bump: adding, removing or rewriting the chains beneath a stable relation,
+adding stable relations, widening a domain or range (for example `Customer` to `Party`), and
+label, alias or metadata changes. The diff does not validate the candidate; validation runs
+separately.
+
+==== Consumer binding guard
+
+`StableRelationGuard.bindingViolations(tbox, predicates, consumer)` returns one violation per bound
+predicate that is not stable, de-duplicated and in first-occurrence order, with code
+`binding_unknown_relation` or `binding_internal_relation`:
+
+----
+Consumer 'orders-view' binds unknown relation 'nope'
+Consumer 'orders-view' binds internal relation 'hasPO': only stable relations may be bound
+----
+
+It is a primitive only: no consumer calls it yet, because every relation is internal today and
+enforcing it would break existing consumers.
 
 === Materializing inferences from annotated models
 

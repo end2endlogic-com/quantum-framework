@@ -56,6 +56,9 @@ public class OntologyMaterializer {
         return v == null ? null : v.toString();
     }
 
+    /** An entity left out of a bulk materialization because its explicit edges were refused. */
+    public record RejectedEntity(String entityId, String entityType, String message) {}
+
     /**
      * Apply materialization for an entity with full DataDomain scoping.
      *
@@ -79,6 +82,9 @@ public class OntologyMaterializer {
 
         // Resolve registry for the given DataDomain
         OntologyRegistry registry = registryProvider.getRegistryForTenant(dataDomain);
+        // Refuse explicit edges for stable derived relations (relation contract, P1) before anything
+        // is written; computed-provider edges are exempt
+        StableRelationGuard.requireExplicitEdgesAllowed(registry, explicitEdges);
 
         // Build an extended snapshot that includes neighbor edges for chain inference.
         // For each explicit edge A->B, fetch B's outgoing edges so chains like [refersToB, refersToC]
@@ -412,11 +418,42 @@ public class OntologyMaterializer {
      * This significantly improves performance for reindex operations by reducing DB round-trips.
      * Skips edges that already exist and haven't changed to avoid unnecessary writes.
      *
+     * <p>An entity whose explicit edges name a stable derived relation (relation contract, P1) is left
+     * out entirely (nothing written or pruned for it) and logged; the rest of the batch is
+     * materialized. Use {@link #applyBulk(List, Consumer)} to collect those entities.
+     *
      * @param entities list of entity edge contexts to process
      * @return combined EdgeChanges for all entities
      */
     public EdgeChanges applyBulk(List<EntityEdgeContext> entities) {
-        if (entities == null || entities.isEmpty()) {
+        return applyBulk(entities, r -> io.quarkus.logging.Log.warnf(
+                "OntologyMaterializer: skipped %s %s: %s", r.entityType(), r.entityId(), r.message()));
+    }
+
+    /**
+     * {@link #applyBulk(List)} reporting each entity left out because its explicit edges were refused.
+     */
+    public EdgeChanges applyBulk(List<EntityEdgeContext> input, java.util.function.Consumer<RejectedEntity> onRejected) {
+        if (input == null || input.isEmpty()) {
+            return EdgeChanges.empty();
+        }
+        // Check every entity before anything is written, and drop only the offending ones
+        List<EntityEdgeContext> entities = new ArrayList<>(input.size());
+        for (EntityEdgeContext ctx : input) {
+            if (ctx.dataDomain() != null) {
+                try {
+                    StableRelationGuard.requireExplicitEdgesAllowed(
+                            registryProvider.getRegistryForTenant(ctx.dataDomain()), ctx.explicitEdges());
+                } catch (StableRelationGuard.StableDerivedEdgeException rejected) {
+                    if (onRejected != null) {
+                        onRejected.accept(new RejectedEntity(ctx.entityId(), ctx.entityType(), rejected.getMessage()));
+                    }
+                    continue;
+                }
+            }
+            entities.add(ctx);
+        }
+        if (entities.isEmpty()) {
             return EdgeChanges.empty();
         }
 

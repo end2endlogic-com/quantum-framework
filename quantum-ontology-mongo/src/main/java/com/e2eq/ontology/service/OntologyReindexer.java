@@ -119,10 +119,15 @@ public class OntologyReindexer {
     private volatile EdgeChanges lastChanges = EdgeChanges.empty();
     private volatile int entitiesProcessed = 0;
     private volatile List<String> participatingClasses = new ArrayList<>();
+    // Entities and batches that could not be materialized in the current/last run (a set: the second
+    // pass meets the same refused entities again)
+    private final Set<String> failures = java.util.Collections.synchronizedSet(new java.util.LinkedHashSet<>());
 
     public boolean isRunning() { return running.get(); }
     public String status() { return status; }
     public EdgeChanges lastChanges() { return lastChanges; }
+    /** Entities and batches the current/last run could not materialize; empty when none. */
+    public List<String> failures() { synchronized (failures) { return List.copyOf(failures); } }
 
     public ReindexResult getResult() {
         return new ReindexResult(
@@ -163,6 +168,7 @@ public class OntologyReindexer {
         lastChanges = EdgeChanges.empty();
         entitiesProcessed = 0;
         participatingClasses = new ArrayList<>();
+        failures.clear();
 
         // Create a message consumer that logs and optionally emits to SSE
         Consumer<String> messageConsumer = (msg) -> {
@@ -218,11 +224,15 @@ public class OntologyReindexer {
                                     appliedRegistry.classes(), appliedRegistry.properties(), appliedRegistry.propertyChains()),
                             packIdFromSource(res.meta().getSource()), yamlVersion);
                 });
-                status = "COMPLETED";
+                // A run that skipped entities or batches is not a silent success
+                int failureCount = failures().size();
+                status = failureCount == 0 ? "COMPLETED"
+                        : "COMPLETED_WITH_ERRORS: " + failureCount + " entities or batches not materialized";
 
                 // Emit final summary
-                String summary = String.format("Reindex completed: %d entities processed, %d edges added, %d edges removed",
-                        entitiesProcessed, lastChanges.added().size(), lastChanges.removed().size());
+                String summary = String.format("Reindex completed: %d entities processed, %d edges added, %d edges removed%s",
+                        entitiesProcessed, lastChanges.added().size(), lastChanges.removed().size(),
+                        failureCount == 0 ? "" : ", " + failureCount + " not materialized (see failures)");
                 messageConsumer.accept(summary);
 
                 if (emitter != null) {
@@ -310,9 +320,7 @@ public class OntologyReindexer {
                     if (force && processedDataDomains.add(dataDomain)) {
                         // Flush current batch before purging to avoid data loss
                         if (!batch.isEmpty()) {
-                            EdgeChanges batchChanges = materializer.applyBulk(batch);
-                            lastChanges.addAll(batchChanges);
-                            batch.clear();
+                            flush(batch, clazz, messageConsumer);
                         }
                         try {
                             String purgeMsg = "  Purging derived edges for DataDomain: " + dataDomain.getTenantId();
@@ -349,9 +357,7 @@ public class OntologyReindexer {
 
                     // Process batch when full
                     if (batch.size() >= BATCH_SIZE) {
-                        EdgeChanges batchChanges = materializer.applyBulk(batch);
-                        lastChanges.addAll(batchChanges);
-                        batch.clear();
+                        EdgeChanges batchChanges = flush(batch, clazz, messageConsumer);
 
                         String progressMsg = String.format("  Materialized %d/%d %s (total: %d, edges: +%d/~%d)",
                                 processed, totalForClass, clazz.getSimpleName(), entitiesProcessed,
@@ -366,17 +372,38 @@ public class OntologyReindexer {
 
             // Process remaining batch
             if (!batch.isEmpty()) {
-                try {
-                    EdgeChanges batchChanges = materializer.applyBulk(batch);
-                    lastChanges.addAll(batchChanges);
-                    batch.clear();
-                } catch (Throwable t) {
-                    messageConsumer.accept(String.format("  Warning: Failed to process final batch for %s: %s", clazz.getSimpleName(), t.getMessage()));
-                }
+                flush(batch, clazz, messageConsumer);
             }
 
             String completedMsg = String.format("  Completed %s: %d entities processed", clazz.getSimpleName(), processed);
             messageConsumer.accept(completedMsg);
+        }
+    }
+
+    /**
+     * Materialize one batch and always clear it, so a failed batch is never re-applied with the next
+     * one. Entities refused by the materializer (explicit edges for a stable derived relation) and
+     * failed batches are recorded in {@link #failures()} and make the run COMPLETED_WITH_ERRORS.
+     */
+    private EdgeChanges flush(List<OntologyMaterializer.EntityEdgeContext> batch, Class<?> clazz,
+                              Consumer<String> messageConsumer) {
+        try {
+            EdgeChanges batchChanges = materializer.applyBulk(batch, rejected -> {
+                String msg = String.format("  Warning: Skipped %s %s: %s",
+                        rejected.entityType(), rejected.entityId(), rejected.message());
+                failures.add(msg.trim());
+                messageConsumer.accept(msg);
+            });
+            lastChanges.addAll(batchChanges);
+            return batchChanges;
+        } catch (Throwable t) {
+            String msg = String.format("  Warning: Failed to materialize a batch of %d %s: %s",
+                    batch.size(), clazz.getSimpleName(), t.getMessage());
+            failures.add(msg.trim());
+            messageConsumer.accept(msg);
+            return EdgeChanges.empty();
+        } finally {
+            batch.clear();
         }
     }
 
