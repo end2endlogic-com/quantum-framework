@@ -86,62 +86,7 @@ public class OntologyMaterializer {
         // is written; computed-provider edges are exempt
         StableRelationGuard.requireExplicitEdgesAllowed(registry, explicitEdges);
 
-        // Build an extended snapshot that includes neighbor edges for chain inference.
-        // For each explicit edge A->B, fetch B's outgoing edges so chains like [refersToB, refersToC]
-        // can be evaluated to produce A->C inferred edges.
-        //
-        // CYCLE DETECTION: We track visited nodes to prevent infinite loops in cyclic graphs (A→B→C→A).
-        // We also limit the depth of neighbor expansion to prevent excessive traversal.
-        List<Reasoner.Edge> extendedEdges = new ArrayList<>(explicitEdges != null ? explicitEdges : List.of());
-        if (explicitEdges != null && !registry.propertyChains().isEmpty()) {
-            // Track visited nodes to detect cycles: start with the source entity
-            Set<String> visitedNodes = new HashSet<>();
-            visitedNodes.add(entityId); // Don't fetch edges back to the source entity
-
-            // Determine max chain length to limit neighbor expansion depth
-            int maxChainLength = registry.propertyChains().stream()
-                    .mapToInt(ch -> ch.chain() != null ? ch.chain().size() : 0)
-                    .max()
-                    .orElse(2);
-
-            // BFS-style expansion with depth limit to support multi-hop chains
-            // while preventing cycles
-            Set<String> currentFrontier = new HashSet<>();
-            for (var edge : explicitEdges) {
-                currentFrontier.add(edge.dstId());
-            }
-
-            for (int depth = 0; depth < maxChainLength - 1 && !currentFrontier.isEmpty(); depth++) {
-                Set<String> nextFrontier = new HashSet<>();
-
-                for (String neighborId : currentFrontier) {
-                    // Skip if already visited (cycle detection)
-                    if (!visitedNodes.add(neighborId)) {
-                        continue;
-                    }
-
-                    // Fetch neighbor's outgoing edges from the edge repo
-                    List<OntologyEdge> neighborEdges = edgeRepo.findBySrc(realmId, dataDomain, neighborId);
-                    for (OntologyEdge ne : neighborEdges) {
-                        // Convert OntologyEdge to Reasoner.Edge
-                        extendedEdges.add(new Reasoner.Edge(
-                                ne.getSrc(), ne.getSrcType(), ne.getP(),
-                                ne.getDst(), ne.getDstType(), ne.isInferred(),
-                                Optional.empty()
-                        ));
-
-                        // Add destination to next frontier for deeper expansion
-                        // (only if not already visited - cycle detection)
-                        if (!visitedNodes.contains(ne.getDst())) {
-                            nextFrontier.add(ne.getDst());
-                        }
-                    }
-                }
-
-                currentFrontier = nextFrontier;
-            }
-        }
-
+        List<Reasoner.Edge> extendedEdges = chainSnapshotEdges(realmId, dataDomain, entityId, explicitEdges, registry);
         var snap = new Reasoner.EntitySnapshot(tenantId, entityId, entityType, extendedEdges);
         var out = reasoner.infer(snap, registry);
 
@@ -193,57 +138,8 @@ public class OntologyMaterializer {
             }
         }
 
-        // 2) Collect new INFERRED edges by predicate
-        Map<String, Set<String>> newByP = new HashMap<>();
-        List<EdgeRecord> upserts = new ArrayList<>();
-        DataDomainInfo dataDomainInfo = DataDomainConverter.toInfo(dataDomain);
-        for (var e : out.addEdges()) {
-            newByP.computeIfAbsent(e.p(), k -> new HashSet<>()).add(e.dstId());
-            Map<String,Object> prov = e.prov().map(p -> Map.<String,Object>of(
-                    "rule", p.rule(),
-                    "inputs", p.inputs()
-            )).orElse(Map.of());
-
-            EdgeRecord rec = new EdgeRecord(dataDomainInfo, e.srcType(), e.srcId(), e.p(), e.dstType(), e.dstId(), true, prov, new Date());
-            upserts.add(rec);
-
-            // Check if inferred edge is already present for change tracking
-            OntologyEdge existing = existingAll.stream()
-                    .filter(ex -> Objects.equals(ex.getP(), e.p()) && Objects.equals(ex.getDst(), e.dstId()))
-                    .findFirst().orElse(null);
-
-            if (existing == null) {
-                changes.added().add(rec);
-            } else if (isModifiedRecord(existing, rec)) {
-                changes.modified().add(rec);
-            }
-        }
-        if (!upserts.isEmpty()) {
-            edgeRepo.bulkUpsertEdgeRecords(realmId, upserts);
-        }
-
-        // 3) Prune inferred edges no longer justified
-        List<OntologyEdge> existingAfterUpsert = edgeRepo.findBySrc(realmId, dataDomain, entityId);
-        Map<String, Set<String>> existingInfByP = new HashMap<>();
-        for (OntologyEdge e : existingAfterUpsert) {
-            if (!e.isInferred()) continue;
-            existingInfByP.computeIfAbsent(e.getP(), k -> new HashSet<>()).add(e.getDst());
-        }
-        for (Map.Entry<String, Set<String>> en : existingInfByP.entrySet()) {
-            String p = en.getKey();
-            Set<String> keep = newByP.getOrDefault(p, Set.of());
-
-            for (String dst : en.getValue()) {
-                if (!keep.contains(dst)) {
-                    existingAfterUpsert.stream()
-                            .filter(ex -> Objects.equals(ex.getP(), p) && Objects.equals(ex.getDst(), dst) && ex.isInferred())
-                            .findFirst().ifPresent(ex -> changes.removed().add(toEdgeRecord(ex, dataDomain)));
-                }
-            }
-
-            // delete inferred edges not in keep for predicate p
-            edgeRepo.deleteInferredBySrcNotIn(realmId, dataDomain, entityId, p, keep);
-        }
+        // 2) + 3) Upsert new INFERRED edges and prune inferred edges no longer justified
+        List<OntologyEdge> existingAfterUpsert = upsertAndPruneInferred(realmId, dataDomain, entityId, out, existingAll, changes);
 
         // 4) Prune explicit edges that are no longer present in the entity snapshot
         // Determine all predicates that currently exist for this source
@@ -307,6 +203,157 @@ public class OntologyMaterializer {
             edgeRepo.deleteDerivedBySrcNotIn(realmId, dataDomain, entityId, pAbsent, Set.of());
         }
 
+        return changes;
+    }
+
+    /**
+     * The snapshot a chain is evaluated over: the entity's own base edges plus, for each hop a
+     * chain can take, the outgoing edges of the nodes they reach.
+     */
+    private List<Reasoner.Edge> chainSnapshotEdges(String realmId, DataDomain dataDomain, String entityId,
+                                                   List<Reasoner.Edge> baseEdges, OntologyRegistry registry) {
+        // Build an extended snapshot that includes neighbor edges for chain inference.
+        // For each explicit edge A->B, fetch B's outgoing edges so chains like [refersToB, refersToC]
+        // can be evaluated to produce A->C inferred edges.
+        //
+        // CYCLE DETECTION: We track visited nodes to prevent infinite loops in cyclic graphs (A→B→C→A).
+        // We also limit the depth of neighbor expansion to prevent excessive traversal.
+        List<Reasoner.Edge> extendedEdges = new ArrayList<>(baseEdges != null ? baseEdges : List.of());
+        if (baseEdges != null && !registry.propertyChains().isEmpty()) {
+            // Track visited nodes to detect cycles: start with the source entity
+            Set<String> visitedNodes = new HashSet<>();
+            visitedNodes.add(entityId); // Don't fetch edges back to the source entity
+
+            // Determine max chain length to limit neighbor expansion depth
+            int maxChainLength = registry.propertyChains().stream()
+                    .mapToInt(ch -> ch.chain() != null ? ch.chain().size() : 0)
+                    .max()
+                    .orElse(2);
+
+            // BFS-style expansion with depth limit to support multi-hop chains
+            // while preventing cycles
+            Set<String> currentFrontier = new HashSet<>();
+            for (var edge : baseEdges) {
+                currentFrontier.add(edge.dstId());
+            }
+
+            for (int depth = 0; depth < maxChainLength - 1 && !currentFrontier.isEmpty(); depth++) {
+                Set<String> nextFrontier = new HashSet<>();
+
+                for (String neighborId : currentFrontier) {
+                    // Skip if already visited (cycle detection)
+                    if (!visitedNodes.add(neighborId)) {
+                        continue;
+                    }
+
+                    // Fetch neighbor's outgoing edges from the edge repo
+                    List<OntologyEdge> neighborEdges = edgeRepo.findBySrc(realmId, dataDomain, neighborId);
+                    for (OntologyEdge ne : neighborEdges) {
+                        // Convert OntologyEdge to Reasoner.Edge
+                        extendedEdges.add(new Reasoner.Edge(
+                                ne.getSrc(), ne.getSrcType(), ne.getP(),
+                                ne.getDst(), ne.getDstType(), ne.isInferred(),
+                                Optional.empty()
+                        ));
+
+                        // Add destination to next frontier for deeper expansion
+                        // (only if not already visited - cycle detection)
+                        if (!visitedNodes.contains(ne.getDst())) {
+                            nextFrontier.add(ne.getDst());
+                        }
+                    }
+                }
+
+                currentFrontier = nextFrontier;
+            }
+        }
+
+        return extendedEdges;
+    }
+
+    /**
+     * Upsert the reasoner's inferred edges for {@code entityId} and delete its inferred edges that
+     * are no longer justified. Returns the entity's edges after the upsert, before pruning.
+     */
+    private List<OntologyEdge> upsertAndPruneInferred(String realmId, DataDomain dataDomain, String entityId,
+                                                      Reasoner.InferenceResult out, List<OntologyEdge> existingAll,
+                                                      EdgeChanges changes) {
+        // 2) Collect new INFERRED edges by predicate
+        Map<String, Set<String>> newByP = new HashMap<>();
+        List<EdgeRecord> upserts = new ArrayList<>();
+        DataDomainInfo dataDomainInfo = DataDomainConverter.toInfo(dataDomain);
+        for (var e : out.addEdges()) {
+            newByP.computeIfAbsent(e.p(), k -> new HashSet<>()).add(e.dstId());
+            Map<String,Object> prov = e.prov().map(p -> Map.<String,Object>of(
+                    "rule", p.rule(),
+                    "inputs", p.inputs()
+            )).orElse(Map.of());
+
+            EdgeRecord rec = new EdgeRecord(dataDomainInfo, e.srcType(), e.srcId(), e.p(), e.dstType(), e.dstId(), true, prov, new Date());
+            upserts.add(rec);
+
+            // Check if inferred edge is already present for change tracking
+            OntologyEdge existing = existingAll.stream()
+                    .filter(ex -> Objects.equals(ex.getP(), e.p()) && Objects.equals(ex.getDst(), e.dstId()))
+                    .findFirst().orElse(null);
+
+            if (existing == null) {
+                changes.added().add(rec);
+            } else if (isModifiedRecord(existing, rec)) {
+                changes.modified().add(rec);
+            }
+        }
+        if (!upserts.isEmpty()) {
+            edgeRepo.bulkUpsertEdgeRecords(realmId, upserts);
+        }
+
+        // 3) Prune inferred edges no longer justified
+        List<OntologyEdge> existingAfterUpsert = edgeRepo.findBySrc(realmId, dataDomain, entityId);
+        Map<String, Set<String>> existingInfByP = new HashMap<>();
+        for (OntologyEdge e : existingAfterUpsert) {
+            if (!e.isInferred()) continue;
+            existingInfByP.computeIfAbsent(e.getP(), k -> new HashSet<>()).add(e.getDst());
+        }
+        for (Map.Entry<String, Set<String>> en : existingInfByP.entrySet()) {
+            String p = en.getKey();
+            Set<String> keep = newByP.getOrDefault(p, Set.of());
+
+            for (String dst : en.getValue()) {
+                if (!keep.contains(dst)) {
+                    existingAfterUpsert.stream()
+                            .filter(ex -> Objects.equals(ex.getP(), p) && Objects.equals(ex.getDst(), dst) && ex.isInferred())
+                            .findFirst().ifPresent(ex -> changes.removed().add(toEdgeRecord(ex, dataDomain)));
+                }
+            }
+
+            // delete inferred edges not in keep for predicate p
+            edgeRepo.deleteInferredBySrcNotIn(realmId, dataDomain, entityId, p, keep);
+        }
+        return existingAfterUpsert;
+    }
+
+    /**
+     * Re-derive the inferred edges of an entity from its stored base edges (explicit and computed),
+     * without touching those base edges. Chain propagation calls this for a chain head whose path
+     * changed further along the chain (P2): the head entity itself was not written, so its own
+     * explicit edges come from the store rather than from the entity.
+     */
+    public EdgeChanges rederive(String realmId, DataDomain dataDomain, String entityId, String entityType) {
+        if (dataDomain == null) {
+            throw new IllegalArgumentException("DataDomain must be provided for materialization");
+        }
+        EdgeChanges changes = new EdgeChanges();
+        OntologyRegistry registry = registryProvider.getRegistryForTenant(dataDomain);
+        List<OntologyEdge> existingAll = edgeRepo.findBySrc(realmId, dataDomain, entityId);
+        List<Reasoner.Edge> base = new ArrayList<>();
+        for (OntologyEdge e : existingAll) {
+            if (e.isInferred()) continue;
+            base.add(new Reasoner.Edge(e.getSrc(), e.getSrcType(), e.getP(), e.getDst(), e.getDstType(), false,
+                    Optional.empty()));
+        }
+        List<Reasoner.Edge> extendedEdges = chainSnapshotEdges(realmId, dataDomain, entityId, base, registry);
+        var out = reasoner.infer(new Reasoner.EntitySnapshot(dataDomain.getTenantId(), entityId, entityType, extendedEdges), registry);
+        upsertAndPruneInferred(realmId, dataDomain, entityId, out, existingAll, changes);
         return changes;
     }
 
