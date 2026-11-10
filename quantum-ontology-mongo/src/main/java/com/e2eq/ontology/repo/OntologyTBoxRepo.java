@@ -8,6 +8,7 @@ import dev.morphia.query.Sort;
 import dev.morphia.query.filters.Filters;
 import jakarta.enterprise.context.ApplicationScoped;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -48,6 +49,14 @@ public class OntologyTBoxRepo extends MorphiaRepo<OntologyTBox> {
         List<OntologyTBox> legacy = ds().find(OntologyTBox.class)
                 .filter(Filters.exists("builder").not()).iterator(options).toList();
         return legacy.isEmpty() ? Optional.empty() : Optional.of(legacy.get(0));
+    }
+
+    /** The builders recorded on this realm's TBoxes. */
+    public List<String> findBuilders() {
+        List<String> out = new ArrayList<>();
+        ds().getCollection(OntologyTBox.class).distinct("builder", String.class).into(out);
+        out.removeIf(java.util.Objects::isNull);
+        return out;
     }
 
     /** The TBox with {@code tboxHash} that {@code builder} built, if it built one. */

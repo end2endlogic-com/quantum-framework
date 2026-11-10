@@ -214,7 +214,8 @@ public class TenantOntologyRegistryProvider {
         if (realmRegistries.containsKey(realm)) {
             maybeInvalidateIfStale(realm);
         }
-        Refusal refusal = realmRefusals.get(realm);
+        // A cached registry wins over a refusal recorded by a build that raced a rebuild.
+        Refusal refusal = realmRegistries.containsKey(realm) ? null : realmRefusals.get(realm);
         if (refusal != null) {
             if (System.currentTimeMillis() < refusal.retryAt()) throw refusal.error();
             realmRefusals.remove(realm, refusal);
@@ -224,7 +225,7 @@ public class TenantOntologyRegistryProvider {
         } catch (SourceTBoxGate.RefusedException e) {
             long retryAfterMs = ConfigProvider.getConfig()
                     .getOptionalValue("quantum.ontology.stable-diff.retry-after-ms", Long.class).orElse(30_000L);
-            if (retryAfterMs > 0) {
+            if (retryAfterMs > 0 && !realmRegistries.containsKey(realm)) {
                 realmRefusals.put(realm, new Refusal(e, System.currentTimeMillis() + retryAfterMs));
             }
             throw e;
@@ -685,6 +686,14 @@ public class TenantOntologyRegistryProvider {
      * else {@code quarkus.application.name}. Each builder is checked against its own last build, so
      * applications sharing a realm database do not block each other.
      */
+    private List<String> otherBuilders(String builder) {
+        try {
+            return tboxRepo.findBuilders().stream().filter(b -> !b.equals(builder)).toList();
+        } catch (Throwable t) {
+            return List.of();
+        }
+    }
+
     private static String tboxBuilder(Config config) {
         return config.getOptionalValue("quantum.ontology.tbox.builder", String.class)
                 .or(() -> config.getOptionalValue("quarkus.application.name", String.class))
@@ -713,7 +722,15 @@ public class TenantOntologyRegistryProvider {
             Log.error(unreadable.getMessage().replace("=enforce", "=warn"));
             return;
         }
-        if (baseline.isEmpty()) return;
+        if (baseline.isEmpty()) {
+            List<String> others = otherBuilders(builder);
+            if (!others.isEmpty()) {
+                Log.warnf("Realm %s: %s has no earlier build to check stable relations against, but %s built this "
+                        + "realm's TBox. If the builder was renamed, set quantum.ontology.tbox.builder to its earlier "
+                        + "name so the stable-relation contract keeps its baseline.", realm, builder, others);
+            }
+            return;
+        }
         Integer baselineVersion = baseline.get().getVersion();
         SourceTBoxGate.Outcome outcome = SourceTBoxGate.check(
                 baseline.get().toTBox(), baselineVersion, candidate, candidateVersion, pack);
