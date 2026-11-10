@@ -3,6 +3,7 @@ package com.e2eq.ontology.model;
 import com.e2eq.ontology.core.OntologyRegistry.ClassDef;
 import com.e2eq.ontology.core.OntologyRegistry.PropertyDef;
 import com.e2eq.ontology.core.OntologyRegistry.TBox;
+import com.e2eq.ontology.core.RelationStability;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -59,5 +60,25 @@ class TBoxMetadataRoundTripTest {
     void tenantOntologyTBox_roundTripsClassMetadata() {
         TenantOntologyTBox doc = new TenantOntologyTBox(oneClassWithGovernance(), "h1", "y1", "test", "1.0");
         assertGovernanceSurvives(doc.toTBox());
+    }
+
+    @Test
+    void bothEntities_roundTripStabilityAndOmitItAtDefault() {
+        PropertyDef stable = new PropertyDef("hasShipment", Optional.of("Customer"), Optional.of("Shipment"),
+                false, Optional.empty(), false, false, false, Set.of(), true, null, Set.of(), Map.of(),
+                RelationStability.STABLE);
+        TBox tbox = new TBox(Map.of(), Map.of("hasShipment", stable,
+                "placedBy", oneClassWithGovernance().properties().get("placedBy")), List.of());
+
+        OntologyTBox doc = new OntologyTBox(tbox, "h1", "y1", "test");
+        assertEquals("stable", doc.getProperties().get("hasShipment").getStability());
+        assertNull(doc.getProperties().get("placedBy").getStability());
+        assertTrue(doc.toTBox().properties().get("hasShipment").isStableDerived());
+        assertEquals(RelationStability.INTERNAL, doc.toTBox().properties().get("placedBy").stability());
+
+        TenantOntologyTBox tenantDoc = new TenantOntologyTBox(tbox, "h1", "y1", "test", "1.0");
+        assertEquals("stable", tenantDoc.getProperties().get("hasShipment").getStability());
+        assertNull(tenantDoc.getProperties().get("placedBy").getStability());
+        assertTrue(tenantDoc.toTBox().properties().get("hasShipment").isStableDerived());
     }
 }

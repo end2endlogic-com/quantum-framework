@@ -57,6 +57,20 @@ public class OntologyMaterializer {
     }
 
     /**
+     * A stable derived relation gets its edges only from its derivation (relation contract, P1), so an
+     * explicit edge for it is refused. Computed edges ({@code ComputedEdgeProvider}) are derived by
+     * the provider rather than asserted, so they are not explicit edges here.
+     */
+    private static void requireExplicitEdgesAllowed(OntologyRegistry registry, List<Reasoner.Edge> explicitEdges) {
+        if (explicitEdges == null || explicitEdges.isEmpty()) return;
+        List<Reasoner.Edge> asserted = new ArrayList<>(explicitEdges.size());
+        for (Reasoner.Edge e : explicitEdges) {
+            if (!e.prov().map(p -> "computed".equals(p.rule())).orElse(false)) asserted.add(e);
+        }
+        StableRelationGuard.requireExplicitEdgesAllowed(registry, asserted);
+    }
+
+    /**
      * Apply materialization for an entity with full DataDomain scoping.
      *
      * @param dataDomain  full DataDomain context for edge scoping
@@ -79,6 +93,8 @@ public class OntologyMaterializer {
 
         // Resolve registry for the given DataDomain
         OntologyRegistry registry = registryProvider.getRegistryForTenant(dataDomain);
+        // Refuse explicit edges for stable derived relations before anything is written
+        requireExplicitEdgesAllowed(registry, explicitEdges);
 
         // Build an extended snapshot that includes neighbor edges for chain inference.
         // For each explicit edge A->B, fetch B's outgoing edges so chains like [refersToB, refersToC]
@@ -459,6 +475,7 @@ public class OntologyMaterializer {
             List<Reasoner.Edge> explicitEdges = ctx.explicitEdges();
 
             OntologyRegistry registry = registryProvider.getRegistryForTenant(dataDomain);
+            requireExplicitEdgesAllowed(registry, explicitEdges);
             DataDomainInfo dataDomainInfo = DataDomainConverter.toInfo(dataDomain);
             Map<String, OntologyEdge> existingForEntity = existingEdgesByEntity.getOrDefault(entityId, Map.of());
 

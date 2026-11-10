@@ -1,0 +1,71 @@
+{
+  "name": "hash-golden-stability",
+  "description": "Pins the relation contract fields in the canonical TBox hash (docs/HASH_SPEC.md). 'stability' is hashed only when 'stable'; 'internal' (the default) adds no key. 'derivation: derived' is the authoring form of the hashed 'inferred' bit and adds no key. Both runtimes must reproduce expected.tbox_hash exactly; hash-golden.json must keep its hash.",
+  "tbox": {
+    "version": 1,
+    "id": "hash-golden-stability",
+    "name": "Hash Golden Stability",
+    "openness": "closed",
+    "source": "conformance",
+    "source_version": "v1",
+    "classes": [
+      {
+        "id": "Person",
+        "label": "Person",
+        "aliases": [
+          "human"
+        ]
+      },
+      {
+        "id": "Adult",
+        "parents": [
+          "Person"
+        ]
+      }
+    ],
+    "properties": [
+      {
+        "id": "knows",
+        "domain": "Person",
+        "range": "Person",
+        "symmetric": true,
+        "stability": "internal"
+      },
+      {
+        "id": "parentOf",
+        "domain": "Person",
+        "range": "Person",
+        "inverseOf": "childOf",
+        "stability": "stable"
+      },
+      {
+        "id": "childOf",
+        "domain": "Person",
+        "range": "Person",
+        "inferred": true
+      },
+      {
+        "id": "grandparentOf",
+        "domain": "Person",
+        "range": "Person",
+        "derivation": "derived",
+        "stability": "stable"
+      }
+    ],
+    "chains": [
+      {
+        "chain": [
+          "parentOf",
+          "parentOf"
+        ],
+        "implies": "grandparentOf"
+      }
+    ]
+  },
+  "explicit_edges": [],
+  "expected": {
+    "status": "ok",
+    "tbox_hash": "d6f3c9867673b428dd10654133dfb2c6222672930a5e7e50f6396aa6ce574541",
+    "inferred_edges": []
+  }
+}

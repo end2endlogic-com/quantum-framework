@@ -25,8 +25,12 @@ public final class MaterializationEngine {
     /**
      * Materialize inferred edges from explicit edges using fixpoint iteration.
      * Returns all edges (explicit + inferred).
+     *
+     * @throws StableRelationGuard.StableDerivedEdgeException when an explicit edge names a stable
+     *         derived relation, whose edges come only from its derivation
      */
     public Set<Edge> materialize(String tenantId, String entityId, String entityType, List<Edge> explicitEdges) {
+        StableRelationGuard.requireExplicitEdgesAllowed(registry, explicitEdges);
         Set<Edge> allEdges = new LinkedHashSet<>(explicitEdges);
         Set<Edge> workingSet = new LinkedHashSet<>(explicitEdges);
         

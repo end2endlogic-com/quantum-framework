@@ -17,6 +17,7 @@ import java.util.TreeSet;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * Runs the canonical TBox conformance vectors (repo-owned) against the Java
@@ -30,8 +31,8 @@ class VectorConformanceTest {
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final List<String> VECTORS = List.of(
             "chain", "closed-rejection", "combined", "hash-golden",
-            "inverse", "subpropertyof", "symmetric", "transitive",
-            "typing-precedence");
+            "hash-golden-stability", "inverse", "stable-derived-explicit-rejection",
+            "subpropertyof", "symmetric", "transitive", "typing-precedence");
 
     @TestFactory
     List<DynamicTest> conformanceVectors() {
@@ -53,7 +54,7 @@ class VectorConformanceTest {
         Map<String, Object> expected = (Map<String, Object>) vector.get("expected");
         List<Map<String, Object>> explicitPayload = (List<Map<String, Object>>) vector.get("explicit_edges");
 
-        OntologyRegistry.TBox tbox = tboxFromPack(pack);
+        OntologyRegistry.TBox tbox = VectorPacks.tboxFromPack(pack);
         InMemoryOntologyRegistry registry = new InMemoryOntologyRegistry(tbox);
         String openness = CanonicalTBoxHasher.normalizeOpenness((String) pack.get("openness"));
 
@@ -82,10 +83,27 @@ class VectorConformanceTest {
             if (!tbox.classes().containsKey(edge.dstType())) unknownClasses.add(edge.dstType());
             if (!tbox.properties().containsKey(edge.p())) unknownPredicates.add(edge.p());
         }
-        if ("closed".equals(openness) && (!unknownClasses.isEmpty() || !unknownPredicates.isEmpty())) {
-            assertEquals("invalid", expected.get("status"), name + ": unexpected closed-mode rejection");
+        boolean closedRejected = "closed".equals(openness) && (!unknownClasses.isEmpty() || !unknownPredicates.isEmpty());
+        // Explicit edges for stable derived relations are refused in open and closed mode alike, and
+        // reported alongside any closed-mode rejection.
+        List<String> rejectedDerived = StableRelationGuard.rejectedDerivedPredicates(registry,
+                explicit.stream().map(Reasoner.Edge::p).toList());
+        assertEquals(expected.getOrDefault("rejected_derived_predicates", List.of()), rejectedDerived,
+                name + ": rejected stable derived predicates");
+        if (!rejectedDerived.isEmpty()) {
+            StableRelationGuard.StableDerivedEdgeException ex = assertThrows(
+                    StableRelationGuard.StableDerivedEdgeException.class,
+                    () -> new MaterializationEngine(registry).materialize("vector", "e", "T", explicit),
+                    name + ": materialization accepted an explicit stable derived edge");
+            assertEquals(rejectedDerived, ex.rejectedPredicates(), name);
+        }
+        if (closedRejected) {
             assertEquals(expected.get("discovered_class_candidates"), new ArrayList<>(unknownClasses), name);
             assertEquals(expected.get("discovered_property_candidates"), new ArrayList<>(unknownPredicates), name);
+        }
+        if (closedRejected || !rejectedDerived.isEmpty()) {
+            assertEquals("invalid", expected.get("status"), name + ": unexpected rejection");
+            assertEquals(List.of(), expected.get("inferred_edges"), name + ": a rejected vector infers nothing");
             return;
         }
         assertEquals("ok", expected.get("status"), name + ": expected rejection did not happen");
@@ -138,46 +156,5 @@ class VectorConformanceTest {
 
     private List<String> tripleKey(Reasoner.Edge edge) {
         return List.of(edge.srcId(), edge.p(), edge.dstId());
-    }
-
-    @SuppressWarnings("unchecked")
-    private OntologyRegistry.TBox tboxFromPack(Map<String, Object> pack) {
-        Map<String, OntologyRegistry.ClassDef> classes = new HashMap<>();
-        for (Map<String, Object> item : (List<Map<String, Object>>) pack.getOrDefault("classes", List.of())) {
-            String name = (String) (item.get("id") != null ? item.get("id") : item.get("name"));
-            classes.put(name, new OntologyRegistry.ClassDef(name,
-                    stringSet(item.get("parents")), stringSet(item.get("disjointWith")), stringSet(item.get("sameAs"))));
-        }
-        Map<String, OntologyRegistry.PropertyDef> properties = new HashMap<>();
-        for (Map<String, Object> item : (List<Map<String, Object>>) pack.getOrDefault("properties", List.of())) {
-            String name = (String) (item.get("id") != null ? item.get("id") : item.get("name"));
-            Optional<String> inverseOf = Optional.ofNullable((String) item.get("inverseOf"));
-            properties.put(name, new OntologyRegistry.PropertyDef(name,
-                    Optional.ofNullable((String) item.get("domain")),
-                    Optional.ofNullable((String) item.get("range")),
-                    inverseOf.isPresent(),
-                    inverseOf,
-                    Boolean.TRUE.equals(item.get("transitive")),
-                    Boolean.TRUE.equals(item.get("symmetric")),
-                    Boolean.TRUE.equals(item.get("functional")),
-                    stringSet(item.get("subPropertyOf")),
-                    Boolean.TRUE.equals(item.get("inferred"))));
-        }
-        List<OntologyRegistry.PropertyChainDef> chains = new ArrayList<>();
-        for (Map<String, Object> item : (List<Map<String, Object>>) pack.getOrDefault("chains", List.of())) {
-            chains.add(new OntologyRegistry.PropertyChainDef(
-                    (List<String>) item.get("chain"), (String) item.get("implies")));
-        }
-        return new OntologyRegistry.TBox(classes, properties, chains);
-    }
-
-    private Set<String> stringSet(Object value) {
-        Set<String> out = new HashSet<>();
-        if (value instanceof List<?> list) {
-            for (Object item : list) {
-                out.add(String.valueOf(item));
-            }
-        }
-        return out;
     }
 }

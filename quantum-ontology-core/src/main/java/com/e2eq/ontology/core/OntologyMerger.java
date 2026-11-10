@@ -32,7 +32,7 @@ public final class OntologyMerger {
             }
         });
 
-        // Properties: overlay wins for domain/range/inverseOf/label when present; flags are OR'd;
+        // Properties: overlay wins for domain/range/inverseOf/label when present; flags (and stability) are OR'd;
         // subPropertyOf and aliases are unions; metadata keys merge with overlay winning
         Map<String, PropertyDef> props = new LinkedHashMap<>(base.properties());
         overlay.properties().forEach((id, op) -> {
@@ -50,10 +50,14 @@ public final class OntologyMerger {
                 Set<String> supers = new LinkedHashSet<>(bp.subPropertyOf());
                 supers.addAll(op.subPropertyOf());
                 boolean inferred = op.inferred() || bp.inferred();
+                // Stable if either side says so: an overlay must not silently drop a relation contract
+                RelationStability stability = op.isStable() || bp.isStable()
+                        ? RelationStability.STABLE : RelationStability.INTERNAL;
                 props.put(id, new PropertyDef(id, domain, range, inverse, inverseOf, transitive, symmetric, functional, supers, inferred,
                         mergeLabel(bp.label(), op.label()),
                         mergeAliases(bp.aliases(), op.aliases()),
-                        mergeMetadata(bp.metadata(), op.metadata())));
+                        mergeMetadata(bp.metadata(), op.metadata()),
+                        stability));
             }
         });
 

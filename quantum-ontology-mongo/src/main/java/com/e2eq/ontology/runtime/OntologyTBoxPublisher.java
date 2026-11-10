@@ -192,6 +192,12 @@ public class OntologyTBoxPublisher {
             m.put("functional", p.functional());
             m.put("subPropertyOf", new ArrayList<>(p.subPropertyOf()));
             m.put("label", p.label());
+            // Relation contract (P1), omit-at-default: only a stable relation carries its stability and
+            // derivation, so the published body (and hash) of packs that never opt in is unchanged.
+            if (p.isStable()) {
+                m.put("stability", p.stability().wireValue());
+                m.put("derivation", p.derivation().wireValue());
+            }
             properties.add(m);
         }
         body.put("properties", properties);

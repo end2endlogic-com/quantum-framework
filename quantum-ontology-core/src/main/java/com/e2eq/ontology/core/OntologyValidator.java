@@ -61,6 +61,39 @@ public final class OntologyValidator {
                 }
             }
         }
+
+        validateStableRelations(props, chains != null ? chains : List.of());
+    }
+
+    /**
+     * Relation contract (P1): a stable relation declares its domain and range, and a stable derived
+     * relation is backed by a derivation (a chain implying it, an inverse, or a sub-property of it), so
+     * its edges never depend on explicit writes. Internal relations are not checked here.
+     */
+    private static void validateStableRelations(Map<String, PropertyDef> props, List<PropertyChainDef> chains) {
+        for (PropertyDef p : new TreeMap<>(props).values()) {
+            if (!p.isStable()) continue;
+            require(p.domain().isPresent() && p.range().isPresent(),
+                    "Stable relation '"+p.name()+"' must declare a domain and a range");
+            if (p.inferred()) {
+                require(hasDerivation(p, props, chains),
+                        "Stable derived relation '"+p.name()+"' has no derivation: declare a property chain"
+                                + " that implies it, an inverse, or a sub-property of it");
+            }
+        }
+    }
+
+    private static boolean hasDerivation(PropertyDef p, Map<String, PropertyDef> props, List<PropertyChainDef> chains) {
+        if (p.inverseOf().isPresent()) return true;
+        for (PropertyChainDef ch : chains) {
+            if (p.name().equals(ch.implies())) return true;
+        }
+        for (PropertyDef other : props.values()) {
+            if (other.name().equals(p.name())) continue;
+            if (other.inverseOf().filter(p.name()::equals).isPresent()) return true;
+            if (other.subPropertyOf().contains(p.name())) return true;
+        }
+        return false;
     }
     
     /**
@@ -88,6 +121,16 @@ public final class OntologyValidator {
     private static boolean isSubclassOrSame(Map<String, ClassDef> classes, Optional<String> sub, Optional<String> sup) {
         if (sub.isEmpty() || sup.isEmpty() || sub.get().equals(sup.get())) return true;
         if (!isLocallyDeclared(classes, sub.get()) || !isLocallyDeclared(classes, sup.get())) return true;
+        return reachesClass(classes, sub.get(), sup.get());
+    }
+
+    /**
+     * Strict class reachability: true when {@code sub} equals {@code sup} or reaches it through parents
+     * (transitively) and {@code sameAs} (both directions). Unlike the chain endpoint check, an
+     * undeclared class is not given the benefit of the doubt. Shared with {@link StableRelationDiff}.
+     */
+    static boolean reachesClass(Map<String, ClassDef> classes, String sub, String sup) {
+        if (sub.equals(sup)) return true;
         // Parents are followed upward only; sameAs is an equivalence, so it is followed in both directions.
         Map<String, Set<String>> equivalents = new HashMap<>();
         for (ClassDef def : classes.values()) {
@@ -98,15 +141,15 @@ public final class OntologyValidator {
         }
         Set<String> visited = new HashSet<>();
         Deque<String> stack = new ArrayDeque<>();
-        stack.push(sub.get());
-        visited.add(sub.get());
+        stack.push(sub);
+        visited.add(sub);
         while (!stack.isEmpty()) {
             String current = stack.pop();
             List<String> related = new ArrayList<>(equivalents.getOrDefault(current, Set.of()));
             ClassDef def = classes.get(current);
             if (def != null) related.addAll(def.parents());
             for (String next : related) {
-                if (next.equals(sup.get())) return true;
+                if (next.equals(sup)) return true;
                 if (visited.add(next)) stack.push(next);
             }
         }

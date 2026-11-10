@@ -7,6 +7,7 @@ import com.e2eq.framework.model.security.DataDomainResolver;
 import com.e2eq.framework.model.security.SourceAttributes;
 import com.e2eq.ontology.core.EdgeRecord;
 import com.e2eq.ontology.core.OntologyRegistry;
+import com.e2eq.ontology.core.StableRelationGuard;
 import com.e2eq.ontology.exceptions.CardinalityViolationException;
 import com.e2eq.ontology.model.OntologyEdge;
 import com.e2eq.ontology.model.QuarantinedEdge;
@@ -224,6 +225,27 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
     }
 
     /**
+     * Refuses an explicit edge whose predicate is a stable derived relation in the DataDomain's
+     * registry (relation contract, P1). When no registry is available nothing is known to be stable,
+     * so the write proceeds, matching {@link #isFunctionalProperty}.
+     *
+     * @throws StableRelationGuard.StableDerivedEdgeException when the predicate is stable derived
+     */
+    public void validateExplicitEdgeAllowed(DataDomain dataDomain, String predicate) {
+        OntologyRegistry registry;
+        try {
+            if (registryProviderInstance == null || registryProviderInstance.isUnsatisfied()) {
+                return;
+            }
+            registry = registryProviderInstance.get().getRegistryForTenant(dataDomain);
+        } catch (Throwable t) {
+            Log.debugf("Could not resolve the registry to check explicit edge '%s': %s", predicate, t.getMessage());
+            return;
+        }
+        StableRelationGuard.requireExplicitEdgeAllowed(registry, predicate);
+    }
+
+    /**
      * Checks if a property is functional (ONE_TO_ONE or MANY_TO_ONE).
      * <p>
      * A functional property allows at most one value per subject. This is determined
@@ -387,6 +409,10 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
 
         // Validate functional constraint before upserting
         validateFunctionalConstraint(realmId, dataDomain, srcType, src, p, dst);
+        // A stable derived relation's edges come only from its derivation (relation contract, P1)
+        if (!inferred) {
+            validateExplicitEdgeAllowed(dataDomain, p);
+        }
 
         Datastore d = ds(realmId);
         Query<OntologyEdge> q = d.find(OntologyEdge.class);
