@@ -181,8 +181,8 @@ Property chains (implied relationships)
 - placedBy ∘ memberOf ∘ orgAncestor ⇒ placedUnderOrg, with placedInOrg ⊑ placedUnderOrg
   - placedUnderOrg holds the order's own org (through the sub-property) and every ancestor (through the chain), so one query covers an org and its subsidiaries. When an org is re-parented and its orgAncestor edges change, chain propagation re-derives its orders without saving them (<<chain-propagation>>).
 
-[[regular-chains-and-hierarchies]]
-Chains must be regular: a chain step cannot be a transitive property, and a chain cannot imply one (OntologyValidator rejects both). To roll up through a hierarchy, keep the closure on the hierarchy node as a non-transitive predicate, written explicitly or by a ComputedEdgeProvider such as HierarchyListEdgeProvider, and chain over it. Do not chain over a transitive ancestorOf, and do not re-imply placedInOrg from itself.
+[[regular-chains-and-hierarchies,Regular chains and hierarchies]]
+Chains must be regular: a chain step cannot be a transitive property, and a chain cannot imply one (OntologyValidator rejects both). To roll up through a hierarchy, keep the closure on the hierarchy node as a non-transitive predicate, written explicitly or by a ComputedEdgeProvider that writes the node's ancestors, and chain over it. Do not chain over a transitive ancestorOf, and do not re-imply placedInOrg from itself. Whatever writes orgAncestor must rewrite the closure of the moved org and of every descendant when the hierarchy changes: propagation starts only from orgAncestor edges that actually change.
 
 Diagram of the core classes and predicates for this example:
 
@@ -1637,7 +1637,7 @@ This release expands the ontology engine and query integration to support a rich
 - symmetric properties
   - For symmetric p, asserting (s, p, o) materializes (o, p, s). Example: peerOf between organizations.
 - transitive properties
-  - For transitive p, if (s, p, m) and (m, p, o) then (s, p, o) is inferred. Typical for ancestorOf, partOf, locatedIn, memberOf within hierarchical contexts.
+  - For transitive p, if (s, p, m) and (m, p, o) then (s, p, o) is inferred. Typical for ancestorOf, partOf and locatedIn within hierarchical contexts. A transitive property cannot be a chain step, so keep a predicate used in chains (such as memberOf in placedBy ∘ memberOf) non-transitive.
 - functional properties
   - For functional p, each source s has at most one destination o. Upserts replace the prior value. Useful for single-valued relations like placedBy on Order.
 
@@ -1732,7 +1732,7 @@ public OntologyRegistry ontologyRegistry() {
       "orgAncestor", Optional.of("Organization"), Optional.of("Organization"), false, Optional.empty(),
       false, false, false, Set.of()
   ));
-  // Transitive ancestor relation (closure is materialized on the org; never a chain step)
+  // Transitive ancestor relation; not usable as a chain step
   props.put("ancestorOf", new OntologyRegistry.PropertyDef(
       "ancestorOf", Optional.of("Organization"), Optional.of("Organization"), false, Optional.empty(),
       true, /*transitive*/ false, false, Set.of()
@@ -1766,6 +1766,7 @@ Notes:
 - subPropertyOf is modeled via the PropertyDef.subPropertyOf set.
 - Inverse and symmetric are encoded in PropertyDef.inverseOf and PropertyDef.symmetric.
 - Transitivity is toggled via PropertyDef.transitive.
+- With placedInOrg ⊑ inOrg and the orgAncestor chain, inOrg means "the order's own org or one of its ancestors".
 
 ==== 2) Materialize inferences when data changes
 
