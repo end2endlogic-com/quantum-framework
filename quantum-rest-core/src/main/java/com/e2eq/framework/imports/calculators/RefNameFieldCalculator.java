@@ -12,7 +12,7 @@ import java.util.UUID;
 /**
  * Built-in field calculator that generates refName if not present.
  * Uses displayName to generate refName, or falls back to UUID. Types annotated with
- * {@link CanonicalRefName} are left untouched so the repository can reject a missing refName.
+ * {@link CanonicalRefName} are left untouched so the repository defaults a missing refName to the ObjectId.
  */
 @ApplicationScoped
 @Named("refNameCalculator")

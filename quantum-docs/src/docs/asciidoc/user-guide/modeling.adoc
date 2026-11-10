@@ -343,7 +343,10 @@ including REST resources, `/api/query/save`, CSV import, and seed packs:
 * After create, `refName` is immutable. Saving, merging, or field-updating a different value fails. A merge that
   omits `refName` leaves it untouched; a full save that omits it stands for the ObjectId default, so it is
   accepted only when the stored `refName` is that default.
-* A record stored before the rule without any `refName` may stay unnamed or be named once under the rule.
+* A record stored before the rule without any `refName` stays unnamed through a merge and may be named once under
+  the rule; a full save that leaves it unnamed gives it the ObjectId default, after which it is immutable.
+* A seed pack record for these types must give a `refName`, an `_id`, or come from a dataset with a `naturalKey`;
+  otherwise every re-apply would create another group or policy.
 * Existing records are never re-validated or rewritten.
 * `skipValidation` does not bypass the rule.
 

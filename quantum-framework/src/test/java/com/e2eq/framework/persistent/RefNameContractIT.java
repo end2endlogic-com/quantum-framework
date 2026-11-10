@@ -165,6 +165,12 @@ public class RefNameContractIT extends BaseRepoTest {
         UserGroup renamed = group(unique("IT_NAMED_LATER"));
         renamed.setId(saved.getId());
         expectViolation(Code.REFNAME_IMMUTABLE, () -> userGroupRepo.save(REALM, renamed));
+        // A merge writes what it is given: an empty refName would blank the default, so it is a change
+        UserGroup blanked = new UserGroup();
+        blanked.setId(saved.getId());
+        blanked.setRefName("");
+        expectViolation(Code.REFNAME_IMMUTABLE,
+                () -> userGroupRepo.merge(morphiaDataStoreWrapper.getDataStore(REALM), blanked));
     }
 
     @Test

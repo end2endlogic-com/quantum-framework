@@ -148,7 +148,9 @@ public class CanonicalRefNameMigrator {
          }
          occupants.computeIfAbsent(slot(row, refName), k -> new ArrayList<>()).add(row);
          // A refName equal to the record's own ObjectId is the repository default, not a violation
-         boolean defaulted = row.get("_id") instanceof ObjectId oid && refName.equals(oid.toHexString());
+         Object rowId = row.get("_id");
+         boolean defaulted = rowId != null
+               && refName.equals(rowId instanceof ObjectId oid ? oid.toHexString() : String.valueOf(rowId));
          if (!defaulted && RefNameRule.check(refName).isPresent() && !legacy.contains(refName)) {
             offending.add(row);
             String target = canonicalForm(refName);

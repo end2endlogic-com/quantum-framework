@@ -32,7 +32,8 @@ import java.util.Set;
  *    writes, never inside a {@link #clientSuppliedRefNames()} scope.</li>
  *    <li>Update: refName must equal the stored value. On {@link WriteMode#MERGE} a null refName leaves the stored
  *    value untouched and is allowed; on {@link WriteMode#REPLACE} it stands for the ObjectId default. A record
- *    stored without a refName may keep none or be named once under the rule.</li>
+ *    stored without a refName keeps none through a merge and may be named once under the rule; a full save
+ *    without a name gives it the ObjectId default, after which it is immutable like any other.</li>
  * </ul>
  * Stored refNames are read by {@code _id} outside the caller's security filters, because the check guards data
  * integrity rather than visibility. {@code skipValidation} does not bypass it.
@@ -155,8 +156,9 @@ public final class RefNameContract {
             checkNewName(value, offered, entityType, entityId);
             return;
          }
-         // A full save without a refName writes the ObjectId default, so it is unchanged only for a defaulted record
-         String effective = missing ? entityId : offered;
+         // A full save without a refName writes the ObjectId default, so it is unchanged only for a defaulted record.
+         // A merge writes what it is given, so an empty refName on a merge is a change (it would blank the name).
+         String effective = missing && mode == WriteMode.REPLACE ? entityId : offered;
          if (!current.equals(effective)) {
             throw new RefNameViolationException(Code.REFNAME_IMMUTABLE, entityType, entityId,
                offered, current, "refName is immutable after creation");
