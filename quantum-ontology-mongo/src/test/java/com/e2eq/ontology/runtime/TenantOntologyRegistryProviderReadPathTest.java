@@ -35,7 +35,8 @@ import static org.mockito.Mockito.*;
  *   <li>when an ACTIVE {@link TenantOntologyTBox} exists for
  *       {@code realmDataDomain(realm)}, the registry is built from it; and</li>
  *   <li>when none exists, the registry is built from sources and checked against the last
- *       built TBox ({@code tboxRepo.findLatest()}) for the stable-relation contract (P3c).</li>
+ *       built TBox of the same builder ({@code tboxRepo.findLatestForBuilder}) for the stable-relation
+ *       contract (P3c).</li>
  * </ol>
  */
 public class TenantOntologyRegistryProviderReadPathTest {
@@ -79,7 +80,7 @@ public class TenantOntologyRegistryProviderReadPathTest {
         // The lookup key is the canonical realmDataDomain(realm).
         verify(tenantRepo).findActiveTBox(eq(TenantOntologyRegistryProvider.realmDataDomain(REALM)));
         // Legacy path must NOT be consulted when an active tenant TBox exists.
-        verify(legacyRepo, never()).findLatest();
+        verify(legacyRepo, never()).findLatestForBuilder(anyString());
     }
 
     /** Runs {@code body} with persistence on and {@code stableDiff} set, restoring module defaults. */
@@ -111,7 +112,8 @@ public class TenantOntologyRegistryProviderReadPathTest {
         TenantOntologyTBoxRepo tenantRepo = mock(TenantOntologyTBoxRepo.class);
         OntologyMetaService metaService = mock(OntologyMetaService.class);
         when(tenantRepo.findActiveTBox(any(DataDomain.class))).thenReturn(Optional.empty());
-        when(legacyRepo.findLatest()).thenReturn(Optional.ofNullable(baseline));
+        when(legacyRepo.findLatestForBuilder(anyString())).thenReturn(Optional.ofNullable(baseline));
+        when(legacyRepo.findByHashAndBuilder(anyString(), anyString())).thenReturn(Optional.empty());
         when(metaService.observeYaml(ArgumentMatchers.<Optional<java.nio.file.Path>>any(), anyString()))
                 .thenReturn(new OntologyMetaService.Result(null, "yaml-hash"));
         when(metaService.getMeta()).thenReturn(Optional.empty());
@@ -147,7 +149,7 @@ public class TenantOntologyRegistryProviderReadPathTest {
 
             assertFalse(registry.classOf("LegacyOnlyClass").isPresent());
             assertTrue(registry.classOf("Order").isPresent(), "built from the module's ontology.yaml");
-            verify(legacyRepo).findLatest();
+            verify(legacyRepo).findLatestForBuilder("default");
             ArgumentCaptor<OntologyTBox> saved = ArgumentCaptor.forClass(OntologyTBox.class);
             verify(legacyRepo).save(saved.capture());
             assertEquals(1, saved.getValue().getVersion(), "the pack version is recorded with the build");
@@ -198,11 +200,85 @@ public class TenantOntologyRegistryProviderReadPathTest {
         withConfig(null, () -> {
             OntologyTBoxRepo legacyRepo = mock(OntologyTBoxRepo.class);
             TenantOntologyRegistryProvider provider = sourceProvider(legacyRepo, null);
-            when(legacyRepo.findLatest()).thenThrow(new IllegalStateException("mongo down"));
+            when(legacyRepo.findLatestForBuilder(anyString())).thenThrow(new IllegalStateException("mongo down"));
 
-            IllegalStateException e = assertThrows(IllegalStateException.class,
-                    () -> provider.getRegistryForRealm(REALM));
+            SourceTBoxGate.BaselineUnreadableException e = assertThrows(
+                    SourceTBoxGate.BaselineUnreadableException.class, () -> provider.getRegistryForRealm(REALM));
             assertTrue(e.getMessage().contains("cannot be checked"), e.getMessage());
+        });
+    }
+
+    @Test
+    void eachBuilderIsCheckedAgainstItsOwnLastBuild() {
+        withConfig(null, () -> {
+            System.setProperty("quantum.ontology.tbox.builder", "orders-app");
+            try {
+                OntologyTBoxRepo legacyRepo = mock(OntologyTBoxRepo.class);
+                TenantOntologyRegistryProvider provider = sourceProvider(legacyRepo, null);
+                // Another application sharing the realm built the stable relation; it is not this baseline.
+                when(legacyRepo.findLatestForBuilder("billing-app")).thenReturn(Optional.of(baselineWithStableRelation(1)));
+
+                assertTrue(provider.getRegistryForRealm(REALM).classOf("Order").isPresent());
+                ArgumentCaptor<OntologyTBox> saved = ArgumentCaptor.forClass(OntologyTBox.class);
+                verify(legacyRepo).save(saved.capture());
+                assertEquals("orders-app", saved.getValue().getBuilder());
+            } finally {
+                System.clearProperty("quantum.ontology.tbox.builder");
+            }
+        });
+    }
+
+    @Test
+    void aTBoxTheBuilderBuiltBeforeIsAdmittedAsARollback() {
+        withConfig(null, () -> {
+            OntologyTBoxRepo legacyRepo = mock(OntologyTBoxRepo.class);
+            TenantOntologyRegistryProvider provider = sourceProvider(legacyRepo, baselineWithStableRelation(1));
+            OntologyTBox earlier = new OntologyTBox();
+            earlier.setVersion(1);
+            when(legacyRepo.findByHashAndBuilder(anyString(), eq("default"))).thenReturn(Optional.of(earlier));
+
+            assertTrue(provider.getRegistryForRealm(REALM).classOf("Order").isPresent());
+            verify(legacyRepo).save(earlier);
+            assertNotNull(earlier.getAppliedAt(), "the earlier build is re-stamped as the baseline");
+        });
+    }
+
+    @Test
+    void aRefusedRealmIsNotRescannedUntilTheRetryWindowPasses() {
+        withConfig(null, () -> {
+            OntologyTBoxRepo legacyRepo = mock(OntologyTBoxRepo.class);
+            TenantOntologyRegistryProvider provider = sourceProvider(legacyRepo, baselineWithStableRelation(1));
+
+            SourceTBoxGate.StableContractException first = assertThrows(SourceTBoxGate.StableContractException.class,
+                    () -> provider.getRegistryForRealm(REALM));
+            SourceTBoxGate.StableContractException again = assertThrows(SourceTBoxGate.StableContractException.class,
+                    () -> provider.getRegistryForRealm(REALM));
+            assertSame(first, again);
+            verify(legacyRepo, times(1)).findLatestForBuilder(anyString());
+
+            provider.invalidateRealm(REALM);
+            assertThrows(SourceTBoxGate.StableContractException.class, () -> provider.getRegistryForRealm(REALM));
+            verify(legacyRepo, times(2)).findLatestForBuilder(anyString());
+        });
+    }
+
+    @Test
+    void anUnversionedRebuildKeepsTheRecordedVersion() {
+        withConfig(null, () -> {
+            System.setProperty("ontology.yaml.path", "src/test/resources/ontology-unversioned.yaml");
+            try {
+                OntologyTBoxRepo legacyRepo = mock(OntologyTBoxRepo.class);
+                TenantOntologyRegistryProvider provider = sourceProvider(legacyRepo, null);
+                OntologyTBox recorded = new OntologyTBox();
+                recorded.setVersion(3);
+                when(legacyRepo.findByHashAndBuilder(anyString(), eq("default"))).thenReturn(Optional.of(recorded));
+
+                provider.getRegistryForRealm(REALM);
+                verify(legacyRepo).save(recorded);
+                assertEquals(3, recorded.getVersion());
+            } finally {
+                System.clearProperty("ontology.yaml.path");
+            }
         });
     }
 }

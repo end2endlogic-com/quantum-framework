@@ -89,6 +89,12 @@ public class TenantOntologyRegistryProvider {
     private final Map<String, String> realmActiveHash = new ConcurrentHashMap<>();
     private final Map<String, Long> realmLastCheckedAt = new ConcurrentHashMap<>();
 
+    /** A refused source build, rethrown without a rescan until {@code retryAt}. */
+    private record Refusal(SourceTBoxGate.RefusedException error, long retryAt) {}
+
+    // Refused source builds per realm, so a refused realm does not rescan its sources on every read.
+    private final Map<String, Refusal> realmRefusals = new ConcurrentHashMap<>();
+
     /**
      * Get the ontology registry for the current security context realm.
      * <p>
@@ -195,7 +201,9 @@ public class TenantOntologyRegistryProvider {
      * <p>
      * If no cached registry exists, loads the realm's active admitted TBox, or else builds
      * from annotations, the Morphia scan and the YAML overlay. A source build that breaks a
-     * stable relation throws {@link SourceTBoxGate.StableContractException} and is not cached.
+     * stable relation throws {@link SourceTBoxGate.StableContractException} (an unreadable baseline,
+     * {@link SourceTBoxGate.BaselineUnreadableException}); the registry is not cached and the refusal
+     * is rethrown without a rescan for {@code quantum.ontology.stable-diff.retry-after-ms}.
      * </p>
      * @param realm the realm (database name) to get registry for
      * @return OntologyRegistry for the realm
@@ -206,6 +214,24 @@ public class TenantOntologyRegistryProvider {
         if (realmRegistries.containsKey(realm)) {
             maybeInvalidateIfStale(realm);
         }
+        Refusal refusal = realmRefusals.get(realm);
+        if (refusal != null) {
+            if (System.currentTimeMillis() < refusal.retryAt()) throw refusal.error();
+            realmRefusals.remove(realm, refusal);
+        }
+        try {
+            return loadAndCache(realm);
+        } catch (SourceTBoxGate.RefusedException e) {
+            long retryAfterMs = ConfigProvider.getConfig()
+                    .getOptionalValue("quantum.ontology.stable-diff.retry-after-ms", Long.class).orElse(30_000L);
+            if (retryAfterMs > 0) {
+                realmRefusals.put(realm, new Refusal(e, System.currentTimeMillis() + retryAfterMs));
+            }
+            throw e;
+        }
+    }
+
+    private OntologyRegistry loadAndCache(String realm) {
         return realmRegistries.computeIfAbsent(realm, r -> {
             Log.infof("Loading ontology registry for realm: %s", r);
             OntologyRegistry registry = loadOrBuildRegistryForRealm(r);
@@ -354,6 +380,7 @@ public class TenantOntologyRegistryProvider {
         realmRegistries.remove(realm);
         realmActiveHash.remove(realm);
         realmLastCheckedAt.remove(realm);
+        realmRefusals.remove(realm);
         Log.infof("Invalidated ontology registry cache for realm: %s", realm);
     }
 
@@ -365,6 +392,7 @@ public class TenantOntologyRegistryProvider {
         dataDomainRegistries.clear();
         realmActiveHash.clear();
         realmLastCheckedAt.clear();
+        realmRefusals.clear();
         Log.info("Cleared all ontology registry caches");
     }
 
@@ -375,6 +403,7 @@ public class TenantOntologyRegistryProvider {
      */
     public OntologyRegistry forceRebuild(String realm) {
         Log.infof("Force rebuilding TBox for realm: %s", realm);
+        realmRefusals.remove(realm);
         OntologyRegistry registry = buildRegistryForRealm(realm);
         realmRegistries.put(realm, registry);
         // Re-stamp so the coherence check tracks this freshly built entry (skipped when
@@ -552,7 +581,9 @@ public class TenantOntologyRegistryProvider {
             if (yamlPath.isPresent() && Files.exists(yamlPath.get())) {
                 loaded = yaml.loadPackFromPath(yamlPath.get());
             } else {
-                try { loaded = yaml.loadPackFromClasspath("/ontology.yaml"); } catch (Exception ignored) { }
+                if (YamlOntologyLoader.class.getResource("/ontology.yaml") != null) {
+                    loaded = yaml.loadPackFromClasspath("/ontology.yaml");
+                }
             }
             if (loaded != null) {
                 pack = loaded.tbox();
@@ -584,7 +615,10 @@ public class TenantOntologyRegistryProvider {
         // 5. Stable-relation contract against the last TBox built for this realm, then persist.
         // A breaking change refuses the build (enforce) before it is persisted, so the next build is
         // checked against the same baseline.
-        if (persistTBox) {
+        if (!persistTBox) {
+            Log.debugf("Realm %s: quantum.ontology.tbox.persist=false, so stable relations are not checked "
+                    + "against a baseline", realm);
+        } else {
             TBox candidate = accumulated;
             TBox packTBox = pack;
             Integer declaredVersion = packVersion.orElse(null);
@@ -592,8 +626,9 @@ public class TenantOntologyRegistryProvider {
             String yamlHash = currentHash;
             Optional<Path> source = yamlPath;
             inSystemScope(realm, () -> {
-                checkStableContract(realm, candidate, candidateVersion, packTBox, sourceFailures, stableDiff);
-                doPersistBuiltTBox(realm, candidate, yamlHash, source, declaredVersion);
+                String builder = tboxBuilder(config);
+                checkStableContract(realm, builder, candidate, candidateVersion, packTBox, sourceFailures, stableDiff);
+                doPersistBuiltTBox(realm, builder, candidate, yamlHash, source, declaredVersion);
             });
         }
 
@@ -646,22 +681,36 @@ public class TenantOntologyRegistryProvider {
     }
 
     /**
-     * Diff the source TBox against the last one built for the realm ({@link SourceTBoxGate}). In
-     * enforce mode a breaking change, or a baseline that cannot be read, refuses the build: the
-     * contract cannot be shown to hold. In warn mode both are logged as errors.
+     * The application that builds this TBox from its sources: {@code quantum.ontology.tbox.builder},
+     * else {@code quarkus.application.name}. Each builder is checked against its own last build, so
+     * applications sharing a realm database do not block each other.
      */
-    private void checkStableContract(String realm, TBox candidate, int candidateVersion, TBox pack,
+    private static String tboxBuilder(Config config) {
+        return config.getOptionalValue("quantum.ontology.tbox.builder", String.class)
+                .or(() -> config.getOptionalValue("quarkus.application.name", String.class))
+                .filter(b -> !b.isBlank())
+                .orElse("default");
+    }
+
+    /**
+     * Diff the source TBox against the last one {@code builder} built for the realm
+     * ({@link SourceTBoxGate}). In enforce mode a breaking change, or a baseline that cannot be
+     * read, refuses the build: the contract cannot be shown to hold. In warn mode both are logged
+     * as errors. A TBox the builder has built before (a rollback) is admitted with a warning.
+     */
+    private void checkStableContract(String realm, String builder, TBox candidate, int candidateVersion, TBox pack,
                                      List<String> sourceFailures, SourceTBoxGate.Mode mode) {
         Optional<OntologyTBox> baseline;
+        boolean builtBefore;
         try {
-            baseline = tboxRepo.findLatest();
+            baseline = tboxRepo.findLatestForBuilder(builder);
+            builtBefore = baseline.isPresent()
+                    && tboxRepo.findByHashAndBuilder(TBoxHasher.computeHash(candidate), builder).isPresent();
         } catch (Throwable t) {
-            String msg = "Ontology for realm '" + realm + "': the last built TBox could not be read ("
-                    + t.getMessage() + "), so its stable relations cannot be checked";
-            if (mode == SourceTBoxGate.Mode.ENFORCE) {
-                throw new IllegalStateException(msg + " (quantum.ontology.stable-diff=enforce)", t);
-            }
-            Log.error(msg);
+            SourceTBoxGate.BaselineUnreadableException unreadable =
+                    new SourceTBoxGate.BaselineUnreadableException(realm, t);
+            if (mode == SourceTBoxGate.Mode.ENFORCE) throw unreadable;
+            Log.error(unreadable.getMessage().replace("=enforce", "=warn"));
             return;
         }
         if (baseline.isEmpty()) return;
@@ -671,7 +720,11 @@ public class TenantOntologyRegistryProvider {
         if (outcome.violations().isEmpty()) return;
         SourceTBoxGate.StableContractException breach = new SourceTBoxGate.StableContractException(
                 realm, outcome.violations(), baselineVersion, candidateVersion, sourceFailures);
-        if (outcome.admissible()) {
+        if (builtBefore && !outcome.admissible()) {
+            Log.warnf("Realm %s: %s rebuilt a TBox it built before (a rollback?), which changes stable relations "
+                    + "of its last build: %s", realm, builder, outcome.violations().stream()
+                            .map(v -> v.code().wireValue() + " " + v.relation()).toList());
+        } else if (outcome.admissible()) {
             Log.infof("Realm %s: pack version %d (last built %s) publishes stable-relation changes: %s",
                     realm, candidateVersion, baselineVersion, outcome.violations().stream()
                             .map(v -> v.code().wireValue() + " " + v.relation()).toList());
@@ -688,23 +741,25 @@ public class TenantOntologyRegistryProvider {
      * never breaks a read or startup. A TBox built again is re-stamped, so the latest one stays the
      * baseline of the next build.
      */
-    private void doPersistBuiltTBox(String realm, TBox accumulated, String currentHash, Optional<Path> yamlPath,
-                                    Integer packVersion) {
+    private void doPersistBuiltTBox(String realm, String builder, TBox accumulated, String currentHash,
+                                    Optional<Path> yamlPath, Integer packVersion) {
         try {
             String tboxHash = TBoxHasher.computeHash(accumulated);
             String source = yamlPath.map(Path::toString).orElse("/ontology.yaml");
 
-            Optional<OntologyTBox> existing = tboxRepo.findByHash(tboxHash);
+            Optional<OntologyTBox> existing = tboxRepo.findByHashAndBuilder(tboxHash, builder);
             if (existing.isEmpty()) {
                 OntologyTBox newTBox = new OntologyTBox(accumulated, tboxHash, currentHash, source);
                 newTBox.setVersion(packVersion);
+                newTBox.setBuilder(builder);
                 tboxRepo.save(newTBox);
                 Log.infof("Persisted new TBox for realm %s (hash: %s, yamlHash: %s)",
                         realm, tboxHash, currentHash);
             } else {
                 OntologyTBox doc = existing.get();
                 doc.setAppliedAt(new Date());
-                doc.setVersion(packVersion);
+                // An unversioned rebuild keeps the version the TBox was recorded with.
+                if (packVersion != null) doc.setVersion(packVersion);
                 tboxRepo.save(doc);
                 Log.debugf("TBox already persisted for realm %s (hash: %s); re-stamped", realm, tboxHash);
             }

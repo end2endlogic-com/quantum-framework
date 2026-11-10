@@ -103,7 +103,7 @@ public class OntologyTBoxPublisher {
             OntologyRegistry registry = registryProvider.buildSourceRegistry(realm);
             publish(realm, registry, serviceBaseUrl.get());
         }
-        catch (com.e2eq.ontology.core.SourceTBoxGate.StableContractException e) {
+        catch (com.e2eq.ontology.core.SourceTBoxGate.RefusedException e) {
             Log.errorf("Ontology TBox publish for realm %s refused: %s", realm, e.getMessage());
         }
         catch (Exception e) {

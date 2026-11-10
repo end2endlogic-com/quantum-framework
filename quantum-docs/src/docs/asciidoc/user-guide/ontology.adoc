@@ -2431,10 +2431,12 @@ separately.
 
 A realm with no admitted TBox builds its registry from its sources: `@OntologyProperty`
 annotations, the Morphia entities and the YAML pack. Each build is checked with the same rules
-against the last TBox built for the realm (the `ontology_tbox` collection), so a refactor cannot
-silently drop a contract. A build that breaks a stable relation is refused unless the pack
-`version:` is greater than the version recorded with the last build. The refused TBox is not
-persisted or cached, and every load of the realm's registry fails with
+against the last TBox the same application built for the realm (the `ontology_tbox` collection),
+so a refactor cannot silently drop a contract. The application is `quantum.ontology.tbox.builder`,
+else `quarkus.application.name`; applications that share a realm database are checked against
+their own builds, not each other's. A build that breaks a stable relation is refused unless the
+pack `version:` is greater than the version recorded with the last build. The refused TBox is not
+persisted or cached, and loads of the realm's registry fail with
 `SourceTBoxGate.StableContractException`:
 
 ----
@@ -2444,11 +2446,25 @@ Ontology for realm 'acme' breaks stable relations without a pack version bump (p
 The message also names any source that failed to load (annotations, Morphia entities, the YAML
 pack), since a missing source looks like removed relations. A last build with no recorded version
 (built before versions were recorded) cannot show a bump, so a breaking change against it is
-refused too. If the last build cannot be read, the build is refused: the contract cannot be checked.
+refused too. If the last build cannot be read, the build is refused with
+`SourceTBoxGate.BaselineUnreadableException`: the contract cannot be checked. Both extend
+`SourceTBoxGate.RefusedException`. A refusal is rethrown without rescanning the sources for
+`quantum.ontology.stable-diff.retry-after-ms` (default 30000); invalidating the realm or a forced
+rebuild retries at once.
+
+A TBox the application built before is admitted with a warning even when it breaks the last
+build, so rolling back to an earlier release works. Rolling forward again needs no bump either:
+that TBox was built before too.
+
+To upgrade an application whose last build has no version, deploy one release with
+`quantum.ontology.stable-diff=warn`, or first deploy a non-breaking release with a pack
+`version:`. An unversioned rebuild of a TBox keeps the version it was recorded with.
 
 `quantum.ontology.stable-diff` controls the check: `enforce` (the default, and any value other
-than `warn`) refuses; `warn` logs the same message as an error and builds anyway. The check needs
-the persisted baseline, so it does not run with `quantum.ontology.tbox.persist=false`.
+than `warn`) refuses; `warn` logs the same message as an error and builds anyway. In warn mode the
+breaking TBox is persisted and becomes the baseline of the next build, so the breach is logged
+once. The check needs the persisted baseline, so `quantum.ontology.tbox.persist=false` turns it
+off.
 
 Each build also logs a warning for a relation that is stable only through an annotation, with no
 stable declaration in the YAML pack. Annotations describe storage, which changes on refactor;

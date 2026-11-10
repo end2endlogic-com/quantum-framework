@@ -304,6 +304,12 @@ quantum.ontology.tbox.persist=true
 # enforce refuses a build that breaks a stable relation without a pack version bump; warn logs it.
 quantum.ontology.stable-diff=enforce
 
+# How long a refused build is rethrown before the sources are scanned again (ms, default 30000).
+quantum.ontology.stable-diff.retry-after-ms=30000
+
+# The application whose builds are each other's baseline (default: quarkus.application.name).
+# quantum.ontology.tbox.builder=orders-app
+
 # No longer has an effect: the TBox is always built from sources.
 # quantum.ontology.tbox.force-rebuild=false
 

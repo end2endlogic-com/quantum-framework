@@ -46,20 +46,37 @@ public final class SourceTBoxGate {
         }
     }
 
-    /** Thrown when a source TBox breaks a stable relation without a pack version bump. */
-    public static final class StableContractException extends IllegalStateException {
+    /** A source TBox build the gate refused; the registry of {@link #realm()} is not available. */
+    public abstract static class RefusedException extends IllegalStateException {
         private final String realm;
-        private final List<StableRelationDiff.Violation> violations;
 
-        public StableContractException(String realm, List<StableRelationDiff.Violation> violations,
-                                       Integer baselineVersion, int candidateVersion, List<String> sourceFailures) {
-            super(message(realm, violations, baselineVersion, candidateVersion, sourceFailures));
+        RefusedException(String realm, String message, Throwable cause) {
+            super(message, cause);
             this.realm = realm;
-            this.violations = List.copyOf(violations);
         }
 
         public String realm() {
             return realm;
+        }
+    }
+
+    /** Thrown when the last built TBox cannot be read, so the contract cannot be checked. */
+    public static final class BaselineUnreadableException extends RefusedException {
+        public BaselineUnreadableException(String realm, Throwable cause) {
+            super(realm, "Ontology for realm '" + realm + "': the last built TBox could not be read ("
+                    + (cause != null ? cause.getMessage() : "unknown") + "), so its stable relations cannot be "
+                    + "checked (quantum.ontology.stable-diff=enforce)", cause);
+        }
+    }
+
+    /** Thrown when a source TBox breaks a stable relation without a pack version bump. */
+    public static final class StableContractException extends RefusedException {
+        private final List<StableRelationDiff.Violation> violations;
+
+        public StableContractException(String realm, List<StableRelationDiff.Violation> violations,
+                                       Integer baselineVersion, int candidateVersion, List<String> sourceFailures) {
+            super(realm, message(realm, violations, baselineVersion, candidateVersion, sourceFailures), null);
+            this.violations = List.copyOf(violations);
         }
 
         public List<StableRelationDiff.Violation> violations() {
