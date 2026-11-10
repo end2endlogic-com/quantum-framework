@@ -37,11 +37,16 @@ import java.util.*;
  * {@code quantum.ontology.chain-propagation.max-rederivations}; reaching the bound is logged as an
  * error naming what was left, and DriftRepairJob or a reindex repairs the rest.</p>
  *
- * <p>Known limit: a head is re-derived against its neighbours' stored inferred edges. In a cyclic
- * graph under a recursive chain (its implied predicate is also one of its steps), two heads can keep
- * justifying each other's stale edge after the edge that supported both is removed. Removing that
- * needs delete-and-rederive over the affected heads, which this class does not do; a reindex clears
- * it. Transitive chain steps need no backward closure here because chain validation rejects them.</p>
+ * <p>Recursive chains (DRed). A head is re-derived against its neighbours' stored inferred edges, so
+ * in a cyclic graph under a recursive chain (its implied predicate is also one of its steps) two
+ * heads could keep justifying each other's stale edge after the edge that supported both is
+ * removed. When a change touches a step of a chain whose implied predicate is recursive, the
+ * propagation first over-deletes: it walks upstream over those chains, deletes every head's own
+ * inferred edges of the recursive predicates that may depend on the change, and then re-derives
+ * every such head to a fixpoint, so only edges with a justification outside the cycle come back. The
+ * over-deleted heads count toward the same budget; when they do not fit, nothing is deleted, the
+ * plain propagation runs, and the result is reported truncated naming them. Transitive chain steps
+ * need no backward closure here because chain validation rejects them.</p>
  */
 @ApplicationScoped
 public class ChainPropagator {
@@ -82,20 +87,22 @@ public class ChainPropagator {
         bySrc.put(nodeId, changedPredicates(nodeId, changes));
         Map<String, String> srcTypes = new LinkedHashMap<>();
         changesElsewhere(nodeId, changes, bySrc, srcTypes);
-        return propagate(realmId, dataDomain, nodeId, bySrc, srcTypes);
+        return propagate(realmId, dataDomain, nodeId, bySrc, srcTypes, removedBySrc(changes));
     }
 
     /**
      * Propagate a change of the given predicates at {@code nodeId}, for callers that know what
      * changed without an {@link EdgeChanges}, such as a delete that removed all of a node's edges.
+     * The predicates are treated as removed.
      */
     public Result propagate(String realmId, DataDomain dataDomain, String nodeId, Set<String> changedPredicates) {
-        return propagate(realmId, dataDomain, nodeId,
-                changedPredicates == null ? Map.of() : Map.of(nodeId, changedPredicates), Map.of());
+        Map<String, Set<String>> changed = changedPredicates == null ? Map.of() : Map.of(nodeId, changedPredicates);
+        return propagate(realmId, dataDomain, nodeId, changed, Map.of(), changed);
     }
 
     private Result propagate(String realmId, DataDomain dataDomain, String nodeId,
-                             Map<String, Set<String>> changedBySrc, Map<String, String> otherTypes) {
+                             Map<String, Set<String>> changedBySrc, Map<String, String> otherTypes,
+                             Map<String, Set<String>> removedBySrc) {
         changedBySrc = new LinkedHashMap<>(changedBySrc);
         changedBySrc.values().removeIf(Set::isEmpty);
         if (dataDomain == null || nodeId == null || changedBySrc.isEmpty()) {
@@ -122,6 +129,10 @@ public class ChainPropagator {
         }
         int rederived = 0;
         int changedEdges = 0;
+        // Heads to re-derive even when they are the written entity (over-deleted by DRed)
+        Set<String> forced = new LinkedHashSet<>();
+        Set<String> unrepaired = new LinkedHashSet<>();
+        overdelete(realmId, dataDomain, removedBySrc, chains, 0, pending, selfHeads, forced, unrepaired);
 
         while (!pending.isEmpty()) {
             Iterator<Map.Entry<String, Set<String>>> it = pending.entrySet().iterator();
@@ -137,12 +148,13 @@ public class ChainPropagator {
             while (headIt.hasNext()) {
                 Map.Entry<String, String> head = headIt.next();
                 String headId = head.getKey();
-                if (origin.contains(headId) && next.getKey().equals(headId)) {
+                if (origin.contains(headId) && next.getKey().equals(headId) && !forced.remove(headId)) {
                     continue; // the written entity was just re-derived by its own materialization
                 }
                 if (rederived >= maxRederivations) {
                     Set<String> left = new LinkedHashSet<>(pending.keySet());
                     left.add(headId);
+                    left.addAll(unrepaired);
                     headIt.forEachRemaining(rest -> left.add(rest.getKey()));
                     Log.errorf("Chain propagation from %s stopped after %d re-derivations "
                                     + "(quantum.ontology.chain-propagation.max-rederivations); derived edges of %d "
@@ -157,6 +169,10 @@ public class ChainPropagator {
                 if (!headPredicates.isEmpty()) {
                     pending.computeIfAbsent(headId, __ -> new LinkedHashSet<>()).addAll(headPredicates);
                 }
+                Map<String, Set<String>> removedHere = removedBySrc(headChanges);
+                if (!removedHere.isEmpty()) {
+                    overdelete(realmId, dataDomain, removedHere, chains, rederived, pending, selfHeads, forced, unrepaired);
+                }
                 // Images the head wrote on other nodes propagate from there
                 Map<String, Set<String>> elsewhere = new LinkedHashMap<>();
                 Map<String, String> elsewhereTypes = new LinkedHashMap<>();
@@ -169,7 +185,87 @@ public class ChainPropagator {
                 });
             }
         }
-        return new Result(rederived, changedEdges, false, Set.of());
+        return unrepaired.isEmpty()
+                ? new Result(rederived, changedEdges, false, Set.of())
+                : new Result(rederived, changedEdges, true, unrepaired);
+    }
+
+    /**
+     * DRed over-delete for a change at the nodes of {@code changedBySrc}: every head whose own
+     * inferred edges of a recursive predicate may depend on the change loses them, and is queued to
+     * be re-derived (and its deletions propagated). Does nothing when no recursive chain is touched;
+     * deletes nothing when the heads do not fit the budget left after {@code rederived}, and adds
+     * them to {@code unrepaired} instead.
+     */
+    void overdelete(String realmId, DataDomain dataDomain, Map<String, Set<String>> changedBySrc,
+                    List<PropertyChainDef> chains, int rederived, Map<String, Set<String>> pending,
+                    Map<String, String> selfHeads, Set<String> forced, Set<String> unrepaired) {
+        Set<String> recursive = new LinkedHashSet<>();
+        for (PropertyChainDef chain : chains) {
+            if (chain.chain() != null && chain.implies() != null && chain.chain().contains(chain.implies())) {
+                recursive.add(chain.implies());
+            }
+        }
+        if (recursive.isEmpty()) return;
+        List<PropertyChainDef> feeding = chains.stream()
+                .filter(c -> c.chain() != null && recursive.contains(c.implies())).toList();
+
+        // Plan: heads reached upstream over the feeding chains, each with its own recursive edges
+        Map<String, List<OntologyEdge>> doomed = new LinkedHashMap<>();
+        Deque<Map.Entry<String, Set<String>>> work = new ArrayDeque<>();
+        changedBySrc.forEach((node, ps) -> work.add(Map.entry(node, ps)));
+        while (!work.isEmpty()) {
+            Map.Entry<String, Set<String>> at = work.poll();
+            Set<String> heads = new LinkedHashSet<>(headsUpstream(realmId, dataDomain, at.getKey(), at.getValue(), feeding).keySet());
+            if (feeding.stream().anyMatch(c -> at.getValue().contains(c.chain().get(0)))) {
+                heads.add(at.getKey()); // the node starts a feeding chain itself
+            }
+            for (String head : heads) {
+                if (doomed.containsKey(head)) continue;
+                List<OntologyEdge> own = edgeRepo.findBySrc(realmId, dataDomain, head).stream()
+                        .filter(e -> e.isInferred() && recursive.contains(e.getP()))
+                        .filter(e -> OntologyMaterializer.ownerOf(e) == null || head.equals(OntologyMaterializer.ownerOf(e)))
+                        .toList();
+                doomed.put(head, own);
+                if (!own.isEmpty()) {
+                    Set<String> ps = new LinkedHashSet<>();
+                    own.forEach(e -> ps.add(e.getP()));
+                    work.add(Map.entry(head, ps));
+                }
+            }
+        }
+        doomed.values().removeIf(List::isEmpty);
+        if (doomed.isEmpty()) return;
+        if (rederived + doomed.size() > maxRederivations) {
+            Log.errorf("Chain propagation cannot re-derive the %d chain heads of a recursive chain within "
+                            + "quantum.ontology.chain-propagation.max-rederivations; their derived edges may keep "
+                            + "justifying each other until DriftRepairJob or a reindex runs: %s",
+                    doomed.size(), doomed.keySet());
+            unrepaired.addAll(doomed.keySet());
+            return;
+        }
+        doomed.forEach((head, own) -> {
+            Set<String> ps = new LinkedHashSet<>();
+            for (OntologyEdge e : own) {
+                edgeRepo.deleteInferredEdge(realmId, dataDomain, e.getSrc(), e.getP(), e.getDst());
+                ps.add(e.getP());
+            }
+            selfHeads.putIfAbsent(head, own.get(0).getSrcType());
+            forced.add(head);
+            pending.computeIfAbsent(head, __ -> new LinkedHashSet<>()).addAll(ps);
+        });
+    }
+
+    /** Removed edges grouped by source. */
+    private static Map<String, Set<String>> removedBySrc(EdgeChanges changes) {
+        Map<String, Set<String>> out = new LinkedHashMap<>();
+        if (changes == null) return out;
+        for (EdgeRecord rec : changes.removed()) {
+            if (rec != null && rec.getSrc() != null) {
+                out.computeIfAbsent(rec.getSrc(), __ -> new LinkedHashSet<>()).add(rec.getP());
+            }
+        }
+        return out;
     }
 
     /**

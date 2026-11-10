@@ -152,8 +152,9 @@ across all modes must use it (or APIs wired through it) rather than
 * *Source-keyed reads* (`edgesFor` / `dstIdsBySrc`): for `LAZY`/`ONDEMAND`,
   short-circuit to the provider (with TTL cache for `LAZY`) instead of the
   collection.
-* *Destination-keyed reads* (`srcIdsByDst`, used by `hasEdge` /
-  `ListQueryRewriter`, MCP incoming-graph tools, and similar): for
+* *Destination-keyed reads* (`srcIdsByDst`, used by `hasEdge` in policy
+  rewrites (`ListQueryRewriter`) and in BIAPI query filters (through the
+  `OntologyEdgeLookup` SPI), MCP incoming-graph tools, and similar): for
   `LAZY`/`ONDEMAND`, enumerate candidate sources via
   `SourceEntityEnumerator`, compute provider edges, and union with any
   EAGER rows still in `ontology_edges`. Without an enumerator, inverse
