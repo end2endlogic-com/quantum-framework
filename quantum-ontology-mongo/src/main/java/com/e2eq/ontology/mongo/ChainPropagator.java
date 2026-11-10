@@ -74,11 +74,15 @@ public class ChainPropagator {
 
     /**
      * Propagate the edge changes {@code changes} made at {@code nodeId} to the chain heads upstream
-     * of it. Only changed edges whose source is {@code nodeId} start a walk.
+     * of it. Changed edges at other nodes (the inverse or symmetric images of {@code nodeId}'s edges)
+     * also start a walk there, and make that node a head itself when they start a chain.
      */
     public Result propagate(String realmId, DataDomain dataDomain, String nodeId, EdgeChanges changes) {
-        Set<String> predicates = changedPredicates(nodeId, changes);
-        return propagate(realmId, dataDomain, nodeId, predicates);
+        Map<String, Set<String>> bySrc = new LinkedHashMap<>();
+        bySrc.put(nodeId, changedPredicates(nodeId, changes));
+        Map<String, String> srcTypes = new LinkedHashMap<>();
+        changesElsewhere(nodeId, changes, bySrc, srcTypes);
+        return propagate(realmId, dataDomain, nodeId, bySrc, srcTypes);
     }
 
     /**
@@ -86,20 +90,36 @@ public class ChainPropagator {
      * changed without an {@link EdgeChanges}, such as a delete that removed all of a node's edges.
      */
     public Result propagate(String realmId, DataDomain dataDomain, String nodeId, Set<String> changedPredicates) {
-        if (dataDomain == null || nodeId == null || changedPredicates == null || changedPredicates.isEmpty()) {
+        return propagate(realmId, dataDomain, nodeId,
+                changedPredicates == null ? Map.of() : Map.of(nodeId, changedPredicates), Map.of());
+    }
+
+    private Result propagate(String realmId, DataDomain dataDomain, String nodeId,
+                             Map<String, Set<String>> changedBySrc, Map<String, String> otherTypes) {
+        changedBySrc = new LinkedHashMap<>(changedBySrc);
+        changedBySrc.values().removeIf(Set::isEmpty);
+        if (dataDomain == null || nodeId == null || changedBySrc.isEmpty()) {
             return new Result(0, 0, false, Set.of());
         }
         OntologyRegistry registry = registryProvider.getRegistryForTenant(dataDomain);
-        List<PropertyChainDef> chains = registry.propertyChains();
-        if (chains == null || chains.isEmpty()) {
-            return new Result(0, 0, false, Set.of());
-        }
+        List<PropertyChainDef> chains = registry.propertyChains() == null ? List.of() : registry.propertyChains();
 
         // Work queue of (node, predicates that changed at it). A head is queued once at a time; if
         // it changes again while queued, its predicates are merged.
         Map<String, Set<String>> pending = new LinkedHashMap<>();
-        pending.put(nodeId, new LinkedHashSet<>(changedPredicates));
+        changedBySrc.forEach((node, ps) -> pending.put(node, new LinkedHashSet<>(ps)));
         Set<String> origin = Set.of(nodeId);
+        // Other nodes whose edges changed (inverse and symmetric images) were not materialized: when a
+        // rule consumes a changed predicate there, they are re-derived themselves
+        Map<String, String> selfHeads = new LinkedHashMap<>();
+        changedBySrc.forEach((node, ps) -> {
+            if (!node.equals(nodeId) && ps.stream().anyMatch(q -> OntologyMaterializer.consumedByRules(registry, q))) {
+                selfHeads.put(node, otherTypes.get(node));
+            }
+        });
+        if (chains.isEmpty() && selfHeads.isEmpty()) {
+            return new Result(0, 0, false, Set.of());
+        }
         int rederived = 0;
         int changedEdges = 0;
 
@@ -108,7 +128,11 @@ public class ChainPropagator {
             Map.Entry<String, Set<String>> next = it.next();
             it.remove();
 
-            Map<String, String> heads = headsUpstream(realmId, dataDomain, next.getKey(), next.getValue(), chains);
+            Map<String, String> heads = new LinkedHashMap<>();
+            if (selfHeads.containsKey(next.getKey())) {
+                heads.put(next.getKey(), selfHeads.remove(next.getKey()));
+            }
+            headsUpstream(realmId, dataDomain, next.getKey(), next.getValue(), chains).forEach(heads::putIfAbsent);
             Iterator<Map.Entry<String, String>> headIt = heads.entrySet().iterator();
             while (headIt.hasNext()) {
                 Map.Entry<String, String> head = headIt.next();
@@ -133,6 +157,16 @@ public class ChainPropagator {
                 if (!headPredicates.isEmpty()) {
                     pending.computeIfAbsent(headId, __ -> new LinkedHashSet<>()).addAll(headPredicates);
                 }
+                // Images the head wrote on other nodes propagate from there
+                Map<String, Set<String>> elsewhere = new LinkedHashMap<>();
+                Map<String, String> elsewhereTypes = new LinkedHashMap<>();
+                changesElsewhere(headId, headChanges, elsewhere, elsewhereTypes);
+                elsewhere.forEach((node, ps) -> {
+                    pending.computeIfAbsent(node, __ -> new LinkedHashSet<>()).addAll(ps);
+                    if (!origin.contains(node) && ps.stream().anyMatch(q -> OntologyMaterializer.consumedByRules(registry, q))) {
+                        selfHeads.putIfAbsent(node, elsewhereTypes.get(node));
+                    }
+                });
             }
         }
         return new Result(rederived, changedEdges, false, Set.of());
@@ -166,6 +200,19 @@ public class ChainPropagator {
             }
         }
         return heads;
+    }
+
+    /** Changed edges whose source is not {@code nodeId}, grouped by source, with each source's type. */
+    private static void changesElsewhere(String nodeId, EdgeChanges changes, Map<String, Set<String>> bySrc,
+                                         Map<String, String> srcTypes) {
+        if (changes == null) return;
+        for (List<EdgeRecord> list : List.of(changes.added(), changes.modified(), changes.removed())) {
+            for (EdgeRecord rec : list) {
+                if (rec == null || rec.getSrc() == null || rec.getSrc().equals(nodeId)) continue;
+                bySrc.computeIfAbsent(rec.getSrc(), __ -> new LinkedHashSet<>()).add(rec.getP());
+                srcTypes.putIfAbsent(rec.getSrc(), rec.getSrcType());
+            }
+        }
     }
 
     private static Set<String> changedPredicates(String nodeId, EdgeChanges changes) {

@@ -13,6 +13,7 @@ import com.e2eq.ontology.model.OntologyEdge;
 import com.e2eq.ontology.model.QuarantinedEdge;
 import com.e2eq.framework.model.securityrules.SecurityContext;
 import dev.morphia.Datastore;
+import dev.morphia.DeleteOptions;
 import dev.morphia.query.Query;
 import dev.morphia.query.filters.Filter;
 import dev.morphia.query.filters.Filters;
@@ -37,6 +38,9 @@ import java.util.Optional;
  */
 @ApplicationScoped
 public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
+
+    /** Morphia 3 deletes only the first match unless asked for all of them. */
+    private static final DeleteOptions MULTI = new DeleteOptions().multi(true);
 
    // Optional injection to avoid circular dependency issues during startup
    // Uses Instance<> for lazy resolution
@@ -801,7 +805,7 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
         }
         q.filter(Filters.eq("src", src));
         if (inferredOnly) q.filter(Filters.eq("inferred", true));
-        q.delete();
+        q.delete(MULTI);
     }
 
     /**
@@ -819,7 +823,7 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
         }
         q.filter(Filters.eq("src", src))
          .filter(Filters.eq("p", p))
-         .delete();
+         .delete(MULTI);
     }
 
     /**
@@ -839,7 +843,21 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
          .filter(Filters.eq("p", p))
          .filter(Filters.eq("inferred", true))
          .filter(Filters.nin("dst", dstKeep))
-         .delete();
+         .delete(MULTI);
+    }
+
+    /** Delete one inferred edge by its key. */
+    public void deleteInferredEdge(String realmId, DataDomain dataDomain, String src, String p, String dst) {
+        validateWritableDataDomain(dataDomain);
+        Query<OntologyEdge> q = ds(realmId).find(OntologyEdge.class);
+        for (Filter f : dataDomainFilters(dataDomain)) {
+            q.filter(f);
+        }
+        q.filter(Filters.eq("src", src))
+         .filter(Filters.eq("p", p))
+         .filter(Filters.eq("dst", dst))
+         .filter(Filters.eq("inferred", true))
+         .delete(MULTI);
     }
 
     /**
@@ -863,7 +881,7 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
          .filter(Filters.ne("inferred", true))
          .filter(Filters.ne("derived", true))  // Exclude derived/computed edges
          .filter(Filters.nin("dst", dstKeep))
-         .delete();
+         .delete(MULTI);
     }
 
     /**
@@ -884,7 +902,7 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
          .filter(Filters.eq("p", p))
          .filter(Filters.eq("derived", true))  // Only derived/computed edges
          .filter(Filters.nin("dst", dstKeep))
-         .delete();
+         .delete(MULTI);
     }
 
     /**

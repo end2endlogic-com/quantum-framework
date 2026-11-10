@@ -3,6 +3,7 @@ package com.e2eq.ontology.repo;
 import com.e2eq.framework.model.persistent.morphia.MorphiaRepo;
 import com.e2eq.ontology.model.OntologyEdgeProvenanceDoc;
 import dev.morphia.Datastore;
+import dev.morphia.DeleteOptions;
 import dev.morphia.query.filters.Filters;
 import jakarta.enterprise.context.ApplicationScoped;
 
@@ -20,6 +21,9 @@ import java.util.Optional;
  */
 @ApplicationScoped
 public class OntologyEdgeProvenanceRepo extends MorphiaRepo<OntologyEdgeProvenanceDoc> {
+
+    /** Morphia 3 deletes only the first match unless asked for all of them. */
+    private static final DeleteOptions MULTI = new DeleteOptions().multi(true);
 
     public Datastore ds() { return ds(getSecurityContextRealmId()); }
 
@@ -60,7 +64,7 @@ public class OntologyEdgeProvenanceRepo extends MorphiaRepo<OntologyEdgeProvenan
     public long deleteByEdgeId(String realmId, String edgeId) {
         return ds(realmId).find(OntologyEdgeProvenanceDoc.class)
                 .filter(Filters.eq("edgeId", edgeId))
-                .delete()
+                .delete(MULTI)
                 .getDeletedCount();
     }
 }
