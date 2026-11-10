@@ -2427,6 +2427,46 @@ adding stable relations, widening a domain or range (for example `Customer` to `
 label, alias or metadata changes. The diff does not validate the candidate; validation runs
 separately.
 
+==== When the TBox is built from sources
+
+A realm with no admitted TBox builds its registry from its sources: `@OntologyProperty`
+annotations, the Morphia entities and the YAML pack. Each build is checked with the same rules
+against the last TBox built for the realm (the `ontology_tbox` collection), so a refactor cannot
+silently drop a contract. A build that breaks a stable relation is refused unless the pack
+`version:` is greater than the version recorded with the last build. The refused TBox is not
+persisted or cached, and every load of the realm's registry fails with
+`SourceTBoxGate.StableContractException`:
+
+----
+Ontology for realm 'acme' breaks stable relations without a pack version bump (pack version 3, last built 3): stable_relation_removed: Stable relation 'hasShipment' was removed. Restore the relations, or raise the pack version to publish the change.
+----
+
+The message also names any source that failed to load (annotations, Morphia entities, the YAML
+pack), since a missing source looks like removed relations. A last build with no recorded version
+(built before versions were recorded) cannot show a bump, so a breaking change against it is
+refused too. If the last build cannot be read, the build is refused: the contract cannot be checked.
+
+`quantum.ontology.stable-diff` controls the check: `enforce` (the default, and any value other
+than `warn`) refuses; `warn` logs the same message as an error and builds anyway. The check needs
+the persisted baseline, so it does not run with `quantum.ontology.tbox.persist=false`.
+
+Each build also logs a warning for a relation that is stable only through an annotation, with no
+stable declaration in the YAML pack. Annotations describe storage, which changes on refactor;
+declare or promote stable relations in the pack, where the contract is versioned and reviewed.
+
+[cols="1,1,2"]
+|===
+| Layer | Like | Stability
+
+| `@OntologyProperty` on fields
+| Tables and foreign keys
+| Internal by default: edges come from storage
+
+| Pack YAML properties backed by chains, inverses or sub-properties
+| Views
+| `stable` when consumers may depend on them
+|===
+
 ==== Consumer binding guard
 
 `StableRelationGuard.bindingViolations(tbox, predicates, consumer)` returns one violation per bound

@@ -73,6 +73,26 @@ public final class YamlOntologyLoader {
         return toTBox(mapper.readValue(in, YOntology.class));
     }
 
+    /** A pack's TBox together with its declared {@code version:} (empty when the pack has none). */
+    public record Pack(TBox tbox, Optional<Integer> version) {}
+
+    public Pack loadPackFromClasspath(String resourcePath) throws IOException {
+        try (InputStream in = getClass().getResourceAsStream(resourcePath)) {
+            if (in == null) throw new IOException("Resource not found: " + resourcePath);
+            return toPack(mapper.readValue(in, YOntology.class));
+        }
+    }
+
+    public Pack loadPackFromPath(Path path) throws IOException {
+        try (InputStream in = Files.newInputStream(path)) {
+            return toPack(mapper.readValue(in, YOntology.class));
+        }
+    }
+
+    private Pack toPack(YOntology y) {
+        return new Pack(toTBox(y), Optional.ofNullable(y.version()));
+    }
+
     /**
      * Parse out the {@code computed:} block from a YAML document. Returns an
      * empty list if absent, so existing YAML files keep working.
