@@ -285,5 +285,57 @@ Key Security Defaults for Multi-Hop Traversals:
 ==== When is AGGREGATION used vs FILTER?
 
 - FILTER: no expand(...). Planner returns a Morphia Filter and the gateway executes find with dev.morphia.query.Query.
-- AGGREGATION: one or more expand(...). Planner returns an aggregation pipeline with per-stage $lookup inner pipelines, $unwind, and $project stages. Execution requires `feature.queryGateway.execution.enabled=true`; otherwise, POST /api/query/find returns HTTP 501. If any $lookup.from is "__unknown__", execution returns HTTP 422.
+- AGGREGATION: one or more expand(...) or expand(@relation). Planner returns an aggregation pipeline with per-stage $lookup inner pipelines, $unwind, and $project stages. Execution requires `feature.queryGateway.execution.enabled=true`; otherwise, POST /api/query/find returns HTTP 501. If any $lookup.from is "__unknown__", execution returns HTTP 422.
 
+=== Expanding a named relation: expand(@relation)
+
+`expand(path)` follows reference fields. `expand(@relation)` follows a relation of the ontology by
+name instead, whatever its derivation: an asserted edge, an inverse, a sub-property or a property
+chain. The leading `@` marks the relation; it is not a field path. Both forms can be combined:
+
+----
+expand(@hasShipment) && expand(customer) && status:active
+----
+
+Each row of the page gets the relation's targets under `_rel.<relation>`: a list, or a single
+object (or `null`) when the relation is `functional`:
+
+[source,json]
+----
+{ "_id": "...", "refName": "C-1",
+  "_rel": { "hasShipment": [ { "_id": "...", "refName": "S-OPEN", "status": "open" } ] } }
+----
+
+How it runs: the root query runs as usual under the root policy, with its own sort, skip and limit.
+Then one edge read per DataDomain (the row's own, read back by id when the projection drops it)
+finds the targets of the page's rows (stored edges, and edges of
+LAZY and ONDEMAND computed providers), and one read per target type fetches them. Each target answers
+to the rules of the request's functional area and of its own `@FunctionalMapping` area, row filters
+and excluded fields both, as a field-path expand does. A target those rules hide is not returned. To
+follow a relation backwards, declare its inverse (`inverseOf`) and expand that. Targets are listed
+in target-id order; a functional relation with several edges returns the first visible target by
+id and logs a warning.
+
+Only *stable* relations may be expanded: consumers bind to the contract, never to how it is derived
+(see the ontology guide, Stable relations). An expand that cannot be governed is refused with no
+rows. Every REST surface answers:
+
+[cols="2,1,3"]
+|===
+| `code` | Status | When
+
+| `expand_unknown_relation` | 400 | The TBox does not declare the relation.
+| `expand_internal_relation` | 400 | The relation is internal.
+| `expand_no_target_type` | 400 | An edge reaches a type that is not a mapped entity.
+| `expand_target_not_governed` | 403 | A target type has no `@FunctionalMapping`, or its policy cannot be resolved.
+| `expand_too_many_targets` | 422 | The page reaches more targets than `quantum.ontology.expand.max-targets` (default 1000), or more edges than `quantum.ontology.expand.max-edges` (default 10000; the edge read stops there).
+| `expand_no_row_data_domain` | 422 | A row's DataDomain, which keys its edges, cannot be read.
+| `expand_ontology_unavailable` | 503 | The realm's ontology was refused (for example a stable-relation breach).
+| `expand_not_available` | 501 | The ontology module is not installed.
+|===
+
+The body is `{"error": "RelationExpandRefused", "code": ..., "relation": ..., "message": ...}`.
+Repository callers (`getSecuredAggregationDocuments`) get a `RelationExpansionException` with the
+same codes; `RelationExpansionExceptionMapper` gives any resource that lets it through the same
+status and body. `POST /api/query/plan` lists the relations under `relationExpands`, apart from
+`expandPaths`. Filtering the root rows by a relation stays `hasEdge(...)`.

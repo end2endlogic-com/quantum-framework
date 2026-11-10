@@ -132,6 +132,49 @@ public class QueryGatewayAggregationIT extends BaseRepoTest {
     }
 
     @Test
+    public void find_refuses_expand_of_an_undeclared_relation_with_a_typed_error() {
+        Datastore ds = morphiaDataStoreWrapper.getDataStore(realm);
+        seedOneUserWithCredential(ds);
+
+        Map<String,Object> body = new HashMap<>();
+        body.put("rootType", UserProfile.class.getName());
+        body.put("query", "expand(@notARelation) && email:*agg-user*");
+        body.put("realm", realm);
+
+        given()
+            .header("X-Realm", realm)
+            .contentType(ContentType.JSON)
+            .body(body)
+        .when()
+            .post("/api/query/find")
+        .then()
+            .statusCode(400)
+            .body("error", equalTo("RelationExpandRefused"))
+            .body("code", equalTo("expand_unknown_relation"))
+            .body("relation", equalTo("notARelation"))
+            .body("rows", nullValue());
+    }
+
+    @Test
+    public void plan_reports_relation_expands_apart_from_field_paths() {
+        Map<String,Object> body = new HashMap<>();
+        body.put("rootType", UserProfile.class.getName());
+        body.put("query", "expand(@hasCredential) && expand(credentialUserIdPasswordRef) && email:x");
+
+        given()
+            .header("X-Realm", realm)
+            .contentType(ContentType.JSON)
+            .body(body)
+        .when()
+            .post("/api/query/plan")
+        .then()
+            .statusCode(200)
+            .body("mode", equalTo("AGGREGATION"))
+            .body("expandPaths", contains("credentialUserIdPasswordRef"))
+            .body("relationExpands", contains("hasCredential"));
+    }
+
+    @Test
     public void aggregation_enforces_root_row_security_across_tenants() {
         Datastore ds = morphiaDataStoreWrapper.getDataStore(realm);
         try (SecurityCallScope.Scope ignored = SecurityCallScope.openIgnoringRules()) {

@@ -16,8 +16,8 @@ import java.util.TreeSet;
  *
  * <ul>
  *   <li><b>Consumer binding</b> ({@link #bindingViolations}): a consumer may bind only to stable
- *       relations. This is a primitive; no consumer is wired to it yet, because every relation is
- *       internal today and enforcing it would break them.</li>
+ *       relations. {@code expand(@relation)} in queries enforces it; existing consumers that bind
+ *       internal relations are not wired to it yet.</li>
  *   <li><b>Explicit edges</b> ({@link #requireExplicitEdgesAllowed}): a stable derived relation gets
  *       its edges only from its derivation, so explicit edges for it are refused. Internal
  *       derived relations keep today's behaviour and accept explicit edges.</li>

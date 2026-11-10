@@ -15,6 +15,8 @@ import com.e2eq.framework.model.persistent.morphia.MorphiaUtils;
 import com.e2eq.framework.model.persistent.morphia.planner.LogicalPlan;
 import com.e2eq.framework.model.persistent.morphia.planner.PlannedQuery;
 import com.e2eq.framework.model.persistent.morphia.planner.PlannerResult;
+import com.e2eq.framework.model.persistent.morphia.planner.RelationExpansion;
+import com.e2eq.framework.model.persistent.morphia.planner.RelationExpansionException;
 import com.e2eq.framework.model.persistent.morphia.query.QueryGateway;
 import com.e2eq.framework.model.persistent.morphia.query.QueryGatewayImpl;
 import com.e2eq.framework.model.persistent.morphia.compiler.mongo.MongoAggregationCompiler;
@@ -179,6 +181,7 @@ public class QueryGatewayResource {
         PlanResponse out = new PlanResponse();
         out.mode = pr.getMode().name();
         out.expandPaths = pr.getExpandPaths();
+        out.relationExpands = pr.getRelationExpands();
         return out;
     }
 
@@ -384,6 +387,12 @@ public class QueryGatewayResource {
                     .getCollection(rootCollection)
                     .aggregate(clean, org.bson.Document.class)
                     .into(new java.util.ArrayList<>());
+            // expand(@relation): targets are read after the root page, under the target's own policy
+            try {
+                RelationExpansion.hydrateIfRequested(realm, root, rows, pr.getRelationExpands());
+            } catch (RelationExpansionException refused) {
+                return relationExpandRefused(refused);
+            }
             Collection<org.bson.Document> col = new Collection<>(rows, effSkip, effLimit, req.query);
             return Response.ok(col).build();
         }
@@ -1148,6 +1157,15 @@ public class QueryGatewayResource {
                 && java.util.Objects.equals(a.excludedFields(), b.excludedFields());
     }
 
+    /**
+     * Typed refusal of {@code expand(@relation)}: 400 for a relation the caller may not expand, 403
+     * for a target without a resolvable policy, 422 over the target cap, 501 without the ontology
+     * module. No rows are returned.
+     */
+    private Response relationExpandRefused(RelationExpansionException refused) {
+        return Response.status(refused.code().httpStatus()).entity(refused.toErrorBody()).build();
+    }
+
     /** Typed 403 for an expand whose target policy cannot be resolved; no query has run. */
     private Response expandPolicyUnresolved(String path, String reason) {
         return Response.status(Response.Status.FORBIDDEN)
@@ -1492,7 +1510,12 @@ public class QueryGatewayResource {
     @RegisterForReflection
     public static class PlanRequest { public String rootType; public String query; }
     @RegisterForReflection
-    public static class PlanResponse { public String mode; public List<String> expandPaths; }
+    public static class PlanResponse {
+        public String mode;
+        public List<String> expandPaths;
+        /** Relations named by {@code expand(@relation)}, hydrated under {@code _rel} after the query. */
+        public List<String> relationExpands;
+    }
 
     @RegisterForReflection
     public static class FindRequest {

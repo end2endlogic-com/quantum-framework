@@ -142,6 +142,47 @@ public class ComputedEdgeReader {
     }
 
     /**
+     * Edges with {@code predicate} leaving any of {@code sourceIds}: one store query (excluding stale
+     * non-EAGER provider rows) unioned with LAZY/ONDEMAND provider computation per source. Set
+     * semantics on {@code (srcId, predicate, dstId)}, in store order and then provider order.
+     */
+    public List<Reasoner.Edge> edgesFromSrcs(String realmId, DataDomain dataDomain,
+                                             String predicate, Collection<String> sourceIds) {
+        return edgesFromSrcs(realmId, dataDomain, predicate, sourceIds, 0);
+    }
+
+    /**
+     * {@link #edgesFromSrcs(String, DataDomain, String, Collection)} that stops once more than
+     * {@code limit} edges are read ({@code <= 0}: no limit), so a caller can refuse an oversized
+     * page without loading all of it.
+     */
+    public List<Reasoner.Edge> edgesFromSrcs(String realmId, DataDomain dataDomain,
+                                             String predicate, Collection<String> sourceIds, int limit) {
+        Objects.requireNonNull(predicate, "predicate");
+        if (sourceIds == null || sourceIds.isEmpty()) return List.of();
+        realmId = normalizeRealmId(realmId);
+        Set<String> nonEager = nonEagerProviderIds(predicate);
+        Map<String, Reasoner.Edge> unique = new LinkedHashMap<>();
+        int read = limit > 0 ? limit + 1 : 0;
+        for (OntologyEdge e : edgeRepo.findBySrcInAndP(realmId, dataDomain, sourceIds, predicate, read)) {
+            if (isStaleNonEagerStoreRow(e, nonEager)) continue;
+            putEdge(unique, toReasonerEdge(e));
+        }
+        for (ComputedEdgeProvider<?> provider : providersForPredicate(predicate)) {
+            if (provider.getMaterializationMode() == MaterializationMode.EAGER) continue;
+            for (String sourceId : sourceIds) {
+                if (limit > 0 && unique.size() > limit) break;
+                for (Reasoner.Edge e : edgesFor(realmId, dataDomain, provider, sourceId)) {
+                    if (predicate.equals(e.p()) && sourceId.equals(e.srcId()) && e.dstId() != null) {
+                        putEdge(unique, e);
+                    }
+                }
+            }
+        }
+        return new ArrayList<>(unique.values());
+    }
+
+    /**
      * Source IDs that have an edge with {@code predicate} pointing to {@code dstId}.
      *
      * <p>Unions store rows with LAZY/ONDEMAND providers. Store rows attributed to a

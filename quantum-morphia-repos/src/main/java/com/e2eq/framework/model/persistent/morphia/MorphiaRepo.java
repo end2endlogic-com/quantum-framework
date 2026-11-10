@@ -761,7 +761,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         PlannedQuery planned = MorphiaUtils.convertToPlannedQuery(
                 query, getPersistentClass(), limit, skip, plannerSort);
         if (planned.getMode() != PlannerResult.Mode.AGGREGATION) {
-            throw new IllegalArgumentException("Query does not contain a valid expand(...) operation");
+            throw new IllegalArgumentException("Query does not contain a valid expand(...) or expand(@relation) operation");
         }
 
         List<Document> pipeline = new ArrayList<>();
@@ -790,10 +790,16 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
         String rootCollection = morphiaDatastore.getMapper()
                 .getEntityModel(getPersistentClass()).collectionName();
-        return morphiaDatastore.getDatabase()
+        List<Document> rows = morphiaDatastore.getDatabase()
                 .getCollection(rootCollection)
                 .aggregate(new ArrayList<Bson>(pipeline), Document.class)
                 .into(new ArrayList<>());
+        // expand(@relation): targets are read after the root page, under the target's own policy
+        com.e2eq.framework.model.persistent.morphia.planner.RelationExpansion.hydrateIfRequested(
+                morphiaDatastore.getDatabase().getName(), getPersistentClass(), rows,
+                new com.e2eq.framework.model.persistent.morphia.planner.QueryPlanner()
+                        .analyze(query).getRelationExpands());
+        return rows;
     }
 
     private Document compilePolicyMatch(MongoAggregationCompiler compiler, List<Filter> filters) {
