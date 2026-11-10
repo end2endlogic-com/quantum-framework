@@ -129,6 +129,12 @@ class OntologyRelationExpansionTest {
         assertTrue(rows.stream().noneMatch(r -> r.containsKey(RelationExpansion.FIELD)));
     }
 
+    @Test
+    void queryListenersReachTheModeAwareEdgeLookup() {
+        assertInstanceOf(ComputedEdgeLookup.class,
+                com.e2eq.framework.model.persistent.base.OntologyEdgeLookup.current().orElseThrow());
+    }
+
     private OntologyRelationExpansion configured() {
         OntologyRelationExpansion e = new OntologyRelationExpansion();
         e.registryProvider = registryProvider;

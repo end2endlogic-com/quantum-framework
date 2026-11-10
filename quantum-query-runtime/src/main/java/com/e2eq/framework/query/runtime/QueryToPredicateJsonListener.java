@@ -3,6 +3,7 @@ package com.e2eq.framework.query.runtime;
 import com.e2eq.framework.grammar.BIAPIQueryBaseListener;
 import com.e2eq.framework.grammar.BIAPIQueryParser;
 import com.e2eq.framework.model.persistent.base.DataDomain;
+import com.e2eq.framework.model.persistent.base.OntologyEdgeLookup;
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.SecurityContext;
@@ -771,58 +772,20 @@ public class QueryToPredicateJsonListener extends BIAPIQueryBaseListener {
         }
     }
 
-    @SuppressWarnings("unchecked")
+    /** hasEdge ids through {@link OntologyEdgeLookup} (all materialization modes); none without it. */
     protected Set<String> ontologySrcIdsByDst(DataDomain dataDomain, String predicate, String dst, Object edgeFilter) {
         if (dataDomain == null) return Collections.emptySet();
-        try {
-            var cdi = jakarta.enterprise.inject.spi.CDI.current();
-            if (cdi == null) return Collections.emptySet();
-            Class<?> edgeRepoClass = Class.forName("com.e2eq.ontology.repo.OntologyEdgeRepo");
-            var selection = cdi.select(edgeRepoClass);
-            if (selection.isUnsatisfied()) return Collections.emptySet();
-            Object edgeRepo = selection.get();
-            if (edgeFilter != null) {
-                for (java.lang.reflect.Method m : edgeRepoClass.getMethods()) {
-                    if (m.getName().equals("srcIdsByDst") && m.getParameterCount() == 4 && m.getParameterTypes()[0].equals(DataDomain.class)) {
-                        Object filterArray = java.lang.reflect.Array.newInstance(m.getParameterTypes()[3].getComponentType(), 1);
-                        java.lang.reflect.Array.set(filterArray, 0, edgeFilter);
-                        Object result = m.invoke(edgeRepo, dataDomain, predicate, dst, filterArray);
-                        if (result instanceof Set<?> set) return (Set<String>) set;
-                    }
-                }
-            }
-            java.lang.reflect.Method method = edgeRepoClass.getMethod("srcIdsByDst", DataDomain.class, String.class, String.class);
-            Object result = method.invoke(edgeRepo, dataDomain, predicate, dst);
-            if (result instanceof Set<?> set) return (Set<String>) set;
-        } catch (Throwable ignored) { }
-        return Collections.emptySet();
+        return OntologyEdgeLookup.current()
+                .map(l -> l.srcIdsByDst(dataDomain, predicate, dst, (dev.morphia.query.filters.Filter) edgeFilter))
+                .orElse(Collections.emptySet());
     }
 
-    @SuppressWarnings("unchecked")
+    /** hasIncomingEdge ids through {@link OntologyEdgeLookup} (all materialization modes); none without it. */
     protected Set<String> ontologyDstIdsBySrc(DataDomain dataDomain, String predicate, String src, Object edgeFilter) {
         if (dataDomain == null) return Collections.emptySet();
-        try {
-            var cdi = jakarta.enterprise.inject.spi.CDI.current();
-            if (cdi == null) return Collections.emptySet();
-            Class<?> edgeRepoClass = Class.forName("com.e2eq.ontology.repo.OntologyEdgeRepo");
-            var selection = cdi.select(edgeRepoClass);
-            if (selection.isUnsatisfied()) return Collections.emptySet();
-            Object edgeRepo = selection.get();
-            if (edgeFilter != null) {
-                for (java.lang.reflect.Method m : edgeRepoClass.getMethods()) {
-                    if (m.getName().equals("dstIdsBySrc") && m.getParameterCount() == 4 && m.getParameterTypes()[0].equals(DataDomain.class)) {
-                        Object filterArray = java.lang.reflect.Array.newInstance(m.getParameterTypes()[3].getComponentType(), 1);
-                        java.lang.reflect.Array.set(filterArray, 0, edgeFilter);
-                        Object result = m.invoke(edgeRepo, dataDomain, predicate, src, filterArray);
-                        if (result instanceof Set<?> set) return (Set<String>) set;
-                    }
-                }
-            }
-            java.lang.reflect.Method method = edgeRepoClass.getMethod("dstIdsBySrc", DataDomain.class, String.class, String.class);
-            Object result = method.invoke(edgeRepo, dataDomain, predicate, src);
-            if (result instanceof Set<?> set) return (Set<String>) set;
-        } catch (Throwable ignored) { }
-        return Collections.emptySet();
+        return OntologyEdgeLookup.current()
+                .map(l -> l.dstIdsBySrc(dataDomain, predicate, src, (dev.morphia.query.filters.Filter) edgeFilter))
+                .orElse(Collections.emptySet());
     }
 
     private void pushIdPredicate(Set<String> ids) {
