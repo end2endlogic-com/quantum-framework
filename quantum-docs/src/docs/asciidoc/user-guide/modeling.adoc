@@ -336,12 +336,17 @@ so it must be meaningful and spelled exactly one way. Entities annotated with `@
 (currently `UserGroup` and `Policy`) are held to a canonical rule by `MorphiaRepo` on every write path,
 including REST resources, `/api/query/save`, CSV import, and seed packs:
 
-* On create, `refName` must match `^[A-Z][A-Z0-9_]*$`, be 3-64 characters, and not look like a generated id
-  (`^[0-9a-f]{16,}$`, case-insensitive). Values are judged as given; the server never trims or re-cases them.
-  A missing `refName` is rejected instead of defaulting to the ObjectId.
+* On create, a `refName` that is given must match `^[A-Z][A-Z0-9_]*$`, be 3-64 characters, and not look like a
+  generated id (`^[0-9a-f]{16,}$`, case-insensitive). Values are judged as given; the server never trims or
+  re-cases them. A `refName` that is not given defaults to the record's ObjectId (hex), as for every other entity;
+  sending the record's own id as its `refName` is the same default.
 * After create, `refName` is immutable. Saving, merging, or field-updating a different value fails. A merge that
-  omits `refName` leaves it untouched; a full save that omits it is treated as a change.
-* A record stored before the rule without any `refName` may stay unnamed or be named once under the rule.
+  omits `refName` leaves it untouched; a full save that omits it stands for the ObjectId default, so it is
+  accepted only when the stored `refName` is that default.
+* A record stored before the rule without any `refName` stays unnamed through a merge and may be named once under
+  the rule; a full save that leaves it unnamed gives it the ObjectId default, after which it is immutable.
+* A seed pack record for these types must give a `refName`, an `_id`, or come from a dataset with a `naturalKey`;
+  otherwise every re-apply would create another group or policy.
 * Existing records are never re-validated or rewritten.
 * `skipValidation` does not bypass the rule.
 
@@ -351,7 +356,7 @@ Violations raise `RefNameViolationException`, rendered as a `RestError` with `er
 |===
 | errorCode | HTTP | Meaning
 
-| `REFNAME_REQUIRED` | 400 | No refName supplied on create
+| `REFNAME_REQUIRED` | 400 | No refName where one is required (not raised on create: a missing refName defaults to the ObjectId)
 | `REFNAME_INVALID_FORMAT` | 400 | Pattern or length violation
 | `REFNAME_GENERATED_ID` | 400 | Looks like an ObjectId, dashless UUID, or hash
 | `REFNAME_RESERVED` | 400 | A client tried to create a declared legacy name reserved for framework code

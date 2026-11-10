@@ -26,11 +26,14 @@ import java.util.Set;
  * Enforces {@link CanonicalRefName} on the repository write paths.
  *
  * <ul>
- *    <li>Create (no id, or an id with no stored record): refName must satisfy {@link RefNameRule}. A declared legacy
- *    name is admitted only for framework writes, never inside a {@link #clientSuppliedRefNames()} scope.</li>
+ *    <li>Create (no id, or an id with no stored record): a refName that is given must satisfy {@link RefNameRule}.
+ *    A missing refName is allowed and defaults to the record's ObjectId ({@code MorphiaRepo#setDefaultValues}); a
+ *    refName equal to the record's own id is that default. A declared legacy name is admitted only for framework
+ *    writes, never inside a {@link #clientSuppliedRefNames()} scope.</li>
  *    <li>Update: refName must equal the stored value. On {@link WriteMode#MERGE} a null refName leaves the stored
- *    value untouched and is allowed. A record stored without a refName may keep none or be named once under the
- *    rule.</li>
+ *    value untouched and is allowed; on {@link WriteMode#REPLACE} it stands for the ObjectId default. A record
+ *    stored without a refName keeps none through a merge and may be named once under the rule; a full save
+ *    without a name gives it the ObjectId default, after which it is immutable like any other.</li>
  * </ul>
  * Stored refNames are read by {@code _id} outside the caller's security filters, because the check guards data
  * integrity rather than visibility. {@code skipValidation} does not bypass it.
@@ -138,6 +141,7 @@ public final class RefNameContract {
       String entityType = value.getClass().getSimpleName();
       String entityId = value.getId() == null ? null : value.getId().toHexString();
       String offered = value.getRefName();
+      boolean missing = offered == null || offered.isEmpty();
 
       if (value.getId() != null && stored.containsKey(value.getId())) {
          String current = stored.get(value.getId());
@@ -146,13 +150,16 @@ public final class RefNameContract {
          }
          if (current == null || current.isEmpty()) {
             // Pre-rule record without a refName: it may keep none, or be named once under the rule.
-            if (offered == null || offered.isEmpty()) {
+            if (missing) {
                return;
             }
             checkNewName(value, offered, entityType, entityId);
             return;
          }
-         if (!current.equals(offered)) {
+         // A full save without a refName writes the ObjectId default, so it is unchanged only for a defaulted record.
+         // A merge writes what it is given, so an empty refName on a merge is a change (it would blank the name).
+         String effective = missing && mode == WriteMode.REPLACE ? entityId : offered;
+         if (!current.equals(effective)) {
             throw new RefNameViolationException(Code.REFNAME_IMMUTABLE, entityType, entityId,
                offered, current, "refName is immutable after creation");
          }
@@ -162,6 +169,10 @@ public final class RefNameContract {
    }
 
    private static void checkNewName(UnversionedBaseModel value, String refName, String entityType, String entityId) {
+      if (refName == null || refName.isEmpty() || refName.equals(entityId)) {
+         // Not given (or given as the record's own id): the repository defaults it to the ObjectId
+         return;
+      }
       var violation = RefNameRule.check(refName);
       if (violation.isEmpty()) {
          return;
