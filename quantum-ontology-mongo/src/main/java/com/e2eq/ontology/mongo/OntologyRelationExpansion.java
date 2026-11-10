@@ -18,6 +18,7 @@ import com.e2eq.ontology.annotations.OntologyClass;
 import com.e2eq.ontology.core.OntologyRegistry;
 import com.e2eq.ontology.core.OntologyRegistry.PropertyDef;
 import com.e2eq.ontology.core.Reasoner;
+import com.e2eq.ontology.core.SourceTBoxGate;
 import com.e2eq.ontology.core.StableRelationGuard;
 import com.e2eq.ontology.runtime.TenantOntologyRegistryProvider;
 import dev.morphia.MorphiaDatastore;
@@ -66,13 +67,24 @@ public class OntologyRelationExpansion implements RelationExpansion {
     RuleContext ruleContext;
 
     @ConfigProperty(name = "quantum.ontology.expand.max-targets", defaultValue = "1000")
-    int maxTargets;
+    int maxTargets = 1000;
+
+    /** Edges read per page and relation before the expand is refused; bounds memory before targets are counted. */
+    @ConfigProperty(name = "quantum.ontology.expand.max-edges", defaultValue = "10000")
+    int maxEdges = 10_000;
 
     @Override
     public void hydrate(String realmId, Class<? extends UnversionedBaseModel> rootType, List<Document> rows,
                         List<String> relations) {
         if (relations == null || relations.isEmpty() || rows == null || rows.isEmpty()) return;
-        OntologyRegistry registry = registryProvider.getRegistryForRealm(realmId);
+        OntologyRegistry registry;
+        try {
+            registry = registryProvider.getRegistryForRealm(realmId);
+        } catch (SourceTBoxGate.RefusedException refused) {
+            throw new RelationExpansionException(Code.ONTOLOGY_UNAVAILABLE, null,
+                    "expand(@relation) needs the ontology of realm '" + realmId + "', which was refused: "
+                            + refused.getMessage(), refused);
+        }
         Map<String, PropertyDef> defs = new LinkedHashMap<>();
         for (String relation : relations) {
             defs.put(relation, requireExpandable(registry, relation));
@@ -80,23 +92,38 @@ public class OntologyRelationExpansion implements RelationExpansion {
 
         // Row ids grouped by the DataDomain their edges were written under
         Map<DataDomain, List<String>> idsByDomain = new LinkedHashMap<>();
+        Map<String, DataDomain> stored = storedDataDomains(realmId, rootType, rows);
         for (Document row : rows) {
             String id = idOf(row);
-            idsByDomain.computeIfAbsent(dataDomainOf(row), __ -> new ArrayList<>()).add(id);
+            DataDomain dd = dataDomainOf(row).orElseGet(() -> stored.get(id));
+            if (dd == null) {
+                throw new RelationExpansionException(Code.NO_ROW_DATA_DOMAIN, null, "expand(@relation) cannot read the "
+                        + "dataDomain of row '" + id + "', under which its edges are stored");
+            }
+            idsByDomain.computeIfAbsent(dd, __ -> new ArrayList<>()).add(id);
         }
 
         // relation -> src -> ordered targets (id, type)
-        Map<String, Map<String, LinkedHashMap<String, String>>> reached = new LinkedHashMap<>();
+        Map<String, Map<String, TreeMap<String, String>>> reached = new LinkedHashMap<>();
         Map<String, Set<String>> idsByType = new LinkedHashMap<>();
         Map<String, String> relationByType = new HashMap<>();
         int distinct = 0;
         for (String relation : relations) {
-            Map<String, LinkedHashMap<String, String>> bySrc = new HashMap<>();
+            Map<String, TreeMap<String, String>> bySrc = new HashMap<>();
+            int edges = 0;
             for (Map.Entry<DataDomain, List<String>> group : idsByDomain.entrySet()) {
-                for (Reasoner.Edge e : edgeReader.edgesFromSrcs(realmId, group.getKey(), relation, group.getValue())) {
+                List<Reasoner.Edge> read = edgeReader.edgesFromSrcs(realmId, group.getKey(), relation, group.getValue(),
+                        maxEdges - edges);
+                edges += read.size();
+                if (edges > maxEdges) {
+                    throw new RelationExpansionException(Code.TOO_MANY_TARGETS, relation, "expand(@" + relation
+                            + ") reaches more than " + maxEdges + " edges for this page "
+                            + "(quantum.ontology.expand.max-edges); narrow the query or lower the page size");
+                }
+                for (Reasoner.Edge e : read) {
                     String type = e.dstType() != null ? e.dstType() : defs.get(relation).range().orElse(null);
                     relationByType.putIfAbsent(type, relation);
-                    bySrc.computeIfAbsent(e.srcId(), __ -> new LinkedHashMap<>()).put(e.dstId(), type);
+                    bySrc.computeIfAbsent(e.srcId(), __ -> new TreeMap<>()).put(e.dstId(), type);
                     if (idsByType.computeIfAbsent(type, __ -> new LinkedHashSet<>()).add(e.dstId())) {
                         distinct++;
                     }
@@ -117,12 +144,16 @@ public class OntologyRelationExpansion implements RelationExpansion {
             Document rel = row.get(FIELD) instanceof Document existing ? existing : new Document();
             for (String relation : relations) {
                 List<Document> hits = new ArrayList<>();
-                LinkedHashMap<String, String> dsts = reached.get(relation).get(id);
+                TreeMap<String, String> dsts = reached.get(relation).get(id); // ordered by target id
                 if (dsts != null) {
                     for (Map.Entry<String, String> dst : dsts.entrySet()) {
                         Document target = targets.get(targetKey(dst.getValue(), dst.getKey()));
                         if (target != null) hits.add(target);
                     }
+                }
+                if (defs.get(relation).functional() && dsts != null && dsts.size() > 1) {
+                    io.quarkus.logging.Log.warnf("expand(@%s): functional relation has %d edges from %s; returning the "
+                            + "first visible target by id", relation, dsts.size(), id);
                 }
                 rel.put(relation, defs.get(relation).functional() ? (hits.isEmpty() ? null : hits.get(0)) : hits);
             }
@@ -256,18 +287,43 @@ public class OntologyRelationExpansion implements RelationExpansion {
         return id instanceof ObjectId oid ? oid.toHexString() : String.valueOf(id);
     }
 
-    /** The DataDomain of {@code row}, else the principal's: edges are stored under their source's. */
-    private static DataDomain dataDomainOf(Document row) {
-        if (row.get("dataDomain") instanceof Document dd && dd.getString("orgRefName") != null
-                && dd.getString("accountNum") != null && dd.getString("tenantId") != null) {
-            Object segment = dd.get("dataSegment");
-            return new DataDomain(dd.getString("orgRefName"), dd.getString("accountNum"), dd.getString("tenantId"),
-                    segment instanceof Number n ? n.intValue() : 0,
-                    dd.getString("ownerId") != null ? dd.getString("ownerId") : "");
+    /** The DataDomain carried on {@code row}, under which its edges are stored, if the projection kept it. */
+    private static Optional<DataDomain> dataDomainOf(Document row) {
+        return row.get("dataDomain") instanceof Document dd ? toDataDomain(dd) : Optional.empty();
+    }
+
+    private static Optional<DataDomain> toDataDomain(Document dd) {
+        if (dd.getString("orgRefName") == null || dd.getString("accountNum") == null || dd.getString("tenantId") == null) {
+            return Optional.empty();
         }
-        return SecurityContext.getPrincipalContext().map(PrincipalContext::getDataDomain)
-                .orElseThrow(() -> new IllegalStateException(
-                        "expand(@relation) needs each row's dataDomain or a principal DataDomain"));
+        Object segment = dd.get("dataSegment");
+        return Optional.of(new DataDomain(dd.getString("orgRefName"), dd.getString("accountNum"), dd.getString("tenantId"),
+                segment instanceof Number n ? n.intValue() : 0,
+                dd.getString("ownerId") != null ? dd.getString("ownerId") : ""));
+    }
+
+    /**
+     * The stored DataDomain of each row whose projection dropped it, read by id from the root
+     * collection. The rows were already read under the root policy, so this reads no new rows.
+     */
+    private Map<String, DataDomain> storedDataDomains(String realmId, Class<? extends UnversionedBaseModel> rootType,
+                                                      List<Document> rows) {
+        List<String> missing = new ArrayList<>();
+        for (Document row : rows) {
+            if (dataDomainOf(row).isEmpty()) missing.add(idOf(row));
+        }
+        if (missing.isEmpty() || rootType == null) return Map.of();
+        MorphiaDatastore ds = morphiaDataStoreWrapper.getDataStore(realmId);
+        EntityModel model = ds.getMapper().getEntityModel(rootType);
+        Map<String, DataDomain> out = new HashMap<>();
+        for (Document doc : ds.getDatabase().getCollection(model.collectionName())
+                .find(new Document("_id", new Document("$in", toIds(missing))))
+                .projection(new Document("dataDomain", 1))) {
+            if (doc.get("dataDomain") instanceof Document dd) {
+                toDataDomain(dd).ifPresent(d -> out.put(idOf(doc), d));
+            }
+        }
+        return out;
     }
 
     private static List<Object> toIds(Collection<String> ids) {

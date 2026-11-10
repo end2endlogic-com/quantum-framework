@@ -14,7 +14,9 @@ import com.e2eq.ontology.model.QuarantinedEdge;
 import com.e2eq.framework.model.securityrules.SecurityContext;
 import dev.morphia.Datastore;
 import dev.morphia.DeleteOptions;
+import dev.morphia.query.FindOptions;
 import dev.morphia.query.Query;
+import dev.morphia.query.Sort;
 import dev.morphia.query.filters.Filter;
 import dev.morphia.query.filters.Filters;
 import io.quarkus.logging.Log;
@@ -1165,6 +1167,12 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
      */
     /** Edges with predicate {@code p} leaving any of {@code srcIds} in {@code realmId}, scoped to {@code dataDomain}. */
     public List<OntologyEdge> findBySrcInAndP(String realmId, DataDomain dataDomain, Collection<String> srcIds, String p) {
+        return findBySrcInAndP(realmId, dataDomain, srcIds, p, 0);
+    }
+
+    /** {@link #findBySrcInAndP(String, DataDomain, Collection, String)}, ordered by src then dst, at most {@code limit} rows ({@code <= 0}: all). */
+    public List<OntologyEdge> findBySrcInAndP(String realmId, DataDomain dataDomain, Collection<String> srcIds, String p,
+                                              int limit) {
         if (srcIds == null || srcIds.isEmpty()) return List.of();
         validateDataDomain(dataDomain);
         Query<OntologyEdge> q = ds(realmId).find(OntologyEdge.class);
@@ -1172,7 +1180,9 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
             q.filter(f);
         }
         q.filter(Filters.eq("p", p)).filter(Filters.in("src", srcIds));
-        return q.iterator().toList();
+        FindOptions options = new FindOptions().sort(Sort.ascending("src"), Sort.ascending("dst"));
+        if (limit > 0) options.limit(limit);
+        return q.iterator(options).toList();
     }
 
     public List<OntologyEdge> findBySrcAndP(DataDomain dataDomain, String src, String p, Filter... edgeFilters) {

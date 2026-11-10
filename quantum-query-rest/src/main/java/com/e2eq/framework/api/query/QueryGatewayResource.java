@@ -1163,18 +1163,7 @@ public class QueryGatewayResource {
      * module. No rows are returned.
      */
     private Response relationExpandRefused(RelationExpansionException refused) {
-        int status = switch (refused.code()) {
-            case UNKNOWN_RELATION, INTERNAL_RELATION, NO_TARGET_TYPE -> 400;
-            case TARGET_NOT_GOVERNED -> 403;
-            case TOO_MANY_TARGETS -> 422;
-            case NOT_AVAILABLE -> 501;
-        };
-        Map<String, Object> body = new HashMap<>();
-        body.put("error", "RelationExpandRefused");
-        body.put("code", refused.code().wireValue());
-        body.put("message", refused.getMessage());
-        if (refused.relation() != null) body.put("relation", refused.relation());
-        return Response.status(status).entity(body).build();
+        return Response.status(refused.code().httpStatus()).entity(refused.toErrorBody()).build();
     }
 
     /** Typed 403 for an expand whose target policy cannot be resolved; no query has run. */

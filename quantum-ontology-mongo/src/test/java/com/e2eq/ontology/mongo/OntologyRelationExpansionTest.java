@@ -129,17 +129,42 @@ class OntologyRelationExpansionTest {
         assertTrue(rows.stream().noneMatch(r -> r.containsKey(RelationExpansion.FIELD)));
     }
 
+    private OntologyRelationExpansion configured() {
+        OntologyRelationExpansion e = new OntologyRelationExpansion();
+        e.registryProvider = registryProvider;
+        e.edgeReader = edgeReader;
+        e.morphiaDataStoreWrapper = dataStoreWrapper;
+        e.ruleContext = ruleContext;
+        return e;
+    }
+
     @Test
     void morePageTargetsThanTheCapAreRefused() {
-        OntologyRelationExpansion capped = new OntologyRelationExpansion();
-        capped.registryProvider = registryProvider;
-        capped.edgeReader = edgeReader;
-        capped.morphiaDataStoreWrapper = dataStoreWrapper;
-        capped.ruleContext = ruleContext;
+        OntologyRelationExpansion capped = configured();
         capped.maxTargets = 1;
         RelationExpansionException e = assertThrows(RelationExpansionException.class, () -> privileged(() ->
                 capped.hydrate(REALM, ItExpandCustomer.class, customers(), List.of("expandShipments"))));
         assertEquals(RelationExpansionException.Code.TOO_MANY_TARGETS, e.code());
+    }
+
+    @Test
+    void moreEdgesThanTheEdgeCapAreRefusedBeforeTargetsAreRead() {
+        OntologyRelationExpansion capped = configured();
+        capped.maxEdges = 1;
+        RelationExpansionException e = assertThrows(RelationExpansionException.class, () -> privileged(() ->
+                capped.hydrate(REALM, ItExpandCustomer.class, customers(), List.of("expandShipments"))));
+        assertEquals(RelationExpansionException.Code.TOO_MANY_TARGETS, e.code());
+        assertTrue(e.getMessage().contains("max-edges"), e.getMessage());
+    }
+
+    @Test
+    void rowsWhoseProjectionDropsTheDataDomainUseTheStoredOne() {
+        List<Document> rows = ds.getDatabase().getCollection("it_expand_customers").find()
+                .projection(new Document("refName", 1)).sort(new Document("refName", 1)).into(new ArrayList<>());
+        assertTrue(rows.stream().noneMatch(r -> r.containsKey("dataDomain")));
+        privileged(() -> expansion.hydrate(REALM, ItExpandCustomer.class, rows, List.of("expandShipments")));
+        assertEquals(List.of("S-CLOSED", "S-OPEN"), refNames(row(rows, withShipments).get("_rel", Document.class)
+                .getList("expandShipments", Document.class)));
     }
 
     @Test
