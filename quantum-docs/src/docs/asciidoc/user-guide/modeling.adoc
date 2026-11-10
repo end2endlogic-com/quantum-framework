@@ -1230,10 +1230,10 @@ These modules let you define your ontology (core), materialize derived relations
   - Query: "Find Orders whose buyer belongs to Org X or its parents."
   - With @Reference: requires joining Order -> User -> Org and recursing org.parent; costly and tightly coupled to fields.
 - Ontology edge example (resilient/fast)
-  - Define predicates: placedBy(order, user), memberOf(user, org), ancestorOf(org, org). Define chain placedBy ∘ memberOf ⇒ placedInOrg.
-  - Materialize edges: (order --placedInOrg--> org). Also make ancestorOf transitive.
+  - Define predicates: placedBy(order, user), memberOf(user, org), orgAncestor(org, org). Define chain placedBy ∘ memberOf ⇒ placedInOrg.
+  - Materialize edges: (order --placedInOrg--> org). Each org stores its ancestor closure as orgAncestor edges (non-transitive; see <<regular-chains-and-hierarchies>>).
   - Query becomes: where order._id in EdgeDao.srcIdsByDst(tenantId, "placedInOrg", orgX).
-  - With transitivity, you can precompute ancestor closure or add a chain placedInOrg ∘ ancestorOf ⇒ placedInOrg to include parents automatically.
+  - To include parents, add the chain placedBy ∘ memberOf ∘ orgAncestor ⇒ placedUnderOrg and declare placedInOrg a subPropertyOf placedUnderOrg; then query placedUnderOrg.
 
 ==== Migration: from @Reference to ontology edges
 
@@ -1284,7 +1284,7 @@ Key predicates (relationships)
 - orderHasShipment(order, shipment): outbound shipment for the order
 - shipsTo(shipment, address): shipment destination
 - locatedIn(address, region): address is located in a Region
-- ancestorOf(org, org): organizational ancestry (transitive)
+- orgAncestor(org, org): each of an organization's ancestors, stored on the organization (not transitive)
 
 Property chains (implied relationships)
 
@@ -1294,8 +1294,11 @@ Property chains (implied relationships)
   - If (order --orderHasShipment--> shipment) and (shipment --shipsTo--> address), infer (order --orderShipsTo--> address)
 - orderShipsTo ∘ locatedIn ⇒ orderShipsToRegion
   - If (order --orderShipsTo--> address) and (address --locatedIn--> region), infer (order --orderShipsToRegion--> region)
-- placedInOrg ∘ ancestorOf ⇒ placedInOrg
-  - Makes placedInOrg resilient to org hierarchy changes (ancestorOf is transitive). This is a common “closure” trick: re-assert the same predicate via chain to absorb hierarchy.
+- placedBy ∘ memberOf ∘ orgAncestor ⇒ placedUnderOrg, with placedInOrg ⊑ placedUnderOrg
+  - placedUnderOrg holds the order's own org (through the sub-property) and every ancestor (through the chain), so one query covers an org and its subsidiaries. When an org is re-parented and its orgAncestor edges change, chain propagation re-derives its orders without saving them (see "Property chains stay current when a later hop changes" in the Ontologies guide).
+
+[[regular-chains-and-hierarchies,Regular chains and hierarchies]]
+Chains must be regular: a chain step cannot be a transitive property, and a chain cannot imply one (OntologyValidator rejects both). To roll up through a hierarchy, keep the closure on the hierarchy node as a non-transitive predicate, written explicitly or by a ComputedEdgeProvider that writes the node's ancestors, and chain over it. Do not chain over a transitive ancestorOf, and do not re-imply placedInOrg from itself. Whatever writes orgAncestor must rewrite the closure of the moved org and of every descendant when the hierarchy changes: propagation starts only from orgAncestor edges that actually change.
 
 A minimal Java-style snippet to define this TBox
 
@@ -1314,24 +1317,25 @@ Map<String, ClassDef> classes = Map.of(
   "Region", new ClassDef("Region", Set.of(), Set.of(), Set.of())
 );
 
-Map<String, PropertyDef> props = Map.of(
-  "placedBy", new PropertyDef("placedBy", Optional.of("Order"), Optional.of("Customer"), false, Optional.empty(), false),
-  "memberOf", new PropertyDef("memberOf", Optional.of("Customer"), Optional.of("Organization"), false, Optional.empty(), false),
-  "orderHasShipment", new PropertyDef("orderHasShipment", Optional.of("Order"), Optional.of("Shipment"), false, Optional.empty(), false),
-  "shipsTo", new PropertyDef("shipsTo", Optional.of("Shipment"), Optional.of("Address"), false, Optional.empty(), false),
-  "locatedIn", new PropertyDef("locatedIn", Optional.of("Address"), Optional.of("Region"), false, Optional.empty(), false),
-  "ancestorOf", new PropertyDef("ancestorOf", Optional.of("Organization"), Optional.of("Organization"), false, Optional.empty(), true), // transitive
-  // implied predicates (no domain/range required, but you may add them for validation)
-  "placedInOrg", new PropertyDef("placedInOrg", Optional.of("Order"), Optional.of("Organization"), false, Optional.empty(), false),
-  "orderShipsTo", new PropertyDef("orderShipsTo", Optional.of("Order"), Optional.of("Address"), false, Optional.empty(), false),
-  "orderShipsToRegion", new PropertyDef("orderShipsToRegion", Optional.of("Order"), Optional.of("Region"), false, Optional.empty(), false)
-);
+// PropertyDef(name, domain, range, inverse, inverseOf, transitive, symmetric, functional, subPropertyOf, inferred)
+Map<String, PropertyDef> props = new LinkedHashMap<>();
+props.put("placedBy", new PropertyDef("placedBy", Optional.of("Order"), Optional.of("Customer"), false, Optional.empty(), false, false, false, Set.of()));
+props.put("memberOf", new PropertyDef("memberOf", Optional.of("Customer"), Optional.of("Organization"), false, Optional.empty(), false, false, false, Set.of()));
+props.put("orderHasShipment", new PropertyDef("orderHasShipment", Optional.of("Order"), Optional.of("Shipment"), false, Optional.empty(), false, false, false, Set.of()));
+props.put("shipsTo", new PropertyDef("shipsTo", Optional.of("Shipment"), Optional.of("Address"), false, Optional.empty(), false, false, false, Set.of()));
+props.put("locatedIn", new PropertyDef("locatedIn", Optional.of("Address"), Optional.of("Region"), false, Optional.empty(), false, false, false, Set.of()));
+// The org's stored ancestor closure; not transitive, so chains may use it
+props.put("orgAncestor", new PropertyDef("orgAncestor", Optional.of("Organization"), Optional.of("Organization"), false, Optional.empty(), false, false, false, Set.of()));
+// implied predicates
+props.put("placedInOrg", new PropertyDef("placedInOrg", Optional.of("Order"), Optional.of("Organization"), false, Optional.empty(), false, false, false, Set.of("placedUnderOrg"), true));
+props.put("placedUnderOrg", new PropertyDef("placedUnderOrg", Optional.of("Order"), Optional.of("Organization"), false, Optional.empty(), false, false, false, Set.of(), true));
+props.put("orderShipsTo", new PropertyDef("orderShipsTo", Optional.of("Order"), Optional.of("Address"), false, Optional.empty(), false, false, false, Set.of(), true));
+props.put("orderShipsToRegion", new PropertyDef("orderShipsToRegion", Optional.of("Order"), Optional.of("Region"), false, Optional.empty(), false, false, false, Set.of(), true));
 
 List<PropertyChainDef> chains = List.of(
   new PropertyChainDef(List.of("placedBy", "memberOf"), "placedInOrg"),
   new PropertyChainDef(List.of("orderHasShipment", "shipsTo"), "orderShipsTo"),
-  new PropertyChainDef(List.of("orderShipsTo", "locatedIn"), "orderShipsToRegion"),
-  new PropertyChainDef(List.of("placedInOrg", "ancestorOf"), "placedInOrg")
+  new PropertyChainDef(List.of("orderShipsTo", "locatedIn"), "orderShipsToRegion")
 );
 
 OntologyRegistry.TBox tbox = new OntologyRegistry.TBox(classes, props, chains);
@@ -1346,11 +1350,12 @@ Materializing edges for an Order
   - O1 orderHasShipment S17
   - S17 shipsTo Addr42
   - Addr42 locatedIn RegionWest
-  - OrgA ancestorOf OrgParent
+  - OrgA orgAncestor OrgParent
 
 - Inferred edges after running the reasoner for O1’s snapshot:
   - O1 placedInOrg OrgA
-  - O1 placedInOrg OrgParent (via closure with ancestorOf)
+  - O1 placedUnderOrg OrgA (placedInOrg ⊑ placedUnderOrg)
+  - O1 placedUnderOrg OrgParent (via placedBy ∘ memberOf ∘ orgAncestor)
   - O1 orderShipsTo Addr42
   - O1 orderShipsToRegion RegionWest
 
@@ -1366,7 +1371,7 @@ import org.bson.conversions.Bson;
 import com.e2eq.ontology.policy.ListQueryRewriter;
 
 Bson base = Filters.eq("status", "OPEN");
-Bson rewritten = rewriter.rewriteForHasEdge(base, tenantId, "placedInOrg", "OrgParent");
+Bson rewritten = rewriter.rewriteForHasEdge(base, tenantId, "placedUnderOrg", "OrgParent");
 // Use rewritten in your Mongo find
 ----
 
@@ -1380,7 +1385,7 @@ Bson rewritten2 = rewriter.rewriteForHasEdge(Filters.empty(), tenantId, "orderSh
 Why this is resilient
 
 - If tomorrow Customer becomes AccountContact and the organization model gains Divisions and multi-parent org graphs, you only adjust predicates and chains.
-- Queries that rely on placedInOrg or orderShipsToRegion remain unchanged and fast, because edges are re-materialized by OntologyMaterializer.
+- Queries that rely on placedUnderOrg or orderShipsToRegion remain unchanged and fast, because edges are re-materialized by OntologyMaterializer.
 
 Evolving the model: add Fulfillment
 
