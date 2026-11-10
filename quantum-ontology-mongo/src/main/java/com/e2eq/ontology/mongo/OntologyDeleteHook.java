@@ -95,10 +95,14 @@ public class OntologyDeleteHook implements PreDeleteHook, PostDeleteHook {
             // Remove any edges that still have this node as src, then re-derive the chain heads
             // upstream whose paths ran through them
             Set<String> removedPredicates = new LinkedHashSet<>();
-            for (OntologyEdge e : edgeRepo.findBySrc(dataDomain, idAsString)) removedPredicates.add(e.getP());
-            edgeRepo.deleteBySrc(dataDomain, idAsString, false);
+            // (read, delete and walk in the hook's realm)
+            for (OntologyEdge e : edgeRepo.findBySrc(realmId, dataDomain, idAsString)) removedPredicates.add(e.getP());
+            edgeRepo.deleteBySrc(realmId, dataDomain, idAsString, false);
             try (SecurityCallScope.Scope ignored = SecurityCallScope.openIgnoringRules()) {
                 chainPropagator.propagate(realmId, dataDomain, idAsString, removedPredicates);
+            } catch (RuntimeException e) {
+                Log.errorf(e, "Chain propagation after deleting %s failed; derived edges of upstream chain heads "
+                        + "may be stale until DriftRepairJob or a reindex runs", idAsString);
             }
         } catch (Throwable t) {
             Log.warn("OntologyDeleteHook.afterDelete error: "+t.getMessage());

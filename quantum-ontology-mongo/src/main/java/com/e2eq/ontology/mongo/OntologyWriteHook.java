@@ -100,7 +100,13 @@ public class OntologyWriteHook implements PostPersistHook {
             // First, apply materialization so explicit edges are upserted and stale ones pruned
             var changes = materializer.apply(realmId, dataDomain, srcId, entityType, explicit);
             // Entities upstream whose chains pass through this one re-derive now, not on their next save
-            chainPropagator.propagate(realmId, dataDomain, srcId, changes);
+            // A failure here must not skip the cascade below; DriftRepairJob repairs stale heads
+            try {
+                chainPropagator.propagate(realmId, dataDomain, srcId, changes);
+            } catch (RuntimeException e) {
+                io.quarkus.logging.Log.errorf(e, "Chain propagation after writing %s failed; derived edges of "
+                        + "upstream chain heads may be stale until DriftRepairJob or a reindex runs", srcId);
+            }
         }
         // Then handle ORPHAN_REMOVE cascade based on prior vs new state and repo contents
         try { cascadeExecutor.onAfterPersist(realmId, dataDomain, srcId, entity, priorExplicit, explicit); } catch (Throwable ignored) {}

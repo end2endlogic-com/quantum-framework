@@ -1007,6 +1007,10 @@ the Customer being saved again:
   the propagation stops and logs an ERROR naming the heads it did not reach. Their derived edges stay
   stale until DriftRepairJob or a reindex runs.
 
+Known limit: in a cyclic graph under a recursive chain (its implied predicate is also one of its
+steps), two heads can keep each other's stale derived edge after the edge that supported both is
+removed. A reindex clears it.
+
 Not covered: reindex (`OntologyMaterializer.applyBulk`) and governed `ingestEdges` writes. A reindex
 re-derives every entity it touches anyway. After ingesting edges directly, run a reindex for the
 affected types.

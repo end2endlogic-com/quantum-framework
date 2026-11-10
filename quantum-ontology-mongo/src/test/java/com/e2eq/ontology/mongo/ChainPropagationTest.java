@@ -140,10 +140,10 @@ public class ChainPropagationTest {
 
     @Test
     void theBudgetStopsPropagationAndNamesWhatWasLeft() {
-        write("c1", "Customer", edge("c1", "Customer", "hasPO", "po1", "PurchaseOrder"));
-        write("c2", "Customer", edge("c2", "Customer", "hasPO", "po2", "PurchaseOrder"));
-        write("po1", "PurchaseOrder", edge("po1", "PurchaseOrder", "hasLine", "l1", "POLine"));
-        write("po2", "PurchaseOrder", edge("po2", "PurchaseOrder", "hasLine", "l1", "POLine"));
+        for (String n : List.of("1", "2", "3")) {
+            write("c" + n, "Customer", edge("c" + n, "Customer", "hasPO", "po" + n, "PurchaseOrder"));
+            write("po" + n, "PurchaseOrder", edge("po" + n, "PurchaseOrder", "hasLine", "l1", "POLine"));
+        }
         EdgeChanges changes = materializer.apply(tenant, "l1", "POLine",
                 List.of(edge("l1", "POLine", "lineShipment", "s1", "Shipment")));
 
@@ -152,10 +152,10 @@ public class ChainPropagationTest {
 
         assertTrue(result.truncated());
         assertEquals(1, result.rederived());
-        assertTrue(hasShipment("c1", "s1") ^ hasShipment("c2", "s1"), "exactly one head fits the budget");
-        String missed = hasShipment("c1", "s1") ? "c2" : "c1";
-        // The head that was not reached is named; the one re-derived stays queued for its own onward walk
-        assertTrue(result.pendingHeads().contains(missed), result.pendingHeads().toString());
+        List<String> missed = List.of("c1", "c2", "c3").stream().filter(c -> !hasShipment(c, "s1")).toList();
+        assertEquals(2, missed.size(), "exactly one head fits the budget");
+        // Every head not reached is named; the one re-derived stays queued for its own onward walk
+        assertTrue(result.pendingHeads().containsAll(missed), result.pendingHeads().toString());
     }
 
     @Test

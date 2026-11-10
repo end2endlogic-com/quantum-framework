@@ -36,6 +36,12 @@ import java.util.*;
  * number of re-derivations per write is bounded by
  * {@code quantum.ontology.chain-propagation.max-rederivations}; reaching the bound is logged as an
  * error naming what was left, and DriftRepairJob or a reindex repairs the rest.</p>
+ *
+ * <p>Known limit: a head is re-derived against its neighbours' stored inferred edges. In a cyclic
+ * graph under a recursive chain (its implied predicate is also one of its steps), two heads can keep
+ * justifying each other's stale edge after the edge that supported both is removed. Removing that
+ * needs delete-and-rederive over the affected heads, which this class does not do; a reindex clears
+ * it. Transitive chain steps need no backward closure here because chain validation rejects them.</p>
  */
 @ApplicationScoped
 public class ChainPropagator {
@@ -103,7 +109,9 @@ public class ChainPropagator {
             it.remove();
 
             Map<String, String> heads = headsUpstream(realmId, dataDomain, next.getKey(), next.getValue(), chains);
-            for (Map.Entry<String, String> head : heads.entrySet()) {
+            Iterator<Map.Entry<String, String>> headIt = heads.entrySet().iterator();
+            while (headIt.hasNext()) {
+                Map.Entry<String, String> head = headIt.next();
                 String headId = head.getKey();
                 if (origin.contains(headId) && next.getKey().equals(headId)) {
                     continue; // the written entity was just re-derived by its own materialization
@@ -111,6 +119,7 @@ public class ChainPropagator {
                 if (rederived >= maxRederivations) {
                     Set<String> left = new LinkedHashSet<>(pending.keySet());
                     left.add(headId);
+                    headIt.forEachRemaining(rest -> left.add(rest.getKey()));
                     Log.errorf("Chain propagation from %s stopped after %d re-derivations "
                                     + "(quantum.ontology.chain-propagation.max-rederivations); derived edges of %d "
                                     + "chain heads may be stale until DriftRepairJob or a reindex runs: %s",
