@@ -26,7 +26,8 @@ import java.util.Set;
 @Indexes({
     @Index(options = @IndexOptions(name = "idx_tbox_hash"), fields = { @Field("tboxHash") }),
     @Index(options = @IndexOptions(name = "idx_tbox_yaml_hash"), fields = { @Field("yamlHash") }),
-    @Index(options = @IndexOptions(name = "idx_tbox_applied"), fields = { @Field("appliedAt") })
+    @Index(options = @IndexOptions(name = "idx_tbox_applied"), fields = { @Field("appliedAt") }),
+    @Index(options = @IndexOptions(name = "idx_tbox_builder_applied"), fields = { @Field("builder"), @Field("appliedAt") })
 })
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class OntologyTBox extends UnversionedBaseModel {
@@ -35,6 +36,7 @@ public class OntologyTBox extends UnversionedBaseModel {
     private String yamlHash;            // Hash of source YAML (for correlation)
     private Date appliedAt;              // When this TBox was applied
     private String source;              // Source description (YAML path, etc.)
+    private String builder;             // Application that built it from its sources (stable-relation baseline key)
     
     // Serialized TBox content - stored as embedded documents
     private Map<String, ClassDefData> classes;

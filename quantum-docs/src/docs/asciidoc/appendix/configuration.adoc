@@ -295,14 +295,23 @@ TBox Persistence
 
 [source,properties]
 ----
-# Enable TBox persistence to MongoDB (default: true)
-# When enabled, the ontology TBox (schema) is persisted to MongoDB for faster startup
-# and version history. The TBox is automatically rebuilt if the YAML source changes.
+# Persist each TBox built from sources to MongoDB (default: true). The persisted TBox is the
+# version history and the baseline of the stable-relation check; it is not served in place of
+# the sources, so annotation, entity and YAML changes all take effect on the next build.
 quantum.ontology.tbox.persist=true
 
-# Force rebuild of TBox even if persisted version exists (default: false)
-# Useful for development or when you want to ensure fresh rebuild from sources
-quantum.ontology.tbox.force-rebuild=false
+# Stable-relation check of a TBox built from sources against the last one built (default: enforce).
+# enforce refuses a build that breaks a stable relation without a pack version bump; warn logs it.
+quantum.ontology.stable-diff=enforce
+
+# How long a refused build is rethrown before the sources are scanned again (ms, default 30000).
+quantum.ontology.stable-diff.retry-after-ms=30000
+
+# The application whose builds are each other's baseline (default: quarkus.application.name).
+# quantum.ontology.tbox.builder=orders-app
+
+# No longer has an effect: the TBox is always built from sources.
+# quantum.ontology.tbox.force-rebuild=false
 
 # Package scanning for @OntologyClass and @OntologyProperty annotations
 quantum.ontology.scan.packages=com.example.model,com.example.entities
@@ -312,7 +321,7 @@ Registry modes
 
 - In-memory (recommended to start): build a TBox in code/resources and instantiate OntologyRegistry.inMemory(tbox).
 - Mongo-backed (advanced): load a TBox from a Mongo collection and cache it in memory for hot reload/versioning.
-- Persisted TBox (recommended for production): TBox is persisted to MongoDB and loaded on startup for faster initialization.
+- Persisted TBox (recommended for production): each TBox built from sources is persisted to MongoDB as history and as the baseline of the stable-relation check.
 
 Edges collection and indexes
 

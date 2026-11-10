@@ -33,8 +33,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>This provider supports true multi-tenancy by:</p>
  * <ul>
  *   <li>Caching OntologyRegistry instances per realm (MongoDB database)</li>
- *   <li>Rebuilding TBox from Morphia scan + YAML when no persisted TBox exists</li>
- *   <li>Persisting rebuilt TBox in realm-specific collections</li>
+ *   <li>Building the TBox from annotations, the Morphia scan and YAML when no admitted TBox is active</li>
+ *   <li>Checking each build's stable relations against the last build ({@link SourceTBoxGate})
+ *       and persisting it in realm-specific collections</li>
  * </ul>
  * <p>
  * The realm is derived from SecurityContext via RuleContext.getRealmId().
@@ -87,6 +88,12 @@ public class TenantOntologyRegistryProvider {
     // the last time we checked that realm against the durable store.
     private final Map<String, String> realmActiveHash = new ConcurrentHashMap<>();
     private final Map<String, Long> realmLastCheckedAt = new ConcurrentHashMap<>();
+
+    /** A refused source build, rethrown without a rescan until {@code retryAt}. */
+    private record Refusal(SourceTBoxGate.RefusedException error, long retryAt) {}
+
+    // Refused source builds per realm, so a refused realm does not rescan its sources on every read.
+    private final Map<String, Refusal> realmRefusals = new ConcurrentHashMap<>();
 
     /**
      * Get the ontology registry for the current security context realm.
@@ -192,8 +199,11 @@ public class TenantOntologyRegistryProvider {
     /**
      * Get the ontology registry for a specific realm.
      * <p>
-     * If no cached registry exists, attempts to load from persisted TBox.
-     * If no persisted TBox exists, rebuilds from Morphia scan + YAML overlay.
+     * If no cached registry exists, loads the realm's active admitted TBox, or else builds
+     * from annotations, the Morphia scan and the YAML overlay. A source build that breaks a
+     * stable relation throws {@link SourceTBoxGate.StableContractException} (an unreadable baseline,
+     * {@link SourceTBoxGate.BaselineUnreadableException}); the registry is not cached and the refusal
+     * is rethrown without a rescan for {@code quantum.ontology.stable-diff.retry-after-ms}.
      * </p>
      * @param realm the realm (database name) to get registry for
      * @return OntologyRegistry for the realm
@@ -204,6 +214,25 @@ public class TenantOntologyRegistryProvider {
         if (realmRegistries.containsKey(realm)) {
             maybeInvalidateIfStale(realm);
         }
+        // A cached registry wins over a refusal recorded by a build that raced a rebuild.
+        Refusal refusal = realmRegistries.containsKey(realm) ? null : realmRefusals.get(realm);
+        if (refusal != null) {
+            if (System.currentTimeMillis() < refusal.retryAt()) throw refusal.error();
+            realmRefusals.remove(realm, refusal);
+        }
+        try {
+            return loadAndCache(realm);
+        } catch (SourceTBoxGate.RefusedException e) {
+            long retryAfterMs = ConfigProvider.getConfig()
+                    .getOptionalValue("quantum.ontology.stable-diff.retry-after-ms", Long.class).orElse(30_000L);
+            if (retryAfterMs > 0 && !realmRegistries.containsKey(realm)) {
+                realmRefusals.put(realm, new Refusal(e, System.currentTimeMillis() + retryAfterMs));
+            }
+            throw e;
+        }
+    }
+
+    private OntologyRegistry loadAndCache(String realm) {
         return realmRegistries.computeIfAbsent(realm, r -> {
             Log.infof("Loading ontology registry for realm: %s", r);
             OntologyRegistry registry = loadOrBuildRegistryForRealm(r);
@@ -352,6 +381,7 @@ public class TenantOntologyRegistryProvider {
         realmRegistries.remove(realm);
         realmActiveHash.remove(realm);
         realmLastCheckedAt.remove(realm);
+        realmRefusals.remove(realm);
         Log.infof("Invalidated ontology registry cache for realm: %s", realm);
     }
 
@@ -363,6 +393,7 @@ public class TenantOntologyRegistryProvider {
         dataDomainRegistries.clear();
         realmActiveHash.clear();
         realmLastCheckedAt.clear();
+        realmRefusals.clear();
         Log.info("Cleared all ontology registry caches");
     }
 
@@ -373,6 +404,7 @@ public class TenantOntologyRegistryProvider {
      */
     public OntologyRegistry forceRebuild(String realm) {
         Log.infof("Force rebuilding TBox for realm: %s", realm);
+        realmRefusals.remove(realm);
         OntologyRegistry registry = buildRegistryForRealm(realm);
         realmRegistries.put(realm, registry);
         // Re-stamp so the coherence check tracks this freshly built entry (skipped when
@@ -456,22 +488,12 @@ public class TenantOntologyRegistryProvider {
     }
 
     private OntologyRegistry loadOrBuildRegistryForRealm(String realm) {
-        Config config = ConfigProvider.getConfig();
-        boolean persistTBox = config.getOptionalValue("quantum.ontology.tbox.persist", Boolean.class)
-                .orElse(true);
-        boolean forceRebuild = config.getOptionalValue("quantum.ontology.tbox.force-rebuild", Boolean.class)
-                .orElse(false);
-
         // 0. B2 read-path unification: prefer an ACTIVATED TenantOntologyTBox for
         // this realm if one exists. This is strictly additive — behavior changes
         // ONLY when admission has activated a tenant TBox for realmDataDomain(realm);
-        // realms with no active tenant TBox fall through UNCHANGED to the legacy
-        // findLatest()/build path below. realmDataDomain() is the SAME derivation
-        // the admission write path uses, so write and read can never drift.
-        //
-        // This is intentionally NOT gated by force-rebuild: force-rebuild governs
-        // rebuilding the legacy/source-derived TBox, whereas an activated tenant
-        // TBox is an explicit admission decision that must be observed on reads.
+        // realms with no active tenant TBox fall through to the source build below.
+        // realmDataDomain() is the SAME derivation the admission write path uses, so
+        // write and read can never drift.
         try {
             Optional<TenantOntologyTBox> activeTenantTBox =
                     tenantTboxRepo.findActiveTBox(realmDataDomain(realm));
@@ -493,56 +515,23 @@ public class TenantOntologyRegistryProvider {
                     + "falling back to legacy load: %s", realm, t.getMessage());
         }
 
-        // 1. Try to load from persisted TBox first (if persistence is enabled)
-        if (persistTBox && !forceRebuild) {
-            try {
-                Optional<OntologyTBox> persistedTBox = loadPersistedTBox(realm);
-                if (persistedTBox.isPresent()) {
-                    // Check if YAML has changed
-                    Optional<Path> yamlPath = resolveYamlPath(realm);
-                    var yamlResult = metaService.observeYaml(yamlPath, "/ontology.yaml");
-                    String currentYamlHash = yamlResult.currentHash();
-                    String persistedYamlHash = persistedTBox.get().getYamlHash();
-                    
-                    // If YAML hash matches, use persisted TBox
-                    if (persistedYamlHash != null && persistedYamlHash.equals(currentYamlHash)) {
-                        boolean needsReindex = metaService.getMeta()
-                                .map(m -> m.isReindexRequired())
-                                .orElse(false);
-                        Log.infof("Loaded TBox for realm %s from persistence (hash: %s, yamlHash: %s)", 
-                                realm, persistedTBox.get().getTboxHash(), persistedYamlHash);
-                        return new PersistedOntologyRegistry(
-                            persistedTBox.get().toTBox(),
-                            persistedTBox.get().getTboxHash(),
-                            persistedTBox.get().getYamlHash(),
-                            needsReindex
-                        );
-                    } else {
-                        Log.infof("YAML changed for realm %s, rebuilding TBox (old: %s, new: %s)", 
-                                realm, persistedYamlHash, currentYamlHash);
-                    }
-                }
-            } catch (Throwable t) {
-                Log.warnf("Failed to load persisted TBox for realm %s, will rebuild: %s", realm, t.getMessage());
-            }
-        }
-
-        // 2. Build from sources
+        // 1. Build from sources. The persisted OntologyTBox is not served in place of the sources: it
+        // was keyed on the YAML hash alone, so an annotation or entity change kept serving the old
+        // TBox. It is the baseline the stable-relation contract is checked against instead.
         return buildRegistryForRealm(realm);
-    }
-
-    private Optional<OntologyTBox> loadPersistedTBox(String realm) {
-        // Use the realm-specific datastore for querying
-        // The repos now use getSecurityContextRealmId() which should return the correct realm
-        return tboxRepo.findLatest();
     }
 
     private OntologyRegistry buildRegistryForRealm(String realm) {
         Config config = ConfigProvider.getConfig();
         boolean persistTBox = config.getOptionalValue("quantum.ontology.tbox.persist", Boolean.class)
                 .orElse(true);
+        SourceTBoxGate.Mode stableDiff = SourceTBoxGate.Mode.parse(
+                config.getOptionalValue("quantum.ontology.stable-diff", String.class).orElse("enforce"));
 
         TBox accumulated = new TBox(Map.of(), Map.of(), List.of());
+        TBox pack = null;
+        Optional<Integer> packVersion = Optional.empty();
+        List<String> sourceFailures = new ArrayList<>();
 
         // 1. Scan configured packages for @OntologyClass/@OntologyProperty annotations
         try {
@@ -564,6 +553,7 @@ public class TenantOntologyRegistryProvider {
             }
         } catch (Throwable t) {
             Log.warnf("Failed to load annotations for realm %s: %s", realm, t.getMessage());
+            sourceFailures.add("annotations: " + t.getMessage());
         }
 
         // 2. Merge in Morphia-derived TBox from realm-specific datastore
@@ -578,6 +568,7 @@ public class TenantOntologyRegistryProvider {
             }
         } catch (Throwable t) {
             Log.warnf("Failed to load Morphia TBox for realm %s: %s", realm, t.getMessage());
+            sourceFailures.add("Morphia entities: " + t.getMessage());
         }
 
         // 3. YAML overlay (can be realm-specific or global)
@@ -587,14 +578,18 @@ public class TenantOntologyRegistryProvider {
         try {
             YamlOntologyLoader yaml = new YamlOntologyLoader();
             yamlPath = resolveYamlPath(realm);
-            TBox overlay = null;
+            YamlOntologyLoader.Pack loaded = null;
             if (yamlPath.isPresent() && Files.exists(yamlPath.get())) {
-                overlay = yaml.loadFromPath(yamlPath.get());
+                loaded = yaml.loadPackFromPath(yamlPath.get());
             } else {
-                try { overlay = yaml.loadFromClasspath("/ontology.yaml"); } catch (Exception ignored) { }
+                if (YamlOntologyLoader.class.getResource("/ontology.yaml") != null) {
+                    loaded = yaml.loadPackFromClasspath("/ontology.yaml");
+                }
             }
-            if (overlay != null) {
-                overlay = OntologyReferenceCloser.closeClassReferences(overlay);
+            if (loaded != null) {
+                pack = loaded.tbox();
+                packVersion = loaded.version();
+                TBox overlay = OntologyReferenceCloser.closeClassReferences(pack);
                 accumulated = OntologyMerger.merge(accumulated, overlay);
             }
             var result = metaService.observeYaml(yamlPath, "/ontology.yaml");
@@ -602,18 +597,40 @@ public class TenantOntologyRegistryProvider {
             needsReindex = metaService.getMeta().map(m -> m.isReindexRequired()).orElse(false);
         } catch (Throwable t) {
             Log.warnf("Failed to load YAML overlay for realm %s: %s", realm, t.getMessage());
+            sourceFailures.add("YAML pack: " + t.getMessage());
         }
 
         // 4. Validate final TBox
-        try { 
-            OntologyValidator.validate(accumulated); 
-        } catch (Exception e) { 
+        try {
+            OntologyValidator.validate(accumulated);
+        } catch (Exception e) {
             Log.warnf("TBox validation failed for realm %s: %s", realm, e.getMessage());
         }
 
-        // 5. Persist TBox if persistence is enabled
-        if (persistTBox) {
-            persistBuiltTBox(realm, accumulated, currentHash, yamlPath);
+        List<String> outsidePack = SourceTBoxGate.stableOutsidePack(accumulated, pack);
+        if (!outsidePack.isEmpty()) {
+            Log.warnf("Realm %s: relations %s are stable only through annotations; declare them stable "
+                    + "in the ontology pack YAML, where the contract is versioned", realm, outsidePack);
+        }
+
+        // 5. Stable-relation contract against the last TBox built for this realm, then persist.
+        // A breaking change refuses the build (enforce) before it is persisted, so the next build is
+        // checked against the same baseline.
+        if (!persistTBox) {
+            Log.debugf("Realm %s: quantum.ontology.tbox.persist=false, so stable relations are not checked "
+                    + "against a baseline", realm);
+        } else {
+            TBox candidate = accumulated;
+            TBox packTBox = pack;
+            Integer declaredVersion = packVersion.orElse(null);
+            int candidateVersion = declaredVersion != null ? declaredVersion : 0;
+            String yamlHash = currentHash;
+            Optional<Path> source = yamlPath;
+            inSystemScope(realm, () -> {
+                String builder = tboxBuilder(config);
+                checkStableContract(realm, builder, candidate, candidateVersion, packTBox, sourceFailures, stableDiff);
+                doPersistBuiltTBox(realm, builder, candidate, yamlHash, source, declaredVersion);
+            });
         }
 
         Log.infof("Built ontology registry for realm %s: %d classes, %d properties",
@@ -623,26 +640,21 @@ public class TenantOntologyRegistryProvider {
     }
 
     /**
-     * Persist the freshly built <em>source</em> TBox for {@code realm}, best-effort — so a
-     * later boot loads the persisted {@link OntologyTBox} instead of re-scanning annotations,
-     * Morphia, and YAML every time.
+     * Run {@code work} (the stable-relation check and the persist of the freshly built
+     * <em>source</em> TBox) under a realm-scoped SYSTEM security context.
      * <p>
-     * The Morphia save path resolves the target realm (and, via the audit interceptor, the
+     * The Morphia read and save paths resolve the target realm (and, via the audit interceptor, the
      * acting identity) from the ambient {@link SecurityContext}, falling back to the
      * request-scoped {@link io.quarkus.security.identity.SecurityIdentity} proxy when no
      * context is set. That fallback is fatal when {@code buildRegistryForRealm} runs OUTSIDE a
      * request/security context — e.g. the {@code OntologyStartupInitializer} daemon thread that
      * publishes the TBox at boot ({@code "ontology-tbox-publisher"}), or a {@code @PostConstruct}
-     * startup path: dereferencing the proxy throws
-     * "RequestScoped context was not active …", the persist is skipped, and every subsequent
-     * rebuild re-scans. To make persistence work from any thread we run the save under a
-     * realm-scoped SYSTEM security context when — and only when — none is already active, so the
-     * realm resolves WITHOUT touching the request-scoped proxy. Request-scoped callers keep their
-     * existing context and behave exactly as before.
+     * startup path: dereferencing the proxy throws "RequestScoped context was not active …".
+     * The scope lets the realm resolve WITHOUT touching the request-scoped proxy.
      * <p>
-     * Best-effort by contract: any failure is caught and logged; startup is never broken.
+     * The persist is best-effort ({@link #doPersistBuiltTBox}); a stable-relation breach is not.
      */
-    private void persistBuiltTBox(String realm, TBox accumulated, String currentHash, Optional<Path> yamlPath) {
+    private void inSystemScope(String realm, Runnable work) {
         // Persisting the source-derived TBox is a SYSTEM cache operation (annotations + YAML), not a
         // user-authored write. It can be reached three ways, and ALL of them must resolve to a
         // realm-scoped SYSTEM write context — never the ambient request context:
@@ -658,37 +670,115 @@ public class TenantOntologyRegistryProvider {
         // authenticated user authorizing THIS write — the system is caching its OWN source-derived
         // TBox — and a synthetic SYSTEM principal holds no per-realm ONTOLOGY/TBOX grant. Only
         // genuine internal rebuild/startup paths reach here; external writes go through admission,
-        // which keeps full permission enforcement.
+        // which keeps full permission enforcement. The baseline read for the stable-relation
+        // contract runs in the same scope.
         PrincipalContext principal = SecurityCallScope.service(
                 realm, realmDataDomain(realm), "ontology-tbox-publisher");
         ResourceContext resource = SecurityCallScope.writeResource(principal, realm, "ONTOLOGY", "TBOX");
         try (SecurityCallScope.Scope ctx = SecurityCallScope.open(principal, resource);
              SecurityCallScope.Scope ignoreRules = SecurityCallScope.openIgnoringRules()) {
-            doPersistBuiltTBox(realm, accumulated, currentHash, yamlPath);
+            work.run();
+        }
+    }
+
+    /**
+     * The application that builds this TBox from its sources: {@code quantum.ontology.tbox.builder},
+     * else {@code quarkus.application.name}. Each builder is checked against its own last build, so
+     * applications sharing a realm database do not block each other.
+     */
+    private List<String> otherBuilders(String builder) {
+        try {
+            return tboxRepo.findBuilders().stream().filter(b -> !b.equals(builder)).toList();
         } catch (Throwable t) {
-            // Best-effort by contract: never break a read or startup on a persist failure.
-            Log.warnf("Failed to persist TBox for realm %s under system context: %s", realm, t.getMessage());
+            return List.of();
+        }
+    }
+
+    private static String tboxBuilder(Config config) {
+        return config.getOptionalValue("quantum.ontology.tbox.builder", String.class)
+                .or(() -> config.getOptionalValue("quarkus.application.name", String.class))
+                .filter(b -> !b.isBlank())
+                .orElse("default");
+    }
+
+    /**
+     * Diff the source TBox against the last one {@code builder} built for the realm
+     * ({@link SourceTBoxGate}). In enforce mode a breaking change, or a baseline that cannot be
+     * read, refuses the build: the contract cannot be shown to hold. In warn mode both are logged
+     * as errors. A TBox the builder has built before (a rollback) is admitted with a warning.
+     */
+    private void checkStableContract(String realm, String builder, TBox candidate, int candidateVersion, TBox pack,
+                                     List<String> sourceFailures, SourceTBoxGate.Mode mode) {
+        Optional<OntologyTBox> baseline;
+        boolean builtBefore;
+        try {
+            baseline = tboxRepo.findLatestForBuilder(builder);
+            builtBefore = baseline.isPresent()
+                    && tboxRepo.findByHashAndBuilder(TBoxHasher.computeHash(candidate), builder).isPresent();
+        } catch (Throwable t) {
+            SourceTBoxGate.BaselineUnreadableException unreadable =
+                    new SourceTBoxGate.BaselineUnreadableException(realm, t);
+            if (mode == SourceTBoxGate.Mode.ENFORCE) throw unreadable;
+            Log.error(unreadable.getMessage().replace("=enforce", "=warn"));
+            return;
+        }
+        if (baseline.isEmpty()) {
+            List<String> others = otherBuilders(builder);
+            if (!others.isEmpty()) {
+                Log.warnf("Realm %s: %s has no earlier build to check stable relations against, but %s built this "
+                        + "realm's TBox. If the builder was renamed, set quantum.ontology.tbox.builder to its earlier "
+                        + "name so the stable-relation contract keeps its baseline.", realm, builder, others);
+            }
+            return;
+        }
+        Integer baselineVersion = baseline.get().getVersion();
+        SourceTBoxGate.Outcome outcome = SourceTBoxGate.check(
+                baseline.get().toTBox(), baselineVersion, candidate, candidateVersion, pack);
+        if (outcome.violations().isEmpty()) return;
+        SourceTBoxGate.StableContractException breach = new SourceTBoxGate.StableContractException(
+                realm, outcome.violations(), baselineVersion, candidateVersion, sourceFailures);
+        if (builtBefore && !outcome.admissible()) {
+            Log.warnf("Realm %s: %s rebuilt a TBox it built before (a rollback?), which changes stable relations "
+                    + "of its last build: %s", realm, builder, outcome.violations().stream()
+                            .map(v -> v.code().wireValue() + " " + v.relation()).toList());
+        } else if (outcome.admissible()) {
+            Log.infof("Realm %s: pack version %d (last built %s) publishes stable-relation changes: %s",
+                    realm, candidateVersion, baselineVersion, outcome.violations().stream()
+                            .map(v -> v.code().wireValue() + " " + v.relation()).toList());
+        } else if (mode == SourceTBoxGate.Mode.ENFORCE) {
+            throw breach;
+        } else {
+            Log.error(breach.getMessage() + " (quantum.ontology.stable-diff=warn)");
         }
     }
 
     /**
      * The actual persist: idempotent by canonical TBox hash. Assumes an active security context
-     * (see {@link #persistBuiltTBox}). Fully guarded so a persistence failure never propagates.
+     * (see {@link #inSystemScope}). Best-effort by contract: a persistence failure is logged and
+     * never breaks a read or startup. A TBox built again is re-stamped, so the latest one stays the
+     * baseline of the next build.
      */
-    private void doPersistBuiltTBox(String realm, TBox accumulated, String currentHash, Optional<Path> yamlPath) {
+    private void doPersistBuiltTBox(String realm, String builder, TBox accumulated, String currentHash,
+                                    Optional<Path> yamlPath, Integer packVersion) {
         try {
             String tboxHash = TBoxHasher.computeHash(accumulated);
             String source = yamlPath.map(Path::toString).orElse("/ontology.yaml");
 
-            // Check if this TBox already exists
-            Optional<OntologyTBox> existing = tboxRepo.findByHash(tboxHash);
+            Optional<OntologyTBox> existing = tboxRepo.findByHashAndBuilder(tboxHash, builder);
             if (existing.isEmpty()) {
                 OntologyTBox newTBox = new OntologyTBox(accumulated, tboxHash, currentHash, source);
+                newTBox.setVersion(packVersion);
+                newTBox.setBuilder(builder);
                 tboxRepo.save(newTBox);
                 Log.infof("Persisted new TBox for realm %s (hash: %s, yamlHash: %s)",
                         realm, tboxHash, currentHash);
             } else {
-                Log.debugf("TBox already persisted for realm %s (hash: %s)", realm, tboxHash);
+                OntologyTBox doc = existing.get();
+                doc.setAppliedAt(new Date());
+                // An unversioned rebuild keeps the version the TBox was recorded with.
+                if (packVersion != null) doc.setVersion(packVersion);
+                tboxRepo.save(doc);
+                Log.debugf("TBox already persisted for realm %s (hash: %s); re-stamped", realm, tboxHash);
             }
         } catch (Throwable t) {
             Log.warnf("Failed to persist TBox for realm %s: %s", realm, t.getMessage());
