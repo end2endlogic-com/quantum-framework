@@ -143,7 +143,7 @@ public class OntologyMaterializer {
 
         // 2) + 3) Upsert new INFERRED edges and prune inferred edges no longer justified
         List<OntologyEdge> existingAfterUpsert = upsertAndPruneInferred(realmId, dataDomain, entityId, out, existingAll,
-                assertedKeys(existingAll, explicitEdges), changes);
+                assertedKeys(List.of(), explicitEdges), changes);
 
         // 4) Prune explicit edges that are no longer present in the entity snapshot
         // Determine all predicates that currently exist for this source
@@ -232,6 +232,18 @@ public class OntologyMaterializer {
             changes.modified().addAll(more.modified());
             changes.removed().addAll(more.removed());
         }
+    }
+
+    /** Whether some rule reads predicate {@code p}: a chain step, a sub-property, or a transitive property. */
+    static boolean consumedByRules(OntologyRegistry registry, String p) {
+        if (registry.propertyChains() != null) {
+            for (OntologyRegistry.PropertyChainDef chain : registry.propertyChains()) {
+                if (chain.chain() != null && chain.chain().contains(p)) return true;
+            }
+        }
+        return registry.propertyOf(p)
+                .map(def -> def.transitive() || (def.subPropertyOf() != null && !def.subPropertyOf().isEmpty()))
+                .orElse(false);
     }
 
     /** Whether edges of {@code p} have an image at the other end: it is symmetric or has an inverse. */
@@ -418,7 +430,11 @@ public class OntologyMaterializer {
         return changes;
     }
 
-    /** Keys {@code [src, p, dst]} of the entity's asserted and computed edges, stored or being written. */
+    /**
+     * Keys {@code [src, p, dst]} of asserted and computed edges in {@code existing} and {@code written}.
+     * A write passes only what it writes: stored edges it is about to prune must not block an inferred
+     * edge with the same key.
+     */
     private static Set<List<String>> assertedKeys(Collection<OntologyEdge> existing, List<Reasoner.Edge> written) {
         Set<List<String>> keys = new HashSet<>();
         for (OntologyEdge e : existing) {
@@ -816,7 +832,7 @@ public class OntologyMaterializer {
             // Collect inferred edges - only if new or changed
             Map<String, Set<String>> inferredByP = new HashMap<>();
             Set<List<String>> imagesElsewhere = new HashSet<>();
-            Set<List<String>> asserted = assertedKeys(existingForEntity.values(), explicitEdges);
+            Set<List<String>> asserted = assertedKeys(List.of(), explicitEdges);
             for (var e : out.addEdges()) {
                 OntologyEdge existing;
                 if (Objects.equals(e.srcId(), entityId)) {
@@ -862,6 +878,17 @@ public class OntologyMaterializer {
             edgeRepo.bulkUpsertEdgeRecords(realmId, edgesToUpsert);
         }
 
+        // Images written on other nodes by any entity of the batch: their source keeps them
+        Map<String, Map<String, Set<String>>> imagesBySrc = new HashMap<>();
+        for (Set<List<String>> keys : entityImagesElsewhere.values()) {
+            for (List<String> k : keys) {
+                imagesBySrc.computeIfAbsent(k.get(0), x -> new HashMap<>())
+                        .computeIfAbsent(k.get(1), x -> new HashSet<>()).add(k.get(2));
+            }
+        }
+        // Nodes to re-derive once the batch is written, so the result does not depend on batch order
+        Map<String, EntityEdgeContext> repairs = new LinkedHashMap<>();
+
         // Phase 3: Prune stale edges for each entity
         for (EntityEdgeContext ctx : entities) {
             if (ctx.dataDomain() == null) continue;
@@ -896,9 +923,20 @@ public class OntologyMaterializer {
                 }
             }
 
-            // Prune explicit edges
+            OntologyRegistry registry = registryProvider.getRegistryForTenant(dataDomain);
+
+            // Prune explicit edges; a dropped mirrored edge's far end re-derives its own image
             for (String p : existingExplicitPreds) {
                 Set<String> keep = explicitByP.getOrDefault(p, Set.of());
+                if (mirrored(registry, p)) {
+                    for (OntologyEdge e : existingMap.values()) {
+                        if (p.equals(e.getP()) && !e.isInferred() && !Boolean.TRUE.equals(e.isDerived())
+                                && !keep.contains(e.getDst()) && !entityId.equals(e.getDst())) {
+                            repairs.putIfAbsent(e.getDst(),
+                                    new EntityEdgeContext(realmId, dataDomain, e.getDst(), e.getDstType(), List.of()));
+                        }
+                    }
+                }
                 edgeRepo.deleteExplicitBySrcNotIn(realmId, dataDomain, entityId, p, keep);
             }
 
@@ -912,12 +950,31 @@ public class OntologyMaterializer {
             for (String p : existingInferredPreds) {
                 Set<String> keep = new HashSet<>(inferredByP.getOrDefault(p, Set.of()));
                 keep.addAll(foreignByP.getOrDefault(p, Set.of()));
+                keep.addAll(imagesBySrc.getOrDefault(entityId, Map.of()).getOrDefault(p, Set.of()));
                 edgeRepo.deleteInferredBySrcNotIn(realmId, dataDomain, entityId, p, keep);
             }
 
             // Prune this entity's images on other nodes that it no longer justifies
             pruneImagesElsewhere(realmId, dataDomain, entityId,
                     entityImagesElsewhere.getOrDefault(entityId, Set.of()), allChanges);
+
+            // Nodes that received an image a rule reads (a chain may start there, or a sub-property
+            // or transitive closure builds on it) re-derive over it
+            for (List<String> k : entityImagesElsewhere.getOrDefault(entityId, Set.of())) {
+                if (consumedByRules(registry, k.get(1))) {
+                    String type = allChanges.added().stream().filter(r -> k.get(0).equals(r.getSrc()))
+                            .map(EdgeRecord::getSrcType).findFirst().orElse(null);
+                    repairs.putIfAbsent(k.get(0), new EntityEdgeContext(realmId, dataDomain, k.get(0), type, List.of()));
+                }
+            }
+        }
+
+        // Phase 4: re-derive those nodes from what the batch stored
+        for (EntityEdgeContext repair : repairs.values()) {
+            EdgeChanges more = rederive(repair.realmId(), repair.dataDomain(), repair.entityId(), repair.entityType());
+            allChanges.added().addAll(more.added());
+            allChanges.modified().addAll(more.modified());
+            allChanges.removed().addAll(more.removed());
         }
 
         return allChanges;

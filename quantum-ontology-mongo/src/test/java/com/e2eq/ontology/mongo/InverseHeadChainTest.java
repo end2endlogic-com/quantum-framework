@@ -182,6 +182,41 @@ public class InverseHeadChainTest {
         assertEquals(Set.of("decl1"), dsts("doc1", "documentSupports"));
     }
 
+    @Test
+    void droppingAnExplicitEdgeKeepsTheSameEdgeInferred() {
+        write("link1", "EvidenceLink", edge("link1", "EvidenceLink", "linkSourceDocument", "doc1", "Document"));
+        write("doc1", "Document", edge("doc1", "Document", "documentRelated", "link1", "EvidenceLink"));
+
+        write("doc1", "Document");
+
+        assertEquals(Set.of(true), inferredFlags("doc1", "documentRelated", "link1"),
+                "documentHasLink still implies documentRelated");
+    }
+
+    @Test
+    void aReindexBatchDerivesWhateverOrderItsEntitiesComeIn() {
+        materializer.applyBulk(List.of(
+                new OntologyMaterializer.EntityEdgeContext(null, tenant, "doc1", "Document", List.of()),
+                new OntologyMaterializer.EntityEdgeContext(null, tenant, "link1", "EvidenceLink", List.of(
+                        edge("link1", "EvidenceLink", "linkSourceDocument", "doc1", "Document"),
+                        edge("link1", "EvidenceLink", "linkTarget", "decl1", "Declaration")))));
+
+        assertEquals(Set.of("link1"), dsts("doc1", "documentHasLink"));
+        assertEquals(Set.of("decl1"), dsts("doc1", "documentSupports"));
+    }
+
+    @Test
+    void aReindexBatchKeepsImagesItsOwnEntitiesWrite() {
+        write("link2", "EvidenceLink", edge("link2", "EvidenceLink", "linkSourceDocument", "doc1", "Document"));
+
+        materializer.applyBulk(List.of(
+                new OntologyMaterializer.EntityEdgeContext(null, tenant, "doc1", "Document", List.of()),
+                new OntologyMaterializer.EntityEdgeContext(null, tenant, "link1", "EvidenceLink", List.of(
+                        edge("link1", "EvidenceLink", "linkSourceDocument", "doc1", "Document")))));
+
+        assertEquals(Set.of("link1", "link2"), dsts("doc1", "documentHasLink"));
+    }
+
     private Set<Boolean> inferredFlags(String src, String p, String dst) {
         return edgeRepo.findBySrc((String) null, tenant, src).stream()
                 .filter(e -> p.equals(e.getP()) && dst.equals(e.getDst()))

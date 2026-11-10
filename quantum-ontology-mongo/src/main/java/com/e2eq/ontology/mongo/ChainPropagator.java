@@ -113,7 +113,7 @@ public class ChainPropagator {
         // rule consumes a changed predicate there, they are re-derived themselves
         Map<String, String> selfHeads = new LinkedHashMap<>();
         changedBySrc.forEach((node, ps) -> {
-            if (!node.equals(nodeId) && ps.stream().anyMatch(q -> consumed(registry, chains, q))) {
+            if (!node.equals(nodeId) && ps.stream().anyMatch(q -> OntologyMaterializer.consumedByRules(registry, q))) {
                 selfHeads.put(node, otherTypes.get(node));
             }
         });
@@ -163,7 +163,7 @@ public class ChainPropagator {
                 changesElsewhere(headId, headChanges, elsewhere, elsewhereTypes);
                 elsewhere.forEach((node, ps) -> {
                     pending.computeIfAbsent(node, __ -> new LinkedHashSet<>()).addAll(ps);
-                    if (!origin.contains(node) && ps.stream().anyMatch(q -> consumed(registry, chains, q))) {
+                    if (!origin.contains(node) && ps.stream().anyMatch(q -> OntologyMaterializer.consumedByRules(registry, q))) {
                         selfHeads.putIfAbsent(node, elsewhereTypes.get(node));
                     }
                 });
@@ -200,16 +200,6 @@ public class ChainPropagator {
             }
         }
         return heads;
-    }
-
-    /** Whether some rule reads predicate {@code p}: a chain step, a sub-property, or a transitive property. */
-    private static boolean consumed(OntologyRegistry registry, List<PropertyChainDef> chains, String p) {
-        for (PropertyChainDef chain : chains) {
-            if (chain.chain() != null && chain.chain().contains(p)) return true;
-        }
-        return registry.propertyOf(p)
-                .map(def -> def.transitive() || (def.subPropertyOf() != null && !def.subPropertyOf().isEmpty()))
-                .orElse(false);
     }
 
     /** Changed edges whose source is not {@code nodeId}, grouped by source, with each source's type. */
