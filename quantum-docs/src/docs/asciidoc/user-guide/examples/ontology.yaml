@@ -50,6 +50,12 @@ properties:
     range: Organization
     transitive: true
 
+  # Each org's ancestors, stored on the org (explicitly or by a ComputedEdgeProvider).
+  # Not transitive, so chains may use it; ancestorOf above is transitive and may not.
+  - id: orgAncestor
+    domain: Organization
+    range: Organization
+
   - id: peerOf
     domain: Organization
     range: Organization
@@ -61,6 +67,7 @@ chains:
   - chain: [ "placedBy", "memberOf" ]
     implies: "placedInOrg"
 
-  # Roll up through the org tree: placedInOrg ∘ ancestorOf ⇒ placedInOrg
-  - chain: [ "placedInOrg", "ancestorOf" ]
-    implies: "placedInOrg"
+  # Roll up through the org tree: Order --inOrg--> each ancestor org. With placedInOrg ⊑ inOrg,
+  # inOrg covers the order's own org and all of its ancestors.
+  - chain: [ "placedBy", "memberOf", "orgAncestor" ]
+    implies: "inOrg"
