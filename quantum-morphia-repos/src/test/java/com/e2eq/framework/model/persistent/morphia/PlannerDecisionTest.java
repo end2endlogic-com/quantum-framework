@@ -52,4 +52,25 @@ public class PlannerDecisionTest {
         assertTrue(d.containsKey("$plannedExpandPaths"));
         assertEquals(List.of("customer"), d.get("$plannedExpandPaths"));
     }
+
+    @Test
+    public void relationExpand_isAggregationWithoutALookup() {
+        String q = "expand(@hasShipment) && expand(customer) && status:active";
+        PlannerResult analysis = new com.e2eq.framework.model.persistent.morphia.planner.QueryPlanner().analyze(q);
+        assertEquals(PlannerResult.Mode.AGGREGATION, analysis.getMode());
+        assertEquals(List.of("customer"), analysis.getExpandPaths(), "a relation is not a field path");
+        assertEquals(List.of("hasShipment"), analysis.getRelationExpands());
+
+        PlannedQuery relationOnly = MorphiaUtils.convertToPlannedQuery("expand(@hasShipment) && status:active", DummyModel.class);
+        assertEquals(PlannerResult.Mode.AGGREGATION, relationOnly.getMode());
+        assertTrue(relationOnly.getAggregation().stream()
+                        .noneMatch(stage -> stage instanceof Document d && d.containsKey("$lookup")),
+                "relations are hydrated after the query, never compiled into a $lookup");
+    }
+
+    @Test
+    public void relationExpand_needsAName() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new com.e2eq.framework.model.persistent.morphia.planner.QueryPlanner().analyze("expand(@) && status:active"));
+    }
 }

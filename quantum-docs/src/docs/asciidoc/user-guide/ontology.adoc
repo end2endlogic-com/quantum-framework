@@ -2494,8 +2494,8 @@ Consumer 'orders-view' binds unknown relation 'nope'
 Consumer 'orders-view' binds internal relation 'hasPO': only stable relations may be bound
 ----
 
-It is a primitive only: no consumer calls it yet, because every relation is internal today and
-enforcing it would break existing consumers.
+`expand(@relation)` in queries enforces it (consumer `query:expand`): only stable relations can be
+expanded (see Query expansion, Expanding a named relation). Other consumers do not call it yet.
 
 === Materializing inferences from annotated models
 

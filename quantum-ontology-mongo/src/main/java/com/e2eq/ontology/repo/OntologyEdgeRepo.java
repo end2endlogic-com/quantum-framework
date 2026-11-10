@@ -1163,6 +1163,18 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
     /**
      * Find edges from source with given predicate, within the DataDomain.
      */
+    /** Edges with predicate {@code p} leaving any of {@code srcIds} in {@code realmId}, scoped to {@code dataDomain}. */
+    public List<OntologyEdge> findBySrcInAndP(String realmId, DataDomain dataDomain, Collection<String> srcIds, String p) {
+        if (srcIds == null || srcIds.isEmpty()) return List.of();
+        validateDataDomain(dataDomain);
+        Query<OntologyEdge> q = ds(realmId).find(OntologyEdge.class);
+        for (Filter f : dataDomainFilters(dataDomain)) {
+            q.filter(f);
+        }
+        q.filter(Filters.eq("p", p)).filter(Filters.in("src", srcIds));
+        return q.iterator().toList();
+    }
+
     public List<OntologyEdge> findBySrcAndP(DataDomain dataDomain, String src, String p, Filter... edgeFilters) {
         return findBySrcAndP(resolveRealmId(dataDomain), dataDomain, src, p, edgeFilters);
     }
