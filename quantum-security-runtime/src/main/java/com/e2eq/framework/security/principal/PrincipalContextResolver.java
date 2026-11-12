@@ -123,31 +123,43 @@ public class PrincipalContextResolver {
         }
 
         String realm = request.realm();
-        PrincipalContext base = buildBaseContext(request, caller, realm);
-
         CredentialUserIdPassword effective = caller;
         PrincipalRef impersonatedBy = null;
         PrincipalContext context;
         if (!request.impersonationRequested()) {
-            context = withoutImpersonation(request, base);
-        } else {
-            CredentialUserIdPassword original = impersonatorCredential(request);
-            String impersonationRealm = identity ? realm : request.signedClaims().impersonationRealm();
-            if (identity) {
-                validateRealmAccess(original, impersonationRealm, true);
-            }
-            validateImpersonationPermissions(original, impersonationRealm, identity);
+            context = withoutImpersonation(request, buildBaseContext(request, caller, realm));
+        } else if (identity) {
+            CredentialUserIdPassword original = caller;
             CredentialUserIdPassword target = findImpersonationTarget(
                     request.impersonateSubject(), request.impersonateUserId())
-                    .orElseThrow(() -> identity
-                            ? refusal(PrincipalResolutionError.IMPERSONATION_REFUSED,
-                                    "Could not find impersonated userId or subject, id:" + impersonationId(request))
-                            : new WebApplicationException(String.format(
-                                    "Could not find impersonated userId or subject, id:%s", impersonationId(request)),
-                                    Response.Status.NOT_FOUND));
-            if (identity) {
-                requireListedImpersonationTarget(original, target);
+                    .orElseThrow(() -> refusal(PrincipalResolutionError.IMPERSONATION_REFUSED,
+                            "Could not find impersonated userId or subject, id:" + impersonationId(request)));
+            // An impersonation runs in the target's home realm, so that is the realm the
+            // impersonator must be authorized for; a different requested realm is refused.
+            String targetRealm = target.getDomainContext().getDefaultRealm();
+            if (realm != null && !realm.equals(targetRealm)) {
+                throw refusal(PrincipalResolutionError.IMPERSONATION_REFUSED,
+                        "Impersonating '" + target.getUserId() + "' runs in realm '" + targetRealm
+                                + "', not the requested realm '" + realm + "'");
             }
+            validateRealmAccess(original, targetRealm, true);
+            validateImpersonationPermissions(original, targetRealm, true);
+            requireListedImpersonationTarget(original, target);
+            context = buildImpersonatedContext(target, original, request.actingOnBehalfOfSubject(),
+                    request.actingOnBehalfOfUserId(), request.applicationId());
+            effective = target;
+            impersonatedBy = new PrincipalRef(original.getUserId(), original.getSubject());
+        } else {
+            // Signed mode keeps the filter's order: the base context (and its realm check) first.
+            buildBaseContext(request, caller, realm);
+            CredentialUserIdPassword original = impersonatorCredential(request);
+            String impersonationRealm = request.signedClaims().impersonationRealm();
+            validateImpersonationPermissions(original, impersonationRealm, false);
+            CredentialUserIdPassword target = findImpersonationTarget(
+                    request.impersonateSubject(), request.impersonateUserId())
+                    .orElseThrow(() -> new WebApplicationException(String.format(
+                            "Could not find impersonated userId or subject, id:%s", impersonationId(request)),
+                            Response.Status.NOT_FOUND));
             context = buildImpersonatedContext(target, original, request.actingOnBehalfOfSubject(),
                     request.actingOnBehalfOfUserId(), request.applicationId());
             effective = target;
@@ -785,12 +797,11 @@ public class PrincipalContextResolver {
                 throw refusal(PrincipalResolutionError.TENANT_NOT_AUTHORIZED,
                         "Tenant '" + headerTenantId + "' is not the single tenant of realm '" + effectiveRealm + "'");
             }
-            if (realmContext == null || context.getDomainContext() == null
-                    || Objects.equals(realmTenant, context.getDomainContext().getTenantId())) {
+            if (realmContext == null || sameDataCoordinate(realmContext, context.getDomainContext())) {
                 return context;
             }
-            // A dedicated realm is its one tenant: a home DomainContext naming another tenant
-            // does not carry into it.
+            // A dedicated realm is its one tenant: a home DomainContext naming another tenant,
+            // organization or account does not carry into it.
             return copy(context)
                     .withDomainContext(realmContext)
                     .withDataDomain(realmContext.toDataDomain(context.getUserId()))
@@ -816,6 +827,13 @@ public class PrincipalContextResolver {
                 .orElseThrow(() -> refusal(PrincipalResolutionError.TENANT_NOT_AUTHORIZED,
                         "Tenant '" + tenantId + "' is not active in realm '" + effectiveRealm + "'"));
         return withTenant(context, effectiveRealm, tenantId, assignment, membership);
+    }
+
+    private static boolean sameDataCoordinate(DomainContext realmContext, DomainContext current) {
+        return current != null
+                && Objects.equals(realmContext.getTenantId(), current.getTenantId())
+                && Objects.equals(realmContext.getOrgRefName(), current.getOrgRefName())
+                && Objects.equals(realmContext.getAccountId(), current.getAccountId());
     }
 
     private String defaultTenant(Realm realm, UserRealmRole assignment, CredentialUserIdPassword credential) {

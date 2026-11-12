@@ -125,6 +125,14 @@ class PrincipalContextResolverRefusalTest {
     }
 
     @Test
+    void aHomeDomainContextNamingAnotherOrganizationDoesNotCarryIntoADedicatedRealm() {
+        world.credential("alice@acme").getDomainContext().setOrgRefName("stale-org");
+        PrincipalContext context = resolve(world.identity("alice@acme"));
+        assertEquals("acme", context.getDataDomain().getTenantId());
+        assertEquals("acme-org", context.getDataDomain().getOrgRefName());
+    }
+
+    @Test
     void aTenantTheAssignmentDoesNotAuthorizeIsRefused() {
         world.member("pooled", "tenant-c", "org-c", "acct-c");
         refused(PrincipalResolutionError.TENANT_NOT_AUTHORIZED, 403,
@@ -229,10 +237,31 @@ class PrincipalContextResolverRefusalTest {
     }
 
     @Test
-    void impersonationInARealmOutsideTheImpersonatorsAuthorizationIsRefused() {
+    void impersonatingAnIdentityWhoseRealmIsOutsideTheImpersonatorsAuthorizationIsRefused() {
         world.realm("other-D1", RealmTenancyMode.SINGLE_TENANT, "other", "o", "a");
+        world.credential("bob@other", "sub-bob", "other-D1", "other", "user");
         refused(PrincipalResolutionError.REALM_NOT_AUTHORIZED, 403,
-                () -> resolve(world.identity("admin@acme").impersonate(null, "alice@acme").realm("other-D1")));
+                () -> resolve(world.identity("admin@acme").impersonate(null, "bob@other")));
+    }
+
+    @Test
+    void impersonationIsAuthorizedForTheRealmItRunsInNotTheRequestedOne() {
+        // The script admits acme-D2 only; alice lives in acme-D1, so asking for acme-D2 cannot
+        // authorize an impersonation that would run in acme-D1.
+        world.credential("admin@acme").setImpersonateFilterScript("realm === 'acme-D2'");
+        refused(PrincipalResolutionError.IMPERSONATION_REFUSED, 403,
+                () -> resolve(world.identity("admin@acme").impersonate(null, "alice@acme").realm("acme-D2")));
+        refused(PrincipalResolutionError.IMPERSONATION_REFUSED, 403,
+                () -> resolve(world.identity("admin@acme").impersonate(null, "alice@acme")));
+    }
+
+    @Test
+    void anImpersonatorResolvedByUserIdAloneMayImpersonate() {
+        PrincipalContextResolution resolved = world.resolver().resolve(PrincipalContextRequest
+                .identity(null, "admin@acme").applicationId(PrincipalFixture.APP)
+                .impersonate(null, "alice@acme").build());
+        assertEquals("alice@acme", resolved.context().getUserId());
+        assertEquals("admin@acme", resolved.impersonatedBy().userId());
     }
 
     // --- DELEGATION_NOT_ALLOWED / DELEGATION_TARGET_UNKNOWN ---
