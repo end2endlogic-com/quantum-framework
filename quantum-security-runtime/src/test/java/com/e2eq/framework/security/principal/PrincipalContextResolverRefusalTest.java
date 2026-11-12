@@ -14,6 +14,7 @@ import org.junit.jupiter.api.function.Executable;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
@@ -45,10 +46,11 @@ class PrincipalContextResolverRefusalTest {
     }
 
     @Test
-    void theUserIdAloneResolvesWhenTheTokenHasNoSubject() {
-        PrincipalContext context = resolve(PrincipalContextRequest.identity(null, "alice@acme")
-                .applicationId(PrincipalFixture.APP));
-        assertEquals("alice@acme", context.getUserId());
+    void aUserIdWithoutAVerifiedSubjectIsRefused() {
+        refused(PrincipalResolutionError.PRINCIPAL_UNKNOWN, 401,
+                () -> resolve(PrincipalContextRequest.identity(null, "alice@acme").applicationId(PrincipalFixture.APP)));
+        refused(PrincipalResolutionError.PRINCIPAL_UNKNOWN, 401,
+                () -> resolve(PrincipalContextRequest.identity(" ", "alice@acme").applicationId(PrincipalFixture.APP)));
     }
 
     @Test
@@ -179,6 +181,17 @@ class PrincipalContextResolverRefusalTest {
     }
 
     @Test
+    void theFirstDefaultThatIsAuthorizedAndActiveWins() {
+        // The credential tenant is authorized but not an active member; the policy default is both.
+        world.credential("alice@acme").getDomainContext().setTenantId("tenant-c");
+        world.assignments.get("alice@acme|pooled").setAuthorizedTenantIds(List.of("tenant-a", "tenant-b", "tenant-c"));
+        world.credential("alice@acme").setDataDomainPolicy(
+                PrincipalFixture.policy(DataDomainPolicyEntry.ResolutionMode.FIXED, "tenant-a"));
+        PrincipalContext context = resolve(world.identity("alice@acme").realm("pooled"));
+        assertEquals("tenant-a", context.getDataDomain().getTenantId());
+    }
+
+    @Test
     void anExplicitTenantSwitchWinsOverTheDefault() {
         world.credential("alice@acme").setDataDomainPolicy(
                 PrincipalFixture.policy(DataDomainPolicyEntry.ResolutionMode.FIXED, "tenant-a"));
@@ -240,7 +253,7 @@ class PrincipalContextResolverRefusalTest {
     void impersonatingAnIdentityWhoseRealmIsOutsideTheImpersonatorsAuthorizationIsRefused() {
         world.realm("other-D1", RealmTenancyMode.SINGLE_TENANT, "other", "o", "a");
         world.credential("bob@other", "sub-bob", "other-D1", "other", "user");
-        refused(PrincipalResolutionError.REALM_NOT_AUTHORIZED, 403,
+        refused(PrincipalResolutionError.IMPERSONATION_REFUSED, 403,
                 () -> resolve(world.identity("admin@acme").impersonate(null, "bob@other")));
     }
 
@@ -256,12 +269,62 @@ class PrincipalContextResolverRefusalTest {
     }
 
     @Test
-    void anImpersonatorResolvedByUserIdAloneMayImpersonate() {
-        PrincipalContextResolution resolved = world.resolver().resolve(PrincipalContextRequest
-                .identity(null, "admin@acme").applicationId(PrincipalFixture.APP)
-                .impersonate(null, "alice@acme").build());
-        assertEquals("alice@acme", resolved.context().getUserId());
-        assertEquals("admin@acme", resolved.impersonatedBy().userId());
+    void impersonatingADisabledIdentityIsRefused() {
+        world.credential("alice@acme").setActiveStatus(ActiveStatus.INACTIVE);
+        refused(PrincipalResolutionError.IMPERSONATION_REFUSED, 403,
+                () -> resolve(world.identity("admin@acme").impersonate(null, "alice@acme")));
+    }
+
+    @Test
+    void aServiceCredentialCannotImpersonateEvenWithAScript() {
+        world.credential("svc-app@acme").setImpersonateFilterScript("true");
+        world.credential("svc-deleg@acme").setImpersonateFilterScript("true");
+        refused(PrincipalResolutionError.IMPERSONATION_REFUSED, 403,
+                () -> resolve(world.identity("svc-app@acme").impersonate(null, "alice@acme")));
+        refused(PrincipalResolutionError.IMPERSONATION_REFUSED, 403,
+                () -> resolve(world.identity("svc-deleg@acme").impersonate(null, "alice@acme")));
+    }
+
+    @Test
+    void theCallersPermissionIsCheckedBeforeAnyTargetIsLookedUp() {
+        // alice has no filter script: the refusal is the same whether the target exists or not.
+        PrincipalResolutionException known = assertThrows(PrincipalResolutionException.class,
+                () -> resolve(world.identity("alice@acme").impersonate(null, "admin@acme")));
+        PrincipalResolutionException unknown = assertThrows(PrincipalResolutionException.class,
+                () -> resolve(world.identity("alice@acme").impersonate(null, "nobody@acme")));
+        assertEquals(known.getMessage(), unknown.getMessage());
+        // A requested realm the caller may not use is refused before the target is considered.
+        world.realm("other-D1", RealmTenancyMode.SINGLE_TENANT, "other", "o", "a");
+        refused(PrincipalResolutionError.REALM_NOT_AUTHORIZED, 403,
+                () -> resolve(world.identity("admin@acme").impersonate(null, "nobody@acme").realm("other-D1")));
+    }
+
+    @Test
+    void impersonationRefusalsShareOnePublicMessage() {
+        world.realm("other-D1", RealmTenancyMode.SINGLE_TENANT, "other", "o", "a");
+        world.credential("bob@other", "sub-bob", "other-D1", "other", "user");
+        world.credential("dave@acme", "sub-dave", "acme-D1", "acme", "user").setActiveStatus(ActiveStatus.DELETED);
+        List<Executable> refusals = List.of(
+                () -> resolve(world.identity("admin@acme").impersonate(null, "nobody@acme")),
+                () -> resolve(world.identity("admin@acme").impersonate(null, "dave@acme")),
+                () -> resolve(world.identity("admin@acme").impersonate(null, "bob@other")),
+                () -> resolve(world.identity("admin@acme").impersonate(null, "alice@acme").realm("acme-D2")));
+        for (Executable call : refusals) {
+            PrincipalResolutionException refusal = assertThrows(PrincipalResolutionException.class, call);
+            assertEquals(PrincipalResolutionError.IMPERSONATION_REFUSED, refusal.error(), refusal.getMessage());
+            assertEquals("Impersonation refused", refusal.error().publicMessage());
+        }
+    }
+
+    @Test
+    void publicMessagesNameNoIdentityRealmOrStore() {
+        for (PrincipalResolutionError error : PrincipalResolutionError.values()) {
+            String message = error.publicMessage();
+            assertFalse(message == null || message.isBlank(), error.name());
+            for (String detail : List.of("acme", "pooled", "system", "@", "'")) {
+                assertFalse(message.contains(detail), error + " leaks " + detail);
+            }
+        }
     }
 
     // --- DELEGATION_NOT_ALLOWED / DELEGATION_TARGET_UNKNOWN ---
@@ -313,6 +376,16 @@ class PrincipalContextResolverRefusalTest {
         world.credential("svc-deleg@acme").setRealmRegEx("acme-D1");
         refused(PrincipalResolutionError.DELEGATION_NOT_ALLOWED, 403,
                 () -> resolve(world.identity("svc-deleg@acme").actingOnBehalfOf(null, "alice@acme").realm("acme-D2")));
+    }
+
+    @Test
+    void aServiceWithoutRealmAuthorizationDelegatesInItsHomeRealmOnly() {
+        world.credential("svc-deleg@acme").setRealmRegEx(null);
+        world.credential("svc-deleg@acme").setAuthorizedRealms(null);
+        refused(PrincipalResolutionError.DELEGATION_NOT_ALLOWED, 403,
+                () -> resolve(world.identity("svc-deleg@acme").actingOnBehalfOf(null, "alice@acme").realm("acme-D2")));
+        assertEquals("acme-D1", resolve(world.identity("svc-deleg@acme").actingOnBehalfOf(null, "alice@acme"))
+                .getDefaultRealm());
     }
 
     @Test

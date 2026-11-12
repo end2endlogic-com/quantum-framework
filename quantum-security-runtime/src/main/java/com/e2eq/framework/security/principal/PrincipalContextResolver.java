@@ -129,26 +129,11 @@ public class PrincipalContextResolver {
         if (!request.impersonationRequested()) {
             context = withoutImpersonation(request, buildBaseContext(request, caller, realm));
         } else if (identity) {
-            CredentialUserIdPassword original = caller;
-            CredentialUserIdPassword target = findImpersonationTarget(
-                    request.impersonateSubject(), request.impersonateUserId())
-                    .orElseThrow(() -> refusal(PrincipalResolutionError.IMPERSONATION_REFUSED,
-                            "Could not find impersonated userId or subject, id:" + impersonationId(request)));
-            // An impersonation runs in the target's home realm, so that is the realm the
-            // impersonator must be authorized for; a different requested realm is refused.
-            String targetRealm = target.getDomainContext().getDefaultRealm();
-            if (realm != null && !realm.equals(targetRealm)) {
-                throw refusal(PrincipalResolutionError.IMPERSONATION_REFUSED,
-                        "Impersonating '" + target.getUserId() + "' runs in realm '" + targetRealm
-                                + "', not the requested realm '" + realm + "'");
-            }
-            validateRealmAccess(original, targetRealm, true);
-            validateImpersonationPermissions(original, targetRealm, true);
-            requireListedImpersonationTarget(original, target);
-            context = buildImpersonatedContext(target, original, request.actingOnBehalfOfSubject(),
+            CredentialUserIdPassword target = authorizeIdentityImpersonation(request, caller, realm);
+            context = buildImpersonatedContext(target, caller, request.actingOnBehalfOfSubject(),
                     request.actingOnBehalfOfUserId(), request.applicationId());
             effective = target;
-            impersonatedBy = new PrincipalRef(original.getUserId(), original.getSubject());
+            impersonatedBy = new PrincipalRef(caller.getUserId(), caller.getSubject());
         } else {
             // Signed mode keeps the filter's order: the base context (and its realm check) first.
             buildBaseContext(request, caller, realm);
@@ -189,9 +174,59 @@ public class PrincipalContextResolver {
         return new PrincipalContextResolution(context, effective, caller, impersonatedBy, null);
     }
 
+    /**
+     * Identity-mode impersonation, caller first as {@code SecurityFilter} does: a service
+     * credential never impersonates (acting for an identity is delegation, DELEGATING only); the
+     * caller needs a filter script, and a requested realm is checked for realm access and by the
+     * script before any target is looked up. The impersonation then runs in the target's home
+     * realm, which must be the requested one, and is checked again there. Every failure after
+     * the caller checks is the same IMPERSONATION_REFUSED, so a refusal does not reveal whether
+     * the target exists, is disabled, or lives elsewhere.
+     */
+    private CredentialUserIdPassword authorizeIdentityImpersonation(PrincipalContextRequest request,
+                                                                   CredentialUserIdPassword caller,
+                                                                   String realm) {
+        if (serviceCredential(caller)) {
+            throw refusal(PrincipalResolutionError.IMPERSONATION_REFUSED,
+                    "Service credential '" + caller.getUserId() + "' may not impersonate; delegation is for "
+                            + "DELEGATING service credentials");
+        }
+        if (caller.getImpersonateFilterScript() == null) {
+            throw refusal(PrincipalResolutionError.IMPERSONATION_REFUSED,
+                    "'" + caller.getUserId() + "' has no impersonation filter script");
+        }
+        if (realm != null) {
+            validateRealmAccess(caller, realm, true);
+            validateImpersonationPermissions(caller, realm, true);
+        }
+        String id = impersonationId(request);
+        CredentialUserIdPassword target = findImpersonationTarget(
+                request.impersonateSubject(), request.impersonateUserId())
+                .orElseThrow(() -> refusal(PrincipalResolutionError.IMPERSONATION_REFUSED,
+                        "No credential for impersonation target " + id));
+        if (credentialDisabled(target)) {
+            throw refusal(PrincipalResolutionError.IMPERSONATION_REFUSED,
+                    "Impersonation target " + id + " is " + target.getActiveStatus());
+        }
+        String targetRealm = target.getDomainContext().getDefaultRealm();
+        if (realm != null && !realm.equals(targetRealm)) {
+            throw refusal(PrincipalResolutionError.IMPERSONATION_REFUSED,
+                    "Impersonation target " + id + " runs in realm " + targetRealm + ", not " + realm);
+        }
+        try {
+            validateRealmAccess(caller, targetRealm, true);
+            validateImpersonationPermissions(caller, targetRealm, true);
+        } catch (PrincipalResolutionException refused) {
+            throw refusal(PrincipalResolutionError.IMPERSONATION_REFUSED, refused.getMessage());
+        }
+        requireListedImpersonationTarget(caller, target);
+        return target;
+    }
+
     private void requireIdentityInputs(PrincipalContextRequest request) {
-        if (!PrincipalContextRequest.nonBlank(request.subject()) && request.userIdCandidates().isEmpty()) {
-            throw refusal(PrincipalResolutionError.PRINCIPAL_UNKNOWN, "The token names no subject or userId");
+        // The verified subject is the identity; a userId claim alone is not proof of a credential.
+        if (!PrincipalContextRequest.nonBlank(request.subject())) {
+            throw refusal(PrincipalResolutionError.PRINCIPAL_UNKNOWN, "The token names no subject");
         }
         if (!PrincipalContextRequest.nonBlank(request.applicationId())) {
             throw refusal(PrincipalResolutionError.APPLICATION_NOT_GRANTED,
@@ -538,9 +573,14 @@ public class PrincipalContextResolver {
             throw refusal(PrincipalResolutionError.DELEGATION_NOT_ALLOWED,
                     "Service credential '" + service.getUserId() + "' may not delegate in realm " + targetRealm);
         }
-        if (!realmWithinBoundary(service, targetRealm)) {
+        // The service's own realm authorization bounds delegation, with the usual reading: no
+        // authorizedRealms and no realmRegEx means its home realm only.
+        try {
+            validateRealmAccess(service, targetRealm, true);
+        } catch (PrincipalResolutionException outside) {
             throw refusal(PrincipalResolutionError.DELEGATION_NOT_ALLOWED,
-                    "Realm " + targetRealm + " is outside the delegation scope of '" + service.getUserId() + "'");
+                    "Realm " + targetRealm + " is outside the delegation scope of '" + service.getUserId() + "': "
+                            + outside.getMessage());
         }
 
         PrincipalContextRequest asTarget = PrincipalContextRequest.identity(target.getSubject(), target.getUserId())
@@ -551,12 +591,6 @@ public class PrincipalContextResolver {
         PrincipalContextResolution resolved = resolve(asTarget);
         return new PrincipalContextResolution(resolved.context(), resolved.credential(), service, null,
                 new PrincipalRef(service.getUserId(), service.getSubject()));
-    }
-
-    private boolean realmWithinBoundary(CredentialUserIdPassword service, String realm) {
-        boolean bounded = (service.getAuthorizedRealms() != null && !service.getAuthorizedRealms().isEmpty())
-                || (service.getRealmRegEx() != null && !service.getRealmRegEx().isBlank());
-        return !bounded || securityUtils.computeAllowedRealmRefNames(service, List.of(realm)).contains(realm);
     }
 
     // ------------------------------------------------------------------ realm switch
@@ -838,8 +872,10 @@ public class PrincipalContextResolver {
 
     private String defaultTenant(Realm realm, UserRealmRole assignment, CredentialUserIdPassword credential) {
         String realmRefName = realm.getRefName();
-        Optional<String> declared = TenantDefaults.authorizedDefault(credential, assignment)
-                .filter(tenant -> realmMembershipService.tenantInRealm(realmRefName, tenant).isPresent());
+        Optional<String> declared = TenantDefaults.candidates(credential).stream()
+                .filter(tenant -> AccessibleTenantResolver.isAuthorized(assignment, tenant))
+                .filter(tenant -> realmMembershipService.tenantInRealm(realmRefName, tenant).isPresent())
+                .findFirst();
         if (declared.isPresent()) {
             return declared.get();
         }

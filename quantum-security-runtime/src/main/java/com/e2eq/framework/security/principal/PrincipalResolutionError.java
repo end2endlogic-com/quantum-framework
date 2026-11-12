@@ -7,28 +7,39 @@ package com.e2eq.framework.security.principal;
  */
 public enum PrincipalResolutionError {
     /** No credential for the verified identity. */
-    PRINCIPAL_UNKNOWN(401),
+    PRINCIPAL_UNKNOWN(401, "The verified identity is not known"),
     /** The credential is INACTIVE or DELETED. */
-    PRINCIPAL_DISABLED(401),
+    PRINCIPAL_DISABLED(401, "The identity is disabled"),
     /** The identity is not granted the receiving application in the resolved realm. */
-    APPLICATION_NOT_GRANTED(403),
+    APPLICATION_NOT_GRANTED(403, "The identity is not granted this application"),
     /** The requested realm is unregistered or outside the credential's realm authorization. */
-    REALM_NOT_AUTHORIZED(403),
+    REALM_NOT_AUTHORIZED(403, "The identity is not authorized for the realm"),
     /** The tenant is not authorized by the realm assignment, or not active in the realm. */
-    TENANT_NOT_AUTHORIZED(403),
+    TENANT_NOT_AUTHORIZED(403, "The identity is not authorized for the tenant"),
     /** Several tenants are reachable in a shared realm and the identity defines no default. */
-    TENANT_SELECTION_REQUIRED(400),
+    TENANT_SELECTION_REQUIRED(400, "Select a tenant: the identity reaches several and defines no default"),
     /** Impersonation is not configured, not authorized, or names an unknown identity. */
-    IMPERSONATION_REFUSED(403),
+    IMPERSONATION_REFUSED(403, "Impersonation refused"),
     /** Acting on behalf of an identity without a delegating service credential, or outside its scope. */
-    DELEGATION_NOT_ALLOWED(403),
+    DELEGATION_NOT_ALLOWED(403, "Delegation not allowed"),
     /** The acted-for identity has no credential. */
-    DELEGATION_TARGET_UNKNOWN(403);
+    DELEGATION_TARGET_UNKNOWN(403, "The acted-for identity is not known");
 
     private final int httpStatus;
+    private final String publicMessage;
 
-    PrincipalResolutionError(int httpStatus) {
+    PrincipalResolutionError(int httpStatus, String publicMessage) {
         this.httpStatus = httpStatus;
+        this.publicMessage = publicMessage;
+    }
+
+    /**
+     * The one message a caller sees for this code. It never names identities, realms, tenants
+     * or stores, so a refusal does not tell apart, for example, an unknown impersonation target
+     * from one the caller may not impersonate. The exception message carries the detail for logs.
+     */
+    public String publicMessage() {
+        return publicMessage;
     }
 
     public int httpStatus() {
