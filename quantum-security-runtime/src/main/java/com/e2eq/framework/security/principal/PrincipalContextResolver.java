@@ -159,7 +159,11 @@ public class PrincipalContextResolver {
         }
 
         if (identity) {
-            context = applyIdentityTenantSelection(context, request.tenantId(), effective);
+            // A platform operation that needs no tenant keeps the base data domain, exactly as the
+            // signed path's tenantSelectionExempt; a requested tenant is still authorized.
+            if (!(request.tenantSelectionOptional() && blank(request.tenantId()))) {
+                context = applyIdentityTenantSelection(context, request.tenantId(), effective);
+            }
         } else {
             // The signed tenant claim names a tenant of the realm the token was issued for. It
             // applies only while the request stays in that realm; after an X-Realm switch the
@@ -582,6 +586,7 @@ public class PrincipalContextResolver {
                 .applicationId(request.applicationId())
                 .realm(request.realm())
                 .tenantId(request.tenantId())
+                .tenantSelectionOptional(request.tenantSelectionOptional())
                 .build();
         PrincipalContextResolution resolved = resolve(asTarget);
         return new PrincipalContextResolution(resolved.context(), resolved.credential(), service, null,

@@ -17,6 +17,8 @@ final class RequestAuthorizationState {
     private ResolvedAuthorizationContext completed;
     private final Map<com.e2eq.framework.security.session.SessionSelectionPolicy.Input,
             com.e2eq.framework.security.session.SessionSelectionPolicy.Selection> selections = new HashMap<>();
+    private final Map<com.e2eq.framework.security.principal.RemotePrincipalRequest.CacheKey, Object> remotePrincipals =
+            new HashMap<>();
 
     synchronized com.e2eq.framework.security.session.SessionSelectionPolicy.Selection selectRealm(
             com.e2eq.framework.security.session.SessionSelectionPolicy.Input input,
@@ -52,6 +54,44 @@ final class RequestAuthorizationState {
             roles.put(key, result);
         }
         return result.toArray(String[]::new);
+    }
+
+    /**
+     * This request's remote principal resolution for {@code request}, asked of {@code source} once:
+     * the roles augmentor and SecurityFilter share one answer, refusals included.
+     */
+    static com.e2eq.framework.model.securityrules.PrincipalContext remotePrincipal(
+            RoutingContext routing,
+            com.e2eq.framework.security.principal.RemotePrincipalRequest request,
+            com.e2eq.framework.security.principal.RemotePrincipalSource source) {
+        RequestAuthorizationState state = from(routing);
+        return state == null ? requireResolved(source.resolve(request))
+                : state.remotePrincipal(request.cacheKey(), () -> requireResolved(source.resolve(request)));
+    }
+
+    private synchronized com.e2eq.framework.model.securityrules.PrincipalContext remotePrincipal(
+            com.e2eq.framework.security.principal.RemotePrincipalRequest.CacheKey key,
+            Supplier<com.e2eq.framework.model.securityrules.PrincipalContext> resolver) {
+        Object outcome = remotePrincipals.get(key);
+        if (outcome == null) {
+            try {
+                outcome = resolver.get();
+            } catch (RuntimeException refused) {
+                outcome = refused;
+            }
+            remotePrincipals.put(key, outcome);
+        }
+        if (outcome instanceof RuntimeException refused) throw refused;
+        return (com.e2eq.framework.model.securityrules.PrincipalContext) outcome;
+    }
+
+    private static com.e2eq.framework.model.securityrules.PrincipalContext requireResolved(
+            com.e2eq.framework.model.securityrules.PrincipalContext context) {
+        if (context == null) {
+            throw com.e2eq.framework.security.principal.RemotePrincipalResolutionException.unavailable(
+                    "The remote principal source returned no principal");
+        }
+        return context;
     }
 
     synchronized void beginAdmission() { completed = null; }

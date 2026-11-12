@@ -161,6 +161,79 @@ class PrincipalContextResolverParityTest {
         assertEquals(List.of(PrincipalFixture.APP, PrincipalFixture.APP), world.roleApplications);
     }
 
+    @Test
+    void aPlatformOperationNeedsNoTenantOnEitherPath() {
+        // alice reaches several tenants of the shared realm and defines no default: an ordinary
+        // request must select one, a platform operation (tenantSelectionExempt / tenantSelection
+        // "optional") keeps the realm-switched base principal on both paths.
+        PrincipalContext viaFilter = viaFilter("alice@acme", Map.of("X-Realm", "pooled"), Set.of(),
+                platformResource());
+        PrincipalContext viaIdentity = world.resolver().resolve(world.identity("alice@acme").realm("pooled")
+                .tenantSelectionOptional(true).build()).context();
+
+        assertSamePrincipal(viaFilter, viaIdentity);
+        assertEquals("pooled", viaIdentity.getDefaultRealm());
+    }
+
+    @Test
+    void aPlatformOperationStillAuthorizesARequestedTenant() {
+        PrincipalContext viaFilter = viaFilter("alice@acme", Map.of("X-Realm", "pooled", "X-Tenant-Id", "tenant-b"),
+                Set.of(), platformResource());
+        PrincipalContext viaIdentity = world.resolver().resolve(world.identity("alice@acme").realm("pooled")
+                .tenantId("tenant-b").tenantSelectionOptional(true).build()).context();
+
+        assertSamePrincipal(viaFilter, viaIdentity);
+        assertEquals("tenant-b", viaIdentity.getDataDomain().getTenantId());
+        com.e2eq.framework.security.principal.PrincipalResolutionException refused = assertThrows(
+                com.e2eq.framework.security.principal.PrincipalResolutionException.class,
+                () -> world.resolver().resolve(world.identity("alice@acme").realm("pooled")
+                        .tenantId("tenant-z").tenantSelectionOptional(true).build()));
+        assertEquals("TENANT_NOT_AUTHORIZED", refused.code());
+    }
+
+    @Test
+    void anOrdinaryRequestStillRequiresATenantSelection() {
+        com.e2eq.framework.security.principal.PrincipalResolutionException refused = assertThrows(
+                com.e2eq.framework.security.principal.PrincipalResolutionException.class,
+                () -> world.resolver().resolve(world.identity("alice@acme").realm("pooled").build()));
+        assertEquals("TENANT_SELECTION_REQUIRED", refused.code());
+    }
+
+    @Test
+    void delegationCarriesTheTenantSelectionRule() {
+        PrincipalContextResolution delegated = world.resolver().resolve(
+                world.identity("svc-deleg@acme").actingOnBehalfOf(null, "alice@acme").realm("pooled")
+                        .tenantSelectionOptional(true).build());
+        PrincipalContext aliceDirect = world.resolver().resolve(world.identity("alice@acme").realm("pooled")
+                .tenantSelectionOptional(true).build()).context();
+
+        assertSamePrincipal(aliceDirect, delegated.context());
+    }
+
+    @com.e2eq.framework.annotations.FunctionalMapping(area = "security", domain = "identity")
+    static final class PlatformIdentityResource {
+        public void read() {
+        }
+    }
+
+    private static jakarta.ws.rs.container.ResourceInfo platformResource() {
+        return new jakarta.ws.rs.container.ResourceInfo() {
+            @Override
+            public java.lang.reflect.Method getResourceMethod() {
+                try {
+                    return PlatformIdentityResource.class.getDeclaredMethod("read");
+                } catch (NoSuchMethodException e) {
+                    throw new IllegalStateException(e);
+                }
+            }
+
+            @Override
+            public Class<?> getResourceClass() {
+                return PlatformIdentityResource.class;
+            }
+        };
+    }
+
     // --- where the two paths deliberately differ ---
 
     @Test
@@ -206,6 +279,11 @@ class PrincipalContextResolverParityTest {
 
     /** SecurityFilter's local credential path for a sign-in token of {@code userId}. */
     private PrincipalContext viaFilter(String userId, Map<String, String> headers, Set<String> tokenRoles) {
+        return viaFilter(userId, headers, tokenRoles, null);
+    }
+
+    private PrincipalContext viaFilter(String userId, Map<String, String> headers, Set<String> tokenRoles,
+                                       jakarta.ws.rs.container.ResourceInfo resourceInfo) {
         CredentialUserIdPassword credential = world.credential(userId);
         Map<String, Object> claims = new HashMap<>();
         claims.put("sub", credential.getSubject());
@@ -225,6 +303,7 @@ class PrincipalContextResolverParityTest {
         filter.securityUtils = world.securityUtils;
         filter.envConfigUtils = world.env;
         filter.sessionApplicationId = Optional.of(PrincipalFixture.APP);
+        filter.resourceInfo = resourceInfo;
 
         Map<String, String> all = new HashMap<>(headers);
         all.put("Authorization", "Bearer signed-in");
