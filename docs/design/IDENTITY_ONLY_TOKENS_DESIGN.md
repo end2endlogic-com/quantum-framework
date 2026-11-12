@@ -89,7 +89,7 @@ Response `helixor.principal_context.v1` (`PrincipalContextResolution`):
 
 Typed refusals: `PRINCIPAL_UNKNOWN` (401), `PRINCIPAL_DISABLED` (401),
 `APPLICATION_NOT_GRANTED` (403), `REALM_NOT_AUTHORIZED` (403),
-`TENANT_NOT_AUTHORIZED` (403), `IMPERSONATION_REFUSED` (403).
+`TENANT_NOT_AUTHORIZED` (403), `TENANT_SELECTION_REQUIRED` (400), `IMPERSONATION_REFUSED` (403).
 
 Auth computes it with exactly the 1.4.1 credential path, extracted into one
 framework service (`PrincipalContextResolver`) and used by both
@@ -109,6 +109,23 @@ framework service (`PrincipalContextResolver`) and used by both
 - `area2RealmOverrides`, `dataDomainPolicy` from the credential;
 - impersonation: `buildImpersonatedContext` with the credential's
   `authorizedImpersonateIds` / `impersonateFilterScript`.
+
+### Tenancy models
+
+The realm catalog's `RealmTenancyMode` decides; applications carry no code
+for either.
+
+- **Dedicated realm per tenant (`SINGLE_TENANT`)**: the realm's DomainContext
+  is the one tenant. Resolving the realm resolves the database, and then you're
+  done. `X-Tenant-Id` is not needed, and if sent it must match. Filtering, where
+  policies ask for it, is by data segment or owner only.
+- **Shared realm (`MULTI_TENANT`)**: the tenant is the assignment's default or
+  the one chosen with `X-Tenant-Id`. It must be authorized by the assignment
+  (`authorizedTenantIds` / `authorizedTenantRegEx`) and active in the realm.
+  Policies scope every query to the tenant (plus org, account and segment).
+- Realm assignments get a `defaultTenantId`. With one authorized tenant, that
+  tenant is the default. With several and no default, resolution fails with
+  `TENANT_SELECTION_REQUIRED` (400), and the UI asks the user to choose.
 
 ### 3. Receiving applications
 
@@ -186,6 +203,7 @@ their claims until step 4.
 ## Decisions for the owner
 
 1. Cache window of 60 seconds for grant changes and revocation to take effect.
+1. `defaultTenantId` on the realm assignment for shared realms.
 2. Issuing service tokens: realm `admin` (proposed) instead of the
    `mint-own-service-token` / `mint-agnostic-service-token` roles, which are
    retired.
