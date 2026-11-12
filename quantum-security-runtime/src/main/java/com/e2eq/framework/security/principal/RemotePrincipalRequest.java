@@ -18,6 +18,10 @@ import java.util.function.UnaryOperator;
  * @param tenantId         the requested tenant, or null for the identity's default
  * @param impersonate      the identity to impersonate, or null
  * @param actingOnBehalfOf the identity a delegating service acts for, or null
+ * @param tenantSelectionOptional true when the request needs no tenant (a platform operation, or
+ *                         a role or realm question asked before the resource is known): Auth
+ *                         answers without one instead of {@code TENANT_SELECTION_REQUIRED}; a
+ *                         requested tenant is still authorized
  */
 public record RemotePrincipalRequest(String bearer,
                                      String issuer,
@@ -26,7 +30,8 @@ public record RemotePrincipalRequest(String bearer,
                                      String realm,
                                      String tenantId,
                                      PrincipalRef impersonate,
-                                     PrincipalRef actingOnBehalfOf) {
+                                     PrincipalRef actingOnBehalfOf,
+                                     boolean tenantSelectionOptional) {
 
     public RemotePrincipalRequest {
         bearer = trimToNull(bearer);
@@ -37,8 +42,13 @@ public record RemotePrincipalRequest(String bearer,
         tenantId = trimToNull(tenantId);
         impersonate = selector(impersonate);
         actingOnBehalfOf = selector(actingOnBehalfOf);
-        Objects.requireNonNull(bearer, "bearer is required");
         Objects.requireNonNull(applicationId, "applicationId is required");
+        // The cache key is the identity: a token that does not name one (no iss or sub) is never
+        // resolved, so it can never share another caller's resolution.
+        if (bearer == null || issuer == null || subject == null) {
+            throw RemotePrincipalResolutionException.of(PrincipalResolutionError.PRINCIPAL_UNKNOWN,
+                    "The verified token names no " + (bearer == null ? "encoding" : issuer == null ? "iss" : "sub"));
+        }
     }
 
     /** Request headers naming the realm, tenant, impersonation and acting-on-behalf-of selections. */
@@ -56,12 +66,14 @@ public record RemotePrincipalRequest(String bearer,
      * userId and subject is refused here with Auth's own {@code INVALID_REQUEST}.
      */
     public static RemotePrincipalRequest fromHeaders(String bearer, String issuer, String subject,
-                                                     String applicationId, UnaryOperator<String> header) {
+                                                     String applicationId, UnaryOperator<String> header,
+                                                     boolean tenantSelectionOptional) {
         return new RemotePrincipalRequest(bearer, issuer, subject, applicationId,
                 header.apply(REALM_HEADER),
                 header.apply(TENANT_HEADER),
                 namedOnce(header.apply(IMPERSONATE_USER_ID_HEADER), header.apply(IMPERSONATE_SUBJECT_HEADER)),
-                namedOnce(header.apply(ACTING_USER_ID_HEADER), header.apply(ACTING_SUBJECT_HEADER)));
+                namedOnce(header.apply(ACTING_USER_ID_HEADER), header.apply(ACTING_SUBJECT_HEADER)),
+                tenantSelectionOptional);
     }
 
     private static PrincipalRef namedOnce(String userId, String subject) {
@@ -78,7 +90,8 @@ public record RemotePrincipalRequest(String bearer,
      * itself (two tokens for the same identity resolve alike).
      */
     public CacheKey cacheKey() {
-        return new CacheKey(issuer, subject, applicationId, realm, tenantId, impersonate, actingOnBehalfOf);
+        return new CacheKey(issuer, subject, applicationId, realm, tenantId, impersonate, actingOnBehalfOf,
+                tenantSelectionOptional);
     }
 
     /** Never prints the bearer. */
@@ -86,12 +99,13 @@ public record RemotePrincipalRequest(String bearer,
     public String toString() {
         return "RemotePrincipalRequest[issuer=" + issuer + ", subject=" + subject
                 + ", applicationId=" + applicationId + ", realm=" + realm + ", tenantId=" + tenantId
-                + ", impersonate=" + impersonate + ", actingOnBehalfOf=" + actingOnBehalfOf + "]";
+                + ", impersonate=" + impersonate + ", actingOnBehalfOf=" + actingOnBehalfOf
+                + ", tenantSelectionOptional=" + tenantSelectionOptional + "]";
     }
 
-    /** (iss, sub, application, realm, tenant, impersonation, acting-on-behalf-of). */
+    /** (iss, sub, application, realm, tenant, impersonation, acting-on-behalf-of, tenant selection). */
     public record CacheKey(String issuer, String subject, String applicationId, String realm, String tenantId,
-                           PrincipalRef impersonate, PrincipalRef actingOnBehalfOf) {
+                           PrincipalRef impersonate, PrincipalRef actingOnBehalfOf, boolean tenantSelectionOptional) {
     }
 
     private static PrincipalRef selector(PrincipalRef ref) {

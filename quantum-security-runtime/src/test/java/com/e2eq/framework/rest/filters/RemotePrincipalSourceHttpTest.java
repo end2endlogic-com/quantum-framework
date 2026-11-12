@@ -35,6 +35,9 @@ import java.util.function.Function;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 /**
@@ -76,12 +79,19 @@ class RemotePrincipalSourceHttpTest {
 
         assertEquals(200, response.statusCode(), response.body());
         assertEquals("mingardia:airfreight-demo:helixor-di:airfreight-demo-example:editor", response.body());
-        assertEquals(1, StubSource.requests.size(), "augmentor and filter share one resolution per request");
-        RemotePrincipalRequest sent = StubSource.requests.get(0);
+        // One question before matching (roles, refusal, migration realm: tenant selection optional)
+        // and one for the resource's own tenant rule; each asked once.
+        assertEquals(2, StubSource.requests.size(), StubSource.requests.toString());
+        assertEquals(List.of(true, false),
+                StubSource.requests.stream().map(RemotePrincipalRequest::tenantSelectionOptional).toList());
+        RemotePrincipalRequest sent = StubSource.requests.get(1);
         assertEquals("helixor-di", sent.applicationId());
         assertEquals("subject-123", sent.subject());
         assertEquals("https://lifecycle.invalid", sent.issuer());
         verifyNoInteractions(credentials, providers, directory, memberships);
+        // The migration check uses the realm Auth resolved, not the token's helixor-di-D1.
+        verify(migrations, atLeastOnce()).checkInitialized("airfreight-demo");
+        verify(migrations, never()).checkInitialized("helixor-di-D1");
     }
 
     @Test
@@ -111,6 +121,46 @@ class RemotePrincipalSourceHttpTest {
 
         assertEquals(403, response.statusCode(), response.body());
         assertTrue(response.body().contains("\"code\":\"TENANT_NOT_AUTHORIZED\""), response.body());
+    }
+
+    @Test
+    void aTypedRefusalOnARolesAllowedResourceKeepsItsStatusAndCode() throws Exception {
+        StubSource.answer = request -> {
+            throw new RemotePrincipalResolutionException(403, "APPLICATION_NOT_GRANTED",
+                    "The identity is not granted this application", "detail");
+        };
+
+        HttpResponse<String> response = call("remote-principal/roles", Map.of());
+
+        assertEquals(403, response.statusCode(), response.body());
+        assertTrue(response.body().contains("\"code\":\"APPLICATION_NOT_GRANTED\""), response.body());
+    }
+
+    @Test
+    void authUnavailableOnARolesAllowedResourceIs503() throws Exception {
+        StubSource.answer = request -> {
+            throw RemotePrincipalResolutionException.unavailable("connection refused");
+        };
+
+        HttpResponse<String> response = call("remote-principal/roles", Map.of());
+
+        assertEquals(503, response.statusCode(), response.body());
+        assertTrue(response.body().contains("\"code\":\"PRINCIPAL_RESOLUTION_UNAVAILABLE\""), response.body());
+    }
+
+    @Test
+    void aTenantSelectionRefusalReachesTheResourceRuleOnly() throws Exception {
+        // Before matching the question is asked with tenant selection optional; the resource's own
+        // rule (required here) refuses with Auth's code.
+        StubSource.answer = request -> {
+            if (request.tenantSelectionOptional()) return principal("airfreight-demo-example", "editor");
+            throw new RemotePrincipalResolutionException(400, "TENANT_SELECTION_REQUIRED", "Select a tenant", "d");
+        };
+
+        HttpResponse<String> response = call("remote-principal/roles", Map.of());
+
+        assertEquals(400, response.statusCode(), response.body());
+        assertTrue(response.body().contains("\"code\":\"TENANT_SELECTION_REQUIRED\""), response.body());
     }
 
     @Test

@@ -31,7 +31,17 @@ public record PrincipalContextRequest(Mode mode,
                                       String impersonateUserId,
                                       String actingOnBehalfOfSubject,
                                       String actingOnBehalfOfUserId,
-                                      SignedClaims signedClaims) {
+                                      SignedClaims signedClaims,
+                                      boolean tenantSelectionOptional) {
+
+    /** The 1.4.3 step-1 shape: tenant selection required. */
+    public PrincipalContextRequest(Mode mode, String subject, List<String> userIdCandidates, String applicationId,
+                                   String realm, String tenantId, String impersonateSubject,
+                                   String impersonateUserId, String actingOnBehalfOfSubject,
+                                   String actingOnBehalfOfUserId, SignedClaims signedClaims) {
+        this(mode, subject, userIdCandidates, applicationId, realm, tenantId, impersonateSubject,
+                impersonateUserId, actingOnBehalfOfSubject, actingOnBehalfOfUserId, signedClaims, false);
+    }
 
     public enum Mode {
         /** Identity-only resolution with typed refusals. */
@@ -113,6 +123,7 @@ public record PrincipalContextRequest(Mode mode,
         private final List<String> userIdCandidates = new ArrayList<>();
         private String applicationId;
         private String realm;
+        private boolean tenantSelectionOptional;
         private String tenantId;
         private String impersonateSubject;
         private String impersonateUserId;
@@ -163,6 +174,17 @@ public record PrincipalContextRequest(Mode mode,
             return this;
         }
 
+        /**
+         * Identity mode: the request needs no tenant (a platform operation). With no tenant
+         * requested, the principal keeps its base data domain instead of failing
+         * {@code TENANT_SELECTION_REQUIRED}; a requested tenant is still authorized. The signed
+         * path's equivalent is {@link SignedClaims#tenantSelectionExempt()}.
+         */
+        public Builder tenantSelectionOptional(boolean optional) {
+            this.tenantSelectionOptional = optional;
+            return this;
+        }
+
         Builder signedClaims(SignedClaims claims) {
             this.signedClaims = claims;
             return this;
@@ -171,7 +193,7 @@ public record PrincipalContextRequest(Mode mode,
         public PrincipalContextRequest build() {
             return new PrincipalContextRequest(mode, subject, userIdCandidates, applicationId, realm, tenantId,
                     impersonateSubject, impersonateUserId, actingOnBehalfOfSubject, actingOnBehalfOfUserId,
-                    signedClaims);
+                    signedClaims, tenantSelectionOptional);
         }
     }
 }

@@ -65,6 +65,50 @@ class SecurityFilterRemotePrincipalSourceTest {
         assertNull(sent.tenantId());
         assertNull(sent.impersonate());
         assertNull(sent.actingOnBehalfOf());
+        assertEquals(false, sent.tenantSelectionOptional());
+    }
+
+    @Test
+    void aPlatformOperationAsksWithTenantSelectionOptional() {
+        RecordingSource source = new RecordingSource(principal("t"));
+        SecurityFilter filter = filter(source, CLAIMS);
+        filter.resourceInfo = new jakarta.ws.rs.container.ResourceInfo() {
+            @Override public java.lang.reflect.Method getResourceMethod() { return null; }
+            @Override public Class<?> getResourceClass() { return IdentityDirectory.class; }
+        };
+
+        filter.determinePrincipalContext(request(Map.of("Authorization", "Bearer raw-token")));
+
+        assertEquals(true, source.only().tenantSelectionOptional());
+    }
+
+    @Test
+    void aJwtCarriedWithoutAnAuthorizationHeaderStillResolvesRemotely() {
+        // A cookie-carried token: no Authorization header, never the local paths.
+        RecordingSource source = new RecordingSource(principal("airfreight-demo-example"));
+        SecurityFilter filter = filter(source, CLAIMS);
+
+        PrincipalContext context = filter.determinePrincipalContext(request(Map.of()));
+
+        assertEquals("airfreight-demo-example", context.getDataDomain().getTenantId());
+        assertEquals("raw-token", source.only().bearer());
+    }
+
+    @Test
+    void aTokenWithoutASubjectIsRefusedBeforeAuthIsAsked() {
+        RecordingSource source = new RecordingSource(principal("t"));
+        SecurityFilter filter = filter(source, Map.of("iss", ISS));
+
+        RemotePrincipalResolutionException thrown = assertThrows(RemotePrincipalResolutionException.class,
+                () -> filter.determinePrincipalContext(request(Map.of("Authorization", "Bearer raw-token"))));
+
+        assertEquals(401, thrown.getResponse().getStatus());
+        assertEquals("PRINCIPAL_UNKNOWN", thrown.code());
+        assertTrue(source.requests.isEmpty());
+    }
+
+    @com.e2eq.framework.annotations.FunctionalMapping(area = "security", domain = "identity")
+    static final class IdentityDirectory {
     }
 
     @Test

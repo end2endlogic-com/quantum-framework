@@ -542,39 +542,27 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
      * {@code sub} are not read, and Auth has already applied the realm switch, application
      * admission and tenant selection, so none runs here. A refusal or an unreachable Auth fails
      * the request ({@link com.e2eq.framework.security.principal.RemotePrincipalResolutionException});
-     * there is no fallback to the claims or local credential paths. Returns null for a request
-     * without a verified JWT bearer (anonymous), which keeps its usual path.
+     * there is no fallback to the claims or local credential paths. A platform operation
+     * ({@link #isPlatformTenantExemptRequest()}) asks with tenant selection optional, as the local
+     * paths exempt it. Returns null for a request without a verified JWT (anonymous), which keeps
+     * its usual path.
      */
     private PrincipalContext remotePrincipalContext(ContainerRequestContext requestContext,
                                                     RequestAuthorizationState requestState) {
-        String authHeader = requestContext.getHeaderString(HttpHeaders.AUTHORIZATION);
         JsonWebToken token = currentJwt();
-        if (authHeader == null || token == null) {
+        if (token == null) {
             return null;
         }
+        // Every verified JWT, however it was carried (header or cookie), is resolved remotely and
+        // presented by its own encoding; none falls back to the local paths.
         String issuer = claimString("iss");
         String subject = claimString("sub");
-        var request = com.e2eq.framework.security.principal.RemotePrincipalRequest.fromHeaders(
-                verifiedBearer(token, authHeader), issuer, subject,
-                remotePrincipalSettings.applicationId(), requestContext::getHeaderString);
-        PrincipalContext resolved = RequestAuthorizationState.remotePrincipal(
-                routingContext, request, remotePrincipalSettings.source());
+        PrincipalContext resolved = RemotePrincipals.resolve(remotePrincipalSettings, routingContext, token,
+                requestContext::getHeaderString, isPlatformTenantExemptRequest());
         PrincipalContext completed = applyCustomProperties(requestContext, resolved, null);
         if (requestState != null) requestState.complete(
                 ResolvedAuthorizationContext.from(issuer, subject, completed));
         return completed;
-    }
-
-    /** The verified token's own encoding; the Authorization header's value when it has none. */
-    private static String verifiedBearer(JsonWebToken token, String authHeader) {
-        String raw = token.getRawToken();
-        if (raw != null && !raw.isBlank()) {
-            return raw;
-        }
-        String value = authHeader.trim();
-        return value.regionMatches(true, 0, AUTHENTICATION_SCHEME + " ", 0, AUTHENTICATION_SCHEME.length() + 1)
-                ? value.substring(AUTHENTICATION_SCHEME.length() + 1).trim()
-                : value;
     }
 
     /**

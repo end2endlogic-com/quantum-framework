@@ -180,19 +180,14 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
                                             org.eclipse.microprofile.jwt.JsonWebToken token,
                                             io.vertx.ext.web.RoutingContext routing) {
         QuarkusSecurityIdentity.Builder builder = withoutTokenRoles(identity);
-        String bearer = token.getRawToken();
-        if (bearer == null || bearer.isBlank()) {
-            Log.warnf("RolesAugmentor: verified token for %s has no raw encoding; no roles granted",
-                    identity.getPrincipal().getName());
-            return builder.build();
-        }
         com.e2eq.framework.model.securityrules.PrincipalContext principal;
         try {
-            var request = com.e2eq.framework.security.principal.RemotePrincipalRequest.fromHeaders(
-                    bearer, claim(token, "iss"), claim(token, "sub"),
-                    remotePrincipalSettings.applicationId(), name -> header(routing, name));
-            principal = RequestAuthorizationState.remotePrincipal(routing, request, remotePrincipalSettings.source());
+            // Roles do not depend on the tenant, and the resource (whose tenant rule SecurityFilter
+            // applies) is not known yet: ask with tenant selection optional.
+            principal = RemotePrincipals.resolve(remotePrincipalSettings, routing, token,
+                    name -> header(routing, name), true);
         } catch (RuntimeException refused) {
+            // RemotePrincipalRefusalFilter answers this refusal with its status and code.
             Log.debugf("RolesAugmentor: remote principal resolution failed for %s: %s",
                     identity.getPrincipal().getName(), refused.getMessage());
             return builder.build();

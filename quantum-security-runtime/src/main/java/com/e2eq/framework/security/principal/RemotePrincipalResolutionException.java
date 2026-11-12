@@ -28,6 +28,11 @@ public class RemotePrincipalResolutionException extends WebApplicationException 
         this.publicMessage = publicMessage;
     }
 
+    /** A refusal this application raises itself, with the code's own status and fixed message. */
+    public static RemotePrincipalResolutionException of(PrincipalResolutionError error, String detail) {
+        return new RemotePrincipalResolutionException(error.httpStatus(), error.name(), error.publicMessage(), detail);
+    }
+
     /** Auth unreachable, or its answer unusable, and no unexpired resolution held: fail closed. */
     public static RemotePrincipalResolutionException unavailable(String detail) {
         return new RemotePrincipalResolutionException(503, UNAVAILABLE, UNAVAILABLE_MESSAGE, detail);

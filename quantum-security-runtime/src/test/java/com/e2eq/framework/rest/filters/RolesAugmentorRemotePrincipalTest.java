@@ -34,6 +34,7 @@ class RolesAugmentorRemotePrincipalTest {
         assertEquals("raw-token", sent.bearer());
         assertEquals("helixor-di", sent.applicationId());
         assertEquals("tenant-x", sent.tenantId());
+        assertTrue(sent.tenantSelectionOptional(), "roles are asked before the resource's tenant rule is known");
     }
 
     @Test

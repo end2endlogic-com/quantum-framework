@@ -46,6 +46,9 @@ public class MigrationCheckRequestFilter implements ContainerRequestFilter {
     @Inject
     io.vertx.ext.web.RoutingContext routingContext;
 
+    @Inject
+    com.e2eq.framework.security.principal.RemotePrincipalSettings remotePrincipalSettings;
+
     @ConfigProperty(name = "quantum.database.migration.enabled", defaultValue = "true")
     boolean migrationCheckEnabled;
 
@@ -106,6 +109,14 @@ public class MigrationCheckRequestFilter implements ContainerRequestFilter {
     }
 
     String resolveMigrationRealm(ContainerRequestContext requestContext) {
+        // Remote mode: the realm is the one Auth resolved for this request (X-Realm included),
+        // never the token's realm claim. A refusal was already answered by RemotePrincipalRefusalFilter.
+        if (remotePrincipalSettings != null && remotePrincipalSettings.remote()
+                && identity != null && !identity.isAnonymous()
+                && identity.getPrincipal() instanceof JsonWebToken token) {
+            return RemotePrincipals.resolve(remotePrincipalSettings, routingContext, token,
+                    requestContext::getHeaderString, true).getDefaultRealm();
+        }
         String realmOverride = sessionSelection != null && sessionSelection.enabled()
                 ? sessionSelection.realm(routingContext, identity, requestContext.getHeaderString("X-Realm"),
                     sessionRealm.map(String::trim).filter(value -> !value.isEmpty()).orElse(null))
