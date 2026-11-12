@@ -1,6 +1,6 @@
 # Identity-Only Tokens: Auth Resolves The Principal
 
-Status: **Proposed** (2026-11-12). Needs owner sign-off before implementation.
+Status: **Accepted** (2026-11-12, owner). All decisions below accepted.
 Owners: quantum-framework (`quantum-security-runtime`, `quantum-jwt-provider`,
 `quantum-morphia-repos`, `quantum-system-management`), quantum-enterprise
 (`quantum-auth-service`, `quantum-auth-client-provider`), helixor-core (Python
@@ -219,7 +219,7 @@ Resolve request field: `actingOnBehalfOf { userId | subject }`. Response field:
 Applications still on 1.4.2 keep working during steps 1-3 because tokens keep
 their claims until step 4.
 
-## Decisions for the owner
+## Decisions (accepted 2026-11-12)
 
 1. Cache window of 60 seconds for grant changes and revocation to take effect.
 2. Issuing service tokens: realm `admin` (proposed) instead of the
