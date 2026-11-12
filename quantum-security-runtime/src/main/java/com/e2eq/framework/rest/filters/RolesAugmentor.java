@@ -47,6 +47,11 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
     @Inject
     com.e2eq.framework.model.persistent.morphia.IdentityRoleResolver identityRoleResolver;
 
+    // quantum.auth.principal-source=remote: @RolesAllowed sees the roles Auth resolves, never the
+    // token's groups. Absent (unit tests) or unset keeps the paths below.
+    @Inject
+    com.e2eq.framework.security.principal.RemotePrincipalSettings remotePrincipalSettings;
+
     @Inject
     com.e2eq.framework.api.system.SystemDirectory systemDirectory;
 
@@ -79,6 +84,11 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
     private SecurityIdentity build(SecurityIdentity identity, String contextRealm,
                                    io.vertx.ext.web.RoutingContext routing) {
         String originalPrincipal = identity.getPrincipal().getName();
+
+        if (remotePrincipalSettings != null && remotePrincipalSettings.remote()
+                && identity.getPrincipal() instanceof org.eclipse.microprofile.jwt.JsonWebToken token) {
+            return remoteIdentity(identity, token, routing);
+        }
 
         // In an application session whose application or realm differs from the token's, the
         // session's roles replace the token's, derived exactly as SecurityFilter derives them.
@@ -158,6 +168,60 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
         }
 
         return builder.build();
+    }
+
+    /**
+     * Remote mode: the identity carries exactly the roles Auth resolved for this application and
+     * request (shared with SecurityFilter through the request's state), plus {@code user}. When Auth
+     * refuses or cannot answer, the identity keeps no roles at all (fail closed) and SecurityFilter
+     * answers the request with Auth's status and code.
+     */
+    private SecurityIdentity remoteIdentity(SecurityIdentity identity,
+                                            org.eclipse.microprofile.jwt.JsonWebToken token,
+                                            io.vertx.ext.web.RoutingContext routing) {
+        QuarkusSecurityIdentity.Builder builder = withoutTokenRoles(identity);
+        String bearer = token.getRawToken();
+        if (bearer == null || bearer.isBlank()) {
+            Log.warnf("RolesAugmentor: verified token for %s has no raw encoding; no roles granted",
+                    identity.getPrincipal().getName());
+            return builder.build();
+        }
+        com.e2eq.framework.model.securityrules.PrincipalContext principal;
+        try {
+            var request = com.e2eq.framework.security.principal.RemotePrincipalRequest.fromHeaders(
+                    bearer, claim(token, "iss"), claim(token, "sub"),
+                    remotePrincipalSettings.applicationId(), name -> header(routing, name));
+            principal = RequestAuthorizationState.remotePrincipal(routing, request, remotePrincipalSettings.source());
+        } catch (RuntimeException refused) {
+            Log.debugf("RolesAugmentor: remote principal resolution failed for %s: %s",
+                    identity.getPrincipal().getName(), refused.getMessage());
+            return builder.build();
+        }
+        builder.addRoles(roleSet(principal.getRoles() == null ? new String[0] : principal.getRoles()));
+        builder.addRole("user");
+        if (principal.getUserId() != null && !principal.getUserId().isBlank()) {
+            builder.addAttribute("userId", principal.getUserId());
+        }
+        if (principal.getSubjectId() != null && !principal.getSubjectId().isBlank()) {
+            builder.addAttribute("subjectId", principal.getSubjectId());
+            builder.addAttribute("sub", principal.getSubjectId());
+        }
+        builder.addAttribute("originalPrincipal", identity.getPrincipal().getName());
+        return builder.build();
+    }
+
+    private String header(io.vertx.ext.web.RoutingContext routing, String name) {
+        if (routing != null) {
+            return routing.request().getHeader(name);
+        }
+        if (httpHeaders == null) {
+            return null;
+        }
+        try {
+            return httpHeaders.getHeaderString(name);
+        } catch (ContextNotActiveException unavailable) {
+            return null;
+        }
     }
 
     /**

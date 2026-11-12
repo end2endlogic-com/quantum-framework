@@ -148,6 +148,11 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
     @ConfigProperty(name = "quantum.security.system-realm.authority-roles", defaultValue = "system")
     List<String> systemRealmAuthorityRoles = List.of("system");
 
+    // Remote principal source (quantum.auth.principal-source=remote): every verified bearer is
+    // resolved by Auth for this application. Unset (or absent, as in unit tests) keeps the paths below.
+    @Inject
+    com.e2eq.framework.security.principal.RemotePrincipalSettings remotePrincipalSettings;
+
     @Inject
     com.e2eq.framework.security.runtime.RuleContext ruleContext;
 
@@ -476,6 +481,12 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
     protected PrincipalContext determinePrincipalContext(ContainerRequestContext requestContext) {
         RequestAuthorizationState requestState = RequestAuthorizationState.from(routingContext);
         if (requestState != null) requestState.beginAdmission();
+        if (remotePrincipalSource()) {
+            PrincipalContext remote = remotePrincipalContext(requestContext, requestState);
+            if (remote != null) {
+                return remote;
+            }
+        }
         validateContextInputs(requestContext);
 
         String tenantId = requestContext.getHeaderString("X-Tenant-Id");
@@ -518,6 +529,52 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         if (requestState != null) requestState.complete(
                 ResolvedAuthorizationContext.from(claimString("iss"), claimString("sub"), completed));
         return completed;
+    }
+
+    private boolean remotePrincipalSource() {
+        return remotePrincipalSettings != null && remotePrincipalSettings.remote();
+    }
+
+    /**
+     * Remote mode ({@code IDENTITY_ONLY_TOKENS_DESIGN.md} section 3): the bearer was verified by
+     * signature; Auth resolves who it is for this application, with the request's realm, tenant,
+     * impersonation and acting-on-behalf-of selections. Token claims beyond {@code iss} and
+     * {@code sub} are not read, and Auth has already applied the realm switch, application
+     * admission and tenant selection, so none runs here. A refusal or an unreachable Auth fails
+     * the request ({@link com.e2eq.framework.security.principal.RemotePrincipalResolutionException});
+     * there is no fallback to the claims or local credential paths. Returns null for a request
+     * without a verified JWT bearer (anonymous), which keeps its usual path.
+     */
+    private PrincipalContext remotePrincipalContext(ContainerRequestContext requestContext,
+                                                    RequestAuthorizationState requestState) {
+        String authHeader = requestContext.getHeaderString(HttpHeaders.AUTHORIZATION);
+        JsonWebToken token = currentJwt();
+        if (authHeader == null || token == null) {
+            return null;
+        }
+        String issuer = claimString("iss");
+        String subject = claimString("sub");
+        var request = com.e2eq.framework.security.principal.RemotePrincipalRequest.fromHeaders(
+                verifiedBearer(token, authHeader), issuer, subject,
+                remotePrincipalSettings.applicationId(), requestContext::getHeaderString);
+        PrincipalContext resolved = RequestAuthorizationState.remotePrincipal(
+                routingContext, request, remotePrincipalSettings.source());
+        PrincipalContext completed = applyCustomProperties(requestContext, resolved, null);
+        if (requestState != null) requestState.complete(
+                ResolvedAuthorizationContext.from(issuer, subject, completed));
+        return completed;
+    }
+
+    /** The verified token's own encoding; the Authorization header's value when it has none. */
+    private static String verifiedBearer(JsonWebToken token, String authHeader) {
+        String raw = token.getRawToken();
+        if (raw != null && !raw.isBlank()) {
+            return raw;
+        }
+        String value = authHeader.trim();
+        return value.regionMatches(true, 0, AUTHENTICATION_SCHEME + " ", 0, AUTHENTICATION_SCHEME.length() + 1)
+                ? value.substring(AUTHENTICATION_SCHEME.length() + 1).trim()
+                : value;
     }
 
     /**
@@ -1017,8 +1074,9 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                 context.getDomainContext()
             );
 
-        // Collect properties from all resolvers (sorted by priority)
-        java.util.Map<String, Object> allProperties = new java.util.LinkedHashMap<>();
+        // Collect properties from all resolvers (sorted by priority), after any the context already
+        // carries (a remote principal's actingService); locally built contexts carry none.
+        java.util.Map<String, Object> allProperties = new java.util.LinkedHashMap<>(context.getCustomProperties());
 
         java.util.List<com.e2eq.framework.model.securityrules.PrincipalContextPropertiesResolver> sortedResolvers =
             new java.util.ArrayList<>();
@@ -1047,7 +1105,12 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         }
 
         // Rebuild context with custom properties
-        return new PrincipalContext.Builder()
+        PrincipalContext.Builder rebuilt = new PrincipalContext.Builder();
+        if (remotePrincipalSource()) {
+            // A remote principal names its subject; the local paths below never kept it here.
+            rebuilt.withSubjectId(context.getSubjectId());
+        }
+        return rebuilt
                 .withDefaultRealm(context.getDefaultRealm())
                 .withApplicationId(context.getApplicationId())
                 .withDataDomain(context.getDataDomain())

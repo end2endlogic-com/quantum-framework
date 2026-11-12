@@ -630,6 +630,32 @@ An explicit `X-Realm` still applies with its own checks.
 Service tokens and anonymous requests are unchanged.
 Leave both unset to keep the token-derived behaviour.
 
+[[remote-principal-source]]
+==== Remote principal source (`quantum.auth.principal-source=remote`)
+
+An application that receives tokens issued by a central `quantum-auth-service` can ask Auth who the caller is instead of reading roles, realm or tenancy from the token (identity-only tokens, step 2).
+After the token's signature is verified locally, `SecurityFilter` calls the deployed `RemotePrincipalSource` for every bearer, user and service tokens alike, with this application's id and the request's `X-Realm`, `X-Tenant-Id`, `X-Impersonate-*` and `X-Acting-On-Behalf-Of-*` selections.
+Auth applies the realm switch, application grant, default-tenant rule, impersonation and delegation; the filter skips its own realm override, admission and tenant selection, and still runs `PrincipalContextPropertiesResolver` beans.
+`@RolesAllowed` sees the roles Auth resolved (plus `user`), never the token's `groups`.
+Only `iss` and `sub` are read from the token.
+
+* Auth's typed refusals pass through with Auth's status and `{"code", "message"}` body: `PRINCIPAL_UNKNOWN` and `PRINCIPAL_DISABLED` (401), `APPLICATION_NOT_GRANTED`, `REALM_NOT_AUTHORIZED`, `TENANT_NOT_AUTHORIZED`, `IMPERSONATION_REFUSED`, `DELEGATION_NOT_ALLOWED`, `DELEGATION_TARGET_UNKNOWN` (403), `TENANT_SELECTION_REQUIRED` and `INVALID_REQUEST` (400). On a `@RolesAllowed` endpoint a refused identity holds no roles and is answered 403 by the role check.
+* Auth unreachable, or an answer that is not a valid `helixor.principal_context.v1` for this application, with no unexpired resolution held: 503 `PRINCIPAL_RESOLUTION_UNAVAILABLE`. There is no fallback to token claims.
+* The receiving application id is `quantum.security.session.application-id`, else `quantum.application-registration.application-id`.
+* Startup fails when the value is not `remote`, when no `RemotePrincipalSource` bean is deployed (`quantum-auth-client-provider` provides it), when no application id is configured, or together with `quantum.security.session.realm` or `quantum.security.session.selection-policy`.
+
+[source,properties]
+----
+auth.provider=quantum-auth-service
+quantum.auth-service.base-url=${QUANTUM_AUTH_SERVICE_URL}
+mp.jwt.verify.issuer=${HELIXORQ_ISSUER}
+mp.jwt.verify.publickey.location=${HELIXORQ_JWKS_URL}
+quantum.security.session.application-id=acme-orders
+quantum.auth.principal-source=remote
+----
+
+Leave the property unset to keep the paths described above unchanged.
+
 ==== Realm Override with `X-Realm`
 
 If the service token's credential has `authorizedRealms` or a matching `realmRegEx`, the caller can pass `X-Realm: <target-realm>` to operate in a different realm.
@@ -823,6 +849,10 @@ See xref:{doc-root}/user-guide/multiple-auth-providers.adoc#per-tenant-key-pairs
 | `quantum.security.session.realm`
 | _(unset — token realm)_
 | Realm a user's session runs in when the request sends no `X-Realm`.
+
+| `quantum.auth.principal-source`
+| (unset)
+| `remote` resolves every verified bearer through Auth for this application; see <<remote-principal-source>>. Unset keeps token-claim or local-credential resolution.
 
 | `quantum.security.system-realm.authority-roles`
 | `system`

@@ -57,6 +57,14 @@ tokens use the system realm, sessions use the configured session realm or signed
 realm. Missing required signed realm fails closed. Realm selection never grants
 realm access; the authorization filter still admits the request separately.
 
+With `quantum.auth.principal-source=remote`, a verified bearer is resolved by the
+deployed `RemotePrincipalSource` (`quantum-auth-client-provider`) for this
+application: `SecurityFilter` and `RolesAugmentor` read only `iss` and `sub`
+from the token, share one resolution per request, and fail the request with
+Auth's status and code, or 503 `PRINCIPAL_RESOLUTION_UNAVAILABLE`, instead of
+falling back to claims. Unset keeps every path above unchanged. See the user
+guide, "Remote principal source".
+
 ## Verification
 
 Run `mvn -pl quantum-security-runtime,quantum-oauth-server -am test` from the
