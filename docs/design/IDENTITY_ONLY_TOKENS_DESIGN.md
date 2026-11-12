@@ -119,13 +119,17 @@ for either.
   is the one tenant. Resolving the realm resolves the database, and then you're
   done. `X-Tenant-Id` is not needed, and if sent it must match. Filtering, where
   policies ask for it, is by data segment or owner only.
-- **Shared realm (`MULTI_TENANT`)**: the tenant is the assignment's default or
-  the one chosen with `X-Tenant-Id`. It must be authorized by the assignment
+- **Shared realm (`MULTI_TENANT`)**: the tenant is the identity's default
+  tenant or the one chosen with `X-Tenant-Id`. It must be authorized by the assignment
   (`authorizedTenantIds` / `authorizedTenantRegEx`) and active in the realm.
   Policies scope every query to the tenant (plus org, account and segment).
-- Realm assignments get a `defaultTenantId`. With one authorized tenant, that
-  tenant is the default. With several and no default, resolution fails with
-  `TENANT_SELECTION_REQUIRED` (400), and the UI asks the user to choose.
+- An identity with access to more than one tenant must define a default
+  tenant, either in its credential (DomainContext `tenantId`) or in its
+  data-domain policy. That default applies when no `X-Tenant-Id` is sent. An
+  identity with exactly one tenant uses that tenant. Granting a second tenant
+  to an identity with no default is refused when the grant is saved. An older
+  record that breaks the rule fails resolution with
+  `TENANT_SELECTION_REQUIRED` (400).
 
 ### 3. Receiving applications
 
@@ -218,7 +222,6 @@ their claims until step 4.
 ## Decisions for the owner
 
 1. Cache window of 60 seconds for grant changes and revocation to take effect.
-1. `defaultTenantId` on the realm assignment for shared realms.
 2. Issuing service tokens: realm `admin` (proposed) instead of the
    `mint-own-service-token` / `mint-agnostic-service-token` roles, which are
    retired.
