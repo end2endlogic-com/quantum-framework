@@ -222,15 +222,18 @@ their claims until step 4.
 ## Decisions (accepted 2026-11-12)
 
 1. Cache window of 60 seconds for grant changes and revocation to take effect.
-2. Issuing service tokens: realm `admin` (proposed) instead of the
+2. Default tenant: an identity with more than one tenant defines it in its
+   credential or data-domain policy; granting a second tenant without one is
+   refused.
+3. Issuing service tokens: realm `admin` instead of the
    `mint-own-service-token` / `mint-agnostic-service-token` roles, which are
    retired.
-3. Two service token kinds (application, delegating); drop identity-bound
+4. Two service token kinds (application, delegating); drop identity-bound
    ("own") tokens.
-1. Delegation scope reuses the credential's impersonation authorization.
-1. An acted-for user's roles come from their grants for the receiving service,
+5. Delegation scope reuses the credential's impersonation authorization.
+6. An acted-for user's roles come from their grants for the receiving service,
    plus realm-wide default grants.
-4. Applications move to framework 1.4.3 for step 2 (an exception to staying on
+7. Applications move to framework 1.4.3 for step 2 (an exception to staying on
    1.4.2).
 
 ## Superseded
