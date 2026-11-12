@@ -67,7 +67,7 @@ POST /v1/auth/principal-context/resolve
   "realm": "acme-D1",                      // optional: the caller's X-Realm request
   "tenantId": "acme",                      // optional: the caller's X-Tenant-Id request
   "impersonate": { "userId": "..." },      // optional: X-Impersonate-UserId | -Subject
-  "actingOnBehalfOfUserId": "..."          // optional: service calls, attribution
+  "actingOnBehalfOf": { "userId": "..." }  // optional: delegating service tokens only
 }
 ```
 
@@ -82,7 +82,7 @@ Response `helixor.principal_context.v1` (`PrincipalContextResolution`):
   "area2RealmOverrides": { "<area>": "<realm>" },
   "dataDomainPolicy": { ... },
   "impersonatedBy": { "userId", "subject" } | null,
-  "actingOnBehalfOfUserId": ... | null,
+  "actingService": { "userId", "subject" } | null,
   "cacheSeconds": 60
 }
 ```
@@ -160,25 +160,40 @@ Helixor Python receivers (`helixor_core.auth` `require_principal`) do the same:
 verify the signature, then resolve through the generated Python auth SDK with
 their application id (`helixor-solver`, `helixor-decision`, ...).
 
-### 4. Service tokens v2
+### 4. Service tokens v2 — two kinds
 
-- A service is a credential like any other. Its token is identity only
-  (section 1) and carries no roles, realm or tenants.
-- Its roles per application come from grants, exactly as a person's do: the
-  staff app's Access page grants the service identity (or a group it belongs
-  to) roles in a realm for an application. Changing them needs no new token.
-- The realms and tenants it may act in are the credential's `authorizedRealms`
-  / realm assignments. A call names them with `X-Realm` / `X-Tenant-Id`;
-  resolution checks them.
-- Issuing: `POST /security/service-token { description, realm }` returns the
-  token and its `credentialId` (`jti`). No roles, no expiry, no audiences, no
-  identity-bound "own" kind. Revoking the credential stops it on the next
-  resolution (within the cache window).
-- Who may issue: an `admin` of the realm the service is created in (decision
-  below).
+A service is a credential like any other, and its token is identity only
+(section 1). The credential records its kind (`serviceKind`).
 
-The staff app's Service accounts page reduces to: name, realm, Issue; grants
-are set on the Access page.
+- **Application token**: "I am this application; give me the answer." The
+  credential has one realm and one tenant (its DomainContext) and its own grants
+  per receiving service. Calls send only the bearer. Resolution is exactly as
+  for a user: one realm, one tenant, the application's roles and policies.
+  `X-Acting-On-Behalf-Of-*` is refused (`DELEGATION_NOT_ALLOWED`).
+- **Delegating token**: for multi-tenant services (DI, Agent Framework). A call
+  sends `X-Acting-On-Behalf-Of-UserId` (or `-Subject`). Auth checks that the
+  service credential may delegate to that identity, then resolves the
+  **acted-for identity**: its realm, tenant, roles, area overrides and
+  data-domain policy, recording `actingService`. The receiving service applies
+  those policies as that identity. Without the header the service runs as
+  itself, like an application token.
+- Delegation scope reuses the credential's impersonation authorization
+  (`authorizedImpersonateIds`, `impersonateFilterScript`, `realmRegEx`).
+- Roles for an acted-for user are resolved for the receiving service's
+  application id, from the user's grants; realm-wide default grants keep that
+  invisible to users.
+- This changes `X-Acting-On-Behalf-Of-*`, which today only records who the
+  work is for: with a delegating token it becomes the identity that is
+  resolved. Callers stop naming the tenant with `X-Realm` / `X-Tenant-Id`.
+- Issuing: `POST /security/service-token { description, realm, kind:
+  "application" | "delegating" }` returns the token and its `credentialId`
+  (`jti`). No roles, no expiry, no audiences, no identity-bound "own" kind.
+  Revoking the credential stops it on the next resolution.
+- Who may issue: an `admin` of the realm the service is created in.
+
+Resolve request field: `actingOnBehalfOf { userId | subject }`. Response field:
+`actingService { userId, subject }`. Refusals: `DELEGATION_NOT_ALLOWED` (403),
+`DELEGATION_TARGET_UNKNOWN` (403).
 
 ## Rollout
 
@@ -207,7 +222,11 @@ their claims until step 4.
 2. Issuing service tokens: realm `admin` (proposed) instead of the
    `mint-own-service-token` / `mint-agnostic-service-token` roles, which are
    retired.
-3. Drop identity-bound ("own") service tokens entirely.
+3. Two service token kinds (application, delegating); drop identity-bound
+   ("own") tokens.
+1. Delegation scope reuses the credential's impersonation authorization.
+1. An acted-for user's roles come from their grants for the receiving service,
+   plus realm-wide default grants.
 4. Applications move to framework 1.4.3 for step 2 (an exception to staying on
    1.4.2).
 
