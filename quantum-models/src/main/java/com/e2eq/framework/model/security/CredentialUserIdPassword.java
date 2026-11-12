@@ -186,6 +186,13 @@ public class CredentialUserIdPassword extends BaseModel {
    /** For SERVICE_TOKEN credentials: the subject of the owning PASSWORD credential. */
    protected String parentCredentialSubject;
 
+   /**
+    * For service credentials: whether the identity runs only as itself
+    * ({@link ServiceKind#APPLICATION}) or may resolve an acted-for identity
+    * ({@link ServiceKind#DELEGATING}). null = neither; delegation is refused.
+    */
+   protected ServiceKind serviceKind;
+
    @Override
    public void validate () {
       super.validate();
