@@ -545,18 +545,6 @@ public class PrincipalContextResolver {
             throw refusal(PrincipalResolutionError.DELEGATION_NOT_ALLOWED,
                     "Only a delegating service credential may act on behalf of an identity");
         }
-        String targetSubject = PrincipalContextRequest.nonBlank(request.actingOnBehalfOfSubject())
-                ? request.actingOnBehalfOfSubject().trim() : null;
-        String targetUserId = targetSubject == null ? request.actingOnBehalfOfUserId().trim() : null;
-        CredentialUserIdPassword target = findImpersonationTarget(targetSubject, targetUserId)
-                .orElseThrow(() -> refusal(PrincipalResolutionError.DELEGATION_TARGET_UNKNOWN,
-                        "No credential for the acted-for identity"));
-        if (credentialDisabled(target)) {
-            throw refusal(PrincipalResolutionError.DELEGATION_TARGET_UNKNOWN,
-                    "The acted-for identity is " + target.getActiveStatus());
-        }
-
-        String targetRealm = request.realm() != null ? request.realm() : target.getDomainContext().getDefaultRealm();
         boolean listed = service.getAuthorizedImpersonateIds() != null
                 && !service.getAuthorizedImpersonateIds().isEmpty();
         boolean scripted = service.getImpersonateFilterScript() != null;
@@ -564,23 +552,30 @@ public class PrincipalContextResolver {
             throw refusal(PrincipalResolutionError.DELEGATION_NOT_ALLOWED,
                     "Service credential '" + service.getUserId() + "' has no delegation scope");
         }
+        // The service's own permission is settled before any acted-for identity is looked up, so
+        // a requested realm outside its reach refuses the same way whoever is named.
+        if (request.realm() != null) {
+            authorizeDelegationRealm(service, request.realm(), scripted);
+        }
+
+        // From here on every refusal is the same: an unknown, disabled or out-of-scope identity
+        // must not be told apart, or delegation becomes a directory probe.
+        String targetSubject = PrincipalContextRequest.nonBlank(request.actingOnBehalfOfSubject())
+                ? request.actingOnBehalfOfSubject().trim() : null;
+        String targetUserId = targetSubject == null ? request.actingOnBehalfOfUserId().trim() : null;
+        CredentialUserIdPassword target = findImpersonationTarget(targetSubject, targetUserId)
+                .orElseThrow(() -> refusal(PrincipalResolutionError.DELEGATION_NOT_ALLOWED,
+                        "No credential for the acted-for identity"));
+        if (credentialDisabled(target)) {
+            throw refusal(PrincipalResolutionError.DELEGATION_NOT_ALLOWED,
+                    "The acted-for identity is " + target.getActiveStatus());
+        }
+        if (request.realm() == null) {
+            authorizeDelegationRealm(service, target.getDomainContext().getDefaultRealm(), scripted);
+        }
         if (listed && !listedTarget(service, target)) {
             throw refusal(PrincipalResolutionError.DELEGATION_NOT_ALLOWED,
                     "'" + target.getUserId() + "' is outside the delegation scope of '" + service.getUserId() + "'");
-        }
-        if (scripted && !scriptEvaluator.evaluate(service.getSubject(), service.getUserId(), targetRealm,
-                service.getImpersonateFilterScript())) {
-            throw refusal(PrincipalResolutionError.DELEGATION_NOT_ALLOWED,
-                    "Service credential '" + service.getUserId() + "' may not delegate in realm " + targetRealm);
-        }
-        // The service's own realm authorization bounds delegation, with the usual reading: no
-        // authorizedRealms and no realmRegEx means its home realm only.
-        try {
-            validateRealmAccess(service, targetRealm, true);
-        } catch (PrincipalResolutionException outside) {
-            throw refusal(PrincipalResolutionError.DELEGATION_NOT_ALLOWED,
-                    "Realm " + targetRealm + " is outside the delegation scope of '" + service.getUserId() + "': "
-                            + outside.getMessage());
         }
 
         PrincipalContextRequest asTarget = PrincipalContextRequest.identity(target.getSubject(), target.getUserId())
@@ -591,6 +586,26 @@ public class PrincipalContextResolver {
         PrincipalContextResolution resolved = resolve(asTarget);
         return new PrincipalContextResolution(resolved.context(), resolved.credential(), service, null,
                 new PrincipalRef(service.getUserId(), service.getSubject()));
+    }
+
+    /**
+     * The service's own realm authorization bounds delegation, with the usual reading (no
+     * authorizedRealms and no realmRegEx means its home realm only), and its script, if any, must
+     * admit the realm.
+     */
+    private void authorizeDelegationRealm(CredentialUserIdPassword service, String realm, boolean scripted) {
+        try {
+            validateRealmAccess(service, realm, true);
+        } catch (PrincipalResolutionException outside) {
+            throw refusal(PrincipalResolutionError.DELEGATION_NOT_ALLOWED,
+                    "Realm " + realm + " is outside the delegation scope of '" + service.getUserId() + "': "
+                            + outside.getMessage());
+        }
+        if (scripted && !scriptEvaluator.evaluate(service.getSubject(), service.getUserId(), realm,
+                service.getImpersonateFilterScript())) {
+            throw refusal(PrincipalResolutionError.DELEGATION_NOT_ALLOWED,
+                    "Service credential '" + service.getUserId() + "' may not delegate in realm " + realm);
+        }
     }
 
     // ------------------------------------------------------------------ realm switch

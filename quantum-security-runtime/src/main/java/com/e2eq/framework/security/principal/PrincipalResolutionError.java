@@ -20,10 +20,12 @@ public enum PrincipalResolutionError {
     TENANT_SELECTION_REQUIRED(400, "Select a tenant: the identity reaches several and defines no default"),
     /** Impersonation is not configured, not authorized, or names an unknown identity. */
     IMPERSONATION_REFUSED(403, "Impersonation refused"),
-    /** Acting on behalf of an identity without a delegating service credential, or outside its scope. */
-    DELEGATION_NOT_ALLOWED(403, "Delegation not allowed"),
-    /** The acted-for identity has no credential. */
-    DELEGATION_TARGET_UNKNOWN(403, "The acted-for identity is not known");
+    /**
+     * Acting on behalf of an identity without a delegating service credential, outside its realm
+     * or scope, or for an identity that is unknown or disabled: one refusal, so delegation cannot
+     * probe which identities exist.
+     */
+    DELEGATION_NOT_ALLOWED(403, "Delegation not allowed");
 
     private final int httpStatus;
     private final String publicMessage;

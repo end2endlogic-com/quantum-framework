@@ -327,7 +327,7 @@ class PrincipalContextResolverRefusalTest {
         }
     }
 
-    // --- DELEGATION_NOT_ALLOWED / DELEGATION_TARGET_UNKNOWN ---
+    // --- DELEGATION_NOT_ALLOWED ---
 
     @Test
     void aUserCannotActOnBehalfOfAnyone() {
@@ -397,15 +397,40 @@ class PrincipalContextResolverRefusalTest {
 
     @Test
     void anUnknownActedForIdentityIsRefused() {
-        refused(PrincipalResolutionError.DELEGATION_TARGET_UNKNOWN, 403,
+        refused(PrincipalResolutionError.DELEGATION_NOT_ALLOWED, 403,
                 () -> resolve(world.identity("svc-deleg@acme").actingOnBehalfOf(null, "nobody@acme")));
     }
 
     @Test
     void aDisabledActedForIdentityIsRefused() {
         world.credential("alice@acme").setActiveStatus(ActiveStatus.INACTIVE);
-        refused(PrincipalResolutionError.DELEGATION_TARGET_UNKNOWN, 403,
+        refused(PrincipalResolutionError.DELEGATION_NOT_ALLOWED, 403,
                 () -> resolve(world.identity("svc-deleg@acme").actingOnBehalfOf(null, "alice@acme")));
+    }
+
+    @Test
+    void unknownDisabledAndOutOfScopeIdentitiesLookTheSame() {
+        world.credential("dave@acme", "sub-dave", "acme-D1", "acme", "user").setActiveStatus(ActiveStatus.DELETED);
+        List<Executable> refusals = List.of(
+                () -> resolve(world.identity("svc-deleg@acme").actingOnBehalfOf(null, "nobody@acme")),
+                () -> resolve(world.identity("svc-deleg@acme").actingOnBehalfOf(null, "dave@acme")),
+                () -> resolve(world.identity("svc-deleg@acme").actingOnBehalfOf(null, "admin@acme")));
+        for (Executable call : refusals) {
+            PrincipalResolutionException refusal = assertThrows(PrincipalResolutionException.class, call);
+            assertEquals(PrincipalResolutionError.DELEGATION_NOT_ALLOWED, refusal.error(), refusal.getMessage());
+            assertEquals("Delegation not allowed", refusal.error().publicMessage());
+        }
+    }
+
+    @Test
+    void theServicesRealmIsCheckedBeforeAnyActedForIdentityIsLookedUp() {
+        world.credential("svc-deleg@acme").setRealmRegEx("acme-D1");
+        PrincipalResolutionException known = assertThrows(PrincipalResolutionException.class,
+                () -> resolve(world.identity("svc-deleg@acme").actingOnBehalfOf(null, "alice@acme").realm("acme-D2")));
+        PrincipalResolutionException unknown = assertThrows(PrincipalResolutionException.class,
+                () -> resolve(world.identity("svc-deleg@acme").actingOnBehalfOf(null, "nobody@acme").realm("acme-D2")));
+        assertEquals(PrincipalResolutionError.DELEGATION_NOT_ALLOWED, known.error());
+        assertEquals(known.getMessage(), unknown.getMessage(), "the refusal does not depend on the acted-for identity");
     }
 
     @Test
