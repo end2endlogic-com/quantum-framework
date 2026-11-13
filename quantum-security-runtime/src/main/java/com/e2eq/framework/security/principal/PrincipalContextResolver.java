@@ -4,6 +4,7 @@ import com.e2eq.framework.api.system.SystemDirectory;
 import com.e2eq.framework.rest.models.AccessibleTenantInfo;
 import com.e2eq.framework.model.auth.AccessibleTenantResolver;
 import com.e2eq.framework.model.auth.ApplicationAuthorizationResolver;
+import com.e2eq.framework.model.auth.ApplicationRealmContextResolver;
 import com.e2eq.framework.model.auth.TenantDefaults;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
@@ -123,6 +124,9 @@ public class PrincipalContextResolver {
         }
 
         String realm = request.realm();
+        if (identity && blank(realm) && !request.impersonationRequested()) {
+            realm = applicationRealm(caller, request.applicationId());
+        }
         CredentialUserIdPassword effective = caller;
         PrincipalRef impersonatedBy = null;
         PrincipalContext context;
@@ -611,6 +615,63 @@ public class PrincipalContextResolver {
             throw refusal(PrincipalResolutionError.DELEGATION_NOT_ALLOWED,
                     "Service credential '" + service.getUserId() + "' may not delegate in realm " + realm);
         }
+    }
+
+    // ------------------------------------------------------------------ application realm
+
+    /**
+     * The realm an identity-only request runs in when it names none: the realm the application
+     * owns ({@code Realm.applicationRef}) that the identity may use, through
+     * {@link ApplicationRealmContextResolver}. Candidates are the identity's home realm and the
+     * realms it holds an assignment in, narrowed by its realm authorization.
+     *
+     * <ul>
+     *   <li>No owned realm is usable: {@code null}, so the request stays in the home realm and
+     *       application admission decides there (an application that owns no realm).</li>
+     *   <li>The home realm is one of them: {@code null}, the home realm.</li>
+     *   <li>Exactly one: that realm (a shared-realm application such as one realm per app).</li>
+     *   <li>Several: {@code REALM_NOT_AUTHORIZED}, naming them; the caller selects one with
+     *       {@code X-Realm}.</li>
+     * </ul>
+     */
+    String applicationRealm(CredentialUserIdPassword credential, String applicationId) {
+        if (blank(applicationId) || realmMembershipService == null) {
+            return null;
+        }
+        String homeRealm = credential.getDomainContext() == null
+                ? null : credential.getDomainContext().getDefaultRealm();
+        List<UserRealmRole> assignments = realmMembershipService.realmsForUser(credential.getUserId());
+        java.util.LinkedHashSet<String> candidates = new java.util.LinkedHashSet<>();
+        if (homeRealm != null) {
+            candidates.add(homeRealm);
+        }
+        if (assignments != null) {
+            assignments.stream()
+                    .filter(Objects::nonNull)
+                    .map(UserRealmRole::getRealmRefName)
+                    .filter(Objects::nonNull)
+                    .forEach(candidates::add);
+        }
+        List<String> allowed = securityUtils.computeAllowedRealmRefNames(credential, List.copyOf(candidates));
+        List<Realm> allowedRealms = allowed.stream()
+                .map(systemDirectory::findRealmByRefName)
+                .flatMap(Optional::stream)
+                .toList();
+        List<String> owned = ApplicationRealmContextResolver.resolve(
+                        applicationId, credential, allowedRealms, assignments,
+                        realmMembershipService::membersOfRealm)
+                .stream()
+                .map(context -> context.getRealm().getRefName())
+                .toList();
+        if (owned.isEmpty() || (homeRealm != null && owned.stream().anyMatch(homeRealm::equalsIgnoreCase))) {
+            return null;
+        }
+        if (owned.size() == 1) {
+            return owned.get(0);
+        }
+        throw refusal(PrincipalResolutionError.REALM_NOT_AUTHORIZED, String.format(
+                "%s may use application '%s' in several realms %s; select one with X-Realm",
+                credential.getUserId(), applicationId, owned));
     }
 
     // ------------------------------------------------------------------ realm switch

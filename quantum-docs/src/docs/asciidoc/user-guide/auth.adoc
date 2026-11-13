@@ -642,6 +642,14 @@ Auth applies the realm switch, application grant, default-tenant rule, impersona
 Questions asked before the resource is matched (roles, a refusal, the migration realm) are asked with tenant selection optional; `SecurityFilter` then asks with the resource's own rule. Each distinct question is asked once per request.
 Only `iss` and `sub` are read from the token. `PrincipalContextPropertiesResolver` beans still run and receive the verified token: they must not read roles, realm or tenancy from its claims, only from the principal context they are given.
 
+*Which realm the request runs in.* Without `X-Realm`, identity-only resolution takes the realm from the application, not the identity's home realm. It looks at the realms the application owns (`Realm.applicationRef`) that the identity may use: realms the credential's realm authorization allows (`authorizedRealms`, `realmRegEx`) and the identity is granted the application in or holds an active assignment in; for a shared realm, the identity must also reach at least one tenant.
+
+* If none of those realms qualifies, or one of them is the identity's home realm, the request runs in the home realm, and application admission decides there as before.
+* If exactly one qualifies, the request runs in it. This is how a shared-realm application (one realm per application) reaches users whose home realm is elsewhere, with no realm configured in the application.
+* If several qualify, the request is refused with 403 `REALM_NOT_AUTHORIZED`, naming them; the caller selects one with `X-Realm`.
+
+The tenant is then chosen in that realm by the default-tenant rule. Applications configure nothing for this: remote mode still refuses `quantum.security.session.realm`.
+
 * Auth's typed refusals pass through with Auth's status and `{"code", "message"}` body: `PRINCIPAL_UNKNOWN` and `PRINCIPAL_DISABLED` (401), `APPLICATION_NOT_GRANTED`, `REALM_NOT_AUTHORIZED`, `TENANT_NOT_AUTHORIZED`, `IMPERSONATION_REFUSED`, `DELEGATION_NOT_ALLOWED`, `DELEGATION_TARGET_UNKNOWN` (403), `TENANT_SELECTION_REQUIRED` and `INVALID_REQUEST` (400). An untyped 401 from Auth is answered 401 `PRINCIPAL_UNKNOWN`. The refusal is answered before the resource is matched, so `@RolesAllowed` endpoints answer with the same status and code.
 * Auth unreachable, or an answer that is not a valid `helixor.principal_context.v1` for this application, with no unexpired resolution held: 503 `PRINCIPAL_RESOLUTION_UNAVAILABLE`. There is no fallback to token claims.
 * The receiving application id is `quantum.security.session.application-id`, else `quantum.application-registration.application-id`.
