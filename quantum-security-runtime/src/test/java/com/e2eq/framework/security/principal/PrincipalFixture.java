@@ -116,6 +116,11 @@ public final class PrincipalFixture {
         }
 
         @Override
+        public List<UserRealmRole> realmsForUser(String userId) {
+            return assignments.values().stream().filter(a -> userId.equals(a.getUserId())).toList();
+        }
+
+        @Override
         public List<RealmTenantMembership> membersOfRealm(String realmRefName) {
             return memberships.stream().filter(m -> realmRefName.equals(m.getRealmRefName())).toList();
         }
