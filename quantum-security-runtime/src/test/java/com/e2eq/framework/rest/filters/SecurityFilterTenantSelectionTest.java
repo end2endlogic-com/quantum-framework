@@ -478,6 +478,31 @@ class SecurityFilterTenantSelectionTest {
         org.mockito.Mockito.verifyNoInteractions(repo);
     }
 
+    @Test
+    void aCallingServicesRealmSwitchIsNotAnApplicationAdmission() {
+        // Service contexts run in the realm they name; their reach is their own realm authorization.
+        Realm other = realm("other-app-realm", RealmTenancyMode.SINGLE_TENANT, "tenant-a");
+        other.setApplicationRef(EntityReference.builder()
+                .entityRefName("other-application").entityDisplayName("Other application").build());
+        SecurityFilter filter = filter(other, null, null);
+        com.e2eq.framework.model.persistent.morphia.CredentialRepo repo =
+                org.mockito.Mockito.mock(com.e2eq.framework.model.persistent.morphia.CredentialRepo.class);
+        filter.credentialRepo = repo;
+        filter.envConfigUtils = envConfig();
+        PrincipalContext service = new PrincipalContext.Builder()
+                .withDefaultRealm("other-app-realm")
+                .withApplicationId("quantum-b2bi")
+                .withDataDomain(DataDomain.builder().tenantId("tenant-a").orgRefName("default-org")
+                        .accountNum("default-account").ownerId("svc-sub").build())
+                .withUserId("svc-sub")
+                .withRoles(new String[]{"user"})
+                .withScope("SERVICE")
+                .build();
+
+        assertSame(service, filter.applyRealmOverride(service, "other-app-realm"));
+        org.mockito.Mockito.verifyNoInteractions(repo);
+    }
+
     private static Realm codeRealm() {
         Realm realm = realm("helixor-code-P1", RealmTenancyMode.SINGLE_TENANT, "helixor-code-P1");
         realm.setApplicationRef(EntityReference.builder()
