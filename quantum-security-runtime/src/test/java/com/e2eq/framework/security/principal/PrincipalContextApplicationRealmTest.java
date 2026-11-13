@@ -131,6 +131,29 @@ class PrincipalContextApplicationRealmTest {
     }
 
     @Test
+    void anAssignmentWithNoStatusCountsAsMembership() {
+        world.assignments.get("alice@acme|di-shared").setStatus(null);
+        assertEquals("di-shared", resolve(DI, null).getDefaultRealm());
+    }
+
+    @Test
+    void anIdentityOutsideTheDelegationScopeIsRefusedTheSameWayWhateverItsRealms() {
+        // bob is active and a member of two realms di-app owns, but svc-deleg may act only for alice.
+        world.credential("bob@acme", "sub-bob", "acme-D1", "acme", "user");
+        own(world.realm("di-two", RealmTenancyMode.SINGLE_TENANT, "di-two", "di-two-org", "di-two-acct"), DI);
+        world.assign("bob@acme", "di-shared", List.of("di-user")).setAuthorizedTenantIds(List.of("airfreight"));
+        world.assign("bob@acme", "di-two", List.of("di-user"));
+        authorize("bob@acme", "di-shared");
+        authorize("bob@acme", "di-two");
+        world.credential("svc-deleg@acme").setRealmRegEx("acme-*|pooled|di-*");
+
+        PrincipalResolutionException refusal = refused(PrincipalResolutionError.DELEGATION_NOT_ALLOWED,
+                () -> world.resolver().resolve(world.identity("svc-deleg@acme").applicationId(DI)
+                        .actingOnBehalfOf(null, "bob@acme").build()));
+        assertTrue(refusal.getMessage().contains("outside the delegation scope"), refusal.getMessage());
+    }
+
+    @Test
     void anExplicitRealmIsHonouredAsBefore() {
         assertEquals("di-shared", resolve(DI, "di-shared").getDefaultRealm());
     }
