@@ -989,16 +989,15 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
 
     /**
      * In an application session, a token minted for another application says nothing about this
-     * application: the user must be admitted to it in the session realm (the realm's home
-     * application, or an authorized application on the user's realm assignment). The same-realm
-     * shortcut in {@code PrincipalContextResolver#applicationAdmittedInRealm} does not apply, since it trusts the token's
-     * own application/realm pair.
+     * application: the user must be admitted to it in the session realm by the one admission rule,
+     * {@code PrincipalContextResolver#applicationAdmitted} (the realm's own application, or granted
+     * on the realm assignment or by the credential's applicationRegEx).
      */
     void requireSessionApplicationAdmitted(PrincipalContext context) {
         if (!isUserPrincipal() || !foreignApplicationToken(tokenApplicationId())) {
             return;
         }
-        resolver().requireSessionApplicationAdmitted(context);
+        resolver().requireSessionApplicationAdmitted(context, !trustTokenClaims);
     }
 
     /** True when an application session is configured and the token was minted for another application. */
