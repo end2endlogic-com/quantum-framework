@@ -20,7 +20,8 @@ import java.util.stream.Collectors;
  * their accessible tenants. Pure; shared by auth discovery and by
  * {@code PrincipalContextResolver}, which uses it to pick the realm of a request that names none.
  * A realm is usable when the identity is granted the application (assignment or credential
- * pattern) or holds an active assignment in it, the same admission the resolver applies.
+ * pattern) or holds an active (not invited or suspended) assignment in a realm the application owns,
+ * the home-application admission the resolver applies.
  */
 public final class ApplicationRealmContextResolver {
 
@@ -58,9 +59,10 @@ public final class ApplicationRealmContextResolver {
                     credential.getApplicationRegEx(),
                     assignment == null ? null : assignment.getDefaultApplication(),
                     requestedApplication);
-            // A realm admits its home application: an active member of a realm the application
-            // owns may use it without a separate grant (PrincipalContextResolver's admission rule).
-            if (!applicationAccess.resolved() && assignment == null) {
+            // A realm admits its home application: an active (not invited) member of a realm the
+            // application owns may use it without a separate grant (PrincipalContextResolver's rule).
+            if (!applicationAccess.resolved()
+                    && (assignment == null || !UserRealmRole.STATUS_ACTIVE.equals(assignment.getStatus()))) {
                 continue;
             }
             List<RealmTenantMembership> memberships = AccessibleTenantResolver.sharedMultiTenant(realm)

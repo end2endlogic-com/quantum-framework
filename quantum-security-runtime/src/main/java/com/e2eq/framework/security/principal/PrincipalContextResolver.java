@@ -578,8 +578,14 @@ public class PrincipalContextResolver {
             throw refusal(PrincipalResolutionError.DELEGATION_NOT_ALLOWED,
                     "The acted-for identity is " + target.getActiveStatus());
         }
+        // With no requested realm the acted-for identity runs where it would on its own (its home
+        // realm, or the realm the application owns); the service's scope must admit that realm.
+        String applicationRealm = request.realm() == null
+                ? applicationRealm(target, request.applicationId())
+                : null;
         if (request.realm() == null) {
-            authorizeDelegationRealm(service, target.getDomainContext().getDefaultRealm(), scripted);
+            authorizeDelegationRealm(service, applicationRealm != null
+                    ? applicationRealm : target.getDomainContext().getDefaultRealm(), scripted);
         }
         if (listed && !listedTarget(service, target)) {
             throw refusal(PrincipalResolutionError.DELEGATION_NOT_ALLOWED,
@@ -588,7 +594,7 @@ public class PrincipalContextResolver {
 
         PrincipalContextRequest asTarget = PrincipalContextRequest.identity(target.getSubject(), target.getUserId())
                 .applicationId(request.applicationId())
-                .realm(request.realm())
+                .realm(request.realm() != null ? request.realm() : applicationRealm)
                 .tenantId(request.tenantId())
                 .tenantSelectionOptional(request.tenantSelectionOptional())
                 .build();
@@ -620,18 +626,20 @@ public class PrincipalContextResolver {
     // ------------------------------------------------------------------ application realm
 
     /**
-     * The realm an identity-only request runs in when it names none: the realm the application
-     * owns ({@code Realm.applicationRef}) that the identity may use, through
-     * {@link ApplicationRealmContextResolver}. Candidates are the identity's home realm and the
-     * realms it holds an assignment in, narrowed by its realm authorization.
+     * The realm an identity-only request runs in when it names none: the application decides.
+     * A realm the application owns ({@code Realm.applicationRef}) is where its data lives, so:
      *
      * <ul>
-     *   <li>No owned realm is usable: {@code null}, so the request stays in the home realm and
-     *       application admission decides there (an application that owns no realm).</li>
-     *   <li>The home realm is one of them: {@code null}, the home realm.</li>
-     *   <li>Exactly one: that realm (a shared-realm application such as one realm per app).</li>
-     *   <li>Several: {@code REALM_NOT_AUTHORIZED}, naming them; the caller selects one with
-     *       {@code X-Realm}.</li>
+     *   <li>The home realm is owned by the application: {@code null}, the home realm, with no
+     *       directory lookups.</li>
+     *   <li>Otherwise the owned realms, through {@link ApplicationRealmContextResolver}, in which
+     *       the identity holds an active (not invited or suspended) assignment, allowed by its realm
+     *       authorization and, when shared, with a tenant it can reach. Exactly one: that realm,
+     *       even when the home realm also grants the application (a shared-realm application
+     *       reached by identities homed elsewhere). Several: {@code REALM_NOT_AUTHORIZED}; the
+     *       realm must be selected explicitly.</li>
+     *   <li>None: {@code null}, the home realm, where admission decides (an application that owns
+     *       no realm the identity is a member of).</li>
      * </ul>
      */
     String applicationRealm(CredentialUserIdPassword credential, String applicationId) {
@@ -640,37 +648,41 @@ public class PrincipalContextResolver {
         }
         String homeRealm = credential.getDomainContext() == null
                 ? null : credential.getDomainContext().getDefaultRealm();
-        List<UserRealmRole> assignments = realmMembershipService.realmsForUser(credential.getUserId());
-        java.util.LinkedHashSet<String> candidates = new java.util.LinkedHashSet<>();
-        if (homeRealm != null) {
-            candidates.add(homeRealm);
+        if (homeRealm != null && systemDirectory.findRealmByRefName(homeRealm)
+                .map(PrincipalContextResolver::realmApplicationId)
+                .filter(applicationId::equalsIgnoreCase)
+                .isPresent()) {
+            return null;
         }
-        if (assignments != null) {
-            assignments.stream()
-                    .filter(Objects::nonNull)
-                    .map(UserRealmRole::getRealmRefName)
-                    .filter(Objects::nonNull)
-                    .forEach(candidates::add);
+        List<UserRealmRole> active = realmMembershipService.realmsForUser(credential.getUserId()).stream()
+                .filter(Objects::nonNull)
+                .filter(assignment -> UserRealmRole.STATUS_ACTIVE.equals(assignment.getStatus()))
+                .filter(assignment -> assignment.getRealmRefName() != null)
+                .filter(assignment -> !assignment.getRealmRefName().equals(homeRealm))
+                .toList();
+        if (active.isEmpty()) {
+            return null;
         }
-        List<String> allowed = securityUtils.computeAllowedRealmRefNames(credential, List.copyOf(candidates));
+        List<String> allowed = securityUtils.computeAllowedRealmRefNames(credential,
+                active.stream().map(UserRealmRole::getRealmRefName).distinct().toList());
         List<Realm> allowedRealms = allowed.stream()
                 .map(systemDirectory::findRealmByRefName)
                 .flatMap(Optional::stream)
                 .toList();
         List<String> owned = ApplicationRealmContextResolver.resolve(
-                        applicationId, credential, allowedRealms, assignments,
+                        applicationId, credential, allowedRealms, active,
                         realmMembershipService::membersOfRealm)
                 .stream()
                 .map(context -> context.getRealm().getRefName())
                 .toList();
-        if (owned.isEmpty() || (homeRealm != null && owned.stream().anyMatch(homeRealm::equalsIgnoreCase))) {
+        if (owned.isEmpty()) {
             return null;
         }
         if (owned.size() == 1) {
             return owned.get(0);
         }
         throw refusal(PrincipalResolutionError.REALM_NOT_AUTHORIZED, String.format(
-                "%s may use application '%s' in several realms %s; select one with X-Realm",
+                "%s may use application '%s' in several realms %s; the realm must be selected explicitly",
                 credential.getUserId(), applicationId, owned));
     }
 
@@ -795,26 +807,28 @@ public class PrincipalContextResolver {
      * applications and the credential's {@code applicationRegEx}. No token pair is trusted.
      */
     private void requireApplicationGranted(PrincipalContext context, CredentialUserIdPassword credential) {
-        String applicationId = context.getApplicationId();
-        String realmRefName = context.getDefaultRealm();
+        if (!applicationGranted(context.getUserId(), context.getDefaultRealm(), context.getApplicationId(), credential)) {
+            throw refusal(PrincipalResolutionError.APPLICATION_NOT_GRANTED, String.format(
+                    "%s has no access to application '%s' in realm '%s'",
+                    context.getUserId(), context.getApplicationId(), context.getDefaultRealm()));
+        }
+    }
+
+    private boolean applicationGranted(String userId, String realmRefName, String applicationId,
+                                       CredentialUserIdPassword credential) {
         Realm realm = systemDirectory.findRealmByRefName(realmRefName).orElse(null);
         if (realm != null && realmApplicationId(realm) != null
                 && applicationId.equalsIgnoreCase(realmApplicationId(realm))) {
-            return;
+            return true;
         }
         Optional<UserRealmRole> assignment = realmMembershipService == null
                 ? Optional.empty()
-                : realmMembershipService.assignmentForUser(context.getUserId(), realmRefName);
-        ApplicationAuthorizationResolver.Result grant = ApplicationAuthorizationResolver.resolve(
+                : realmMembershipService.assignmentForUser(userId, realmRefName);
+        return ApplicationAuthorizationResolver.resolve(
                 assignment.map(UserRealmRole::getAuthorizedApplications).orElse(null),
                 credential.getApplicationRegEx(),
                 null,
-                applicationId);
-        if (!grant.resolved()) {
-            throw refusal(PrincipalResolutionError.APPLICATION_NOT_GRANTED, String.format(
-                    "%s has no access to application '%s' in realm '%s'",
-                    context.getUserId(), applicationId, realmRefName));
-        }
+                applicationId).resolved();
     }
 
     // ------------------------------------------------------------------ tenant selection

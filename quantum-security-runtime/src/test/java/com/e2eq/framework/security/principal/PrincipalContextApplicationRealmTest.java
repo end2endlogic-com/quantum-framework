@@ -90,6 +90,47 @@ class PrincipalContextApplicationRealmTest {
     }
 
     @Test
+    void theApplicationsOwnRealmWinsOverAHomeRealmThatAlsoGrantsIt() {
+        // An identity granted every application in its home realm (staff, the owner) still runs a
+        // shared-realm application in that application's realm, where its data lives.
+        world.credential("alice@acme").setApplicationRegEx(".*");
+        assertEquals("di-shared", resolve(DI, null).getDefaultRealm());
+
+        world.credential("alice@acme").setApplicationRegEx(null);
+        world.assignments.get("alice@acme|acme-D1").setAuthorizedApplications(List.of(DI));
+        assertEquals("di-shared", resolve(DI, null).getDefaultRealm());
+    }
+
+    @Test
+    void aHomeRealmOwnedByTheApplicationNeedsNoAssignmentToStayHome() {
+        world.assignments.remove("alice@acme|acme-D1");
+        PrincipalContext context = resolve(PrincipalFixture.APP, null);
+        assertEquals("acme-D1", context.getDefaultRealm());
+    }
+
+    @Test
+    void anInvitedAssignmentDoesNotMakeTheRealmUsable() {
+        world.assignments.get("alice@acme|di-shared").setStatus(UserRealmRole.STATUS_INVITED);
+        refused(PrincipalResolutionError.APPLICATION_NOT_GRANTED, () -> resolve(DI, null));
+    }
+
+    @Test
+    void aDelegatingServiceMustBeScopedToTheRealmTheApplicationResolvesTo() {
+        PrincipalContextRequest.Builder delegated = world.identity("svc-deleg@acme")
+                .applicationId(DI)
+                .actingOnBehalfOf(null, "alice@acme");
+        // svc-deleg's realmRegEx (acme-*|pooled) does not reach di-shared.
+        refused(PrincipalResolutionError.DELEGATION_NOT_ALLOWED,
+                () -> world.resolver().resolve(delegated.build()));
+
+        world.credential("svc-deleg@acme").setRealmRegEx("acme-*|pooled|di-shared");
+        PrincipalContextResolution resolved = world.resolver().resolve(delegated.build());
+        assertEquals("di-shared", resolved.context().getDefaultRealm());
+        assertEquals("alice@acme", resolved.context().getUserId());
+        assertEquals("airfreight", resolved.context().getDataDomain().getTenantId());
+    }
+
+    @Test
     void anExplicitRealmIsHonouredAsBefore() {
         assertEquals("di-shared", resolve(DI, "di-shared").getDefaultRealm());
     }
