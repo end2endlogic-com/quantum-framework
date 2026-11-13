@@ -51,7 +51,7 @@ class ApplicationDeclarationValidatorTest {
       Application app = new Application();
       app.setRefName("legacy-app");
       Declaration legacy = new Declaration(app, List.of(), List.of(domain("LEGACY", "THING", "LIST")),
-         List.of(policy("legacy-user", rule("user", "LEGACY", "THING", "LIST"))));
+         List.of(legacyPolicy()));
       List<Diagnostic> out = ApplicationDeclarationValidator.validate(legacy, PLATFORM, VocabularyEnforcement.WARN);
       assertFalse(ApplicationDeclarationValidator.refuses(out), out.toString());
    }
@@ -153,7 +153,105 @@ class ApplicationDeclarationValidatorTest {
       assertCodes(d, Code.DOMAIN_AREA_UNDECLARED);
    }
 
+   @Test
+   void legacyPackIsCleanEvenUnderRefuse() {
+      Application app = new Application();
+      app.setRefName("legacy-app");
+      Declaration legacy = new Declaration(app, List.of(), List.of(domain("LEGACY", "THING", "LIST")),
+         List.of(legacyPolicy()));
+      List<Diagnostic> out = ApplicationDeclarationValidator.validate(legacy, PLATFORM, VocabularyEnforcement.REFUSE);
+      assertTrue(out.isEmpty(), out.toString());
+   }
+
+   @Test
+   void declarationErrorsStayErrorsInWarnMode() {
+      Declaration d = planner();
+      d.application().setOwnerRoles(List.of("boss"));
+      List<Diagnostic> out = ApplicationDeclarationValidator.validate(d, PLATFORM, VocabularyEnforcement.WARN);
+      assertTrue(out.stream().anyMatch(x -> x.code() == Code.OWNER_ROLE_UNDECLARED && x.severity() == Severity.ERROR), out.toString());
+      assertTrue(ApplicationDeclarationValidator.refuses(out));
+   }
+
+   @Test
+   void caseOfEnumeratedValuesAndApplicationIdsDoesNotMatter() {
+      Declaration d = planner();
+      d.application().getRoles().get(0).setGrantableBy(List.of("Tenant-Admin"));
+      d.application().setTenancy(ApplicationTenancy.builder().placement("pooled").build());
+      d.application().getUses().get(0).setApplication("Quantum-System");
+      List<Diagnostic> out = ApplicationDeclarationValidator.validate(d, PLATFORM, VocabularyEnforcement.REFUSE);
+      assertTrue(out.isEmpty(), out.toString());
+   }
+
+   @Test
+   void anAreaOrDomainTaggedForAnotherApplicationIsRefused() {
+      Declaration d = planner();
+      FunctionalArea billing = new FunctionalArea();
+      billing.setRefName("BILLING");
+      billing.setApplicationId("acme-billing");
+      FunctionalDomain invoice = domain("PLANNER", "INVOICE", "LIST");
+      invoice.setApplicationId("acme-billing");
+      Declaration tagged = new Declaration(d.application(), List.of(d.areas().get(0), billing),
+         List.of(d.domains().get(0), invoice), d.policies());
+      assertExactly(tagged, Code.VOCABULARY_APPLICATION_MISMATCH);
+   }
+
+   @Test
+   void aPolicyForAnotherApplicationIsRefusedAndAWildcardOneIsVocabulary() {
+      Declaration d = planner();
+      Policy other = policy("planner-user", rule("planner-user", "PLANNER", "PLAN", "LIST"));
+      other.setRefName("OTHER_POLICY");
+      other.setApplicationId("acme-billing");
+      Declaration withOther = new Declaration(d.application(), d.areas(), d.domains(), List.of(d.policies().get(0), d.policies().get(1), other));
+      assertExactly(withOther, Code.POLICY_APPLICATION_MISMATCH);
+
+      Policy everywhere = policy("planner-user", rule("planner-user", "PLANNER", "PLAN", "LIST"));
+      everywhere.setRefName("EVERYWHERE_POLICY");
+      everywhere.setApplicationId("*");
+      Declaration withWildcard = new Declaration(d.application(), d.areas(), d.domains(), List.of(d.policies().get(0), d.policies().get(1), everywhere));
+      List<Diagnostic> warn = ApplicationDeclarationValidator.validate(withWildcard, PLATFORM, VocabularyEnforcement.WARN);
+      assertEquals(List.of(Code.POLICY_APPLICATION_MISMATCH), warn.stream().map(Diagnostic::code).toList(), warn.toString());
+      assertFalse(ApplicationDeclarationValidator.refuses(warn));
+   }
+
+   @Test
+   void aUserPolicyDoesNotMakeARoleUsed() {
+      Declaration d = planner();
+      d.application().getRoles().add(role("planner-auditor"));
+      Policy user = policy("planner-auditor", rule("planner-auditor", "PLANNER", "PLAN", "VIEW"));
+      user.setRefName("AUDITOR_USER_POLICY");
+      user.setPrincipalType(Policy.PrincipalType.USER);
+      Declaration withUser = new Declaration(d.application(), d.areas(), d.domains(), List.of(d.policies().get(0), d.policies().get(1), user));
+      assertExactly(withUser, Code.ROLE_UNUSED);
+   }
+
+   @Test
+   void usesWithNoDomainsIsReported() {
+      Declaration d = planner();
+      d.application().getUses().add(VocabularyReference.builder().application("quantum-system").area("SECURITY")
+         .domains(List.of()).build());
+      assertExactly(d, Code.USES_UNKNOWN);
+   }
+
+   @Test
+   void aRuleWithNoDomainIsNotAWildcard() throws Exception {
+      Declaration d = planner();
+      Rule rule = rule("planner-user", "PLANNER", "PLAN", "LIST");
+      // The setter refuses null; a stored document can still lack the field.
+      java.lang.reflect.Field field = SecurityURIHeader.class.getDeclaredField("functionalDomain");
+      field.setAccessible(true);
+      field.set(rule.getSecurityURI().getHeader(), null);
+      d.policies().get(0).getRules().add(rule);
+      assertExactly(d, Code.POLICY_TRIPLE_UNDECLARED);
+   }
+
    // ---- fixtures
+
+   /** The pack is refused, with exactly these codes and nothing else. */
+   private static void assertExactly(Declaration d, Code... expected) {
+      List<Diagnostic> out = ApplicationDeclarationValidator.validate(d, PLATFORM, VocabularyEnforcement.REFUSE);
+      assertEquals(Set.of(expected), Set.copyOf(out.stream().map(Diagnostic::code).toList()), out.toString());
+      assertTrue(ApplicationDeclarationValidator.refuses(out));
+   }
 
    private static void assertCodes(Declaration d, Code... expected) {
       List<Diagnostic> out = ApplicationDeclarationValidator.validate(d, PLATFORM, VocabularyEnforcement.REFUSE);
@@ -185,6 +283,12 @@ class ApplicationDeclarationValidatorTest {
       Policy admin = policy("planner-admin", rule("planner-admin", "PLANNER", "*", "*"));
       return new Declaration(app, List.of(area), List.of(domain("PLANNER", "PLAN", "LIST", "VIEW", "PUBLISH")),
          List.of(user, admin));
+   }
+
+   private static Policy legacyPolicy() {
+      Policy legacy = policy("legacy-user", rule("user", "LEGACY", "THING", "LIST"));
+      legacy.setApplicationId("legacy-app");
+      return legacy;
    }
 
    private static ApplicationRole role(String name) {

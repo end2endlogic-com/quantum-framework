@@ -46,6 +46,8 @@ public final class ApplicationDeclarationValidator {
       TENANCY_PLACEMENT_INVALID,
       TENANCY_REALMS_INVALID,
       AREA_OWNED_ELSEWHERE,
+      VOCABULARY_APPLICATION_MISMATCH,
+      POLICY_APPLICATION_MISMATCH,
       DOMAIN_AREA_UNDECLARED,
       USES_OWN_AREA,
       USES_UNKNOWN,
@@ -62,8 +64,8 @@ public final class ApplicationDeclarationValidator {
    }
 
    /**
-    * What other applications already own, as the issuer holds it. Areas, domains and actions are
-    * passed and compared in lower case, as policy headers hold them.
+    * What other applications already own, as the issuer holds it. Application ids, areas, domains
+    * and actions are passed in lower case, as policy headers hold them.
     */
    public interface VocabularyRegistry {
       /** The application that owns {@code area}, if any other pack declared it. */
@@ -151,7 +153,7 @@ public final class ApplicationDeclarationValidator {
          }
          List<String> grantableBy = role.getGrantableBy() == null ? List.of() : role.getGrantableBy();
          for (String who : grantableBy) {
-            if (who == null || !ApplicationRole.GRANTABLE_BY_VALUES.contains(who.trim())) {
+            if (who == null || !ApplicationRole.GRANTABLE_BY_VALUES.contains(who.trim().toLowerCase(Locale.ROOT))) {
                out.add(error(Code.ROLE_GRANTABLE_BY_INVALID, "Role '" + name + "' grantableBy '" + who
                   + "' is not one of " + ApplicationRole.GRANTABLE_BY_VALUES + "."));
             }
@@ -170,11 +172,18 @@ public final class ApplicationDeclarationValidator {
       return declared;
    }
 
+   /** A record tagged for another application ('*' or blank tags count as this pack's own). */
+   private static boolean foreign(String tagged, String applicationId) {
+      String value = trim(tagged);
+      return value != null && !WILDCARD.equals(value) && !value.equalsIgnoreCase(applicationId);
+   }
+
    private static void checkTenancy(ApplicationTenancy tenancy, List<Diagnostic> out) {
       if (tenancy == null) {
          return;
       }
       String placement = trim(tenancy.getPlacement());
+      placement = placement == null ? null : placement.toUpperCase(Locale.ROOT);
       if (placement == null || !ApplicationTenancy.PLACEMENT_VALUES.contains(placement)) {
          out.add(error(Code.TENANCY_PLACEMENT_INVALID, "tenancy.placement '" + tenancy.getPlacement()
             + "' is not one of " + ApplicationTenancy.PLACEMENT_VALUES + "."));
@@ -200,6 +209,11 @@ public final class ApplicationDeclarationValidator {
       Set<String> declaredAreas = new LinkedHashSet<>();
       for (FunctionalArea area : declaration.areas()) {
          String name = area == null ? null : key(area.getRefName());
+         if (name != null && foreign(area.getApplicationId(), applicationId)) {
+            out.add(error(Code.VOCABULARY_APPLICATION_MISMATCH, "Area " + name + " is tagged for application '"
+               + area.getApplicationId() + "', not " + applicationId + "; a pack declares only its own areas."));
+            continue;
+         }
          if (name != null) {
             declaredAreas.add(name);
             owned.computeIfAbsent(name, k -> new LinkedHashMap<>());
@@ -209,6 +223,11 @@ public final class ApplicationDeclarationValidator {
          String area = key(domain.getArea());
          String name = key(domain.getRefName());
          if (area == null || name == null) {
+            continue;
+         }
+         if (foreign(domain.getApplicationId(), applicationId)) {
+            out.add(error(Code.VOCABULARY_APPLICATION_MISMATCH, "Domain " + area + "/" + name + " is tagged for application '"
+               + domain.getApplicationId() + "', not " + applicationId + "; a pack declares only its own domains."));
             continue;
          }
          if (!declaredAreas.isEmpty() && !declaredAreas.contains(area)) {
@@ -240,7 +259,7 @@ public final class ApplicationDeclarationValidator {
                                                                        List<Diagnostic> out) {
       Map<String, Map<String, Set<String>>> borrowed = new LinkedHashMap<>();
       for (VocabularyReference reference : nonNull(application.getUses())) {
-         String from = reference == null ? null : trim(reference.getApplication());
+         String from = reference == null ? null : key(reference.getApplication());
          String area = reference == null ? null : key(reference.getArea());
          if (from == null || area == null) {
             out.add(new Diagnostic(Code.USES_UNKNOWN, vocabulary, "A 'uses' entry must name an application and an area."));
@@ -249,6 +268,11 @@ public final class ApplicationDeclarationValidator {
          if (from.equalsIgnoreCase(applicationId) || owned.containsKey(area)) {
             out.add(new Diagnostic(Code.USES_OWN_AREA, vocabulary, "'uses' names " + from + "/" + area
                + ", which this application owns; owned areas need no reference."));
+            continue;
+         }
+         if (nonNull(reference.getDomains()).stream().map(ApplicationDeclarationValidator::key).noneMatch(Objects::nonNull)) {
+            out.add(new Diagnostic(Code.USES_UNKNOWN, vocabulary, "'uses' " + from + "/" + area
+               + " names no domains; list the domains this application borrows."));
             continue;
          }
          for (String domain : nonNull(reference.getDomains())) {
@@ -275,6 +299,17 @@ public final class ApplicationDeclarationValidator {
       if (policy == null) {
          return;
       }
+      String target = trim(policy.getApplicationId());
+      if (target != null && !target.equalsIgnoreCase(applicationId)) {
+         if (WILDCARD.equals(target)) {
+            out.add(new Diagnostic(Code.POLICY_APPLICATION_MISMATCH, vocabulary, "Policy " + policy.getRefName()
+               + " applies to every application ('*'); a pack's policies apply to " + applicationId + " only."));
+         } else {
+            out.add(error(Code.POLICY_APPLICATION_MISMATCH, "Policy " + policy.getRefName() + " is for application '"
+               + target + "', not " + applicationId + "."));
+         }
+         return;
+      }
       String principal = key(policy.getPrincipalId());
       boolean rolePrincipal = policy.getPrincipalType() == null || policy.getPrincipalType() == Policy.PrincipalType.ROLE;
       if (rolePrincipal && principal != null) {
@@ -286,7 +321,7 @@ public final class ApplicationDeclarationValidator {
             continue;
          }
          String identity = key(header.getIdentity());
-         if (identity != null && !WILDCARD.equals(identity)) {
+         if (rolePrincipal && identity != null && !WILDCARD.equals(identity)) {
             namedRoles.add(identity);
          }
          String area = key(header.getArea());
@@ -325,8 +360,12 @@ public final class ApplicationDeclarationValidator {
 
    private static void checkTriple(Map<String, Set<String>> areaDomains, String area, String domain, String action,
                                    String where, Severity vocabulary, List<Diagnostic> out) {
-      if (domain == null || WILDCARD.equals(domain)) {
+      if (WILDCARD.equals(domain)) {
          return; // every domain of an area this application may name
+      }
+      if (domain == null) {
+         out.add(new Diagnostic(Code.POLICY_TRIPLE_UNDECLARED, vocabulary, where + " names no domain in " + area + "."));
+         return;
       }
       Set<String> actions = areaDomains.get(domain);
       if (actions == null) {
