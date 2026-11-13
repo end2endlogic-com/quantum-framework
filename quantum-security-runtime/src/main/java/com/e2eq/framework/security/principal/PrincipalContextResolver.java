@@ -155,12 +155,12 @@ public class PrincipalContextResolver {
             impersonatedBy = new PrincipalRef(original.getUserId(), original.getSubject());
         }
 
-        context = applyRealmOverride(context, realm, false, identity);
+        CredentialUserIdPassword resolved = effective;
+        context = applyRealmOverride(context, realm, false, identity, () -> resolved);
         if (identity) {
             requireApplicationGranted(context, effective);
         } else if (request.signedClaims().foreignApplicationToken()) {
-            CredentialUserIdPassword admitted = effective;
-            requireSessionApplicationAdmitted(context, () -> admitted);
+            requireSessionApplicationAdmitted(context, () -> resolved);
         }
 
         if (identity) {
@@ -703,11 +703,13 @@ public class PrincipalContextResolver {
     /**
      * Applies a realm selection as {@code SecurityFilter} always has. Switching realms keeps the
      * identity and roles and adopts the target realm's DomainContext; the original data domain
-     * is kept for audit. Skipped while impersonating. The context's application must belong to
-     * the realm or be granted on the user's assignment there.
+     * is kept for audit. Skipped while impersonating. A user's application must be admitted in the
+     * realm ({@link #applicationAdmitted}); the credential is read by user id, and never where
+     * token claims are trusted.
      */
     public PrincipalContext applyRealmOverride(PrincipalContext context, String realm, boolean trustTokenClaims) {
-        return applyRealmOverride(context, realm, trustTokenClaims, false);
+        return applyRealmOverride(context, realm, trustTokenClaims, false,
+                trustTokenClaims ? () -> null : () -> credentialOf(context.getUserId()));
     }
 
     /**
@@ -715,7 +717,7 @@ public class PrincipalContextResolver {
      * resolution admits the application once, for the final realm, without trusting a token pair).
      */
     PrincipalContext applyRealmOverride(PrincipalContext context, String realm, boolean trustTokenClaims,
-                                        boolean identityOnly) {
+                                        boolean identityOnly, Supplier<CredentialUserIdPassword> credential) {
         boolean checkApplication = !identityOnly;
         if (realm == null || realm.isBlank()) {
             return context;
@@ -735,9 +737,11 @@ public class PrincipalContextResolver {
                         : refusal(PrincipalResolutionError.REALM_NOT_AUTHORIZED,
                                 "Realm '" + realm + "' is not registered"));
         String applicationId = context.getApplicationId();
-        if (checkApplication && applicationId != null && !applicationId.isBlank()
-                && !applicationAdmitted(context.getUserId(), realm, applicationId,
-                        trustTokenClaims ? () -> null : () -> credentialOf(context.getUserId()))) {
+        // Application admission is for identities. A calling service's context already runs in the
+        // realm it names (its reach is its own realm authorization), so it was never checked here.
+        boolean service = "SERVICE".equals(context.getScope());
+        if (checkApplication && !service && applicationId != null && !applicationId.isBlank()
+                && !applicationAdmitted(context.getUserId(), realm, applicationId, credential)) {
             throw new jakarta.ws.rs.ForbiddenException(
                     "Realm '" + realm + "' is not assigned to application '" + applicationId + "'");
         }
