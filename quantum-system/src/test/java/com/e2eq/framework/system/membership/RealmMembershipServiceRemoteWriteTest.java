@@ -63,13 +63,17 @@ class RealmMembershipServiceRemoteWriteTest {
     }
 
     private static RealmMembershipService remoteService(StubEndpoint endpoint) {
+        return remoteService(endpoint, QuantumModeConfig.of("remote", Optional.of("http://quantum-system:8080")));
+    }
+
+    private static RealmMembershipService remoteService(StubEndpoint endpoint, QuantumModeConfig config) {
         RealmMembershipService service = new RealmMembershipService() {
             @Override
             RemoteMembershipClient remote() {
                 return new RemoteMembershipClient(endpoint);
             }
         };
-        service.quantumModeConfig = QuantumModeConfig.of("remote", Optional.of("http://quantum-system:8080"));
+        service.quantumModeConfig = config;
         service.userRealmRoleRepo = new UserRealmRoleRepo() {
             @Override
             public UserRealmRole save(String realmId, UserRealmRole value) {
@@ -92,6 +96,18 @@ class RealmMembershipServiceRemoteWriteTest {
             .authorizedTenantIds(List.of())
             .status(UserRealmRole.STATUS_ACTIVE)
             .build();
+    }
+
+    @Test
+    void embeddedServiceWithRemoteDirectoryWritesRolesToTheDirectoryOwner() {
+        StubEndpoint endpoint = new StubEndpoint();
+        QuantumModeConfig embeddedWithRemoteDirectory = QuantumModeConfig.of("embedded", Optional.empty(),
+            Optional.of("remote"), Optional.of("http://quantum-auth:8080"));
+
+        remoteService(endpoint, embeddedWithRemoteDirectory).upsertUserRealmRole(serviceAssignment());
+
+        assertEquals("8f0c", endpoint.rolePath.get()[0]);
+        assertEquals("quantum-auth", endpoint.rolePath.get()[1]);
     }
 
     @Test
