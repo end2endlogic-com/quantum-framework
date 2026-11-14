@@ -46,6 +46,14 @@ public class FunctionalDomainRepo extends MorphiaRepo<FunctionalDomain>{
       }
    }
 
+   /** Every domain of every application, ignoring rules (the vocabulary registry's read). */
+   public List<FunctionalDomain> findAllWithIgnoreRules() {
+      try (dev.morphia.query.MorphiaCursor<FunctionalDomain> cursor =
+              morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId()).find(FunctionalDomain.class).iterator()) {
+         return cursor.toList();
+      }
+   }
+
    public List<FunctionalDomain> findForApplicationWithIgnoreRules(String applicationId) {
       if (applicationId == null || applicationId.isBlank()) return List.of();
       dev.morphia.query.MorphiaCursor<FunctionalDomain> cursor =
