@@ -50,7 +50,7 @@ class ApplicationDeclarationValidatorTest {
    void legacyPackWithoutRolesHasNoDeclarationErrors() {
       Application app = new Application();
       app.setRefName("legacy-app");
-      Declaration legacy = new Declaration(app, List.of(), List.of(domain("LEGACY", "THING", "LIST")),
+      Declaration legacy = new Declaration(app, List.of(), List.of(tagged(domain("LEGACY", "THING", "LIST"), "legacy-app")),
          List.of(legacyPolicy()));
       List<Diagnostic> out = ApplicationDeclarationValidator.validate(legacy, PLATFORM, VocabularyEnforcement.WARN);
       assertFalse(ApplicationDeclarationValidator.refuses(out), out.toString());
@@ -149,7 +149,7 @@ class ApplicationDeclarationValidatorTest {
    @Test
    void domainOutsideDeclaredAreasIsReported() {
       Declaration d = new Declaration(planner().application(), planner().areas(),
-         List.of(domain("PLANNER", "PLAN", "LIST", "VIEW", "PUBLISH"), domain("OTHER", "THING", "LIST")), planner().policies());
+         List.of(planner().domains().get(0), tagged(domain("OTHER", "THING", "LIST"), "acme-planner")), planner().policies());
       assertCodes(d, Code.DOMAIN_AREA_UNDECLARED);
    }
 
@@ -157,7 +157,7 @@ class ApplicationDeclarationValidatorTest {
    void legacyPackIsCleanEvenUnderRefuse() {
       Application app = new Application();
       app.setRefName("legacy-app");
-      Declaration legacy = new Declaration(app, List.of(), List.of(domain("LEGACY", "THING", "LIST")),
+      Declaration legacy = new Declaration(app, List.of(), List.of(tagged(domain("LEGACY", "THING", "LIST"), "legacy-app")),
          List.of(legacyPolicy()));
       List<Diagnostic> out = ApplicationDeclarationValidator.validate(legacy, PLATFORM, VocabularyEnforcement.REFUSE);
       assertTrue(out.isEmpty(), out.toString());
@@ -244,7 +244,72 @@ class ApplicationDeclarationValidatorTest {
       assertExactly(d, Code.POLICY_TRIPLE_UNDECLARED);
    }
 
+   @Test
+   void aPolicyWithNoApplicationIdReachesEveryApplication() {
+      Declaration d = planner();
+      d.policies().get(0).setApplicationId(null);
+      List<Diagnostic> warn = ApplicationDeclarationValidator.validate(d, PLATFORM, VocabularyEnforcement.WARN);
+      assertEquals(List.of(Code.POLICY_APPLICATION_MISMATCH), warn.stream().map(Diagnostic::code).toList(), warn.toString());
+      assertFalse(ApplicationDeclarationValidator.refuses(warn));
+      assertExactly(d, Code.POLICY_APPLICATION_MISMATCH);
+   }
+
+   @Test
+   void malformedVocabularyRowsAreReported() {
+      Declaration d = planner();
+      FunctionalArea nameless = new FunctionalArea();
+      nameless.setApplicationId("acme-planner");
+      FunctionalDomain arealess = tagged(domain(null, "ORPHAN", "LIST"), "acme-planner");
+      Rule headerless = new Rule();
+      headerless.setName("headerless");
+      d.policies().get(0).getRules().add(headerless);
+      Declaration bad = new Declaration(d.application(), List.of(d.areas().get(0), nameless),
+         List.of(d.domains().get(0), arealess), d.policies());
+      List<Diagnostic> out = ApplicationDeclarationValidator.validate(bad, PLATFORM, VocabularyEnforcement.REFUSE);
+      assertEquals(3, out.stream().filter(x -> x.code() == Code.VOCABULARY_ROW_INVALID).count(), out.toString());
+      assertExactly(bad, Code.VOCABULARY_ROW_INVALID);
+   }
+
+   @Test
+   void untaggedAreasAndDomainsRecordNoOwner() {
+      Declaration d = planner();
+      d.areas().get(0).setApplicationId(null);
+      d.domains().get(0).setApplicationId("*");
+      assertExactly(d, Code.VOCABULARY_APPLICATION_MISSING);
+   }
+
+   @Test
+   void aPolicyOnAnOwnedAreaMayGrantOnlyDeclaredRoles() {
+      Declaration d = planner();
+      d.policies().get(0).getRules().add(rule("planer-user", "PLANNER", "PLAN", "LIST"));
+      assertExactly(d, Code.POLICY_ROLE_UNDECLARED);
+
+      Declaration reserved = planner();
+      reserved.policies().get(0).getRules().add(rule("admin", "PLANNER", "PLAN", "LIST"));
+      List<Diagnostic> out = ApplicationDeclarationValidator.validate(reserved, PLATFORM, VocabularyEnforcement.REFUSE);
+      assertTrue(out.isEmpty(), out.toString());
+   }
+
+   @Test
+   void anAreaHeldForEveryApplicationIsNotClaimable() {
+      VocabularyRegistry shared = new VocabularyRegistry() {
+         @Override public Optional<String> areaOwner(String area) {
+            return "planner".equals(area) ? Optional.of("*") : PLATFORM.areaOwner(area);
+         }
+         @Override public Optional<Set<String>> actions(String application, String area, String domain) {
+            return PLATFORM.actions(application, area, domain);
+         }
+      };
+      List<Diagnostic> out = ApplicationDeclarationValidator.validate(planner(), shared, VocabularyEnforcement.REFUSE);
+      assertEquals(List.of(Code.AREA_OWNED_ELSEWHERE), out.stream().map(Diagnostic::code).toList(), out.toString());
+   }
+
    // ---- fixtures
+
+   private static FunctionalDomain tagged(FunctionalDomain domain, String applicationId) {
+      domain.setApplicationId(applicationId);
+      return domain;
+   }
 
    /** The pack is refused, with exactly these codes and nothing else. */
    private static void assertExactly(Declaration d, Code... expected) {
@@ -281,7 +346,7 @@ class ApplicationDeclarationValidatorTest {
          rule("planner-user", "PLANNER", "PLAN", "VIEW"),
          rule("planner-user", "SYSTEM", "MENUITEM", "LIST"));
       Policy admin = policy("planner-admin", rule("planner-admin", "PLANNER", "*", "*"));
-      return new Declaration(app, List.of(area), List.of(domain("PLANNER", "PLAN", "LIST", "VIEW", "PUBLISH")),
+      return new Declaration(app, List.of(area), List.of(tagged(domain("PLANNER", "PLAN", "LIST", "VIEW", "PUBLISH"), "acme-planner")),
          List.of(user, admin));
    }
 
