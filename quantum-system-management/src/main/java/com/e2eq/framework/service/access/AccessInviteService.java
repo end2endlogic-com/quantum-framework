@@ -1565,10 +1565,10 @@ public class AccessInviteService {
     /**
      * One assignment per (userId, realm) relies on the unique index; in embedded mode it is created
      * on first use and the write fails closed if it cannot be (for example existing duplicates).
-     * In remote mode the control plane owns the store and its constraints.
+     * With a remote directory the directory owner holds the store and its constraints.
      */
     private void requireUniqueAssignmentIndex() {
-        if (quantumModeConfig.isRemote() || uniqueAssignmentIndexReady.get()) {
+        if (quantumModeConfig.membershipsRemote() || uniqueAssignmentIndexReady.get()) {
             return;
         }
         userRealmRoleRepo.ensureUniqueAssignmentIndex(systemRealm());
@@ -1678,7 +1678,7 @@ public class AccessInviteService {
                 return;
             }
             UserRealmRole current = currentOpt.get();
-            if (priorAssignment == null && !quantumModeConfig.isRemote()) {
+            if (priorAssignment == null && !quantumModeConfig.membershipsRemote()) {
                 deleteOrFail(() -> userRealmRoleRepo.delete(systemRealm(), current));
                 return;
             }

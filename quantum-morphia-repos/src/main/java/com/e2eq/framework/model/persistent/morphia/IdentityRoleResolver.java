@@ -6,6 +6,7 @@ import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.UserGroup;
 import com.e2eq.framework.model.security.UserProfile;
 import com.e2eq.framework.util.EnvConfigUtils;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import io.quarkus.logging.Log;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -42,6 +43,22 @@ public class IdentityRoleResolver {
 
     @Inject
     EnvConfigUtils envConfigUtils;
+
+    /**
+     * {@code quantum.directory.mode}. When it is {@code remote}, realm assignments live at the
+     * directory owner (quantum-auth-service), so this service's local UserRealmRole copy is not
+     * an authority and is never read: a stale local row could otherwise keep a role that was
+     * revoked at Auth. Realm roles then come from the token Auth issued. Unset keeps the older
+     * behaviour.
+     */
+    @ConfigProperty(name = "quantum.directory.mode")
+    Optional<String> directoryMode = Optional.empty();
+
+    boolean localRealmAssignmentsAuthoritative() {
+        return directoryMode == null || directoryMode
+            .map(value -> !"remote".equalsIgnoreCase(value.trim()))
+            .orElse(true);
+    }
 
     /**
      * Resolve the effective roles for an already resolved credential, also considering the access token roles
@@ -105,9 +122,11 @@ public class IdentityRoleResolver {
 
         if (credential != null) {
             try {
-                userRealmRoleRepo.findActiveAssignmentForRealmWithIgnoreRules(
-                                credential.getUserId(), targetRealm, envConfigUtils.getSystemRealm())
-                        .ifPresent(assignment -> addRoles(provenance, assignment.getRoles(), RoleSource.REALM));
+                if (localRealmAssignmentsAuthoritative()) {
+                    userRealmRoleRepo.findActiveAssignmentForRealmWithIgnoreRules(
+                                    credential.getUserId(), targetRealm, envConfigUtils.getSystemRealm())
+                            .ifPresent(assignment -> addRoles(provenance, assignment.getRoles(), RoleSource.REALM));
+                }
 
                 addUserGroupRoles(provenance, credential, envConfigUtils.getSystemRealm(), applicationId);
                 if (!sameRealm(targetRealm, envConfigUtils.getSystemRealm())) {
@@ -174,9 +193,11 @@ public class IdentityRoleResolver {
         if (credential.isPresent()) {
             CredentialUserIdPassword cred = credential.get();
             addRoles(out, cred.getRoles(), RoleSource.CREDENTIAL);
-            userRealmRoleRepo.findActiveAssignmentForRealmWithIgnoreRules(
-                            cred.getUserId(), targetRealm, systemRealm)
-                    .ifPresent(assignment -> addRoles(out, assignment.getRoles(), RoleSource.REALM));
+            if (localRealmAssignmentsAuthoritative()) {
+                userRealmRoleRepo.findActiveAssignmentForRealmWithIgnoreRules(
+                                cred.getUserId(), targetRealm, systemRealm)
+                        .ifPresent(assignment -> addRoles(out, assignment.getRoles(), RoleSource.REALM));
+            }
 
             addUserGroupRoles(out, cred, systemRealm, applicationId);
             if (!sameRealm(targetRealm, systemRealm)) {
