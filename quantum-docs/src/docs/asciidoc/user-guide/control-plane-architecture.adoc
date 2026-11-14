@@ -95,8 +95,20 @@ control-plane client (`quantum-control-plane-client`, generated from
 
 The contract leaves out `dataDomain`. The control plane keeps the
 authoritative storage scope of an existing assignment. The request forwards
-the caller's bearer token, or `quantum.system-service.token` when no request
-is in scope, so the control plane authorizes the write under its own policy.
+the caller's bearer token, or `quantum.directory.token` (falling back to
+`quantum.system-service.token`) when no request is in scope, so the control
+plane authorizes the write under its own policy.
+
+=== Directory routing
+
+`quantum.directory.mode` (`local` | `remote`) decides where the realm catalog
+and memberships live, separately from `quantum.mode`. In the reference
+architecture one `quantum-auth-service` per environment owns the directory
+(`local`), and every other service reads it with `remote`. That includes a
+service that still keeps its own system realm for its own records
+(`quantum.mode=embedded`): its realm catalog and memberships go to Auth, while
+its system realm and credential lookups stay local. When the key is unset, the
+older routing applies unchanged.
 
 Every remote failure raises a typed `ControlPlaneException`, and nothing falls
 back to local storage:
@@ -168,7 +180,7 @@ endpoints publicly.
 
 |2 (split planes)
 |`quantum.mode=remote` +
-`quantum.system-service.base-url=...` +
+`quantum.directory.base-url=...` +
 tier-1 build switch
 |Control plane owns the system realm and identity; this app runs only
 app-realm workloads and validates JWTs against the control plane's JWKS.
