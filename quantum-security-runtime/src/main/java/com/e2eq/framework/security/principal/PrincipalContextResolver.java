@@ -155,11 +155,12 @@ public class PrincipalContextResolver {
             impersonatedBy = new PrincipalRef(original.getUserId(), original.getSubject());
         }
 
-        context = applyRealmOverride(context, realm, false, identity);
+        CredentialUserIdPassword resolved = effective;
+        context = applyRealmOverride(context, realm, false, identity, () -> resolved);
         if (identity) {
             requireApplicationGranted(context, effective);
         } else if (request.signedClaims().foreignApplicationToken()) {
-            requireSessionApplicationAdmitted(context);
+            requireSessionApplicationAdmitted(context, () -> resolved);
         }
 
         if (identity) {
@@ -702,11 +703,13 @@ public class PrincipalContextResolver {
     /**
      * Applies a realm selection as {@code SecurityFilter} always has. Switching realms keeps the
      * identity and roles and adopts the target realm's DomainContext; the original data domain
-     * is kept for audit. Skipped while impersonating. The context's application must belong to
-     * the realm or be granted on the user's assignment there.
+     * is kept for audit. Skipped while impersonating. A user's application must be admitted in the
+     * realm ({@link #applicationAdmitted}); the credential is read by user id, and never where
+     * token claims are trusted.
      */
     public PrincipalContext applyRealmOverride(PrincipalContext context, String realm, boolean trustTokenClaims) {
-        return applyRealmOverride(context, realm, trustTokenClaims, false);
+        return applyRealmOverride(context, realm, trustTokenClaims, false,
+                trustTokenClaims ? () -> null : () -> credentialOf(context.getUserId()));
     }
 
     /**
@@ -714,7 +717,7 @@ public class PrincipalContextResolver {
      * resolution admits the application once, for the final realm, without trusting a token pair).
      */
     PrincipalContext applyRealmOverride(PrincipalContext context, String realm, boolean trustTokenClaims,
-                                        boolean identityOnly) {
+                                        boolean identityOnly, Supplier<CredentialUserIdPassword> credential) {
         boolean checkApplication = !identityOnly;
         if (realm == null || realm.isBlank()) {
             return context;
@@ -734,10 +737,11 @@ public class PrincipalContextResolver {
                         : refusal(PrincipalResolutionError.REALM_NOT_AUTHORIZED,
                                 "Realm '" + realm + "' is not registered"));
         String applicationId = context.getApplicationId();
-        String realmApplicationId = realmApplicationId(targetRealm);
-        if (checkApplication && applicationId != null && !applicationId.isBlank()
-                && !applicationAdmittedInRealm(context.getUserId(), realm, applicationId, realmApplicationId,
-                        context.getDefaultRealm())) {
+        // Application admission is for identities. A calling service's context already runs in the
+        // realm it names (its reach is its own realm authorization), so it was never checked here.
+        boolean service = "SERVICE".equals(context.getScope());
+        if (checkApplication && !service && applicationId != null && !applicationId.isBlank()
+                && !applicationAdmitted(context.getUserId(), realm, applicationId, credential)) {
             throw new jakarta.ws.rs.ForbiddenException(
                     "Realm '" + realm + "' is not assigned to application '" + applicationId + "'");
         }
@@ -769,77 +773,87 @@ public class PrincipalContextResolver {
     }
 
     /**
-     * Whether {@code applicationId} is the realm's home application or granted on the user's
-     * assignment there. When {@code sessionRealm} equals the realm, Auth already minted the
-     * session for the application in it, so the verified token pair is trusted.
+     * The one application admission rule, used by identity resolution, realm selection and
+     * application sessions alike: {@code applicationId} is admitted in {@code realm} when it is the
+     * realm's own application, or when it is granted to the identity there, either on its realm
+     * assignment or by the credential's {@code applicationRegEx}. That is the grant login applies
+     * ({@link ApplicationAuthorizationResolver}). No token claim is trusted: a session minted in
+     * the realm does not by itself admit an application the identity is not granted.
+     *
+     * Whether the realm must be registered is the caller's precondition, not part of this rule:
+     * an identity's home realm may be served from its credential alone.
      */
-    public boolean applicationAdmittedInRealm(String userId, String realmRefName, String applicationId,
-                                              String realmHomeApplicationId, String sessionRealm) {
-        if (realmHomeApplicationId != null && applicationId.equalsIgnoreCase(realmHomeApplicationId)) {
+    public boolean applicationAdmitted(String userId, String realmRefName, String applicationId,
+                                       CredentialUserIdPassword credential) {
+        return applicationAdmitted(userId, realmRefName, applicationId, () -> credential);
+    }
+
+    /**
+     * {@code credential} is read only when neither the realm's ownership nor the assignment admits
+     * the application. It yields null where there is no local identity catalog (a resource server
+     * trusting token claims), and then the credential pattern grants nothing.
+     */
+    boolean applicationAdmitted(String userId, String realmRefName, String applicationId,
+                                Supplier<CredentialUserIdPassword> credential) {
+        if (blank(realmRefName) || blank(applicationId)) {
+            return false;
+        }
+        String owner = systemDirectory.findRealmByRefName(realmRefName)
+                .map(PrincipalContextResolver::realmApplicationId).orElse(null);
+        if (owner != null && applicationId.equalsIgnoreCase(owner)) {
             return true;
         }
-        if (sessionRealm != null && sessionRealm.equals(realmRefName)) {
+        if (blank(userId)) {
+            return false;
+        }
+        List<String> assigned = realmMembershipService == null ? null
+                : realmMembershipService.assignmentForUser(userId, realmRefName)
+                        .map(UserRealmRole::getAuthorizedApplications).orElse(null);
+        if (ApplicationAuthorizationResolver.resolve(assigned, null, null, applicationId).resolved()) {
             return true;
         }
-        if (userId == null || userId.isBlank() || realmMembershipService == null) {
-            return false;
+        CredentialUserIdPassword identity = credential.get();
+        String pattern = identity == null ? null : identity.getApplicationRegEx();
+        return !blank(pattern)
+                && ApplicationAuthorizationResolver.resolve(assigned, pattern, null, applicationId).resolved();
+    }
+
+    private CredentialUserIdPassword credentialOf(String userId) {
+        if (credentialRepo == null || envConfigUtils == null || blank(userId)) {
+            return null;
         }
-        Optional<UserRealmRole> assignment = realmMembershipService.assignmentForUser(userId, realmRefName);
-        if (assignment.isEmpty()) {
-            return false;
-        }
-        List<String> granted = assignment.get().getAuthorizedApplications();
-        if (granted == null || granted.isEmpty()) {
-            return false;
-        }
-        return granted.stream().anyMatch(app ->
-                app != null && ApplicationAuthorizationResolver.matches(app.trim(), applicationId));
+        return credentialRepo.findByUserId(userId, envConfigUtils.getSystemRealm(), true).orElse(null);
     }
 
     /**
      * In an application session, a token minted for another application says nothing about this
      * application: the user must be admitted to it in the session realm.
      */
-    public void requireSessionApplicationAdmitted(PrincipalContext context) {
+    public void requireSessionApplicationAdmitted(PrincipalContext context, boolean localIdentityCatalog) {
+        requireSessionApplicationAdmitted(context,
+                localIdentityCatalog ? () -> credentialOf(context.getUserId()) : () -> null);
+    }
+
+    private void requireSessionApplicationAdmitted(PrincipalContext context,
+                                                   Supplier<CredentialUserIdPassword> credential) {
         String applicationId = context.getApplicationId();
         String realmRefName = context.getDefaultRealm();
         Realm realm = systemDirectory.findRealmByRefName(realmRefName).orElse(null);
-        if (realm == null || !applicationAdmittedInRealm(
-                context.getUserId(), realmRefName, applicationId, realmApplicationId(realm), null)) {
+        if (realm == null || !applicationAdmitted(context.getUserId(), realmRefName, applicationId, credential)) {
             throw new jakarta.ws.rs.ForbiddenException(String.format(
                     "Signed in as %s, no access to application '%s' in realm '%s'",
                     context.getUserId(), applicationId, realmRefName));
         }
     }
 
-    /**
-     * Identity-only application admission, the same grant login uses: the realm's home
-     * application, or {@link ApplicationAuthorizationResolver} over the realm assignment's
-     * applications and the credential's {@code applicationRegEx}. No token pair is trusted.
-     */
+    /** Identity-only admission of the resolved realm: {@link #applicationAdmitted}, refused typed. */
     private void requireApplicationGranted(PrincipalContext context, CredentialUserIdPassword credential) {
-        if (!applicationGranted(context.getUserId(), context.getDefaultRealm(), context.getApplicationId(), credential)) {
+        if (!applicationAdmitted(context.getUserId(), context.getDefaultRealm(), context.getApplicationId(),
+                credential)) {
             throw refusal(PrincipalResolutionError.APPLICATION_NOT_GRANTED, String.format(
                     "%s has no access to application '%s' in realm '%s'",
                     context.getUserId(), context.getApplicationId(), context.getDefaultRealm()));
         }
-    }
-
-    private boolean applicationGranted(String userId, String realmRefName, String applicationId,
-                                       CredentialUserIdPassword credential) {
-        Realm realm = systemDirectory.findRealmByRefName(realmRefName).orElse(null);
-        if (realm != null && realmApplicationId(realm) != null
-                && applicationId.equalsIgnoreCase(realmApplicationId(realm))) {
-            return true;
-        }
-        Optional<UserRealmRole> assignment = realmMembershipService == null
-                ? Optional.empty()
-                : realmMembershipService.assignmentForUser(userId, realmRefName);
-        return ApplicationAuthorizationResolver.resolve(
-                assignment.map(UserRealmRole::getAuthorizedApplications).orElse(null),
-                credential.getApplicationRegEx(),
-                null,
-                applicationId).resolved();
     }
 
     // ------------------------------------------------------------------ tenant selection
