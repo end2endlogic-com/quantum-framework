@@ -268,6 +268,9 @@ class ApplicationDeclarationValidatorTest {
       List<Diagnostic> out = ApplicationDeclarationValidator.validate(bad, PLATFORM, VocabularyEnforcement.REFUSE);
       assertEquals(3, out.stream().filter(x -> x.code() == Code.VOCABULARY_ROW_INVALID).count(), out.toString());
       assertExactly(bad, Code.VOCABULARY_ROW_INVALID);
+      // Malformed input, not legacy vocabulary: refused in WARN mode too.
+      assertTrue(ApplicationDeclarationValidator.refuses(
+         ApplicationDeclarationValidator.validate(bad, PLATFORM, VocabularyEnforcement.WARN)));
    }
 
    @Test

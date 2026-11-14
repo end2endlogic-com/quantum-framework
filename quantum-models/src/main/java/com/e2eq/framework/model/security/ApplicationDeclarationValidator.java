@@ -219,7 +219,7 @@ public final class ApplicationDeclarationValidator {
       for (FunctionalArea area : declaration.areas()) {
          String name = area == null ? null : key(area.getRefName());
          if (name == null) {
-            out.add(new Diagnostic(Code.VOCABULARY_ROW_INVALID, vocabulary, "A functional area row names no refName."));
+            out.add(error(Code.VOCABULARY_ROW_INVALID, "A functional area row names no refName."));
             continue;
          }
          if (unowned(area.getApplicationId())) {
@@ -238,7 +238,7 @@ public final class ApplicationDeclarationValidator {
          String area = domain == null ? null : key(domain.getArea());
          String name = domain == null ? null : key(domain.getRefName());
          if (area == null || name == null) {
-            out.add(new Diagnostic(Code.VOCABULARY_ROW_INVALID, vocabulary, "A functional domain row needs an area and a refName: "
+            out.add(error(Code.VOCABULARY_ROW_INVALID, "A functional domain row needs an area and a refName: "
                + (domain == null ? "null" : (domain.getArea() + "/" + domain.getRefName()))));
             continue;
          }
@@ -343,7 +343,7 @@ public final class ApplicationDeclarationValidator {
       for (Rule rule : nonNull(policy.getRules())) {
          SecurityURIHeader header = rule == null || rule.getSecurityURI() == null ? null : rule.getSecurityURI().getHeader();
          if (header == null) {
-            out.add(new Diagnostic(Code.VOCABULARY_ROW_INVALID, vocabulary, "Policy " + policy.getRefName() + " rule '"
+            out.add(error(Code.VOCABULARY_ROW_INVALID, "Policy " + policy.getRefName() + " rule '"
                + (rule == null || rule.getName() == null ? "" : rule.getName()) + "' has no securityURI header."));
             continue;
          }
