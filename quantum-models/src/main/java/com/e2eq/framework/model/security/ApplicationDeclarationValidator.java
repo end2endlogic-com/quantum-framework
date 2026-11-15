@@ -26,7 +26,7 @@ import java.util.Set;
 public final class ApplicationDeclarationValidator {
 
    /** Roles the platform owns. An application never declares them as its own roles. */
-   public static final Set<String> RESERVED_ROLES = Set.of("system", "admin", "user");
+   public static final Set<String> RESERVED_ROLES = Set.of("system", "admin", "user", UserRealmRole.ROLE_EXTERNAL);
 
    private static final String WILDCARD = "*";
 

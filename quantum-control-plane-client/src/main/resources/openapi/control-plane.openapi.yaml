@@ -224,6 +224,7 @@ components:
         authorizedApplications: { type: array, items: { type: string } }
         defaultApplication: { type: string }
         authorizedTenantIds: { type: array, items: { type: string } }
+        externalTenantIds: { type: array, items: { type: string } }
         sponsoringOrgRefName: { type: string }
         status: { type: string, enum: [active, invited, suspended] }
         id:

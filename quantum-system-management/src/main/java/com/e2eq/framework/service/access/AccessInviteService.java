@@ -148,6 +148,9 @@ public class AccessInviteService {
     @Inject
     Instance<AccessInviteNotificationService> notificationServices;
 
+    @Inject
+    com.e2eq.framework.security.runtime.ExternalMembershipAuthorization externalMembershipAuthorization;
+
     /**
      * Creates an invite into exactly one realm: {@code realm}, the realm of the request context.
      * The inviter must be able to access that realm through its own credential (see
@@ -171,7 +174,19 @@ public class AccessInviteService {
             throw failure(Code.INVITE_NOT_AUTHORIZED, "An invite can only be created by the signed-in caller.");
         }
         requireRealmAccess(caller, realm);
-        requireCreateRole(caller, realm);
+        String kind = request.getKind();
+        if (kind != null && !"external".equals(kind)) {
+            throw failure(Code.INVALID_REQUEST, "Invite kind must be external or omitted.");
+        }
+        if ("external".equals(kind)) {
+            externalMembershipAuthorization.require(caller, realm,
+                    caller.getDataDomain() == null ? null : caller.getDataDomain().getTenantId());
+            if (request.getGrantedRoles() != null && !request.getGrantedRoles().isEmpty()) {
+                throw failure(Code.INVALID_REQUEST, "External invites cannot grant roles.");
+            }
+        } else {
+            requireCreateRole(caller, realm);
+        }
 
         String normalizedEmail = normalize(request.getEmail());
         String normalizedTargetUserId = normalize(request.getTargetUserId());
@@ -190,6 +205,10 @@ public class AccessInviteService {
         InviteAcceptancePolicy policy = inSystemScope(() -> acceptancePolicies.forCreate(realmRecord, request.getAcceptancePolicy()));
         InviteScope scope = snapshotScope(caller, realm);
         requireScopeClaimMatches(realm, callerUserId, request.getScope(), scope);
+        if ("external".equals(kind) && (scope.getDataDomain() == null
+                || !java.util.Objects.equals(caller.getDataDomain().getTenantId(), scope.getDataDomain().getTenantId()))) {
+            throw failure(Code.INVITE_SCOPE_NOT_AUTHORIZED, "External invites must name the inviter's tenant.");
+        }
         InviteCreation creation = new InviteCreation(
             realmRecord,
             caller,
@@ -222,6 +241,7 @@ public class AccessInviteService {
             .refName("invite-" + UUID.randomUUID())
             .displayName("Invite " + (normalizedEmail != null ? normalizedEmail : normalizedTargetUserId))
             // The invited identity is fixed here and is the only identity acceptance may bind to.
+            .kind(kind)
             .email(normalizedEmail)
             .targetUserId(normalizedTargetUserId)
             .invitedByUserId(normalize(inviterUserId))
@@ -452,6 +472,8 @@ public class AccessInviteService {
                 .realmRefName(assignment.getRealmRefName())
                 .tenantId(listed)
                 .status(assignment.getStatus())
+                .kind(assignment.externalInTenant(listed) ? "external" : "member")
+                .sponsoringOrgRefName(assignment.getSponsoringOrgRefName())
                 .roles(assignment.getRoles() == null ? List.of() : List.copyOf(assignment.getRoles()))
                 .authorizedApplications(assignment.getAuthorizedApplications() == null ? List.of() : List.copyOf(assignment.getAuthorizedApplications()))
                 .defaultApplication(assignment.getDefaultApplication())
@@ -684,11 +706,18 @@ public class AccessInviteService {
             grant = policy.resolveGrant(new InviteAcceptance(
                 realmRecord, invite, invitedUserId, accountExists, existingAccount, inviterAdmin, inviterAssignment, inviteeAssignment));
             requireGrantWithinInvite(realmRecord, invite, policy, grant, accountExists);
+            if ("external".equals(invite.getKind()) && existingAccount != null && inviteeAssignment == null
+                    && !InviteAcceptancePolicies.pooled(realmRecord)
+                    && existingAccount.getDomainContext() != null
+                    && realm.equals(existingAccount.getDomainContext().getDefaultRealm())) {
+                throw failure(Code.INVITE_MEMBERSHIP_KIND_CONFLICT,
+                        "An external invite cannot convert an existing dedicated-realm member.");
+            }
 
             if (accountExists) {
                 CredentialUserIdPassword existing = existingAccount;
                 rollback.captureAssignment(existing.getUserId());
-                rollback.written = ensureRealmAssignment(realm, existing, grant);
+                rollback.written = ensureRealmAssignment(realm, existing, grant, invite);
                 rollback.realmEntryAdded = !hasExplicitRealmEntry(existing, realm);
                 rollback.userId = existing.getUserId();
                 credential = ensureUserCredential(realm, invitedUserId, true, null, null);
@@ -699,7 +728,7 @@ public class AccessInviteService {
                 rollback.createdCredential = credential;
                 rollback.userId = credential.getUserId();
                 rollback.captureAssignment(credential.getUserId());
-                rollback.written = ensureRealmAssignment(realm, credential, grant);
+                rollback.written = ensureRealmAssignment(realm, credential, grant, invite);
             }
             boolean profileExisted = userProfileRepo.getByUserIdWithIgnoreRules(realm, invitedUserId).isPresent();
             profile = ensureUserProfile(realm, credential, invitedUserId, invitedEmail, firstName, lastName, grant.getProfileDataDomain());
@@ -1305,7 +1334,19 @@ public class AccessInviteService {
      * {@code system}, and it may grant any role.
      */
     private void enforceGrantableRoles(PrincipalContext caller, String realm, String inviterUserId, List<String> grantedRoles) {
-        if (grantedRoles == null || grantedRoles.isEmpty() || isSystemPrincipal(caller)) {
+        if (grantedRoles == null || grantedRoles.isEmpty()) {
+            return;
+        }
+        for (String role : grantedRoles) {
+            if (UserRealmRole.isReservedExternalRole(role)) {
+                Log.warnf(
+                    "access-invite.create.refused reason=role-not-grantable realm=%s inviter=%s role=%s",
+                    sanitizeForLog(realm), sanitizeForLog(inviterUserId), sanitizeForLog(role)
+                );
+                throw failure(Code.INVITE_ROLE_NOT_GRANTABLE, "The role '" + sanitizeForLog(role) + "' cannot be granted in this realm.");
+            }
+        }
+        if (isSystemPrincipal(caller)) {
             return;
         }
         Set<String> held = credentialOf(authenticatedUserId(caller))
@@ -1320,7 +1361,7 @@ public class AccessInviteService {
             if (normalized == null) {
                 continue;
             }
-            if (SYSTEM_ROLE.equals(normalized) || !held.contains(normalized)) {
+            if (SYSTEM_ROLE.equals(normalized) || UserRealmRole.ROLE_EXTERNAL.equals(normalized) || !held.contains(normalized)) {
                 Log.warnf(
                     "access-invite.%s.refused reason=role-not-grantable realm=%s inviter=%s role=%s",
                     operation, sanitizeForLog(realm), sanitizeForLog(inviterUserId), sanitizeForLog(role)
@@ -1421,7 +1462,7 @@ public class AccessInviteService {
         // access to this realm therefore also brings its flat roles here; the inviter must hold them
         // in this realm too, or the invite would grant roles the inviter does not have.
         CredentialUserIdPassword invitee = existingInviteeUserId == null ? null : credentialOf(existingInviteeUserId).orElse(null);
-        if (invitee != null && !credentialCanAccessRealm(invitee, realm) && invitee.getRoles() != null) {
+        if (!"external".equals(invite.getKind()) && invitee != null && !credentialCanAccessRealm(invitee, realm) && invitee.getRoles() != null) {
             List<String> carried = new ArrayList<>();
             for (String role : invitee.getRoles()) {
                 String normalized = normalize(role);
@@ -1441,10 +1482,38 @@ public class AccessInviteService {
      * {@code authorizedApplications}; otherwise that field is left as it is. One document per
      * (userId, realm), so accepting again merges instead of duplicating.
      */
-    private UserRealmRole ensureRealmAssignment(String realm, CredentialUserIdPassword credential, InviteGrant grant) {
+    private UserRealmRole ensureRealmAssignment(String realm, CredentialUserIdPassword credential, InviteGrant grant, AccessInvite invite) {
         String userId = credential.getUserId();
         requireUniqueAssignmentIndex();
-        UserRealmRole assignment = assignment(userId, realm).orElseGet(() -> newAssignment(userId, realm, grant));
+        UserRealmRole prior = assignment(userId, realm).orElse(null);
+        String tenant = grant.getAssignmentDataDomain() == null ? grant.getTenantId()
+                : grant.getAssignmentDataDomain().getTenantId();
+        boolean external = "external".equals(invite.getKind());
+        if (external || (prior != null && prior.getExternalTenantIds() != null && !prior.getExternalTenantIds().isEmpty())) {
+            if (tenant == null) {
+                throw failure(Code.INVITE_SCOPE_UNRESOLVABLE, "Invite grant must name its tenant.");
+            }
+            boolean pooled = registeredRealm(realm).map(InviteAcceptancePolicies::pooled).orElse(true);
+            boolean existingTenant = prior != null && (!pooled
+                    || com.e2eq.framework.model.auth.AccessibleTenantResolver.isAuthorized(prior, tenant)
+                    || prior.externalInTenant(tenant));
+            if (existingTenant && external != prior.externalInTenant(tenant)) {
+                throw failure(Code.INVITE_MEMBERSHIP_KIND_CONFLICT,
+                        "An invite cannot change the kind of an existing tenant membership.");
+            }
+        }
+        UserRealmRole assignment = prior == null ? newAssignment(userId, realm, grant) : prior;
+        if (external) {
+            if (tenant == null || invite.getScope() == null || invite.getScope().getDataDomain() == null
+                    || !tenant.equals(invite.getScope().getDataDomain().getTenantId())
+                    || (grant.getAddTenantIds() != null && grant.getAddTenantIds().stream().anyMatch(t -> !tenant.equals(t)))
+                    || (grant.getNewAssignmentTenantIds() != null && grant.getNewAssignmentTenantIds().stream().anyMatch(t -> !tenant.equals(t)))
+                    || (grant.getRoles() != null && !grant.getRoles().isEmpty())) {
+                throw failure(Code.INVITE_SCOPE_NOT_AUTHORIZED, "External invite must grant exactly its sponsoring tenant and no roles.");
+            }
+            assignment.setAuthorizedTenantIds(unionExact(assignment.getAuthorizedTenantIds(), List.of(tenant)));
+            assignment.setExternalTenantIds(unionExact(assignment.getExternalTenantIds(), List.of(tenant)));
+        }
         if (assignment.getSubject() == null) {
             assignment.setSubject(credential.getSubject());
         }
@@ -1772,6 +1841,8 @@ public class AccessInviteService {
             }
             UserRealmRole prior = priorAssignment;
             current.setRoles(minusIgnoreCase(current.getRoles(), added(written.getRoles(), prior == null ? null : prior.getRoles())));
+            current.setExternalTenantIds(minusExact(current.getExternalTenantIds(),
+                added(written.getExternalTenantIds(), prior == null ? null : prior.getExternalTenantIds())));
             current.setAuthorizedTenantIds(minusExact(current.getAuthorizedTenantIds(),
                 added(written.getAuthorizedTenantIds(), prior == null ? null : prior.getAuthorizedTenantIds())));
             List<String> priorApps = prior == null ? null : prior.getAuthorizedApplications();

@@ -37,7 +37,7 @@ Authenticate external subjects before linking identities; names and email addres
 
 === Revocation and verification
 
-Test grant removal through login, realm/application selection and refresh, not just a membership listing. Changing a stored grant does not itself revoke an already-issued stateless JWT; document and test the supported token-expiry or revocation bound. An incomplete external snapshot or provider outage is not authoritative evidence that all members left.
+Test grant removal through login, realm/application selection and refresh, not just a membership listing. For ordinary memberships, changing a stored grant does not itself revoke an already-issued stateless JWT; document and test the supported token-expiry or revocation bound. An incomplete external snapshot or provider outage is not authoritative evidence that all members left.
 
 Acceptance should cover inactive credentials, unauthorized realm/tenant/application selection, preservation of manual grants and complete stored payloads, concurrent updates, source removal, and environment isolation. Use replica-set Mongo for transactional behavior.
 
@@ -50,3 +50,26 @@ Acceptance should cover inactive credentials, unauthorized realm/tenant/applicat
 * `quantum-jwt-provider`: `CustomTokenAuthProvider.refreshTokens`.
 
 See xref:{doc-root}/design/realm-membership-adr.adoc[Realm membership ADR] for the architecture decision and xref:{doc-root}/prerelease-defect-remediation.adoc[Pre-release migration notes] for the recent repairs.
+
+=== External tenant membership
+
+In `1.4.3-SNAPSHOT`, `UserRealmRole.externalTenantIds` marks tenants in which the
+identity is external. Absent or empty preserves ordinary membership. Receivers
+read current memberships and replace the selected external tenant's rule roles
+with `external`, retaining only the identity's own user application bindings where
+already resolved. Flat credential roles, signed roles, realm and group roles do
+not confer member access there. Login, token minting and refresh contracts are unchanged.
+
+An access invite with `kind: "external"` requires the rule-engine permission
+`SECURITY:ACCESS_INVITE:inviteExternal`, grants no roles, and names only the
+inviter's tenant. Acceptance adds both tenant lists. Existing member/external
+kind conflicts are refused; deliberate membership kind edits require the same
+permission. Member listings return `kind` and `sponsoringOrgRefName`.
+
+Suspend the assignment or remove its authorized tenant to end external access
+on the next request. Keep the external marker when removing tenant authorization;
+clearing it is a kind conversion. In legacy dedicated realms, deleting the entire
+assignment loses the marker and is not an external revocation mechanism.
+Deploy every service of the realm on the new framework before external invites
+are used: old receivers ignore this field. See the tenant-models guide for the
+coarse-gate exclusions and rollout verification requirements.

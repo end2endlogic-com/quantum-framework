@@ -42,6 +42,17 @@ class PrincipalContextResolverParityTest {
     private final PrincipalFixture world = new PrincipalFixture();
 
     @Test
+    void signedCredentialAndIdentityPathsStripFlatAndRealmRolesForExternalTenant() {
+        world.credential("alice@acme").setRoles(new String[]{"user", "admin"});
+        world.assignments.get("alice@acme|pooled").setExternalTenantIds(List.of("tenant-b"));
+        PrincipalContext signed = viaFilter("alice@acme", Map.of("X-Realm", "pooled", "X-Tenant-Id", "tenant-b"));
+        PrincipalContext identity = world.resolver().resolve(world.identity("alice@acme")
+                .realm("pooled").tenantId("tenant-b").build()).context();
+        assertSamePrincipal(signed, identity);
+        assertArrayEquals(new String[]{"external"}, signed.getRoles());
+    }
+
+    @Test
     void plainSignIn() {
         PrincipalContext viaFilter = viaFilter("alice@acme", Map.of());
         PrincipalContext viaIdentity = world.resolver().resolve(world.identity("alice@acme").build()).context();

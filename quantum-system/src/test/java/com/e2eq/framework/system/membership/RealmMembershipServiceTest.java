@@ -73,6 +73,7 @@ class RealmMembershipServiceTest {
         existing.setSubject("stable-subject");
         existing.setRealmRefName("engineering");
         existing.setAuthorizedTenantRegEx("tenant-.*");
+        existing.setExternalTenantIds(List.of("tenant-outside"));
         existing.setDisplayName("User in Engineering");
         existing.setDataDomain(new DataDomain("org", "account", "tenant", 0, "owner"));
         service.userRealmRoleRepo = org.mockito.Mockito.mock(UserRealmRoleRepo.class);
@@ -86,6 +87,7 @@ class RealmMembershipServiceTest {
         assertEquals("tenant-.*", saved.getAuthorizedTenantRegEx());
         assertEquals("authoritative-assignment", saved.getRefName());
         assertEquals("stable-subject", saved.getSubject());
+        assertEquals(List.of("tenant-outside"), saved.getExternalTenantIds());
         assertEquals("User in Engineering", saved.getDisplayName());
         assertEquals(8L, saved.getVersion());
         assertEquals(wire.getId(), saved.getId().toHexString());

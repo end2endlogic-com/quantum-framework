@@ -40,6 +40,14 @@ class PrincipalContextApplicationBindingTest {
         world.install(PLANNER, "acme-D2", "acme-two");
     }
 
+    @Test
+    void externalPrincipalKeepsOnlyOwnBindingRoles() {
+        world.bind(ALICE, PLANNER, "pooled", List.of("tenant-a"), "tenant-a", "planner-user");
+        world.bindGroup("planners", PLANNER, "pooled", "tenant-a", "planner-admin");
+        world.assignments.get(ALICE + "|pooled").setExternalTenantIds(List.of("tenant-a"));
+        assertEquals(List.of("external", "planner-user"), roles(resolve(PLANNER, "pooled", "tenant-a")));
+    }
+
     // --- admission, tenant and roles -------------------------------------------------------
 
     @Test

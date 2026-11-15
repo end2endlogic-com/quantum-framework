@@ -28,6 +28,7 @@ class AccessInviteExceptionMapperTest {
         assertMapped(Code.INVITE_NOT_FOUND, 404);
         assertMapped(Code.INVITE_POLICY_UNAVAILABLE, 409);
         assertMapped(Code.INVITE_NOT_PENDING, 409);
+        assertMapped(Code.INVITE_MEMBERSHIP_KIND_CONFLICT, 409);
         assertMapped(Code.INVITE_ACCOUNT_REALM_CONFLICT, 409);
         assertMapped(Code.INVITE_EXPIRED, 410);
         assertMapped(Code.INVITE_PROVISIONING_FAILED, 500);

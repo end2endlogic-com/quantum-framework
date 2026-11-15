@@ -887,6 +887,13 @@ admission; it is not a resource permission decision. Existing resource rules,
 public provider interfaces, response formats and embedded custom role resolvers
 retain their contracts. Embedded custom role resolution is not cached.
 
+External tenant membership is a receiver-side exception to retaining signed role
+authority: after tenant selection, `PrincipalContextResolver` reads the complete
+realm assignment and replaces roles with `external` plus already-resolved own
+user binding roles. This applies to credential, signed-token and trusted-claims
+paths, including dedicated realms. Ordinary memberships retain their existing
+role behavior. See xref:tenant-models.adoc[External members and rollout ordering].
+
 When `quantum.auth.trust-token-claims=true`, augmentation and authenticated JWT
 migration checks do not consult local credentials. Without an explicit
 `X-Realm`, migration checks select the system realm for service tokens, or the

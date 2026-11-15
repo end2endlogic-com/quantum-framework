@@ -116,6 +116,7 @@ class ControlPlaneRealmMapperTest {
         entry.setAuthorizedApplications(List.of("helixor-code", "helixor-reasoning-ux"));
         entry.setDefaultApplication("helixor-code");
         entry.setAuthorizedTenantIds(List.of("tenant-a", "tenant-b"));
+        entry.setExternalTenantIds(List.of("tenant-b"));
         entry.setSponsoringOrgRefName("HelixorAI");
         entry.setStatus("active");
 
@@ -124,6 +125,8 @@ class ControlPlaneRealmMapperTest {
         assertEquals("mingardia@helixor.ai-helixor-code-D1", role.getRefName());
         assertEquals(entry.getAuthorizedApplications(), role.getAuthorizedApplications());
         assertEquals(entry.getAuthorizedTenantIds(), role.getAuthorizedTenantIds());
+        assertEquals(List.of("tenant-b"), role.getExternalTenantIds());
+        assertEquals(List.of("tenant-b"), ControlPlaneRealmMapper.toEntry(role).getExternalTenantIds());
         assertEquals("HelixorAI", ControlPlaneRealmMapper.toEntry(role).getSponsoringOrgRefName());
     }
 

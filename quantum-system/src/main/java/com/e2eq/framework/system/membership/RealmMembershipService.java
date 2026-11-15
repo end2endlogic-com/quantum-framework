@@ -48,6 +48,8 @@ public class RealmMembershipService {
     @Inject
     JsonWebToken jwt;
 
+
+
     /**
      * Phase C: in remote mode membership resolution goes to the control plane.
      * Capture the bearer while still on the inbound request thread. The REST
@@ -177,6 +179,7 @@ public class RealmMembershipService {
         if (assignment.getRealmRefName() == null || assignment.getRealmRefName().isBlank()) {
             throw new IllegalArgumentException("assignment.realmRefName must not be blank");
         }
+        UserRealmRole.requireNoExternalRole(assignment.getRoles(), "UserRealmRole");
         if (quantumModeConfig.membershipsRemote()) {
             // PUT /control/users/{userId}/realms/{realmRefName} round-trips persisted fields.
             // The control plane retains authority over existing storage scope.
@@ -217,6 +220,7 @@ public class RealmMembershipService {
             existing.setDefaultApplication(assignment.getDefaultApplication());
             existing.setAuthorizedTenantIds(assignment.getAuthorizedTenantIds());
             existing.setAuthorizedTenantRegEx(assignment.getAuthorizedTenantRegEx());
+            existing.setExternalTenantIds(assignment.getExternalTenantIds());
             existing.setSponsoringOrgRefName(assignment.getSponsoringOrgRefName());
             existing.setStatus(assignment.getStatus());
             existing.setDisplayName(assignment.getDisplayName());

@@ -11,6 +11,7 @@ import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.morphia.UserGroupRepo;
 import com.e2eq.framework.model.persistent.morphia.UserProfileRepo;
 import com.e2eq.framework.model.security.Realm;
+import com.e2eq.framework.model.security.UserRealmRole;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.model.securityrules.SecurityContext;
@@ -204,6 +205,15 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
 
         if (principalContext == null) {
             throw new IllegalStateException("Principal context came back null and should not be null");
+        }
+        if (principalContext.getRoles() != null
+                && java.util.Arrays.asList(principalContext.getRoles()).contains(UserRealmRole.ROLE_EXTERNAL)
+                && (isBypassDataScoping() || isServiceTokenMintRequest())) {
+            requestContext.abortWith(Response.status(Response.Status.FORBIDDEN)
+                    .entity(apiError("EXTERNAL_OPERATION_REFUSED",
+                            "External principals cannot bypass data scoping or mint service tokens"))
+                    .build());
+            return;
         }
         if (resourceContext != null && resourceContext.getDataDomain() == null) {
             resourceContext = resourceContext.withDataDomain(principalContext.getDataDomain());
@@ -525,7 +535,8 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         PrincipalContext contextWithTenant = applyTenantSelection(contextWithRealm, tenantId, tokenTenantId);
 
         // Apply custom property resolvers
-        PrincipalContext completed = applyCustomProperties(requestContext, contextWithTenant, credentials);
+        PrincipalContext completed = applyCustomProperties(requestContext,
+                isUserPrincipal() ? resolver().finalizeUserPrincipal(contextWithTenant) : contextWithTenant, credentials);
         if (requestState != null) requestState.complete(
                 ResolvedAuthorizationContext.from(claimString("iss"), claimString("sub"), completed));
         return completed;
@@ -1355,6 +1366,12 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                                           String tokenTenantId) {
         return resolver().applyTenantSelection(context, requestedTenantId, tokenTenantId,
                 isPlatformTenantExemptRequest());
+    }
+
+    private boolean isServiceTokenMintRequest() {
+        return resourceInfo != null && resourceInfo.getResourceClass() != null
+                && combinedResourcePath(resourceInfo.getResourceClass(), resourceInfo.getResourceMethod())
+                    .toLowerCase(Locale.ROOT).contains("service-token");
     }
 
     boolean isPlatformTenantExemptRequest() {

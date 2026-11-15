@@ -273,6 +273,9 @@ public class CredentialRepo extends MorphiaRepo<CredentialUserIdPassword> {
     */
    @Override
    protected void reconcileServerOwnedState (Datastore datastore, CredentialUserIdPassword value, RefNameContract.WriteMode mode) {
+      if (value != null) {
+         com.e2eq.framework.model.security.UserRealmRole.requireNoExternalRole(value.getRoles(), "CredentialUserIdPassword");
+      }
       if (value == null || value.getId() == null) {
          return;
       }
@@ -290,6 +293,13 @@ public class CredentialRepo extends MorphiaRepo<CredentialUserIdPassword> {
       } else {
          value.setPasswordRevision(stored.currentPasswordRevision() + 1);
          value.setPasswordChangedAt(new java.util.Date());
+      }
+   }
+
+   @Override
+   protected void validateFieldUpdate (String requestedPath, Object value) {
+      if (requestedPath != null && (requestedPath.equals("roles") || requestedPath.startsWith("roles."))) {
+         com.e2eq.framework.model.security.UserRealmRole.requireNoExternalRoleValue(value, "CredentialUserIdPassword");
       }
    }
 

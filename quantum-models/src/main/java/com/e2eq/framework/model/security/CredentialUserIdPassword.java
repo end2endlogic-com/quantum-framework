@@ -203,6 +203,7 @@ public class CredentialUserIdPassword extends BaseModel {
                throw new IllegalArgumentException("roles array must not contain null or empty strings");
             }
          }
+         UserRealmRole.requireNoExternalRole(roles, "CredentialUserIdPassword");
       }
    }
 

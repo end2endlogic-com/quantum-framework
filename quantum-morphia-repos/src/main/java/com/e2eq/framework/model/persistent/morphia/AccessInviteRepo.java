@@ -28,6 +28,20 @@ import java.util.Optional;
 @ApplicationScoped
 public class AccessInviteRepo extends MorphiaRepo<AccessInvite> {
 
+    @Override
+    protected void reconcileServerOwnedState(dev.morphia.Datastore datastore, AccessInvite entity, RefNameContract.WriteMode mode) {
+        if (entity != null) {
+            com.e2eq.framework.model.security.UserRealmRole.requireNoExternalRole(entity.getGrantedRoles(), "AccessInvite");
+        }
+    }
+
+    @Override
+    protected void validateFieldUpdate(String requestedPath, Object value) {
+        if (requestedPath != null && (requestedPath.equals("grantedRoles") || requestedPath.startsWith("grantedRoles."))) {
+            com.e2eq.framework.model.security.UserRealmRole.requireNoExternalRoleValue(value, "AccessInvite");
+        }
+    }
+
     public List<AccessInvite> getAllListIgnoreRules(String realm) {
         dev.morphia.Datastore datastore = getMorphiaDataStoreWrapper().getDataStore(realm);
         try (dev.morphia.query.MorphiaCursor<AccessInvite> cursor = datastore.find(AccessInvite.class).iterator()) {

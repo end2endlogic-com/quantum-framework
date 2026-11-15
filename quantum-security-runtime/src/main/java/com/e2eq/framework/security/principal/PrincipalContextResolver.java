@@ -238,6 +238,9 @@ public class PrincipalContextResolver {
             context = applyTenantSelection(context, request.tenantId(), tokenTenantId,
                     request.signedClaims().tenantSelectionExempt());
         }
+        if (!serviceCredential(effective)) {
+            context = identity ? finalizeUserPrincipal(context, grant) : finalizeUserPrincipal(context);
+        }
         return new PrincipalContextResolution(context, effective, caller, impersonatedBy, null);
     }
 
@@ -843,7 +846,7 @@ public class PrincipalContextResolver {
         }
         Optional<UserRealmRole> assignment = realmMembershipService.assignmentForUser(userId, realmRefName)
                 .filter(PrincipalContextResolver::activeAssignment);
-        if (assignment.isEmpty()) {
+        if (assignment.isEmpty() || assignment.get().externalInTenant(tenantId)) {
             return false;
         }
         if (AccessibleTenantResolver.isAuthorized(assignment.get(), tenantId)) {
@@ -1225,6 +1228,75 @@ public class PrincipalContextResolver {
                 credential.getApplicationRegEx(),
                 null,
                 applicationId).resolved();
+    }
+
+    /** Receiver-side role boundary, shared by credential and trusted-claims requests. */
+    public PrincipalContext finalizeUserPrincipal(PrincipalContext context) {
+        try {
+            return finalizeUserPrincipal(context, null);
+        } catch (PrincipalResolutionException refused) {
+            throw RemotePrincipalResolutionException.of(refused.error(), refused.getMessage());
+        }
+    }
+
+    private PrincipalContext finalizeUserPrincipal(PrincipalContext context, ApplicationGrant grant) {
+        DomainContext selectedDomain = context.getDomainContext();
+        Realm selectedRealm = systemDirectory.findRealmByRefName(context.getDefaultRealm()).orElse(null);
+        if (selectedRealm != null && selectedRealm.getTenancyMode() != RealmTenancyMode.MULTI_TENANT
+                && selectedRealm.getDomainContext() != null) {
+            selectedDomain = selectedRealm.getDomainContext();
+        }
+        String tenant = selectedDomain == null ? null : selectedDomain.getTenantId();
+        if (blank(context.getUserId())) {
+            return context;
+        }
+        // Read the complete assignment: the active-only lookup hides suspended outsiders.
+        UserRealmRole assignment = realmMembershipService.realmsForUser(context.getUserId()).stream()
+                .filter(row -> Objects.equals(context.getDefaultRealm(), row.getRealmRefName()))
+                .findFirst().orElse(null);
+        if (assignment == null) {
+            return context;
+        }
+        if (blank(tenant)) {
+            // No tenant was selected, so nothing says the caller is acting where it is a member. An
+            // identity that is an outsider anywhere in this realm then holds only the outsider role.
+            boolean outsiderSomewhere = assignment.getExternalTenantIds() != null
+                    && assignment.getExternalTenantIds().stream().anyMatch(id -> !blank(id));
+            if (!outsiderSomewhere) {
+                return context;
+            }
+            if (!activeAssignment(assignment)) {
+                throw refusal(PrincipalResolutionError.TENANT_NOT_AUTHORIZED,
+                        "External membership is not active in this realm");
+            }
+            return copy(context).withRoles(new String[]{UserRealmRole.ROLE_EXTERNAL}).build();
+        }
+        if (!assignment.externalInTenant(tenant)) {
+            return context;
+        }
+        boolean explicitlyAuthorized = assignment.getAuthorizedTenantIds() != null
+                && assignment.getAuthorizedTenantIds().stream().filter(Objects::nonNull)
+                    .map(String::trim).anyMatch(tenant::equals);
+        if (!activeAssignment(assignment) || !explicitlyAuthorized) {
+            throw refusal(PrincipalResolutionError.TENANT_NOT_AUTHORIZED,
+                    "External membership no longer authorizes the selected tenant");
+        }
+        Set<String> roles = new LinkedHashSet<>();
+        roles.add(UserRealmRole.ROLE_EXTERNAL);
+        if (grant != null) {
+            for (BoundTenants bound : grant.bindings()) {
+                if (!bound.binding().groupBinding() && bound.tenants().contains(tenant)
+                        && bound.binding().getRoles() != null) {
+                    bound.binding().getRoles().stream().filter(Objects::nonNull)
+                            .map(String::trim).forEach(roles::add);
+                }
+            }
+        }
+        PrincipalContext.Builder finalized = copy(context).withRoles(roles.toArray(String[]::new));
+        if (!sameDataCoordinate(selectedDomain, context.getDomainContext())) {
+            finalized.withDomainContext(selectedDomain).withDataDomain(selectedDomain.toDataDomain(context.getUserId()));
+        }
+        return finalized.build();
     }
 
     // ------------------------------------------------------------------ tenant selection

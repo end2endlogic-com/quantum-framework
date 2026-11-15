@@ -45,6 +45,7 @@ class AuthorizationLifecycleHttpTest {
     @InjectMock AuthProviderFactory providers;
     @InjectMock SystemDirectory directory;
     @InjectMock RealmMembershipService memberships;
+    @InjectMock com.e2eq.framework.security.runtime.RuleContext rules;
     @InjectMock com.e2eq.framework.model.persistent.migration.base.MigrationService migrations;
     @Inject JWTParser parser;
     @TestHTTPResource URI base;
@@ -54,6 +55,16 @@ class AuthorizationLifecycleHttpTest {
     @BeforeEach
     void prepare() throws Exception {
         roleReads.set(0);
+        when(rules.checkRules(any(com.e2eq.framework.model.securityrules.PrincipalContext.class),
+                any(com.e2eq.framework.model.securityrules.ResourceContext.class),
+                eq(com.e2eq.framework.model.securityrules.RuleEffect.DENY))).thenAnswer(call -> {
+            com.e2eq.framework.model.securityrules.PrincipalContext principal = call.getArgument(0);
+            var result = new com.e2eq.framework.model.securityrules.SecurityCheckResponse();
+            result.setFinalEffect(List.of(principal.getRoles()).contains("admin")
+                    ? com.e2eq.framework.model.securityrules.RuleEffect.ALLOW
+                    : com.e2eq.framework.model.securityrules.RuleEffect.DENY);
+            return result;
+        });
         when(credentials.findBySubject(anyString(), anyString(), anyBoolean()))
                 .thenThrow(new AssertionError("Delegated mode must not read local credentials"));
         when(directory.findCredentialBySubject(anyString()))
@@ -113,6 +124,30 @@ class AuthorizationLifecycleHttpTest {
         verifyNoInteractions(credentials);
     }
 
+    @Test
+    void externalPrincipalCannotBypassButCanUseAuthenticatedSelfService() throws Exception {
+        var assignment = UserRealmRole.builder().userId("alice").realmRefName("tenant-a")
+                .roles(List.of("admin", "editor")).authorizedTenantIds(List.of("t-a"))
+                .externalTenantIds(List.of("t-a")).status("active").build();
+        when(memberships.realmsForUser("alice")).thenReturn(List.of(assignment));
+        assertEquals(403, call("alice", null).statusCode(), "coarse editor role must not bypass scoping");
+        assertEquals("external", selfCall("self").body());
+        assertEquals(403, selfCall("rules").statusCode(), "signed admin must not reach rule evaluation as admin");
+        assertEquals(403, selfCall("service-token").statusCode());
+        assignment.setAuthorizedTenantIds(List.of());
+        assertEquals(403, selfCall("self").statusCode(), "tenant removal applies on the next request");
+        when(memberships.realmsForUser("alice")).thenReturn(List.of());
+        assertEquals(200, selfCall("rules").statusCode(), "legacy ordinary member roles are preserved");
+    }
+
+    private HttpResponse<String> selfCall(String path) throws Exception {
+        String token = Jwt.issuer("https://lifecycle.invalid").subject("alice").upn("alice")
+                .groups(Set.of("admin", "user")).claim("userId", "alice").claim("realm", "tenant-a")
+                .claim("azp", "app-a").expiresIn(60).sign();
+        return HttpClient.newHttpClient().send(HttpRequest.newBuilder(base.resolve("lifecycle/" + path))
+                .header("Authorization", "Bearer " + token).GET().build(), HttpResponse.BodyHandlers.ofString());
+    }
+
     protected HttpResponse<String> call(String user, String tenant) throws Exception {
         return call(user, tenant, null);
     }
@@ -132,6 +167,26 @@ class AuthorizationLifecycleHttpTest {
     @com.e2eq.framework.annotations.FunctionalMapping(area = "TEST", domain = "LIFECYCLE")
     public static class Resource {
         @Inject io.vertx.ext.web.RoutingContext routing;
+
+        @GET
+        @Path("rules")
+        @RolesAllowed("admin")
+        @com.e2eq.framework.annotations.FunctionalAction("admin")
+        public String governed() { return "admin rule allowed"; }
+
+        @GET
+        @Path("self")
+        @io.quarkus.security.Authenticated
+        @Produces("text/plain")
+        public String self() {
+            return String.join(",", com.e2eq.framework.model.securityrules.SecurityContext
+                    .getPrincipalContext().orElseThrow().getRoles());
+        }
+
+        @GET
+        @Path("service-token")
+        @io.quarkus.security.Authenticated
+        public String mint() { return "must not mint for an outsider"; }
 
         @GET
         @Produces("text/plain")

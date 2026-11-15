@@ -65,7 +65,9 @@ public class AccessInviteException extends RuntimeException {
          * A resend could not deliver the new token through the configured notification service.
          * Nothing was re-issued: the previously delivered token still works (502).
          */
-        INVITE_NOTIFICATION_FAILED
+        INVITE_NOTIFICATION_FAILED,
+        /** An invite cannot implicitly convert a member to an outsider or vice versa (409). */
+        INVITE_MEMBERSHIP_KIND_CONFLICT
     }
 
     private final Code code;
