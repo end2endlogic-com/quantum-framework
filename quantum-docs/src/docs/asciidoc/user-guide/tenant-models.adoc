@@ -780,8 +780,12 @@ typed code:
 |A request made for someone else (acting on behalf, impersonation)
 |`INSTALL_NOT_AUTHORIZED`
 
-|An install id of another application or realm
-|`INSTALL_NOT_AUTHORIZED` (install), `NOT_FOUND` (uninstall)
+|An install with an id (a service identity installs without one; the active
+install is returned when there is one)
+|`INSTALL_NOT_AUTHORIZED`
+
+|An uninstall of another application's install, or of one in an undeclared realm
+|`NOT_FOUND`
 |===
 
 Pre-authorization admits the request through one default rule per action

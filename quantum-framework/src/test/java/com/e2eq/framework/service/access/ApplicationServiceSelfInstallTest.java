@@ -208,10 +208,15 @@ class ApplicationServiceSelfInstallTest {
         // Without an application the request is refused before any install is read.
         refused(Code.APPLICATION_SCOPE_REQUIRED, () -> as(service("svc-" + otherApp, null),
             () -> accessService.uninstall(systemRealm(), ofOther.getId())));
-        // Writing its own application under another application's install id is refused too.
+        // A service identity installs without an id: neither another application's install id nor a
+        // fresh one is accepted, so no id can reach another install.
         ApplicationInstall byId = install(app, DECLARED_REALM);
         byId.setId(ofOther.getId());
         refused(Code.INSTALL_NOT_AUTHORIZED, () -> as(service, () -> accessService.install(systemRealm(), byId)));
+        ApplicationInstall freshId = install(app, DECLARED_REALM);
+        freshId.setId(new org.bson.types.ObjectId());
+        refused(Code.INSTALL_NOT_AUTHORIZED, () -> as(service, () -> accessService.install(systemRealm(), freshId)));
+        assertEquals(java.util.Optional.empty(), installRepo.findByIdWithIgnoreRules(freshId.getId()));
 
         assertEquals(ApplicationInstall.STATUS_ACTIVE, installRepo.findByIdWithIgnoreRules(ofOther.getId()).orElseThrow().getStatus());
         assertEquals(ApplicationInstall.STATUS_ACTIVE, installRepo.findByIdWithIgnoreRules(undeclared.getId()).orElseThrow().getStatus());

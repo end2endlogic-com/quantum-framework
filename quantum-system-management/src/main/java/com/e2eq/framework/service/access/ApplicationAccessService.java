@@ -217,6 +217,13 @@ public class ApplicationAccessService {
       if (ownApplication != null) {
          realm = declaredRealm(application(ownApplication), request.getRealmRefName());
          requireTenant(request.getTenantId());
+         // A caller-supplied id is a write to whatever install holds it, and the stored row is read and
+         // replaced in separate steps; a service identity installs without one (an existing active
+         // install is returned), so it can never reach another install by id.
+         if (request.getId() != null) {
+            throw new ApplicationAccessException(Code.INSTALL_NOT_AUTHORIZED,
+               "a service identity installs without an id; the active install is returned when there is one");
+         }
       } else {
          realm = realmFor(callerRealm, request.getRealmRefName(), probe);
          application(request.getApplicationId());
@@ -227,21 +234,11 @@ public class ApplicationAccessService {
          Optional<ApplicationInstall> stored = system(() -> applicationInstallRepo.findByIdWithIgnoreRules(request.getId()));
          if (stored.isPresent()) {
             ApplicationInstall current = stored.get();
-            if (ownApplication != null) {
-               // The service identity reaches only its own application's installs in that realm, and
-               // learns nothing about any other install the id may name.
-               if (!Objects.equals(current.getApplicationId(), ownApplication)
-                     || !Objects.equals(current.getRealmRefName(), realm)) {
-                  throw new ApplicationAccessException(Code.INSTALL_NOT_AUTHORIZED, "install " + request.getId()
-                     + " is not an install of application '" + ownApplication + "' in realm '" + realm + "'");
-               }
-            } else {
-               if (probe != Authority.PLATFORM && !Objects.equals(current.getRealmRefName(), callerRealm)) {
-                  throw new ApplicationAccessException(Code.REALM_MISMATCH,
-                     "install " + request.getId() + " is not in the caller's realm '" + callerRealm + "'");
-               }
-               requireInstallAuthority(current.getRealmRefName(), current.getTenantId());
+            if (probe != Authority.PLATFORM && !Objects.equals(current.getRealmRefName(), callerRealm)) {
+               throw new ApplicationAccessException(Code.REALM_MISMATCH,
+                  "install " + request.getId() + " is not in the caller's realm '" + callerRealm + "'");
             }
+            requireInstallAuthority(current.getRealmRefName(), current.getTenantId());
             if (!Objects.equals(current.getRealmRefName(), realm)
                || !Objects.equals(current.getTenantId(), request.getTenantId().trim())
                || !Objects.equals(current.getApplicationId(), request.getApplicationId().trim())) {
