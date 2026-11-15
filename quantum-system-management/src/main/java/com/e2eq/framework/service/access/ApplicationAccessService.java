@@ -14,11 +14,13 @@ import com.e2eq.framework.model.security.ApplicationInstall;
 import com.e2eq.framework.model.security.UserAppRole;
 import com.e2eq.framework.model.security.UserGroup;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
+import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import com.e2eq.framework.model.securityrules.SecurityContext;
 import com.e2eq.framework.util.EnvConfigUtils;
 import com.e2eq.framework.util.SecurityUtils;
 import io.quarkus.logging.Log;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.bson.types.ObjectId;
@@ -42,6 +44,9 @@ import java.util.function.Supplier;
  */
 @ApplicationScoped
 public class ApplicationAccessService {
+
+   @ConfigProperty(name = "quantum.security.policy-scope.require-application", defaultValue = "false")
+   boolean requireApplicationScope;
 
    @Inject
    AccessInviteService accessInviteService;
@@ -464,10 +469,60 @@ public class ApplicationAccessService {
       return binding.groupBinding() ? "group:" + binding.getGroupRefName() : binding.getUserId();
    }
 
+   /**
+    * Runs repository work as the system principal once this service has decided the caller's
+    * authority. The raised scope keeps the request's application, so deployments that require an
+    * application on every policy evaluation ({@code quantum.security.policy-scope.require-application})
+    * accept the write. It marks the caller as acting-on-behalf-of on the principal; audit records keep
+    * the actor in this service's own fields ({@code grantedBy}, {@code installedBy}, ...).
+    */
    private <T> T system(Supplier<T> action) {
-      return SecurityCallScope.runWithContexts(
-         securityUtils.getSystemPrincipalContext(),
-         securityUtils.getSystemSecurityResourceContext(),
-         action);
+      PrincipalContext caller = SecurityContext.getPrincipalContext().orElse(null);
+      String applicationId = callerApplicationId(caller);
+      PrincipalContext system = securityUtils.getSystemPrincipalContext();
+      ResourceContext systemResource = securityUtils.getSystemSecurityResourceContext();
+      if (applicationId == null) {
+         if (requireApplicationScope) {
+            throw new ApplicationAccessException(Code.APPLICATION_SCOPE_REQUIRED,
+               "the request names no application, and this deployment requires one");
+         }
+         return SecurityCallScope.runWithContexts(system, systemResource, action);
+      }
+      PrincipalContext.Builder principal = new PrincipalContext.Builder()
+         .withDefaultRealm(system.getDefaultRealm())
+         .withApplicationId(applicationId)
+         .withDomainContext(system.getDomainContext())
+         .withDataDomain(system.getDataDomain())
+         .withUserId(system.getUserId())
+         .withRoles(system.getRoles())
+         .withScope(system.getScope());
+      if (caller != null && caller.getUserId() != null && !caller.getUserId().equals(system.getUserId())) {
+         principal.withActingOnBehalfOfUserId(caller.getUserId());
+      }
+      ResourceContext resource = new ResourceContext.Builder()
+         .withRealm(systemResource.getRealm())
+         .withApplicationId(applicationId)
+         .withArea(systemResource.getArea())
+         .withFunctionalDomain(systemResource.getFunctionalDomain())
+         .withAction(systemResource.getAction())
+         .build();
+      return SecurityCallScope.runWithContexts(principal.build(), resource, action);
+   }
+
+   /**
+    * The application of the request, resolved as {@code RuleContext} does: the resource's, else the
+    * principal's; the two must agree when both are set.
+    */
+   private static String callerApplicationId(PrincipalContext caller) {
+      String fromPrincipal = caller == null ? null : trimmed(caller.getApplicationId());
+      String fromResource = SecurityContext.getResourceContext()
+         .map(resource -> trimmed(resource.getApplicationId()))
+         .orElse(null);
+      if (fromPrincipal != null && fromResource != null && !fromPrincipal.equals(fromResource)) {
+         throw new ApplicationAccessException(Code.APPLICATION_SCOPE_MISMATCH,
+            "the request's principal names application '" + fromPrincipal
+               + "' and its resource names '" + fromResource + "'");
+      }
+      return fromResource != null ? fromResource : fromPrincipal;
    }
 }
