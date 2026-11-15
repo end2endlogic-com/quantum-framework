@@ -65,6 +65,9 @@ class ApplicationAccessIntegrationTest extends BaseRepoTest {
     ApplicationAccessService accessService;
 
     @Inject
+    com.e2eq.framework.rest.resources.security.PublicApplicationCatalogResource catalogResource;
+
+    @Inject
     MorphiaDataStoreWrapper morphiaDataStoreWrapper;
 
     @Inject
@@ -115,7 +118,7 @@ class ApplicationAccessIntegrationTest extends BaseRepoTest {
         ds.find(ApplicationInstall.class).filter(Filters.eq("realmRefName", realm)).delete(new DeleteOptions().multi(true));
         ds.find(com.e2eq.framework.model.security.UserRealmRole.class).filter(Filters.eq("realmRefName", realm))
             .delete(new DeleteOptions().multi(true));
-        ds.find(Application.class).filter(Filters.in("refName", List.of(app, draftApp, "legacy-" + app)))
+        ds.find(Application.class).filter(Filters.in("refName", List.of(app, draftApp, "legacy-" + app, "bind-preview-" + app)))
             .delete(new DeleteOptions().multi(true));
     }
 
@@ -291,18 +294,26 @@ class ApplicationAccessIntegrationTest extends BaseRepoTest {
 
     @Test
     void thePublicCatalogIsUnauthenticatedAndCarriesCatalogFieldsOnly() {
+        String previewApp = "bind-preview-" + app;
+        try (SecuritySession ignored = asSystem()) {
+            Application preview = applicationRepo.ensureRegistered(previewApp, securityUtils.getSystemDataDomain());
+            preview.setLifecycleState(ApplicationLifecycleState.PREVIEW);
+            applicationRepo.save(preview);
+        }
+        catalogResource.invalidate();
         String body = given().when().get("/public/applications").then().statusCode(200).extract().asString();
         JsonPath json = new JsonPath(body);
         List<Map<String, Object>> entries = json.getList("findAll { it.refName == '" + app + "' }");
         assertEquals(1, entries.size(), body);
         Map<String, Object> entry = entries.get(0);
-        assertEquals(Set.of("refName", "displayName", "appVersion", "lifecycleState", "launchAddresses", "signIn"),
-            entry.keySet());
+        assertEquals(Set.of("refName", "displayName", "appVersion", "lifecycleState", "signIn"), entry.keySet());
         assertEquals("2.3.0", entry.get("appVersion"));
         @SuppressWarnings("unchecked")
         Map<String, Object> signIn = (Map<String, Object>) entry.get("signIn");
         assertEquals(Set.of("clientId", "applicationEntryUrl", "authorizationPath"), signIn.keySet());
         assertFalse(body.contains(draftApp), "a draft application is not public");
+        assertFalse(body.contains(previewApp), "a preview application is not listed");
+        assertFalse(body.contains("launchAddresses") || body.contains("development"), "launch addresses are not public");
         assertFalse(body.contains("secret-callback"), "the callback allowlist is not public");
         assertFalse(body.contains("owner-team-"), "the owner is not public");
         assertFalse(body.contains("pack-"), "pack refs are not public");

@@ -62,8 +62,7 @@ class ApplicationCatalogTest {
 
       Set<String> fields = new TreeSet<>();
       entry.fieldNames().forEachRemaining(fields::add);
-      assertEquals(new TreeSet<>(Set.of("refName", "displayName", "appVersion", "lifecycleState",
-         "launchAddresses", "signIn")), fields);
+      assertEquals(new TreeSet<>(Set.of("refName", "displayName", "appVersion", "lifecycleState", "signIn")), fields);
       Set<String> signIn = new TreeSet<>();
       entry.get("signIn").fieldNames().forEachRemaining(signIn::add);
       assertEquals(new TreeSet<>(Set.of("clientId", "applicationEntryUrl", "authorizationPath")), signIn);
@@ -79,8 +78,7 @@ class ApplicationCatalogTest {
       Application application = catalogued();
       for (ApplicationLifecycleState state : ApplicationLifecycleState.values()) {
          application.setLifecycleState(state);
-         boolean expected = state == ApplicationLifecycleState.PREVIEW || state == ApplicationLifecycleState.ACTIVE
-            || state == ApplicationLifecycleState.DEPRECATED;
+         boolean expected = state == ApplicationLifecycleState.ACTIVE || state == ApplicationLifecycleState.DEPRECATED;
          assertEquals(expected, ApplicationCatalogEntry.catalogued(application), state.name());
       }
    }

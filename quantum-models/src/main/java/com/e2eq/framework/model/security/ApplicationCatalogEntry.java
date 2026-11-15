@@ -6,13 +6,15 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.util.List;
 import java.util.Objects;
 
 /**
  * The public, signed-out view of an {@link Application}: what a launch pad shows before sign-in.
  * It is a separate type so nothing else on the record (roles, tenancy, owner, packs, callback
- * allowlist, data domain, audit) can reach an unauthenticated caller by accident.
+ * allowlist, launch addresses, data domain, audit) can reach an unauthenticated caller by
+ * accident. Launch addresses name every environment an application runs in, and the framework
+ * has no key that says which environment the serving instance is, so they are not public; the
+ * sign-in route's entry URL is where a launch pad sends the user.
  */
 @Data
 @Builder
@@ -25,7 +27,6 @@ public class ApplicationCatalogEntry {
    protected String displayName;
    protected String appVersion;
    protected ApplicationLifecycleState lifecycleState;
-   protected List<ApplicationLaunchAddress> launchAddresses;
    protected SignIn signIn;
 
    /** The sign-in route without its callback allowlist. */
@@ -54,11 +55,6 @@ public class ApplicationCatalogEntry {
          .displayName(application.getDisplayName())
          .appVersion(application.getAppVersion())
          .lifecycleState(application.getLifecycleState())
-         .launchAddresses(application.getLaunchAddresses() == null ? List.of()
-            : application.getLaunchAddresses().stream().filter(Objects::nonNull)
-               .map(address -> ApplicationLaunchAddress.builder()
-                  .environment(address.getEnvironment()).url(address.getUrl()).build())
-               .toList())
          .signIn(route == null ? null : SignIn.builder()
             .clientId(route.getClientId())
             .applicationEntryUrl(route.getApplicationEntryUrl())
