@@ -739,8 +739,8 @@ public class PrincipalContextResolver {
      * group's owner tenant (in a binding of a group without one, in one of the binding's tenants);
      * for anyone else it is ignored. Every applying binding is checked again against the binding
      * rules and the registered application, and a group binding must grant exactly its group's
-     * owner tenant: one that fails, a duplicate, or a suspended user binding refuses with
-     * {@code APPLICATION_NOT_GRANTED}. Tenants whose install is gone do not count, and bindings
+     * owner tenant: one that fails, a duplicate, a suspended user binding, or applying bindings
+     * that are all suspended refuse with {@code APPLICATION_NOT_GRANTED}; none of these falls back. Tenants whose install is gone do not count, and bindings
      * left with none refuse.
      */
     ApplicationGrant bindingGrant(CredentialUserIdPassword credential, String applicationId, String realmRefName) {
@@ -795,7 +795,10 @@ public class PrincipalContextResolver {
         }
         List<UserAppRole> active = applying.stream().filter(UserAppRole::active).toList();
         if (active.isEmpty()) {
-            return null;
+            // Every binding that applies is suspended: that is a decision, not an absence.
+            throw refusal(PrincipalResolutionError.APPLICATION_NOT_GRANTED, String.format(
+                    "every binding of %s for application '%s' in realm '%s' is suspended",
+                    credential.getUserId(), app, realmRefName));
         }
         List<BoundTenants> bound = active.stream()
                 .map(binding -> new BoundTenants(binding, ApplicationBindingValidator.tenants(binding).stream()

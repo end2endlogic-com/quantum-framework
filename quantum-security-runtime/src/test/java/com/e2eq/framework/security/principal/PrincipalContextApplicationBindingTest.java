@@ -271,6 +271,33 @@ class PrincipalContextApplicationBindingTest {
     }
 
     @Test
+    void aSuspendedGroupBindingRefusesAndDoesNotFallBack() {
+        world.assignments.get(ALICE + "|pooled").setAuthorizedApplications(List.of(PLANNER));
+        world.groupsOfUser.put(ALICE, List.of("planners", "reviewers"));
+        world.bindGroup("planners", PLANNER, "pooled", "tenant-a", "planner-admin")
+                .setStatus(UserAppRole.STATUS_SUSPENDED);
+        PrincipalResolutionException refusal =
+                refused(PrincipalResolutionError.APPLICATION_NOT_GRANTED, () -> resolve(PLANNER, "pooled", "tenant-a"));
+        assertTrue(refusal.getMessage().contains("suspended"), refusal.getMessage());
+
+        // One active applying binding is enough; the suspended one simply grants nothing.
+        world.bindGroup("reviewers", PLANNER, "pooled", "tenant-a", "planner-user");
+        PrincipalContext context = resolve(PLANNER, "pooled", "tenant-a");
+        assertTrue(roles(context).contains("planner-user") && !roles(context).contains("planner-admin"),
+                roles(context).toString());
+    }
+
+    @Test
+    void aSuspendedGroupBindingOfAnotherTenantIsIgnored() {
+        bob(List.of("tenant-b"));
+        world.assignments.get(BOB + "|pooled").setAuthorizedApplications(List.of(PLANNER));
+        world.groupsOfUser.put(BOB, List.of("planners"));
+        world.bindGroup("planners", PLANNER, "pooled", "tenant-a", "planner-admin")
+                .setStatus(UserAppRole.STATUS_SUSPENDED);
+        assertEquals("tenant-b", resolveAs(BOB, PLANNER, "pooled", "tenant-b").getDataDomain().getTenantId());
+    }
+
+    @Test
     void duplicateUserBindingsRefuse() {
         world.bind(ALICE, PLANNER, "pooled", List.of("tenant-a"), null, "planner-user");
         world.bind(ALICE, PLANNER, "pooled", List.of("tenant-b"), null, "planner-admin");
