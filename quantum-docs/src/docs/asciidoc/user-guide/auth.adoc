@@ -206,7 +206,7 @@ credentialType:: `PASSWORD` (default), `EMAIL`, `SERVICE_TOKEN`, `API_KEY` or `O
 serviceKind:: For service credentials only: `APPLICATION` (the service runs as itself in the one realm and tenant of its own DomainContext) or `DELEGATING` (a multi-tenant service that may act on behalf of an identity inside its impersonation authorization). An unset kind is never treated as `DELEGATING`.
 parentCredentialSubject:: For a `SERVICE_TOKEN` credential, the subject of the credential that created it.
 issuer:: An identifier for who issued the credential or tokens (useful for auditing and multi-provider setups).
-passwordHash, hashingAlgorithm:: The stored password hash and declared algorithm. Not exposed over REST. Providers verify passwords against this.
+passwordHash, hashingAlgorithm:: The stored password hash and declared algorithm. Server-owned and not exposed over REST: field-pair and bulk updates refuse them, and a save or merge that omits the hash keeps both as stored. Providers verify passwords against this.
 passwordChangedAt, passwordRevision:: Server-owned and never read from or written by REST. `passwordRevision` counts password-hash changes; a session remembers the revision it signed in at and stops refreshing once it moves (see <<session-lifetime>>).
 A save or merge of an existing credential that omits the password hash keeps the
 stored hash, hashing algorithm, password revision and change time. This supports
