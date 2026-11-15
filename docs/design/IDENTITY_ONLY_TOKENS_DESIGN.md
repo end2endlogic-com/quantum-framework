@@ -295,15 +295,17 @@ Order: **Solver big-box, decision-service, DI, Agent Framework.** For each servi
 store logs in and calls `POST /security/service-token` with roles at runtime.
 In prod that answers 403 because decision-service lacks the mint role, which
 causes the Reasoning 503. After v2 it uses its own issued application token
-instead: no login and no mint. This needs a static application-token option in
-`helixor-core` `ServiceTokenClient`, and the vault roles the store uses granted to
-the token's `userId`. Once that ships, the 503 is fixed without granting
-decision-service any mint permission.
+instead: no login and no mint. `helixor-core` 1.6.0 `ServiceTokenClient` takes it
+as `HELIXOR_AUTH_SERVICE_TOKEN` (HelixorAI/helixor-core#77), and the store switches in
+HelixorAI/helixor-reasoning-backend#136. The vault roles the store uses are granted to
+the token's `userId`. The 503 is then fixed without granting decision-service any
+mint permission.
 
-**Jobrunner.** `quantum-jobrunner-service` deploy workers mint a per-run role
-token. They stay pinned to the 4.8.0 SDK and fail closed against Auth 4.10.0
-(`SERVICE_TOKEN_FIELD_RETIRED`) until they use one delegating token acting for
-the run's `runAs` user.
+**Jobrunner.** `quantum-jobrunner-service` deploy workers present the jobrunner's
+one delegating token (`QUANTUM_DEPLOY_SERVICE_TOKEN`, issued with
+`{"kind":"delegating"}`) and act for the run's `runAs` user with
+`X-Acting-On-Behalf-Of-UserId` (quantum-enterprise#237). Nothing is minted per run.
+The 4.8.0 SDK pin is gone.
 
 Rollback: redeploy Auth 4.8.0. Tokens issued under 4.10.0 remain valid
 identities with no roles. They grant only what was granted to their `userId`.
