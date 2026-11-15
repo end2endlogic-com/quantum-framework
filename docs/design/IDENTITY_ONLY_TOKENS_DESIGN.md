@@ -232,10 +232,12 @@ Resolve request field: `actingOnBehalfOf { userId | subject }`. Response field:
   are refused unless the kind is `DELEGATING`. A receiver without the credential, or
   one trusting token claims, refuses with 401 (it must run in remote mode).
   Role-bearing service tokens keep the old path until step 4.
-- **Issuer authority is re-resolved.** Issuance re-resolves the caller through the
-  resolver with no token roles (credential, realm assignment, groups) and requires
-  `admin` there and an active user credential. A sign-in token that still carries
-  `admin` after the grant was revoked cannot issue.
+- **Issuer authority is re-resolved.** Issuance re-resolves the caller's roles in the
+  issuing realm with `IdentityRoleResolver`, without token roles: credential roles,
+  the realm assignment and realm-wide (`*`) groups. It requires `admin` there and an
+  active user credential. A sign-in token that still carries `admin` after the grant
+  was revoked cannot issue, and an admin group of a single application does not make
+  a realm admin.
 - **Receivers that read roles from the token** (`trust-token-claims`, the 1.4.2
   claims path) get none from a v2 token and refuse. Give a service a v2 token only
   once the receivers it calls resolve through Auth.
