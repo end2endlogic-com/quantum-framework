@@ -220,6 +220,66 @@ class ApplicationAccessAuthorityTest extends BaseRepoTest {
             groupBinding(ownerless, List.of(TENANT_A), null, "planner-user"))).getGroupRefName());
     }
 
+    // ---- request fields the server owns ---------------------------------------------------
+
+    @Test
+    void theServerSetsTheSourceWhateverTheRequestSays() {
+        String adminA = member("source-admin-a", List.of(TENANT_A), List.of(MEMBERSHIP_ADMIN));
+        String alice = member("source-alice", List.of(TENANT_A), List.of("viewer"));
+        String bob = member("source-bob", List.of(TENANT_A), List.of("viewer"));
+        asSystem(() -> accessService.install(POOLED, install(null, null, TENANT_A)));
+
+        UserAppRole byAdmin = binding(alice, List.of(TENANT_A), null, "planner-user");
+        byAdmin.setSource(UserAppRole.SOURCE_MIGRATION);
+        assertEquals(UserAppRole.SOURCE_TENANT_ADMIN,
+            as(signedIn(adminA, TENANT_A), () -> accessService.putBinding(POOLED, byAdmin)).getSource());
+        UserAppRole byPlatform = binding(bob, List.of(TENANT_A), null, "planner-user");
+        byPlatform.setSource(UserAppRole.SOURCE_INVITE);
+        assertEquals(UserAppRole.SOURCE_STAFF, asSystem(() -> accessService.putBinding(POOLED, byPlatform)).getSource());
+    }
+
+    @Test
+    void onlyTheSubjectOrThePlatformMakesABindingsRealmTheDefault() {
+        String adminA = member("default-admin-a", List.of(TENANT_A), List.of(MEMBERSHIP_ADMIN));
+        String alice = member("default-alice", List.of(TENANT_A), List.of("viewer"));
+        asSystem(() -> accessService.install(POOLED, install(null, null, TENANT_A)));
+
+        UserAppRole forAlice = binding(alice, List.of(TENANT_A), null, "planner-user");
+        forAlice.setDefaultRealm(true);
+        refused(Code.ROLE_NOT_GRANTABLE, () -> as(signedIn(adminA, TENANT_A), () -> accessService.putBinding(POOLED, forAlice)));
+
+        UserAppRole forSelf = binding(adminA, List.of(TENANT_A), null, "planner-user");
+        forSelf.setDefaultRealm(true);
+        assertEquals(Boolean.TRUE, as(signedIn(adminA, TENANT_A), () -> accessService.putBinding(POOLED, forSelf)).getDefaultRealm());
+
+        UserAppRole byPlatform = binding(alice, List.of(TENANT_A), null, "planner-user");
+        byPlatform.setDefaultRealm(true);
+        asSystem(() -> accessService.putBinding(POOLED, byPlatform));
+        // Once set, an administrator may rewrite the binding and keep it.
+        UserAppRole kept = binding(alice, List.of(TENANT_A), null);
+        kept.setDefaultRealm(true);
+        assertEquals(Boolean.TRUE, as(signedIn(adminA, TENANT_A), () -> accessService.putBinding(POOLED, kept)).getDefaultRealm());
+    }
+
+    @Test
+    void onlyActiveMembersOfTheRealmAreBound() {
+        String adminA = member("stranger-admin-a", List.of(TENANT_A), List.of(MEMBERSHIP_ADMIN));
+        String stranger = user("stranger");
+        String invited = member("invited", List.of(TENANT_A), List.of("viewer"));
+        writeAssignment(invited, List.of("viewer"), List.of(TENANT_A), UserRealmRole.STATUS_INVITED);
+        String suspended = member("suspended", List.of(TENANT_A), List.of("viewer"));
+        writeAssignment(suspended, List.of("viewer"), List.of(TENANT_A), UserRealmRole.STATUS_SUSPENDED);
+        asSystem(() -> accessService.install(POOLED, install(null, null, TENANT_A)));
+
+        for (String subject : List.of(stranger, invited, suspended)) {
+            refused(Code.BINDING_SUBJECT_INVALID, () -> as(signedIn(adminA, TENANT_A),
+                () -> accessService.putBinding(POOLED, binding(subject, List.of(TENANT_A), null, "planner-user"))));
+            refused(Code.BINDING_SUBJECT_INVALID, () -> asSystem(
+                () -> accessService.putBinding(POOLED, binding(subject, List.of(TENANT_A), null, "planner-user"))));
+        }
+        assertEquals(0, bindingRepo.findByApplicationWithIgnoreRules(app, POOLED, null).size());
+    }
+
     // ---- remote directory -----------------------------------------------------------------
 
     @Test

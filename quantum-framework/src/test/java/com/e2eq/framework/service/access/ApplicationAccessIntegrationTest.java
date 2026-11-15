@@ -68,6 +68,9 @@ class ApplicationAccessIntegrationTest extends BaseRepoTest {
     MorphiaDataStoreWrapper morphiaDataStoreWrapper;
 
     @Inject
+    com.e2eq.framework.system.membership.RealmMembershipService membershipService;
+
+    @Inject
     SecurityUtils securityUtils;
 
     @Inject
@@ -110,6 +113,8 @@ class ApplicationAccessIntegrationTest extends BaseRepoTest {
         var ds = morphiaDataStoreWrapper.getDataStore(envConfigUtils.getSystemRealm());
         ds.find(UserAppRole.class).filter(Filters.eq("realmRefName", realm)).delete(new DeleteOptions().multi(true));
         ds.find(ApplicationInstall.class).filter(Filters.eq("realmRefName", realm)).delete(new DeleteOptions().multi(true));
+        ds.find(com.e2eq.framework.model.security.UserRealmRole.class).filter(Filters.eq("realmRefName", realm))
+            .delete(new DeleteOptions().multi(true));
         ds.find(Application.class).filter(Filters.in("refName", List.of(app, draftApp, "legacy-" + app)))
             .delete(new DeleteOptions().multi(true));
     }
@@ -165,6 +170,9 @@ class ApplicationAccessIntegrationTest extends BaseRepoTest {
     void thePlatformWritesBindingsAndAnUnprivilegedCallerCannot() {
         try (SecuritySession ignored = asSystem()) {
             accessService.install(realm, install(null, "tenant-a"));
+            membershipService.upsertUserRealmRole(com.e2eq.framework.model.security.UserRealmRole.builder()
+                .refName("user-realm-role:alice:" + realm).userId("alice").realmRefName(realm)
+                .dataDomain(securityUtils.getSystemDataDomain()).status("active").build());
             UserAppRole saved = accessService.putBinding(realm, binding(null, "alice", List.of("tenant-a"), null, "planner-admin"));
             assertEquals(UserAppRole.SOURCE_STAFF, saved.getSource());
             assertEquals(UserAppRole.STATUS_ACTIVE, saved.getStatus());

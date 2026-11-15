@@ -80,6 +80,11 @@ public class ApplicationAccessService {
       String realm = realmFor(callerRealm, request.getRealmRefName(), probe);
       request.setRealmRefName(realm);
       Application application = application(request.getApplicationId());
+      boolean user = request.getUserId() != null && !request.getUserId().isBlank();
+      if (user == (request.groupRefName() != null)) {
+         throw new ApplicationAccessException(Code.BINDING_SUBJECT_INVALID,
+            "a binding names exactly one subject: a userId or a groupRefName");
+      }
       if (request.groupRefName() != null) {
          requireGroupBindable(request, probe);
       }
@@ -93,13 +98,18 @@ public class ApplicationAccessService {
       });
       requireMayGrant(realm, application, request);
 
-      request.setId(existing.map(UserAppRole::getId).orElse(request.getId()));
       PrincipalContext caller = SecurityContext.getPrincipalContext().orElseThrow();
+      requireDefaultRealmSetter(request, existing.orElse(null), caller, probe);
+      if (!request.groupBinding() && !accessInviteService.hasActiveRealmMembership(request.getUserId(), realm)) {
+         throw new ApplicationAccessException(Code.BINDING_SUBJECT_INVALID, String.format(
+            "%s has no active membership in realm '%s'; only members are bound", request.getUserId().trim(), realm));
+      }
+
+      request.setId(existing.map(UserAppRole::getId).orElse(request.getId()));
       request.setGrantedBy(caller.getUserId());
       request.setGrantedAt(new Date());
-      if (request.getSource() == null) {
-         request.setSource(probe == Authority.PLATFORM ? UserAppRole.SOURCE_STAFF : UserAppRole.SOURCE_TENANT_ADMIN);
-      }
+      // Provenance is the server's: whatever the request says, the writer's authority decides.
+      request.setSource(probe == Authority.PLATFORM ? UserAppRole.SOURCE_STAFF : UserAppRole.SOURCE_TENANT_ADMIN);
       if (request.getStatus() == null) {
          request.setStatus(UserAppRole.STATUS_ACTIVE);
       }
@@ -260,6 +270,27 @@ public class ApplicationAccessService {
             "the caller administers none or not all of the tenants %s in realm '%s'", tenants, realm));
       }
       ApplicationBindingValidator.requireGrantable(application, binding.getRoles(), authority);
+   }
+
+   /**
+    * {@code defaultRealm=true} chooses the realm a user's requests run in, so only that user or the
+    * platform may set it; a stored {@code true} may be kept by any writer. A group binding never
+    * chooses a realm.
+    */
+   private void requireDefaultRealmSetter(UserAppRole request, UserAppRole existing, PrincipalContext caller,
+                                          Authority probe) {
+      if (!Boolean.TRUE.equals(request.getDefaultRealm())) {
+         return;
+      }
+      if (request.groupBinding()) {
+         throw new ApplicationAccessException(Code.BINDING_INVALID, "a group binding never sets defaultRealm");
+      }
+      boolean kept = existing != null && Boolean.TRUE.equals(existing.getDefaultRealm());
+      boolean self = caller.getUserId() != null && caller.getUserId().trim().equalsIgnoreCase(request.getUserId().trim());
+      if (!kept && !self && probe != Authority.PLATFORM) {
+         throw new ApplicationAccessException(Code.ROLE_NOT_GRANTABLE,
+            "only " + request.getUserId().trim() + " or the platform may make this binding's realm the default");
+      }
    }
 
    /**

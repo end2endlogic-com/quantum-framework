@@ -356,6 +356,21 @@ public class AccessInviteService {
         return none;
     }
 
+    /**
+     * Whether {@code userId} is an active member of {@code realm}: its {@link UserRealmRole} there
+     * is active (or carries no status, as legacy and seeded rows). Invited and suspended are not.
+     */
+    public boolean hasActiveRealmMembership(String userId, String realm) {
+        String user = normalize(userId);
+        String named = normalize(realm);
+        if (user == null || named == null) {
+            return false;
+        }
+        return assignment(user, named)
+            .filter(candidate -> candidate.getStatus() == null || UserRealmRole.STATUS_ACTIVE.equals(candidate.getStatus()))
+            .isPresent();
+    }
+
     private InviteManagement inviteManagement(PrincipalContext caller, String realm) {
         boolean system = isSystemPrincipal(caller);
         boolean admin = isRealmAdministrator(caller, realm);
