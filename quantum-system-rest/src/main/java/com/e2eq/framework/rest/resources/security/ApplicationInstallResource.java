@@ -58,9 +58,10 @@ public class ApplicationInstallResource {
     @POST
     @FunctionalAction("INSTALL")
     @Operation(summary = "Install an application for a tenant",
-        description = "The platform or a realm administrator of the tenant, or the application's own service identity for that "
-            + "application in a realm the application declares (tenancy placement REALMS). With an id the install is written under it, "
-            + "so a repeat changes nothing; without one an existing active install for the tenant is returned.")
+        description = "The platform or a realm administrator of the tenant. With an id the install is written under it, so a repeat "
+            + "changes nothing; without one an existing active install for the tenant is returned. The application's own service "
+            + "identity may install that application in a realm the application declares (tenancy placement REALMS), always without "
+            + "an id (an install with one is refused INSTALL_NOT_AUTHORIZED).")
     @APIResponses({
         @APIResponse(responseCode = "200", description = "The install",
             content = @Content(mediaType = "application/json", schema = @Schema(implementation = ApplicationInstall.class))),
