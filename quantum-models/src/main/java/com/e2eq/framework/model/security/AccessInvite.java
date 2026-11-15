@@ -52,6 +52,9 @@ public class AccessInvite extends BaseModel {
 
     protected String targetUserId;
 
+    /** Optional: external; absent means an ordinary member invite. */
+    protected String kind;
+
     @NotNull
     protected String invitedByUserId;
 

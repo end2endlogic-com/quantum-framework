@@ -8,6 +8,7 @@ import java.util.List;
 /** One member of a tenant: a realm assignment that authorizes it. Never carries credentials or tokens. */
 @Data
 @Builder
+@lombok.AllArgsConstructor
 public class AccessMemberResponse {
     private String userId;
     private String realmRefName;
@@ -18,4 +19,13 @@ public class AccessMemberResponse {
     private List<String> roles;
     private List<String> authorizedApplications;
     private String defaultApplication;
+    private String kind;
+    private String sponsoringOrgRefName;
+
+    /** Preserve the original constructor descriptor for existing callers. */
+    public AccessMemberResponse(String userId, String realmRefName, String tenantId, String status,
+            List<String> roles, List<String> authorizedApplications, String defaultApplication) {
+        this(userId, realmRefName, tenantId, status, roles, authorizedApplications, defaultApplication, null, null);
+    }
+
 }

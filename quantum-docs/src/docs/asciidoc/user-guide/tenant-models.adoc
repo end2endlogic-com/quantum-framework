@@ -400,6 +400,49 @@ The system realm is never accessible this way; only the framework system user ca
 
 *Roles apply only in the invited realm.* Flat credential roles apply in every realm the user can access, by design. Invited roles are therefore never written to the credential: on acceptance they go to the invitee's `UserRealmRole` for (userId, invited realm), unioned with any existing assignment for that realm. Named applications are unioned into `UserRealmRole.authorizedApplications`; when the invite names none, that field is left as it is. There is one `UserRealmRole` per (userId, realm), so accepting again merges instead of duplicating. In embedded mode the unique index `uidx_user_realm_role_realm_user` (realmRefName, userId) is created by the first invite acceptance rather than at datastore start-up; if existing duplicate assignments prevent it, acceptance fails closed until they are merged. A new assignment takes the data domain and tenant the realm's acceptance policy decides: the realm's own under `dedicated-realm`, the inviter's partition under `pooled-realm-tenant`. A concurrent change to the same assignment between read and write is refused (optimistic version check) and the acceptance can be retried.
 
+===== External members (1.4.3-SNAPSHOT)
+
+An external member is associated with a tenant but receives no ordinary member
+roles there. `UserRealmRole.externalTenantIds` identifies those tenants within
+`authorizedTenantIds`; absent or empty retains ordinary membership behavior.
+The same person can be a member of one tenant and external in another pooled tenant.
+
+Create an invite with optional `kind: "external"` and empty `grantedRoles`.
+The caller must have the functional permission `SECURITY:ACCESS_INVITE:inviteExternal`
+in the selected tenant. The rule engine decides this permission; there is no
+special inviting role or new configuration key. The invite is restricted to the
+inviter's one tenant. Acceptance adds that tenant to both lists. It never changes
+flat credential roles. External invites cannot convert existing members, and
+ordinary invites cannot convert existing external memberships; both return
+`INVITE_MEMBERSHIP_KIND_CONFLICT`. An intentional membership kind edit requires
+`inviteExternal`, in addition to the existing membership-write authorization.
+Read and save the full membership to edit its kind; partial updates to
+`externalTenantIds` are refused. `GET /access/members` includes `kind` (`member`
+or `external`) and `sponsoringOrgRefName`.
+
+On the receiver, principal finalization reads the membership in every realm type.
+For an external tenant, rule identities receive only `external` plus the caller's
+own user application-binding roles where bindings are already resolved. Token,
+credential, realm, group and group-binding roles do not carry into that request.
+`external` is reserved and cannot be granted on a record or declared by an application.
+Applications must explicitly authorize it through policy. The coarse Jakarta role
+augmentor remains unchanged; the security filter separately refuses data-scoping
+bypass operations and service-token minting for external principals.
+`@Authenticated` self-service endpoints remain reachable.
+
+Suspend the membership or remove the tenant from `authorizedTenantIds` to revoke
+access on the next request. Do not merely clear `externalTenantIds`: that changes
+the kind to ordinary membership, rather than revoking access. The marker is needed
+to enforce revocation in dedicated realms whose legacy members need no assignment.
+Deleting the entire assignment in such a legacy realm does not preserve that marker;
+use suspension or tenant removal. Existing named application grants do not override
+an inactive external membership.
+
+Roll out the new framework to *every service of a realm before enabling external
+invites*. An old receiver ignores the new field and can treat the person as a
+member. This is deployment ordering, not a feature flag. Local tests do not establish
+deployment or activation; HTTP verification is required before rollout.
+
 [[invite-acceptance-policy]]
 ===== Pooled realms: invite acceptance policy
 

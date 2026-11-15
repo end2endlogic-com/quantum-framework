@@ -48,6 +48,8 @@ public class RealmMembershipService {
     @Inject
     JsonWebToken jwt;
 
+
+
     /**
      * Phase C: in remote mode membership resolution goes to the control plane.
      * Capture the bearer while still on the inbound request thread. The REST
@@ -218,6 +220,7 @@ public class RealmMembershipService {
             existing.setDefaultApplication(assignment.getDefaultApplication());
             existing.setAuthorizedTenantIds(assignment.getAuthorizedTenantIds());
             existing.setAuthorizedTenantRegEx(assignment.getAuthorizedTenantRegEx());
+            existing.setExternalTenantIds(assignment.getExternalTenantIds());
             existing.setSponsoringOrgRefName(assignment.getSponsoringOrgRefName());
             existing.setStatus(assignment.getStatus());
             existing.setDisplayName(assignment.getDisplayName());

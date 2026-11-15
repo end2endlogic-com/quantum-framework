@@ -19,6 +19,47 @@ import java.util.Optional;
 
 @ApplicationScoped
 public class UserRealmRoleRepo extends MorphiaRepo<UserRealmRole> {
+    @jakarta.inject.Inject
+    com.e2eq.framework.security.runtime.ExternalMembershipAuthorization externalMembershipAuthorization;
+
+    void requireKindChangePermission(UserRealmRole existing, UserRealmRole proposed) {
+        java.util.Set<String> changed = new java.util.LinkedHashSet<>();
+        if (existing.getExternalTenantIds() != null) changed.addAll(existing.getExternalTenantIds());
+        if (proposed.getExternalTenantIds() != null) changed.addAll(proposed.getExternalTenantIds());
+        changed.removeIf(tenant -> existing.externalInTenant(tenant) == proposed.externalInTenant(tenant));
+        for (String tenant : changed) {
+            boolean existingTenant = com.e2eq.framework.model.auth.AccessibleTenantResolver.isAuthorized(existing, tenant)
+                    || (existing.getDataDomain() != null && tenant.equals(existing.getDataDomain().getTenantId()));
+            boolean remainingTenant = com.e2eq.framework.model.auth.AccessibleTenantResolver.isAuthorized(proposed, tenant)
+                    || (proposed.getDataDomain() != null && tenant.equals(proposed.getDataDomain().getTenantId()));
+            if (existingTenant && remainingTenant) {
+                externalMembershipAuthorization.require(
+                        com.e2eq.framework.model.securityrules.SecurityContext.getPrincipalContext().orElse(null),
+                        proposed.getRealmRefName(), tenant);
+            }
+        }
+    }
+
+    /**
+     * A membership that marks an outsider is never deleted by a caller: in a realm where an identity
+     * needs no row to be a member, deleting the row would turn the outsider into one. Suspend it, or
+     * withdraw the tenant from {@code authorizedTenantIds} and keep the marker. Platform jobs running
+     * outside the rules (account or tenant removal) are not refused.
+     */
+    @Override
+    public long delete(MorphiaSession session, UserRealmRole membership)
+            throws com.e2eq.framework.exceptions.ReferentialIntegrityViolationException {
+        if (membership != null && membership.getId() != null
+                && !com.e2eq.framework.model.securityrules.SecurityContext.isIgnoringRules()) {
+            UserRealmRole stored = findById(session, membership.getId()).orElse(null);
+            if (stored != null && stored.getExternalTenantIds() != null
+                    && stored.getExternalTenantIds().stream().anyMatch(id -> id != null && !id.isBlank())) {
+                throw new IllegalArgumentException("EXTERNAL_MEMBERSHIP_DELETE_REFUSED: suspend the membership or"
+                        + " withdraw the tenant authorization; a membership that marks an outsider is not deleted");
+            }
+        }
+        return super.delete(session, membership);
+    }
 
     /** Name of the unique (realmRefName, userId) index: one assignment per user and realm. */
     public static final String UNIQUE_ASSIGNMENT_INDEX = "uidx_user_realm_role_realm_user";
@@ -142,6 +183,11 @@ public class UserRealmRoleRepo extends MorphiaRepo<UserRealmRole> {
                     }
                 }
             }
+            if (entity.getId() != null) {
+                UserRealmRole existing = datastore.find(UserRealmRole.class)
+                        .filter(Filters.eq("_id", entity.getId())).first();
+                if (existing != null) requireKindChangePermission(existing, entity);
+            }
         }
     }
 
@@ -151,15 +197,7 @@ public class UserRealmRoleRepo extends MorphiaRepo<UserRealmRole> {
             UserRealmRole.requireNoExternalRoleValue(value, "UserRealmRole");
         }
         if (requestedPath != null && (requestedPath.equals("externalTenantIds") || requestedPath.startsWith("externalTenantIds."))) {
-            if (value instanceof Iterable<?> iterable) {
-                for (Object item : iterable) {
-                    if (item == null || String.valueOf(item).isBlank()) {
-                        throw new IllegalArgumentException("externalTenantIds must not contain null or blank entries");
-                    }
-                }
-            } else if (value instanceof String str && str.isBlank()) {
-                throw new IllegalArgumentException("externalTenantIds must not contain null or blank entries");
-            }
+            throw new IllegalArgumentException("EXTERNAL_MEMBERSHIP_FULL_UPDATE_REQUIRED: read and save the full membership to change its kind");
         }
     }
 

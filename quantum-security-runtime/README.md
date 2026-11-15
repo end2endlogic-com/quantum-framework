@@ -65,6 +65,17 @@ Auth's status and code, or 503 `PRINCIPAL_RESOLUTION_UNAVAILABLE`, instead of
 falling back to claims. Unset keeps every path above unchanged. See the user
 guide, "Remote principal source".
 
+External tenant memberships are finalized after tenant selection by
+`PrincipalContextResolver`. Each user request reads the complete realm assignment,
+including in dedicated realms and on trusted-claims paths. An external selected
+tenant receives only `external` plus already-resolved own user binding roles;
+other role sources and group bindings are discarded. Suspension or removing the
+explicit tenant grant refuses the next request. Missing external markers preserve
+legacy member behavior. `SecurityFilter` denies external principals on
+`bypassDataScoping` methods and service-token minting, while authenticated
+self-service remains reachable. This does not change role augmentation, token
+issuance, provider validation or ordinary signed-origin session behavior.
+
 ## Verification
 
 Run `mvn -pl quantum-security-runtime,quantum-oauth-server -am test` from the

@@ -30,7 +30,8 @@ class ReservedExternalRoleRepoValidationTest {
         assertThrows(IllegalArgumentException.class,
             () -> repo.validateFieldUpdate("externalTenantIds", List.of(" ")));
         assertDoesNotThrow(() -> repo.validateFieldUpdate("roles", List.of("user")));
-        assertDoesNotThrow(() -> repo.validateFieldUpdate("externalTenantIds", List.of("org-b")));
+        assertThrows(IllegalArgumentException.class,
+            () -> repo.validateFieldUpdate("externalTenantIds", List.of("org-b")));
     }
 
     @Test
