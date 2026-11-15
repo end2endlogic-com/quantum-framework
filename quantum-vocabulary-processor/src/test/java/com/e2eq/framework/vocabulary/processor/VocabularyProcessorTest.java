@@ -308,6 +308,25 @@ class VocabularyProcessorTest {
    }
 
    @Test
+   void aNewPacksRowsTakeTheApplicationRowsDataDomain() throws IOException {
+      Path pack = pack("");
+      Files.writeString(pack.resolve("datasets/applications.jsonl"),
+         "{\"refName\":\"acme-planner\",\"dataDomain\":{\"tenantId\":\"issuer\"},"
+            + "\"uses\":[{\"application\":\"quantum-system\",\"area\":\"SYSTEM\",\"domains\":[\"MENU_ITEM\"]}]}\n");
+      Files.writeString(pack.resolve("datasets/functionalAreas.jsonl"), "");
+      Result written = compile(app(), Map.of(VocabularyProcessor.OPTION_PACK, pack.toString(),
+         VocabularyProcessor.OPTION_MODE, "write"));
+      assertTrue(written.success(), () -> String.join("\n", written.errors()));
+      for (String file : List.of("datasets/functionalAreas.jsonl", "datasets/functionalDomains.jsonl")) {
+         List<String> rows = Files.readAllLines(pack.resolve(file)).stream().filter(l -> !l.isBlank()).toList();
+         assertFalse(rows.isEmpty(), file);
+         for (String row : rows) {
+            assertTrue(row.contains("\"dataDomain\":{\"tenantId\":\"issuer\"}"), file + ": " + row);
+         }
+      }
+   }
+
+   @Test
    void borrowedAreaDomainNotInUsesFailsTheBuild() throws IOException {
       Map<String, String> sources = app();
       sources.put("demo.SettingsResource", """

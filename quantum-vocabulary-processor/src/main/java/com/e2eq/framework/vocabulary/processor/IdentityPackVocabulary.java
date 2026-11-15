@@ -226,7 +226,8 @@ public final class IdentityPackVocabulary {
    /**
     * Rewrites the pack's domain dataset (and its area dataset, when the pack declares one) from
     * {@code code}. Fields other than the vocabulary (display names, dataDomain, status) of rows that
-    * already exist are kept; rows tagged for another application are kept unchanged.
+    * already exist are kept; rows tagged for another application are kept unchanged. A new row takes
+    * the data domain of the pack's existing rows, or else the application row's.
     *
     * @return the files written
     */
@@ -243,6 +244,16 @@ public final class IdentityPackVocabulary {
          if (dataDomain == null) {
             dataDomain = row.get("dataDomain");
          }
+      }
+      for (Map<String, Object> row : ownRows(areaRows)) {
+         if (dataDomain == null) {
+            dataDomain = row.get("dataDomain");
+         }
+      }
+      if (dataDomain == null && application != null) {
+         // A new pack's first rows take the application row's data domain, so they land in the
+         // issuer's catalog domain instead of whatever context applies them.
+         dataDomain = application.get("dataDomain");
       }
       List<Map<String, Object>> domainsOut = new ArrayList<>();
       for (VocabularyManifest.Area area : code.areas()) {
