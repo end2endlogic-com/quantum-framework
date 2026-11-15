@@ -8,11 +8,15 @@ import com.e2eq.framework.model.persistent.base.ActiveStatus;
 import com.mongodb.MongoException;
 import com.mongodb.client.model.Indexes;
 import dev.morphia.Datastore;
+import dev.morphia.query.FindOptions;
+import dev.morphia.query.Sort;
+import dev.morphia.query.filters.Filter;
 import dev.morphia.query.filters.Filters;
 import dev.morphia.transactions.MorphiaSession;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.bson.types.ObjectId;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -88,6 +92,28 @@ public class ApplicationInstallRepo extends MorphiaRepo<ApplicationInstall> {
             .find(ApplicationInstall.class)
             .filter(Filters.eq("realmRefName", realmRefName))
             .iterator()) {
+         return cursor.toList();
+      }
+   }
+
+   /**
+    * Every install in a realm, whatever its status, narrowed to {@code applicationId} and
+    * {@code tenantId} when they are given (null means any), in creation order (ascending id).
+    */
+   public List<ApplicationInstall> findInRealmWithIgnoreRules(String realmRefName, String applicationId, String tenantId) {
+      Objects.requireNonNull(realmRefName, "realmRefName");
+      List<Filter> filters = new ArrayList<>();
+      filters.add(Filters.eq("realmRefName", realmRefName));
+      if (applicationId != null) {
+         filters.add(Filters.eq("applicationId", applicationId));
+      }
+      if (tenantId != null) {
+         filters.add(Filters.eq("tenantId", tenantId));
+      }
+      try (var cursor = morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId())
+            .find(ApplicationInstall.class)
+            .filter(filters.toArray(Filter[]::new))
+            .iterator(new FindOptions().sort(Sort.ascending("_id")))) {
          return cursor.toList();
       }
    }

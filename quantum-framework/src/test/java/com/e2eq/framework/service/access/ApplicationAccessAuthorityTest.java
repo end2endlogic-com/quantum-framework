@@ -489,6 +489,69 @@ class ApplicationAccessAuthorityTest extends BaseRepoTest {
             .get(0).getTenantIds(), "the stored row is unchanged");
     }
 
+    @Test
+    void thePlatformListsAnotherRealmsInstallsWithFilters() {
+        ApplicationInstall pooledA = asSystem(() -> accessService.install(POOLED, install(null, POOLED, TENANT_A)));
+        ApplicationInstall pooledB = asSystem(() -> accessService.install(POOLED, install(null, POOLED, TENANT_B)));
+        ApplicationInstall other = asSystem(() -> accessService.install(OTHER_REALM, install(null, OTHER_REALM, TENANT_A)));
+        asSystem(() -> accessService.uninstall(POOLED, pooledB.getId()));
+        String system = envConfigUtils.getSystemRealm();
+
+        // The platform, resolved in the system realm, names the pooled realm: every install there, any status, in creation order.
+        assertEquals(List.of(pooledA.getId(), pooledB.getId()), ids(asSystem(() -> accessService.listInstalls(system, POOLED, app, null))));
+        assertEquals(List.of(ApplicationInstall.STATUS_ACTIVE, ApplicationInstall.STATUS_UNINSTALLED),
+            asSystem(() -> accessService.listInstalls(system, POOLED, app, null)).stream().map(ApplicationInstall::getStatus).toList());
+        assertEquals(List.of(pooledB.getId()), ids(asSystem(() -> accessService.listInstalls(system, POOLED, " " + app + " ", TENANT_B))));
+        assertEquals(List.of(other.getId()), ids(asSystem(() -> accessService.listInstalls(system, OTHER_REALM, app, TENANT_A))));
+        // No realm named: the caller's own realm, as before.
+        assertEquals(List.of(), ids(asSystem(() -> accessService.listInstalls(system, null, app, null))));
+        assertEquals(List.of(pooledA.getId(), pooledB.getId()), ids(asSystem(() -> accessService.listInstalls(POOLED, " ", app, null))));
+    }
+
+    @Test
+    void aNonPlatformCallerNamingAnotherRealmIsRefusedNeverAnsweredForItsOwn() {
+        String realmAdminA = member("list-cross-admin", List.of(TENANT_A), List.of("admin"));
+        asSystem(() -> accessService.install(POOLED, install(null, POOLED, TENANT_A)));
+        asSystem(() -> accessService.install(OTHER_REALM, install(null, OTHER_REALM, TENANT_A)));
+
+        refused(Code.REALM_MISMATCH, () -> as(signedIn(realmAdminA, TENANT_A),
+            () -> accessService.listInstalls(POOLED, OTHER_REALM, app, null)));
+        refused(Code.REALM_MISMATCH, () -> as(signedIn(realmAdminA, TENANT_A),
+            () -> accessService.listInstalls(POOLED, envConfigUtils.getSystemRealm(), null, null)));
+        // Naming its own realm is the same as naming none.
+        assertEquals(ids(as(signedIn(realmAdminA, TENANT_A), () -> accessService.listInstalls(POOLED))),
+            ids(as(signedIn(realmAdminA, TENANT_A), () -> accessService.listInstalls(POOLED, POOLED, null, null))));
+    }
+
+    @Test
+    void aNonPlatformCallerKeepsSeeingOnlyItsAdministeredTenantsUnderFilters() {
+        String realmAdminA = member("list-filter-admin", List.of(TENANT_A), List.of("admin"));
+        String alice = member("list-filter-alice", List.of(TENANT_A), List.of("viewer"));
+        ApplicationInstall ofA = asSystem(() -> accessService.install(POOLED, install(null, POOLED, TENANT_A)));
+        asSystem(() -> accessService.install(POOLED, install(null, POOLED, TENANT_B)));
+
+        assertEquals(List.of(ofA.getId()), ids(as(signedIn(realmAdminA, TENANT_A),
+            () -> accessService.listInstalls(POOLED, null, app, null))));
+        assertEquals(List.of(), ids(as(signedIn(realmAdminA, TENANT_A),
+            () -> accessService.listInstalls(POOLED, null, app, TENANT_B))), "tenant B is filtered out, not revealed");
+        assertEquals(List.of(), ids(as(signedIn(alice, TENANT_A),
+            () -> accessService.listInstalls(POOLED, null, app, null))), "a non-administrator sees none");
+    }
+
+    @Test
+    void filtersThatMatchNothingAnswerEmptyAndAnUnknownApplicationIsRefused() {
+        asSystem(() -> accessService.install(POOLED, install(null, POOLED, TENANT_A)));
+        String system = envConfigUtils.getSystemRealm();
+
+        assertEquals(List.of(), asSystem(() -> accessService.listInstalls(system, POOLED, app, "tenant-none.bind-authority")));
+        assertEquals(List.of(), asSystem(() -> accessService.listInstalls(system, "bind-authority-empty-" + suffix, app, null)));
+        refused(Code.APPLICATION_UNKNOWN, () -> asSystem(() -> accessService.listInstalls(system, POOLED, "unregistered-" + suffix, null)));
+    }
+
+    private static List<ObjectId> ids(List<ApplicationInstall> installs) {
+        return installs.stream().map(ApplicationInstall::getId).toList();
+    }
+
     // ---- remote directory -----------------------------------------------------------------
 
     @Test
@@ -505,6 +568,7 @@ class ApplicationAccessAuthorityTest extends BaseRepoTest {
                 return null;
             }));
             refused(Code.DIRECTORY_REMOTE, () -> asSystem(() -> accessService.listInstalls(POOLED)));
+            refused(Code.DIRECTORY_REMOTE, () -> asSystem(() -> accessService.listInstalls(POOLED, OTHER_REALM, app, TENANT_A)));
             refused(Code.DIRECTORY_REMOTE, () -> asSystem(() -> accessService.listBindings(POOLED, app, TENANT_A)));
         } finally {
             setAccessDirectoryRouting(before);

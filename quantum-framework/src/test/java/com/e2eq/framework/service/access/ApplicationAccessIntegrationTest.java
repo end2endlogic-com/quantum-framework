@@ -342,6 +342,31 @@ class ApplicationAccessIntegrationTest extends BaseRepoTest {
         assertFalse(body.contains("planner-admin"), "roles are not public");
     }
 
+    // --- install list over HTTP --------------------------------------------------------------
+
+    @Test
+    @io.quarkus.test.security.TestSecurity(user = "system@system.com", roles = {"admin", "system"})
+    void thePlatformListsAnotherRealmsInstallsOverHttp() {
+        // The test identity is the framework's system user, so it resolves to the platform whatever roles it names;
+        // the non-platform refusal is covered at the service in ApplicationAccessAuthorityTest.
+        ObjectId a = new ObjectId();
+        ObjectId b = new ObjectId();
+        try (SecuritySession ignored = asSystem()) {
+            installRepo.upsertById(install(a, "tenant-a"));
+            installRepo.upsertById(install(b, "tenant-b"));
+        }
+        JsonPath all = given().queryParam("realmRefName", realm).queryParam("applicationId", app)
+            .when().get("/api/security/applicationInstall/list").then().statusCode(200).extract().jsonPath();
+        assertEquals(List.of(a.toString(), b.toString()), all.getList("id"));
+        JsonPath one = given().queryParam("realmRefName", realm).queryParam("applicationId", app).queryParam("tenantId", "tenant-b")
+            .when().get("/api/security/applicationInstall/list").then().statusCode(200).extract().jsonPath();
+        assertEquals(List.of(b.toString()), one.getList("id"));
+        assertEquals(List.of(), given().queryParam("realmRefName", realm).queryParam("tenantId", "tenant-none")
+            .when().get("/api/security/applicationInstall/list").then().statusCode(200).extract().jsonPath().getList("$"));
+        assertEquals("APPLICATION_UNKNOWN", given().queryParam("realmRefName", realm).queryParam("applicationId", "unregistered-" + app)
+            .when().get("/api/security/applicationInstall/list").then().statusCode(400).extract().jsonPath().getString("errorCode"));
+    }
+
     // --- rows written before the catalog fields --------------------------------------------
 
     @Test
