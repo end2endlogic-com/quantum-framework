@@ -23,10 +23,10 @@ class SourceTBoxGateTest {
     }
 
     @Test
-    void aPackVersionBumpPublishesTheChange() {
+    void aPackVersionBumpRequiresAPublishedSuccessor() {
         SourceTBoxGate.Outcome outcome = SourceTBoxGate.check(WITH_STABLE, 3, WITHOUT, 4, WITHOUT);
-        assertTrue(outcome.admissible());
-        assertEquals(1, outcome.violations().size());
+        assertFalse(outcome.admissible());
+        assertEquals(StableRelationDiff.Code.STABLE_RELATION_REPLACEMENT_REQUIRED, outcome.violations().get(1).code());
     }
 
     @Test

@@ -40,6 +40,19 @@ class StableRelationDiffTest {
     }
 
     @Test
+    void publishingTheMarkerChangesTheStoredBaselineAndRequiresPriorCoverage() {
+        var old = new OntologyRegistry.PropertyDef("old", Optional.of("Customer"), Optional.of("Shipment"),
+                false, Optional.empty(), false, false, false, Set.of(), false, null, Set.of(),
+                Map.of("replacedBy", "new"), RelationStability.STABLE);
+        var narrow = prop("new", "PremiumCustomer", "Shipment", false, RelationStability.STABLE);
+        var wide = prop("new", "Customer", "Shipment", false, RelationStability.STABLE);
+        var original = prop("old", "Customer", "Shipment", false, RelationStability.STABLE);
+        assertFalse(TBoxHasher.computeHash(tbox(original, narrow)).equals(TBoxHasher.computeHash(tbox(old, narrow))));
+        assertFalse(StableRelationDiff.diff(tbox(old, narrow), 1, tbox(wide), 2).admissible());
+        assertTrue(StableRelationDiff.diff(tbox(old, wide), 1, tbox(wide), 2).admissible());
+    }
+
+    @Test
     void oneRelationCanReportEveryChangeInTableOrder() {
         OntologyRegistry.TBox active = tbox(prop("hasShipment", "Customer", "Shipment", true, RelationStability.STABLE));
         OntologyRegistry.TBox candidate = tbox(prop("hasShipment", "PremiumCustomer", "Parcel", false, RelationStability.INTERNAL));
