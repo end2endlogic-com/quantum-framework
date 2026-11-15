@@ -23,7 +23,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -501,6 +503,40 @@ class SecurityFilterTenantSelectionTest {
 
         assertSame(service, filter.applyRealmOverride(service, "other-app-realm"));
         org.mockito.Mockito.verifyNoInteractions(repo);
+    }
+
+    @Test
+    @SuppressWarnings("removal")
+    void theDeprecatedEntryPointsApplyTheOneRuleAndNoLongerTrustTheSessionRealm() {
+        // Kept for binary compatibility; they must not keep the same-session-realm trust alive.
+        SecurityFilter filter = filter(codeRealm(), staleGrant(), null);
+        com.e2eq.framework.model.persistent.morphia.CredentialRepo repo = credentials(credentialWithPattern("*"));
+        filter.credentialRepo = repo;
+        filter.envConfigUtils = envConfig();
+        var resolver = filter.resolver();
+
+        // The token's own realm used to admit any application; it no longer does, and no
+        // credential pattern is consulted through the old entry point.
+        assertFalse(resolver.applicationAdmittedInRealm("user@example.test", "helixor-code-P1",
+                "quantum-b2bi", "helixor-code", "helixor-code-P1"));
+        // A caller-supplied home application is not trusted; the directory names the owner.
+        assertFalse(resolver.applicationAdmittedInRealm("user@example.test", "helixor-code-P1",
+                "quantum-b2bi", "quantum-b2bi", null));
+        assertTrue(resolver.applicationAdmittedInRealm("user@example.test", "helixor-code-P1",
+                "helixor-code", null, null));
+        assertThrows(ForbiddenException.class,
+                () -> resolver.requireSessionApplicationAdmitted(sessionContext()));
+        org.mockito.Mockito.verifyNoInteractions(repo);
+
+        PrincipalContext owned = new PrincipalContext.Builder()
+                .withDefaultRealm("helixor-code-P1")
+                .withApplicationId("helixor-code")
+                .withDataDomain(sessionContext().getDataDomain())
+                .withUserId("user@example.test")
+                .withRoles(new String[]{"user"})
+                .withScope("AUTHENTICATED")
+                .build();
+        assertDoesNotThrow(() -> resolver.requireSessionApplicationAdmitted(owned));
     }
 
     private static Realm codeRealm() {

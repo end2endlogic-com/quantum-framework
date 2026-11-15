@@ -1127,7 +1127,7 @@ public class PrincipalContextResolver {
         String applicationId = context.getApplicationId();
         // Application admission is for identities. A calling service's context already runs in the
         // realm it names (its reach is its own realm authorization), so it was never checked here.
-        boolean service = "SERVICE".equals(context.getScope());
+        boolean service = PrincipalContext.SCOPE_SERVICE.equals(context.getScope());
         if (checkApplication && !service && applicationId != null && !applicationId.isBlank()
                 && !applicationAdmitted(context.getUserId(), realm, applicationId, credential)) {
             throw new jakarta.ws.rs.ForbiddenException(
@@ -1206,6 +1206,21 @@ public class PrincipalContextResolver {
                 && ApplicationAuthorizationResolver.resolve(assigned, pattern, null, applicationId).resolved();
     }
 
+    /**
+     * Binary-compatible entry point kept for callers compiled against 1.4.2 and earlier.
+     *
+     * @deprecated Use {@link #applicationAdmitted(String, String, String, CredentialUserIdPassword)}.
+     * This overload now applies the one admission rule and fails closed: it no longer trusts a
+     * session minted in the realm ({@code sessionRealm} is ignored), it reads the realm's own
+     * application from the directory ({@code realmHomeApplicationId} is ignored), and with no
+     * credential to consult only the realm's ownership and the realm assignment admit.
+     */
+    @Deprecated(since = "1.4.3", forRemoval = true)
+    public boolean applicationAdmittedInRealm(String userId, String realmRefName, String applicationId,
+                                              String realmHomeApplicationId, String sessionRealm) {
+        return applicationAdmitted(userId, realmRefName, applicationId, () -> null);
+    }
+
     private CredentialUserIdPassword credentialOf(String userId) {
         if (credentialRepo == null || envConfigUtils == null || blank(userId)) {
             return null;
@@ -1220,6 +1235,18 @@ public class PrincipalContextResolver {
     public void requireSessionApplicationAdmitted(PrincipalContext context, boolean localIdentityCatalog) {
         requireSessionApplicationAdmitted(context,
                 localIdentityCatalog ? () -> credentialOf(context.getUserId()) : () -> null);
+    }
+
+    /**
+     * Binary-compatible entry point kept for callers compiled against 1.4.2 and earlier.
+     *
+     * @deprecated Use {@link #requireSessionApplicationAdmitted(PrincipalContext, boolean)}. This
+     * overload consults no credential (as before): the realm's own application or the realm
+     * assignment admits.
+     */
+    @Deprecated(since = "1.4.3", forRemoval = true)
+    public void requireSessionApplicationAdmitted(PrincipalContext context) {
+        requireSessionApplicationAdmitted(context, false);
     }
 
     private void requireSessionApplicationAdmitted(PrincipalContext context,
