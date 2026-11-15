@@ -88,6 +88,19 @@ public class ApplicationInstallRepo extends MorphiaRepo<ApplicationInstall> {
       }
    }
 
+   /** Ids of the uninstalled installs of {@code applicationId} for {@code tenantId} in the realm. */
+   public List<ObjectId> findUninstalledIdsWithIgnoreRules(String applicationId, String realmRefName, String tenantId) {
+      try (var cursor = morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId())
+            .find(ApplicationInstall.class)
+            .filter(Filters.eq("applicationId", applicationId),
+               Filters.eq("realmRefName", realmRefName),
+               Filters.eq("tenantId", tenantId),
+               Filters.eq("status", ApplicationInstall.STATUS_UNINSTALLED))
+            .iterator()) {
+         return cursor.toList().stream().map(ApplicationInstall::getId).toList();
+      }
+   }
+
    public Optional<ApplicationInstall> findByIdWithIgnoreRules(ObjectId id) {
       return Optional.ofNullable(findByIdWithIgnoreRules(
          morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId()), id));

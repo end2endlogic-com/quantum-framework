@@ -182,18 +182,14 @@ class ApplicationAccessIntegrationTest extends BaseRepoTest {
     }
 
     @Test
-    void uninstallRemovesTheApplicationsGroupBindingsForTheTenant() {
+    void uninstallSuspendsTheTenantsGroupBindingsAndAReinstallReactivatesExactlyThose() {
         ApplicationInstall installed;
         try (SecuritySession ignored = asSystem()) {
             installed = accessService.install(realm, install(null, "tenant-a"));
             accessService.install(realm, install(null, "tenant-b"));
-            UserAppRole group = new UserAppRole();
-            group.setGroupRefName("planners-" + app);
-            group.setApplicationId(app);
-            group.setRealmRefName(realm);
-            group.setTenantIds(new ArrayList<>(List.of("tenant-a")));
-            group.setRoles(new ArrayList<>(List.of("planner-user")));
-            bindingRepo.save(group);
+            bindingRepo.save(groupBinding("planners-" + app, "tenant-a", UserAppRole.STATUS_ACTIVE, UserAppRole.SOURCE_STAFF));
+            bindingRepo.save(groupBinding("held-" + app, "tenant-a", UserAppRole.STATUS_SUSPENDED, UserAppRole.SOURCE_TENANT_ADMIN));
+            bindingRepo.save(groupBinding("others-" + app, "tenant-b", UserAppRole.STATUS_ACTIVE, UserAppRole.SOURCE_TENANT_ADMIN));
             bindingRepo.save(binding(null, "alice", List.of("tenant-a", "tenant-b"), "tenant-a", "planner-user"));
 
             ApplicationInstall uninstalled = accessService.uninstall(realm, installed.getId());
@@ -201,9 +197,19 @@ class ApplicationAccessIntegrationTest extends BaseRepoTest {
         }
         assertFalse(installRepo.isInstalled(app, realm, "tenant-a"));
         assertTrue(installRepo.isInstalled(app, realm, "tenant-b"));
-        List<UserAppRole> left = bindingRepo.findByApplicationWithIgnoreRules(app, realm, null);
-        assertEquals(1, left.size(), "the group binding is gone, the user binding stays");
-        assertEquals("alice", left.get(0).getUserId());
+        assertEquals(4, bindingRepo.findByApplicationWithIgnoreRules(app, realm, null).size(), "nothing is deleted");
+        UserAppRole planners = groupRow("planners-" + app);
+        assertEquals(UserAppRole.STATUS_SUSPENDED, planners.getStatus(), "a staff-written binding is suspended too");
+        assertEquals(UserAppRole.SUSPENDED_BY_UNINSTALL + installed.getId(), planners.getSuspendedBy());
+        assertNull(groupRow("held-" + app).getSuspendedBy(), "an already suspended binding keeps its reason");
+        assertEquals(UserAppRole.STATUS_ACTIVE, groupRow("others-" + app).getStatus(), "another tenant's binding is untouched");
+
+        try (SecuritySession ignored = asSystem()) {
+            accessService.install(realm, install(null, "tenant-a"));
+        }
+        assertEquals(UserAppRole.STATUS_ACTIVE, groupRow("planners-" + app).getStatus(), "the uninstall's suspension is undone");
+        assertNull(groupRow("planners-" + app).getSuspendedBy());
+        assertEquals(UserAppRole.STATUS_SUSPENDED, groupRow("held-" + app).getStatus(), "only the uninstall's suspensions are undone");
     }
 
     // --- public catalog -------------------------------------------------------------------
@@ -282,6 +288,24 @@ class ApplicationAccessIntegrationTest extends BaseRepoTest {
         binding.setDefaultTenantId(defaultTenant);
         binding.setRoles(new ArrayList<>(List.of(roles)));
         return binding;
+    }
+
+    private UserAppRole groupBinding(String group, String tenant, String status, String source) {
+        UserAppRole binding = new UserAppRole();
+        binding.setGroupRefName(group);
+        binding.setApplicationId(app);
+        binding.setRealmRefName(realm);
+        binding.setTenantIds(new ArrayList<>(List.of(tenant)));
+        binding.setRoles(new ArrayList<>(List.of("planner-user")));
+        binding.setStatus(status);
+        binding.setSource(source);
+        return binding;
+    }
+
+    private UserAppRole groupRow(String group) {
+        return bindingRepo.findByApplicationWithIgnoreRules(app, realm, null).stream()
+            .filter(binding -> group.equals(binding.getGroupRefName()))
+            .findFirst().orElseThrow();
     }
 
     private <T> T as(PrincipalContext principal, java.util.function.Supplier<T> call) {

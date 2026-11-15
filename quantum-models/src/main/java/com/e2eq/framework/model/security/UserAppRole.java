@@ -59,6 +59,9 @@ public class UserAppRole extends BaseModel {
    public static final List<String> SOURCE_VALUES = List.of(SOURCE_PROVISIONING, SOURCE_INVITE,
       SOURCE_TENANT_ADMIN, SOURCE_STAFF, SOURCE_GROUP, SOURCE_MIGRATION);
 
+   /** Prefix of {@link #suspendedBy} for bindings an uninstall suspended, followed by the install id. */
+   public static final String SUSPENDED_BY_UNINSTALL = "uninstall:";
+
    /** The user's global identity (credential userId); null for a group binding. */
    protected String userId;
 
@@ -85,6 +88,13 @@ public class UserAppRole extends BaseModel {
 
    /** {@link #STATUS_ACTIVE} (or unset) grants; {@link #STATUS_SUSPENDED} refuses. */
    protected String status;
+
+   /**
+    * Why a suspended binding is suspended, set by the server: {@link #SUSPENDED_BY_UNINSTALL} and
+    * the install id when an uninstall suspended it (a reinstall reactivates exactly those), else
+    * {@code user:} and the writer. Null while active.
+    */
+   protected String suspendedBy;
 
    /** Who created the binding; one of {@link #SOURCE_VALUES}. Provenance only. */
    protected String source;

@@ -6,7 +6,8 @@ import com.e2eq.framework.model.security.ApplicationAccessException.Code;
 import com.e2eq.framework.model.security.ApplicationBindingValidator;
 import com.e2eq.framework.model.security.UserAppRole;
 import dev.morphia.Datastore;
-import dev.morphia.DeleteOptions;
+import dev.morphia.UpdateOptions;
+import dev.morphia.query.updates.UpdateOperators;
 import dev.morphia.query.filters.Filter;
 import dev.morphia.query.filters.Filters;
 import dev.morphia.transactions.MorphiaSession;
@@ -124,20 +125,50 @@ public class UserAppRoleRepo extends MorphiaRepo<UserAppRole> {
    }
 
    /**
-    * Removes the group bindings of an application that grant only {@code tenantId} in the realm:
-    * what uninstalling the application for that tenant takes with it. Groups never span tenants.
+    * Suspends the active group bindings of an application that grant only {@code tenantId} in the
+    * realm, marking each {@code suspendedBy = uninstall:<installId>}: what uninstalling the
+    * application for that tenant does to them. Nothing is deleted, whoever wrote the binding.
+    * Groups never span tenants.
     */
-   public long deleteGroupBindingsForTenant(String applicationId, String realmRefName, String tenantId) {
+   public long suspendGroupBindingsForUninstall(String applicationId, String realmRefName, String tenantId,
+                                                ObjectId installId) {
+      return groupBindingsOf(applicationId, realmRefName, tenantId)
+         .filter(Filters.in("status", java.util.Arrays.asList(UserAppRole.STATUS_ACTIVE, null)))
+         .update(new UpdateOptions().multi(true),
+            UpdateOperators.set("status", UserAppRole.STATUS_SUSPENDED),
+            UpdateOperators.set("suspendedBy", UserAppRole.SUSPENDED_BY_UNINSTALL + installId),
+            UpdateOperators.inc("version", 1))
+         .getModifiedCount();
+   }
+
+   /**
+    * Reactivates exactly the group bindings that an uninstall of one of {@code uninstalledIds}
+    * (installs of this application for this tenant) suspended; bindings suspended for any other
+    * reason stay suspended.
+    */
+   public long reactivateGroupBindingsAfterReinstall(String applicationId, String realmRefName, String tenantId,
+                                                     Collection<ObjectId> uninstalledIds) {
+      if (uninstalledIds == null || uninstalledIds.isEmpty()) {
+         return 0;
+      }
+      List<String> markers = uninstalledIds.stream().map(id -> UserAppRole.SUSPENDED_BY_UNINSTALL + id).toList();
+      return groupBindingsOf(applicationId, realmRefName, tenantId)
+         .filter(Filters.eq("status", UserAppRole.STATUS_SUSPENDED), Filters.in("suspendedBy", markers))
+         .update(new UpdateOptions().multi(true),
+            UpdateOperators.set("status", UserAppRole.STATUS_ACTIVE),
+            UpdateOperators.unset("suspendedBy"),
+            UpdateOperators.inc("version", 1))
+         .getModifiedCount();
+   }
+
+   private dev.morphia.query.Query<UserAppRole> groupBindingsOf(String applicationId, String realmRefName, String tenantId) {
       return morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId())
          .find(UserAppRole.class)
+         // One filter per field: two filters on the same field would collapse into one key.
          .filter(Filters.eq("applicationId", applicationId),
             Filters.eq("realmRefName", realmRefName),
-            Filters.exists("groupRefName"),
             Filters.ne("groupRefName", null),
-            Filters.eq("tenantIds", tenantId),
-            Filters.size("tenantIds", 1))
-         .delete(new DeleteOptions().multi(true))
-         .getDeletedCount();
+            Filters.eq("tenantIds", List.of(tenantId)));
    }
 
    void requireValid(Datastore datastore, UserAppRole binding) {

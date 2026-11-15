@@ -103,6 +103,8 @@ public class ApplicationAccessService {
       if (request.getStatus() == null) {
          request.setStatus(UserAppRole.STATUS_ACTIVE);
       }
+      request.setSuspendedBy(UserAppRole.STATUS_SUSPENDED.equals(request.getStatus())
+         ? "user:" + caller.getUserId() : null);
       UserAppRole saved = system(() -> request.getId() == null
          ? userAppRoleRepo.save(request)
          : userAppRoleRepo.upsertById(request));
@@ -186,6 +188,9 @@ public class ApplicationAccessService {
          }
       }
       PrincipalContext caller = SecurityContext.getPrincipalContext().orElseThrow();
+      // Bindings an uninstall of this application for this tenant suspended come back with it.
+      List<ObjectId> uninstalled = system(() -> applicationInstallRepo.findUninstalledIdsWithIgnoreRules(
+         request.getApplicationId().trim(), realm, request.getTenantId().trim()));
       request.setStatus(ApplicationInstall.STATUS_ACTIVE);
       request.setInstalledBy(caller.getUserId());
       request.setInstalledAt(new Date());
@@ -194,14 +199,19 @@ public class ApplicationAccessService {
       ApplicationInstall saved = system(() -> request.getId() == null
          ? applicationInstallRepo.save(request)
          : applicationInstallRepo.upsertById(request));
-      Log.infof("application-install.install id=%s application=%s realm=%s tenant=%s by=%s", saved.getId(),
-         saved.getApplicationId(), saved.getRealmRefName(), saved.getTenantId(), caller.getUserId());
+      long reactivated = system(() -> userAppRoleRepo.reactivateGroupBindingsAfterReinstall(
+         saved.getApplicationId(), saved.getRealmRefName(), saved.getTenantId(), uninstalled));
+      Log.infof("application-install.install id=%s application=%s realm=%s tenant=%s by=%s groupBindingsReactivated=%d",
+         saved.getId(), saved.getApplicationId(), saved.getRealmRefName(), saved.getTenantId(), caller.getUserId(),
+         reactivated);
       return saved;
    }
 
    /**
-    * Uninstalls: the install is kept with status uninstalled, and the application's group bindings
-    * for that tenant are removed. User bindings stay but stop granting the tenant.
+    * Uninstalls: the install is kept with status uninstalled, and the application's active group
+    * bindings for that tenant are suspended with {@code suspendedBy = uninstall:<installId>},
+    * whoever wrote them; a reinstall of the application for the tenant reactivates exactly those.
+    * Nothing is deleted. User bindings stay but stop granting the tenant.
     */
    public ApplicationInstall uninstall(String callerRealm, ObjectId id) {
       accessDirectory.requireLocalDirectory();
@@ -220,10 +230,10 @@ public class ApplicationAccessService {
          uninstalled = system(() -> applicationInstallRepo.upsertById(stored));
       }
       ApplicationInstall done = uninstalled;
-      long removed = system(() -> userAppRoleRepo.deleteGroupBindingsForTenant(
-         done.getApplicationId(), done.getRealmRefName(), done.getTenantId()));
-      Log.infof("application-install.uninstall id=%s application=%s realm=%s tenant=%s groupBindingsRemoved=%d",
-         id, done.getApplicationId(), done.getRealmRefName(), done.getTenantId(), removed);
+      long suspended = system(() -> userAppRoleRepo.suspendGroupBindingsForUninstall(
+         done.getApplicationId(), done.getRealmRefName(), done.getTenantId(), done.getId()));
+      Log.infof("application-install.uninstall id=%s application=%s realm=%s tenant=%s groupBindingsSuspended=%d",
+         id, done.getApplicationId(), done.getRealmRefName(), done.getTenantId(), suspended);
       return done;
    }
 
