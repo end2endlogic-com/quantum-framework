@@ -552,20 +552,50 @@ public class PermissionResource {
       String app = applicationId.trim();
       Response unknown = unknownApplication(app);
       if (unknown != null) return unknown;
-      List<FunctionalArea> areas = new ArrayList<>(ownedBy(functionalAreaRepo.getAllList(), FunctionalArea::getApplicationId, app));
+      List<FunctionalArea> areas = new ArrayList<>(ownedBy(governedList(functionalAreaRepo, "FUNCTIONAL_AREA"),
+              FunctionalArea::getApplicationId, app));
       areas.sort(Comparator.comparing(a -> safe(a.getRefName()), String.CASE_INSENSITIVE_ORDER));
       return Response.ok(areas).build();
    }
 
-   /** 404 naming the application when it is not registered here; {@code null} when it is. */
+   /**
+    * 404 naming the application when the caller cannot see it registered here (absent and hidden answer
+    * alike); {@code null} when it can. The lookup runs the caller's rules on SECURITY/APPLICATION.
+    */
    private Response unknownApplication(String applicationId) {
-      if (applicationRepo.findByRefNameWithIgnoreRules(applicationId).isPresent()) {
+      boolean visible;
+      try (SecurityCallScope.Scope ignored = SecurityCallScope.openResourceOnly(vocabularyResource("APPLICATION", "VIEW"))) {
+         visible = applicationRepo.findByRefName(applicationId).isPresent();
+      }
+      if (visible) {
          return null;
       }
       return Response.status(Response.Status.NOT_FOUND)
               .entity(Map.of("code", "APPLICATION_UNKNOWN",
                       "message", "application '" + applicationId + "' is not registered with this service"))
               .build();
+   }
+
+   /**
+    * The caller's own rules on the vocabulary records themselves (SECURITY/{@code domain}), not on this
+    * resource's system/permission context, so a deny or filter on those records holds here too.
+    */
+   private ResourceContext vocabularyResource(String domain, String action) {
+      ResourceContext current = SecurityContext.getResourceContext().orElse(null);
+      return new ResourceContext.Builder()
+              .withRealm(current == null ? null : current.getRealm())
+              .withApplicationId(current == null ? null : current.getApplicationId())
+              .withArea("SECURITY")
+              .withFunctionalDomain(domain)
+              .withAction(action)
+              .build();
+   }
+
+   private <T extends com.e2eq.framework.model.persistent.base.UnversionedBaseModel> List<T> governedList(
+           com.e2eq.framework.model.persistent.morphia.MorphiaRepo<T> repo, String domain) {
+      try (SecurityCallScope.Scope ignored = SecurityCallScope.openResourceOnly(vocabularyResource(domain, "LIST"))) {
+         return repo.getAllList();
+      }
    }
 
    /** Rows tagged with exactly {@code applicationId} ('*' and untagged rows are nobody's own). */
@@ -587,11 +617,11 @@ public class PermissionResource {
     */
    private Map<String, Map<String, Set<String>>> registeredVocabulary(String applicationId) {
       Map<String, Map<String, Set<String>>> out = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
-      for (FunctionalArea area : ownedBy(functionalAreaRepo.getAllList(), FunctionalArea::getApplicationId, applicationId)) {
+      for (FunctionalArea area : ownedBy(governedList(functionalAreaRepo, "FUNCTIONAL_AREA"), FunctionalArea::getApplicationId, applicationId)) {
          String name = safe(area.getRefName());
          if (!name.isEmpty()) out.computeIfAbsent(name, k -> new TreeMap<>(String.CASE_INSENSITIVE_ORDER));
       }
-      for (FunctionalDomain fd : ownedBy(functionalDomainRepo.getAllList(), FunctionalDomain::getApplicationId, applicationId)) {
+      for (FunctionalDomain fd : ownedBy(governedList(functionalDomainRepo, "FUNCTIONAL_DOMAIN"), FunctionalDomain::getApplicationId, applicationId)) {
          String area = safe(fd.getArea());
          String domain = safe(fd.getRefName());
          if (area.isEmpty() || domain.isEmpty()) continue;

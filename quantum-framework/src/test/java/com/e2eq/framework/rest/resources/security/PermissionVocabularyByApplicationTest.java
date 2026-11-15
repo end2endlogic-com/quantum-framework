@@ -137,6 +137,24 @@ class PermissionVocabularyByApplicationTest extends BaseRepoTest {
         assertTrue(union.keySet().stream().anyMatch("system"::equalsIgnoreCase),
                 "code-discovered vocabulary stays in the union: " + union.keySet());
         assertFalse(union.containsKey("VOCAB_EMPTY"), "the union is built from domains, as before");
+
+        Response names = given().get("/system/permissions/fd");
+        assertEquals(200, names.statusCode(), names.asString());
+        assertEquals(List.of("VOCAB_PLAN"), names.jsonPath().getList("VOCAB_PLANNING"));
+        assertEquals(List.of("VOCAB_INVOICE"), names.jsonPath().getList("VOCAB_BILLING"));
+    }
+
+    @Test
+    @TestSecurity(user = USER, roles = "user")
+    void ordinaryUserDoesNotReadAnotherApplicationsVocabularyRecords() {
+        Response fd = given().queryParam("applicationId", APP_A).get("/system/permissions/fd");
+        Response areaList = given().queryParam("applicationId", APP_A).get("/system/permissions/fd/areas");
+        // The caller's own rules on the SECURITY records refuse it; the permission resource's context does not widen them.
+        for (Response refused : List.of(fd, areaList)) {
+            assertEquals(403, refused.statusCode(), refused.asString());
+            assertTrue(refused.jsonPath().getString("statusMessage").contains("area=security, domain=application"),
+                    refused.asString());
+        }
     }
 
     @Test
