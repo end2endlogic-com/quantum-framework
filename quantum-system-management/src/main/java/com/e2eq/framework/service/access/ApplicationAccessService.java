@@ -14,6 +14,7 @@ import com.e2eq.framework.model.security.ApplicationInstall;
 import com.e2eq.framework.model.security.UserAppRole;
 import com.e2eq.framework.model.security.UserGroup;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
+import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import com.e2eq.framework.model.securityrules.SecurityContext;
 import com.e2eq.framework.util.EnvConfigUtils;
@@ -464,10 +465,49 @@ public class ApplicationAccessService {
       return binding.groupBinding() ? "group:" + binding.getGroupRefName() : binding.getUserId();
    }
 
+   /**
+    * Runs repository work as the system principal once this service has decided the caller's
+    * authority. The raised scope keeps the caller's application, so deployments that require an
+    * application on every policy evaluation ({@code quantum.security.policy-scope.require-application})
+    * accept the write, and it records the caller it acts on behalf of.
+    */
    private <T> T system(Supplier<T> action) {
-      return SecurityCallScope.runWithContexts(
-         securityUtils.getSystemPrincipalContext(),
-         securityUtils.getSystemSecurityResourceContext(),
-         action);
+      PrincipalContext caller = SecurityContext.getPrincipalContext().orElse(null);
+      String applicationId = callerApplicationId(caller);
+      PrincipalContext system = securityUtils.getSystemPrincipalContext();
+      ResourceContext systemResource = securityUtils.getSystemSecurityResourceContext();
+      if (applicationId == null) {
+         return SecurityCallScope.runWithContexts(system, systemResource, action);
+      }
+      PrincipalContext.Builder principal = new PrincipalContext.Builder()
+         .withDefaultRealm(system.getDefaultRealm())
+         .withApplicationId(applicationId)
+         .withDomainContext(system.getDomainContext())
+         .withDataDomain(system.getDataDomain())
+         .withUserId(system.getUserId())
+         .withRoles(system.getRoles())
+         .withScope(system.getScope());
+      if (caller != null && caller.getUserId() != null && !caller.getUserId().equals(system.getUserId())) {
+         principal.withActingOnBehalfOfUserId(caller.getUserId());
+      }
+      ResourceContext resource = new ResourceContext.Builder()
+         .withRealm(systemResource.getRealm())
+         .withApplicationId(applicationId)
+         .withArea(systemResource.getArea())
+         .withFunctionalDomain(systemResource.getFunctionalDomain())
+         .withAction(systemResource.getAction())
+         .build();
+      return SecurityCallScope.runWithContexts(principal.build(), resource, action);
+   }
+
+   /** The application of the request: the caller's principal first, then the request's resource. */
+   private static String callerApplicationId(PrincipalContext caller) {
+      String fromPrincipal = caller == null ? null : trimmed(caller.getApplicationId());
+      if (fromPrincipal != null) {
+         return fromPrincipal;
+      }
+      return SecurityContext.getResourceContext()
+         .map(resource -> trimmed(resource.getApplicationId()))
+         .orElse(null);
    }
 }
