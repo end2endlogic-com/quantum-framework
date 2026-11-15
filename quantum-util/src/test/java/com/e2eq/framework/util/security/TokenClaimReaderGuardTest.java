@@ -76,6 +76,18 @@ class TokenClaimReaderGuardTest {
     }
 
     @Test
+    void interpolationAttributesMethodReferencesAndCarriageReturns() {
+        String jwt = "import org.eclipse.microprofile.jwt.JsonWebToken;\n";
+        assertEquals(Map.of("dynamic", List.of(2)), TokenClaimReaderScan.scanText(jwt + "jwt.getClaim(\"$name\")"));
+        assertEquals(Map.of("groups", List.of(2)),
+                TokenClaimReaderScan.scanText(jwt + "Supplier<Set<String>> g = jwt::getGroups;"));
+        assertEquals(Map.of("dynamic", List.of(2)), TokenClaimReaderScan.scanText(
+                "import io.quarkus.security.identity.SecurityIdentity;\nidentity.getAttribute(\"re\" + \"alm\");"));
+        assertEquals(Map.of("realm", List.of(2)),
+                TokenClaimReaderScan.scanText(jwt + "// note\rjwt.getClaim(\"realm\");"));
+    }
+
+    @Test
     void duplicateAllowlistEntriesFail(@TempDir Path root) throws IOException {
         Path allowlist = root.resolve("allow");
         Files.writeString(allowlist, "a.java | realm | 0 | must-move | TODO\na.java | realm | 9 | must-move | TODO\n");

@@ -6,6 +6,8 @@
 # path | claim | max count | class | TODO (rollout step that removes it) or reason
 quantum-action-enablement-quarkus/src/main/java/com/e2eq/framework/actionenablement/runtime/resolver/PermissionActionDependencyResolver.java | azp | 2 | must-move | TODO step 4 (slim tokens; delete claims path): application from quantum.security.session.application-id, not azp
 quantum-framework/src/main/java/com/e2eq/framework/rest/resources/GreetingResource.java | dynamic | 1 | must-move | TODO step 4 (slim tokens; delete claims path): sample resource logs every claim; delete or log identity only
+quantum-framework/src/main/java/com/e2eq/framework/rest/resources/WorkItemResource.java | dynamic | 1 | not-a-claim | SecurityIdentity attributes profileRefs/capabilityRefs, not removed claims
+quantum-framework/src/main/java/com/e2eq/framework/security/SecurityIdentityNormalizer.java | dynamic | 1 | not-a-claim | IdP subject attribute constant (identity)
 quantum-jwt-provider/src/main/java/com/e2eq/framework/model/auth/provider/jwtToken/CustomTokenAuthProvider.java | accountNum | 3 | issuer | TODO step 4 (slim tokens; delete claims path): embedded issuer copies claims on refresh/validate; slim with token v2
 quantum-jwt-provider/src/main/java/com/e2eq/framework/model/auth/provider/jwtToken/CustomTokenAuthProvider.java | azp | 5 | issuer | TODO step 4 (slim tokens; delete claims path): embedded issuer copies claims on refresh/validate; slim with token v2
 quantum-jwt-provider/src/main/java/com/e2eq/framework/model/auth/provider/jwtToken/CustomTokenAuthProvider.java | dynamic | 2 | issuer | TODO step 4 (slim tokens; delete claims path): embedded issuer copies claims on refresh/validate; slim with token v2
@@ -21,6 +23,7 @@ quantum-jwt-provider/src/main/java/com/e2eq/framework/model/auth/provider/jwtTok
 quantum-jwt-provider/src/main/java/com/e2eq/framework/model/auth/provider/jwtToken/TokenUtils.java | tenantId | 2 | issuer | TODO step 4 (slim tokens; delete claims path): stop minting groups/realm/tenant/aud/azp/realmRegEx (token v2)
 quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/IdentityRoleResolver.java | realm | 1 | must-move | TODO step 4: realm SecurityIdentity attribute copied from the token claim; take the realm the resolver was asked for
 quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/RepoSecurityContextResolver.java | azp | 1 | must-move | TODO step 4: application from the azp SecurityIdentity attribute; use quantum.security.session.application-id
+quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/RepoSecurityContextResolver.java | dynamic | 1 | must-move | TODO step 4: identityAttribute(name) helper reads azp; drop with the claims path
 quantum-oauth-server/src/main/java/com/e2eq/framework/oauth/resource/OAuthUserInfoResource.java | groups | 4 | issuer | TODO step 4 (slim tokens; delete claims path): userinfo echoes groups; drop with token v2
 quantum-rest-core/src/main/java/com/e2eq/framework/rest/core/BaseResource.java | realm | 1 | not-a-claim | @PathParam realm, not a token read
 quantum-security-runtime/src/main/java/com/e2eq/framework/rest/filters/MigrationCheckRequestFilter.java | dynamic | 1 | resolver | reads token_type (identity claim) only

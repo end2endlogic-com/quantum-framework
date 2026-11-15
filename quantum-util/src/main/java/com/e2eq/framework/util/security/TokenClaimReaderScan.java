@@ -30,7 +30,10 @@ import java.util.regex.Pattern;
  * lines). In a file that touches a token (a JWT API, {@code getClaim(}, a hand decoder via
  * {@code getUrlDecoder}, or {@code SecurityIdentity} attributes) it counts exact string literals
  * of a removed claim, {@code getGroups()}, {@code getAudience()} and {@code Claims.<removed>},
- * plus {@code getClaim(<anything but one literal>)} as the pseudo-claim {@code dynamic}. Counts per
+ * plus {@code getClaim(<anything but one literal>)} and, next to {@code SecurityIdentity},
+ * {@code getAttribute(<anything but one literal>)} as the pseudo-claim {@code dynamic}. It is a
+ * tripwire: the comment lexer does not model Kotlin string templates or nested comments, or
+ * Java unicode escapes, so contrived code can still hide a read. Counts per
  * (file, claim) must not exceed the allowlist, so the readers that exist today stay green and a
  * new one fails the build. The same rules and allowlist format are used by
  * {@code check_token_claim_readers.py} for Python and TypeScript.
@@ -70,13 +73,17 @@ public final class TokenClaimReaderScan {
             "iss|sub|upn|userId|iat|exp|nbf|jti|token_type|auth_time|raw_token|email|preferred_username|full_name";
     private static final Pattern LITERAL =
             Pattern.compile("(?<![\\w$.])([\"'])(" + NAMES + ")\\1");
-    private static final Pattern GET_GROUPS = Pattern.compile("\\bgetGroups\\s*\\(\\s*\\)");
-    private static final Pattern GET_AUDIENCE = Pattern.compile("\\bgetAudience\\s*\\(\\s*\\)");
+    private static final Pattern GET_GROUPS = Pattern.compile("\\bgetGroups\\s*\\(\\s*\\)|::\\s*getGroups\\b");
+    private static final Pattern GET_AUDIENCE = Pattern.compile("\\bgetAudience\\s*\\(\\s*\\)|::\\s*getAudience\\b");
     private static final Pattern CLAIMS_ENUM = Pattern.compile("\\bClaims\\.(" + NAMES + ")\\b");
+    /** One literal with no interpolation ("$name") or escapes. */
+    private static final String PLAIN = "(?:\"[\\w-]*\"|'[\\w-]*')";
     /** getClaim(anything but one literal or a Claims constant), "re" + "alm" included. */
     private static final Pattern DYNAMIC_CLAIM = Pattern.compile(
-            "\\bgetClaim\\s*\\((?!\\s*(?:\"[^\"\\\\\\n]*\"|'[^'\\\\\\n]*'|Claims\\.(?:" + IDENTITY + "|" + NAMES
-                    + "))\\s*\\))");
+            "\\bgetClaim\\s*\\((?!\\s*(?:" + PLAIN + "|Claims\\.(?:" + IDENTITY + "|" + NAMES + "))\\s*\\))");
+    /** SecurityIdentity.getAttribute(anything but one literal), in files that name SecurityIdentity. */
+    private static final Pattern DYNAMIC_ATTRIBUTE =
+            Pattern.compile("\\bgetAttribute\\s*\\((?!\\s*" + PLAIN + "\\s*\\))");
 
     private TokenClaimReaderScan() {
     }
@@ -112,6 +119,9 @@ public final class TokenClaimReaderScan {
             add(hits, code, e.group(1), e.start());
         }
         count(hits, code, DYNAMIC_CLAIM.matcher(code), DYNAMIC);
+        if (code.contains("SecurityIdentity")) {
+            count(hits, code, DYNAMIC_ATTRIBUTE.matcher(code), DYNAMIC);
+        }
         hits.values().forEach(lines -> lines.sort(null));
         return hits;
     }
@@ -155,7 +165,7 @@ public final class TokenClaimReaderScan {
                 continue;
             }
             if (text.startsWith("//", i)) {
-                while (i < n && text.charAt(i) != '\n') {
+                while (i < n && text.charAt(i) != '\n' && text.charAt(i) != '\r') {
                     out[i++] = ' ';
                 }
                 continue;
@@ -197,7 +207,9 @@ public final class TokenClaimReaderScan {
                 @Override
                 public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
                     String name = file.getFileName().toString();
-                    if (!(name.endsWith(".java") || name.endsWith(".kt")) || TEST_FILE.matcher(name).find()) {
+                    boolean mainSource = file.toString().replace('\\', '/').contains("/src/main/");
+                    if (!(name.endsWith(".java") || name.endsWith(".kt"))
+                            || (TEST_FILE.matcher(name).find() && !mainSource)) {
                         return FileVisitResult.CONTINUE;
                     }
                     String text = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
