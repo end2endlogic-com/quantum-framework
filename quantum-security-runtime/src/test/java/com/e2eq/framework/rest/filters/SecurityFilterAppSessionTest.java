@@ -182,6 +182,22 @@ class SecurityFilterAppSessionTest {
     }
 
     @Test
+    void aSessionTrustingTokenClaimsReadsNoCredentialForAForeignToken() {
+        SecurityFilter filter = filterWithToken(Map.of("sub", "s1", "azp", LAUNCHPAD_TOKEN_APP));
+        filter.sessionApplicationId = Optional.of("decision-intelligence");
+        filter.trustTokenClaims = true;
+        filter.systemDirectory = directory(realm("helixor-code-D1", "helixor-code"));
+        filter.realmMembershipService = membershipWithApplications(LAUNCHPAD_TOKEN_APP);
+        com.e2eq.framework.model.persistent.morphia.CredentialRepo repo =
+                org.mockito.Mockito.mock(com.e2eq.framework.model.persistent.morphia.CredentialRepo.class);
+        filter.credentialRepo = repo;
+
+        assertThrows(jakarta.ws.rs.ForbiddenException.class,
+                () -> filter.requireSessionApplicationAdmitted(principal("decision-intelligence", "helixor-code-D1")));
+        org.mockito.Mockito.verifyNoInteractions(repo);
+    }
+
+    @Test
     void foreignTokenIsAdmittedByTheRealmHomeApplication() {
         SecurityFilter filter = filterWithToken(Map.of("sub", "s1", "azp", LAUNCHPAD_TOKEN_APP));
         filter.sessionApplicationId = Optional.of("decision-intelligence");
