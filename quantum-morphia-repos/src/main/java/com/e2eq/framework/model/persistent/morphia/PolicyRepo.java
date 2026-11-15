@@ -1,7 +1,10 @@
 package com.e2eq.framework.model.persistent.morphia;
 
+import com.e2eq.framework.model.security.Application;
+import com.e2eq.framework.model.security.ApplicationDeclarationValidator.Code;
 import com.e2eq.framework.model.security.Policy;
 import com.e2eq.framework.model.security.Rule;
+import com.e2eq.framework.model.security.VocabularyReference;
 import com.e2eq.framework.model.securityrules.SecurityURIHeader;
 
 import dev.morphia.query.filters.Filters;
@@ -11,6 +14,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -46,30 +50,39 @@ public class PolicyRepo extends MorphiaRepo<Policy> {
       if (policyAdmissionEnabled) validatePolicyScopeAndVocabulary(policy);
    }
 
+   /**
+    * A policy names vocabulary its application owns, or vocabulary the application's row borrows
+    * through {@code uses} and the owning application actually holds (that domain, that action).
+    * Anything else is refused with a {@link PolicyAdmissionRefusedException} naming the
+    * {@link ApplicationDeclarationValidator.Code}. A borrowed rule must grant one of the
+    * application's own declared roles when it declares any.
+    */
    private void validatePolicyScopeAndVocabulary(Policy policy) {
       String applicationId = required(policy.getApplicationId(), "Policy.applicationId is required");
       required(policy.getRealmRefName(), "Policy.realmRefName is required (use * for every realm)");
-      if (!"*".equals(applicationId)
-            && applicationRepo.findByRefNameWithIgnoreRules(applicationId).isEmpty()) {
+      Optional<Application> application = "*".equals(applicationId)
+         ? Optional.empty()
+         : applicationRepo.findByRefNameWithIgnoreRules(applicationId);
+      if (!"*".equals(applicationId) && application.isEmpty()) {
          throw new IllegalArgumentException("Policy references unknown application: " + applicationId);
       }
       if ("*".equals(applicationId)) return;
 
-      Map<String, Set<String>> vocabulary = new HashMap<>();
+      Map<String, Set<String>> owned = new HashMap<>();
       for (var domain : functionalDomainRepo.findForApplicationWithIgnoreRules(applicationId)) {
-         if (domain.getArea() == null || domain.getRefName() == null) continue;
-         String key = axis(domain.getArea()) + "/" + axis(domain.getRefName());
-         Set<String> actions = vocabulary.computeIfAbsent(key, ignored -> new java.util.HashSet<>());
-         if (domain.getFunctionalActions() != null) {
-            for (var action : domain.getFunctionalActions()) {
-               if (action != null && action.getRefName() != null) actions.add(axis(action.getRefName()));
-            }
-         }
+         addDomain(owned, domain);
       }
-      if (vocabulary.isEmpty()) {
+      Map<String, Borrowed> borrowed = borrowedVocabulary(application.get(), applicationId, owned.keySet());
+      if (owned.isEmpty() && borrowed.isEmpty()) {
          throw new IllegalArgumentException(
             "No functional-domain vocabulary is registered for application: " + applicationId
                + ". Seed that application's functionalDomain catalog before its policies.");
+      }
+      Set<String> declaredRoles = new HashSet<>();
+      if (application.get().getRoles() != null) {
+         for (var role : application.get().getRoles()) {
+            if (role != null && role.getName() != null && !role.getName().isBlank()) declaredRoles.add(axis(role.getName()));
+         }
       }
       if (policy.getRules() == null) return;
       for (Rule rule : policy.getRules()) {
@@ -79,16 +92,87 @@ public class PolicyRepo extends MorphiaRepo<Policy> {
          SecurityURIHeader header = rule.getSecurityURI().getHeader();
          if (wildcard(header.getArea()) || wildcard(header.getFunctionalDomain())) continue;
          String key = axis(header.getArea()) + "/" + axis(header.getFunctionalDomain());
-         Set<String> actions = vocabulary.get(key);
-         if (actions == null) {
-            throw new IllegalArgumentException(
-               "Policy rule '" + rule.getName() + "' references unknown functional area/domain: " + key);
+         String where = "Policy rule '" + rule.getName() + "'";
+         Set<String> actions = owned.get(key);
+         if (actions != null) {
+            requireAction(actions, header, where, key, applicationId);
+            continue;
          }
-         if (!wildcard(header.getAction()) && !actions.contains(axis(header.getAction()))) {
-            throw new IllegalArgumentException(
-               "Policy rule '" + rule.getName() + "' references unknown action '"
-                  + header.getAction() + "' for " + key);
+         Borrowed use = borrowed.get(key);
+         if (use == null) {
+            throw new PolicyAdmissionRefusedException(Code.POLICY_TRIPLE_UNDECLARED,
+               where + " references unknown functional area/domain: " + key + "; " + applicationId
+                  + " neither owns it nor borrows it through 'uses'");
          }
+         if (use.actions() == null) {
+            throw new PolicyAdmissionRefusedException(Code.USES_UNKNOWN,
+               where + " references " + key + ", which " + applicationId + " borrows from " + use.owner()
+                  + ", but " + use.owner() + " holds no such domain");
+         }
+         requireAction(use.actions(), header, where, key, use.owner());
+         String role = !wildcard(header.getIdentity()) ? axis(header.getIdentity())
+            : policy.getPrincipalId() == null ? null : axis(policy.getPrincipalId());
+         boolean rolePrincipal = policy.getPrincipalType() == null || policy.getPrincipalType() == Policy.PrincipalType.ROLE;
+         if (rolePrincipal && !declaredRoles.isEmpty() && (role == null || !declaredRoles.contains(role))) {
+            throw new PolicyAdmissionRefusedException(Code.POLICY_BORROWED_FOREIGN_ROLE,
+               where + " grants borrowed " + key + " to '" + role + "', which is not a role of " + applicationId);
+         }
+      }
+   }
+
+   /** A domain the application borrows: its owner and the actions the owner holds (null: owner holds no such domain). */
+   private record Borrowed(String owner, Set<String> actions) {
+   }
+
+   /**
+    * The {@code area/domain} keys the application row borrows through {@code uses}, each with the
+    * actions its owner holds. A key the application owns itself is judged as owned, so it is left out.
+    */
+   private Map<String, Borrowed> borrowedVocabulary(Application application, String applicationId, Set<String> ownedKeys) {
+      Map<String, Borrowed> out = new HashMap<>();
+      if (application.getUses() == null) return out;
+      Map<String, Map<String, Set<String>>> owners = new HashMap<>();
+      for (VocabularyReference use : application.getUses()) {
+         if (use == null || use.getApplication() == null || use.getApplication().isBlank()
+               || use.getArea() == null || use.getArea().isBlank() || use.getDomains() == null) continue;
+         String owner = use.getApplication().trim();
+         if (owner.equalsIgnoreCase(applicationId) || "*".equals(owner)) continue;
+         Map<String, Set<String>> held = owners.computeIfAbsent(axis(owner), ignored -> {
+            Map<String, Set<String>> vocabulary = new HashMap<>();
+            for (var domain : functionalDomainRepo.findForApplicationWithIgnoreRules(owner)) {
+               // Only the owner's own rows: a '*'-tagged row is nobody's to lend.
+               if (domain.getApplicationId() != null && domain.getApplicationId().trim().equalsIgnoreCase(owner)) {
+                  addDomain(vocabulary, domain);
+               }
+            }
+            return vocabulary;
+         });
+         for (String domain : use.getDomains()) {
+            if (domain == null || domain.isBlank() || "*".equals(domain.trim())) continue;
+            String key = axis(use.getArea()) + "/" + axis(domain);
+            if (ownedKeys.contains(key)) continue;
+            out.putIfAbsent(key, new Borrowed(owner, held.get(key)));
+         }
+      }
+      return out;
+   }
+
+   private static void addDomain(Map<String, Set<String>> vocabulary, com.e2eq.framework.model.security.FunctionalDomain domain) {
+      if (domain.getArea() == null || domain.getRefName() == null) return;
+      String key = axis(domain.getArea()) + "/" + axis(domain.getRefName());
+      Set<String> actions = vocabulary.computeIfAbsent(key, ignored -> new HashSet<>());
+      if (domain.getFunctionalActions() != null) {
+         for (var action : domain.getFunctionalActions()) {
+            if (action != null && action.getRefName() != null) actions.add(axis(action.getRefName()));
+         }
+      }
+   }
+
+   private static void requireAction(Set<String> actions, SecurityURIHeader header, String where, String key, String holder) {
+      if (!wildcard(header.getAction()) && !actions.contains(axis(header.getAction()))) {
+         throw new PolicyAdmissionRefusedException(Code.POLICY_TRIPLE_UNDECLARED,
+            where + " references unknown action '" + header.getAction() + "' for " + key
+               + " (" + holder + " declares " + new java.util.TreeSet<>(actions) + ")");
       }
    }
 

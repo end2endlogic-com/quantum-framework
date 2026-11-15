@@ -186,7 +186,7 @@ These keys are read by `SecurityFilter` and its collaborators in `quantum-securi
 
 |`quantum.security.policy-admission.enabled`
 |`false`
-|Admission checks on save: a policy's scope and vocabulary are validated, and a functional domain must name a registered application (or `*`).
+|Admission checks on save: a policy's scope and vocabulary are validated, and a functional domain must name a registered application (or `*`). A rule may name the application's own domains, or a domain its application row borrows through `uses` that the owning application holds, with an action the owner declares; a borrowed grant goes to one of the application's declared roles when it declares any. A refusal is a `PolicyAdmissionRefusedException` whose message starts with its code (`POLICY_TRIPLE_UNDECLARED`, `USES_UNKNOWN`, `POLICY_BORROWED_FOREIGN_ROLE`).
 |===
 
 Rule evaluation (`RuleContext`) has its own switches:
