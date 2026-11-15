@@ -1,5 +1,6 @@
 package com.e2eq.framework.model.persistent.morphia.changesets;
 
+import com.e2eq.framework.model.persistent.morphia.DirectoryOwnership;
 import com.e2eq.framework.model.persistent.morphia.RealmRepo;
 import com.e2eq.framework.model.security.Realm;
 import com.mongodb.client.MongoClient;
@@ -52,6 +53,23 @@ class AddRealmsSeedSystemOnlyTest {
         assertTrue(saved.contains("system-com"), "system realm MUST still be created under seed-system-only");
         assertFalse(saved.contains("test-quantum-com"), "test realm must NOT be created under seed-system-only");
         assertEquals(1, saved.size(), "seed-system-only creates exactly the system realm");
+    }
+
+    @Test
+    void aRemoteDirectoryOwnerKeepsTheRealmCatalog() throws Exception {
+        RecordingRealmRepo realmRepo = new RecordingRealmRepo();
+        AddRealms changeSet = newChangeSet(realmRepo, false);
+        changeSet.directoryOwnership = new DirectoryOwnership() {
+            @Override
+            public boolean ownedHere() {
+                return false;
+            }
+        };
+
+        changeSet.execute(session("system-com"), mongoClient(), emitter());
+
+        assertTrue(realmRepo.savedRefNames().isEmpty(),
+                "under a remote directory no default realm is written to this service's copy");
     }
 
     // ---- helpers ----------------------------------------------------------------------------

@@ -15,6 +15,7 @@ import com.e2eq.framework.service.application.ApplicationRegistryUnavailableExce
 import com.e2eq.framework.service.application.ApplicationRegistryValidator;
 import com.e2eq.framework.util.EnvConfigUtils;
 import com.e2eq.framework.system.membership.RealmMembershipService;
+import com.e2eq.framework.system.remote.ControlPlaneException;
 import io.quarkus.arc.properties.IfBuildProperty;
 import io.quarkus.logging.Log;
 import jakarta.annotation.security.RolesAllowed;
@@ -280,8 +281,7 @@ public class UserRealmRoleResource extends BaseResource<UserRealmRole, UserRealm
          membership.setDefaultApplication(defaultApp);
       }
 
-      UserRealmRole saved = repo.save(envConfigUtils.getSystemRealm(), membership);
-      return Response.ok(saved).build();
+      return writeAssignment(membership, saved -> Response.ok(saved).build());
    }
 
    /** Clear the application grant (revert the membership to legacy behavior). */
@@ -297,8 +297,7 @@ public class UserRealmRoleResource extends BaseResource<UserRealmRole, UserRealm
       UserRealmRole membership = membershipOp.get();
       membership.setAuthorizedApplications(null);
       membership.setDefaultApplication(null);
-      UserRealmRole saved = repo.save(envConfigUtils.getSystemRealm(), membership);
-      return Response.ok(saved).build();
+      return writeAssignment(membership, saved -> Response.ok(saved).build());
    }
 
    /** Read the tenant-selection grant for a (user, realm) assignment. */
@@ -358,14 +357,42 @@ public class UserRealmRoleResource extends BaseResource<UserRealmRole, UserRealm
       UserRealmRole membership = membershipOp.get();
       membership.setAuthorizedTenantIds(tenants);
       membership.setAuthorizedTenantRegEx(tenantPattern);
-      UserRealmRole saved = repo.save(envConfigUtils.getSystemRealm(), membership);
-      Log.infof("Tenant grant WRITTEN (audit): user=%s realm=%s tenants=%s tenantPattern=%s by=%s",
-          userId, realmRefName, tenants, tenantPattern, callerName());
-      return Response.ok(saved).build();
+      return writeAssignment(membership, saved -> {
+         Log.infof("Tenant grant WRITTEN (audit): user=%s realm=%s tenants=%s tenantPattern=%s by=%s",
+             userId, realmRefName, tenants, tenantPattern, callerName());
+         return Response.ok(saved).build();
+      });
    }
 
+   /**
+    * The (user, realm) assignment, whatever its status, from the directory owner: this service's
+    * system realm when it owns the directory, the remote owner otherwise.
+    */
    private Optional<UserRealmRole> loadMembership(String userId, String realmRefName) {
-      return repo.findAssignmentForRealmWithIgnoreRules(userId, realmRefName, envConfigUtils.getSystemRealm());
+      return realmMembershipService.realmsForUser(userId).stream()
+          .filter(assignment -> realmRefName.equals(assignment.getRealmRefName()))
+          .findFirst();
+   }
+
+   /**
+    * Writes the assignment at the directory owner, so a grant never lands in a copy the owner does
+    * not hold. A refusal or failure at a remote owner is reported, never retried locally.
+    */
+   private Response writeAssignment(UserRealmRole membership, java.util.function.Function<UserRealmRole, Response> written) {
+      UserRealmRole saved;
+      try {
+         saved = realmMembershipService.upsertUserRealmRole(membership);
+      } catch (ControlPlaneException e) {
+         int owner = e.httpStatus().orElse(0);
+         int status = owner >= 400 && owner < 500 ? owner : Response.Status.BAD_GATEWAY.getStatusCode();
+         return Response.status(status)
+             .entity(RestError.builder()
+                 .status(status)
+                 .statusMessage("The directory owner did not write the assignment: " + e.getMessage())
+                 .build())
+             .build();
+      }
+      return written.apply(saved);
    }
 
    private Response notFound(String userId, String realmRefName) {

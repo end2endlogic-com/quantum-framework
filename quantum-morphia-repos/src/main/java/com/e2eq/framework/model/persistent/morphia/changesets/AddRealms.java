@@ -2,6 +2,7 @@ package com.e2eq.framework.model.persistent.morphia.changesets;
 
 import com.e2eq.framework.model.persistent.migration.base.ChangeSetBase;
 import com.e2eq.framework.model.persistent.migration.base.ChangeSetBean;
+import com.e2eq.framework.model.persistent.morphia.DirectoryOwnership;
 import com.e2eq.framework.model.persistent.morphia.RealmRepo;
 import com.e2eq.framework.model.security.DomainContext;
 import com.e2eq.framework.model.security.Realm;
@@ -23,6 +24,9 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 public class AddRealms extends ChangeSetBase {
     @Inject
     RealmRepo realmRepo;
+
+    @Inject
+    DirectoryOwnership directoryOwnership;
 
     @Inject
     RuleContext ruleContext;
@@ -120,6 +124,13 @@ public class AddRealms extends ChangeSetBase {
 
     @Override
     public void execute(MorphiaSession session, MongoClient mongoClient, MultiEmitter<? super String> emitter) throws Exception {
+        if (directoryOwnership != null && !directoryOwnership.ownedHere()) {
+            // The realm catalog is the remote directory owner's, which seeds its own default realms;
+            // a local copy here would be a second catalog that drifts from it.
+            Log.info("Skipping default realms: the realm catalog is held by the remote directory owner");
+            emitter.emit("Skipping default realms: the realm catalog is held by the remote directory owner");
+            return;
+        }
         Log.infof("Adding Default Realm to the database: realm passed to execution: %s", session.getDatabase().getName());
         emitter.emit(String.format("Adding Default Realm to the database: realm passed to execution: %s", session.getDatabase().getName()));
         DomainContext domainContext = DomainContext.builder()

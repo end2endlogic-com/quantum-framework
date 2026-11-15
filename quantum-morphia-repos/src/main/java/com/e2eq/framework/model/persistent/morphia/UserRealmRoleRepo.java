@@ -19,6 +19,18 @@ import java.util.Optional;
 
 @ApplicationScoped
 public class UserRealmRoleRepo extends MorphiaRepo<UserRealmRole> {
+
+    @jakarta.inject.Inject
+    DirectoryOwnership directoryOwnership;
+
+    /** User realm roles are the directory owner's; under a remote directory no write lands in this copy. */
+    @Override
+    protected void requireWritable() {
+        if (directoryOwnership != null) {
+            directoryOwnership.requireOwnedHere("user realm roles");
+        }
+    }
+
     @jakarta.inject.Inject
     com.e2eq.framework.security.runtime.ExternalMembershipAuthorization externalMembershipAuthorization;
 

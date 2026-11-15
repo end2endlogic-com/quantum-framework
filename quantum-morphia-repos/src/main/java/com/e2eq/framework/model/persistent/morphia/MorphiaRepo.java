@@ -1367,6 +1367,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     @Override
     public long delete (@NotNull String realmId, @NotNull ObjectId id) throws ReferentialIntegrityViolationException {
         Objects.requireNonNull(id, "Null argument passed to delete, api requires a non-null object");
+        requireWritable(); // before the pre-delete hooks, which may have effects of their own
 
         Optional<T> found = this.findById(id, realmId);
         if (found.isEmpty()) return 0;
@@ -1408,6 +1409,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     @Override
     public long delete(@NotNull MorphiaSession session, T aobj) throws ReferentialIntegrityViolationException{
+        requireWritable();
         Objects.requireNonNull(aobj, "Null argument passed to delete, api requires a non-null object");
         Objects.requireNonNull(aobj.getId(), "Null argument passed to delete, api requires a non-null id");
         Optional<T> oobj = this.findById(session,aobj.getId());
@@ -1462,6 +1464,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
    @Override
    public long updateActiveStatus (Datastore datastore, @PathParam("id") ObjectId id, ActiveStatus activeStatus) {
       Objects.requireNonNull(id, "id is required");
+      requireWritable();
       // Row gate: the caller must be able to read the row, and the write repeats the caller's
       // rule filters so it cannot reach a row that left scope between the read and the update.
       if (findById(datastore, id).isEmpty()) {
@@ -1922,6 +1925,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
       * field-policy restoration and the refName contract cannot drift apart across overloads.
       */
      private T prepareWrite(Datastore datastore, T entity, RefNameContract.WriteMode mode) {
+         requireWritable();
          T restored = (datastore instanceof MorphiaSession session)
                  ? restorePolicyExcludedFields(session, entity)
                  : restorePolicyExcludedFields(datastore, entity);
@@ -1931,6 +1935,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
      }
 
      private List<T> prepareWrites(Datastore datastore, List<T> entities, RefNameContract.WriteMode mode) {
+         requireWritable();
          List<T> restored = entities.stream()
                  .map(entity -> (datastore instanceof MorphiaSession session)
                          ? restorePolicyExcludedFields(session, entity)
@@ -2020,6 +2025,14 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
      }
 
      /**
+      * Runs before every write this repository makes (save, merge, field and bulk update, active
+      * status change, delete), ahead of any read or write, so a repository whose records this
+      * service does not own can refuse them all in one place. Default: writable.
+      */
+     protected void requireWritable() {
+     }
+
+     /**
       * Runs on field-pair and bulk updates so a repository can enforce value-level invariants on
       * updated fields. Default: nothing to validate.
       */
@@ -2027,6 +2040,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
      }
 
      private void assertFieldUpdateAllowed(String requestedPath) {
+         requireWritable();
          RefNameContract.enforceOnFieldUpdate(getPersistentClass(), requestedPath);
          for (String owned : serverOwnedFields()) {
              if (pathsOverlap(requestedPath, owned)) {
