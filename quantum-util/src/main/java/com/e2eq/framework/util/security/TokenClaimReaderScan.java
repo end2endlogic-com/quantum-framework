@@ -28,7 +28,7 @@ import java.util.regex.Pattern;
  *
  * <p>The scan is plain source scanning of claim names over {@code .java} and {@code .kt} main
  * sources (test sources and generated output are skipped). In a file that names a JWT API
- * ({@code JsonWebToken}, {@code getClaim(} ...) it counts exact string literals of a removed
+ * ({@code JsonWebToken}, {@code getClaim(} ...) or decodes one by hand ({@code getUrlDecoder}) it counts exact string literals of a removed
  * claim, {@code getGroups()}, {@code getAudience()} and {@code Claims.groups|aud|azp}, plus
  * {@code getClaim(<computed name>)} as the pseudo-claim {@code dynamic}. Counts per
  * (file, claim) must not exceed the allowlist, so the readers that exist today stay green and a
@@ -58,11 +58,12 @@ public final class TokenClaimReaderScan {
 
     private static final Set<String> SKIP_DIRS = Set.of(
             "node_modules", "venv", "dist", "build", "target", "coverage", "__pycache__",
-            "test", "tests", "__tests__", "e2e", "testing", "it", "generated");
+            "test", "tests", "__tests__", "testing", "generated");
     private static final Pattern TEST_FILE = Pattern.compile("(Test|Tests|IT)\\.(java|kt)$");
     private static final List<String> TOKEN_MARKERS = List.of(
             "JsonWebToken", "JwtClaims", "JWTClaimsSet", "DecodedJWT", "io.jsonwebtoken",
-            "getClaim(", "org.eclipse.microprofile.jwt", "Jwt.claims", "Jwt.upn", "Jwt.subject");
+            "getClaim(", "org.eclipse.microprofile.jwt", "Jwt.claims", "Jwt.upn", "Jwt.subject",
+            "getUrlDecoder");
     private static final String NAMES = String.join("|", REMOVED_CLAIMS);
     private static final Pattern LITERAL =
             Pattern.compile("(?<![\\w$.])([\"'])(" + NAMES + ")\\1");

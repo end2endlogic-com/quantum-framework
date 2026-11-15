@@ -49,6 +49,14 @@ class TokenClaimReaderGuardTest {
     }
 
     @Test
+    void countsReadsInFilesThatDecodeATokenByHand() {
+        Map<String, List<Integer>> hits = TokenClaimReaderScan.scanText(
+                "byte[] b = Base64.getUrlDecoder().decode(parts[1]);\n"
+                        + "String t = json.get(\"tenantId\").asText();");
+        assertEquals(Map.of("tenantId", List.of(2)), hits);
+    }
+
+    @Test
     void ignoresFilesThatNameNoTokenApi() {
         assertTrue(TokenClaimReaderScan.scanText("record R(String realm) { String k = \"realm\"; }").isEmpty());
     }
