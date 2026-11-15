@@ -1526,11 +1526,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
     static Response preAuthorizationFailure(Exception e) {
         if (e instanceof com.e2eq.framework.model.security.ApplicationAccessException refusal) {
             return Response.status(refusal.code().httpStatus())
-                .entity(apiError(refusal.code().name(), switch (refusal.code()) {
-                    case APPLICATION_SCOPE_REQUIRED -> "The request names no application, and this deployment requires one.";
-                    case APPLICATION_SCOPE_MISMATCH -> "The request's identity and resource name different applications.";
-                    default -> "The request was refused.";
-                }))
+                .entity(apiError(refusal.code().name(), refusal.publicMessage()))
                 .build();
         }
         return Response.status(Response.Status.INTERNAL_SERVER_ERROR)

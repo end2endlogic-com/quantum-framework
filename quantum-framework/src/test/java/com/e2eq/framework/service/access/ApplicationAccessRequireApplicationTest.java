@@ -7,6 +7,12 @@ import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.QuarkusTestProfile;
 import io.quarkus.test.junit.TestProfile;
 import io.quarkus.test.security.TestSecurity;
+import com.e2eq.framework.model.security.ApplicationAccessException;
+import com.e2eq.framework.model.securityrules.ResourceContext;
+import com.e2eq.framework.model.securityrules.RuleEffect;
+import com.e2eq.framework.rest.resources.ApplicationAccessExceptionMapper;
+import com.e2eq.framework.rest.models.RestError;
+import jakarta.inject.Inject;
 import io.restassured.RestAssured;
 import org.junit.jupiter.api.Test;
 
@@ -68,6 +74,31 @@ class ApplicationAccessRequireApplicationTest extends ApplicationAccessAuthority
             .then().extract().response();
         org.junit.jupiter.api.Assertions.assertEquals(400, response.getStatusCode(), response.asString());
         org.junit.jupiter.api.Assertions.assertEquals("APPLICATION_SCOPE_REQUIRED", response.jsonPath().getString("code"));
+    }
+
+    @Inject
+    com.e2eq.framework.security.runtime.RuleContext ruleContext;
+
+    @Test
+    void ruleEvaluationRefusesAPrincipalAndResourceThatNameDifferentApplications() {
+        PrincipalContext principal = signedIn(member("scope-mismatch", List.of(TENANT_A), List.of("admin")), TENANT_A);
+        ResourceContext otherApplication = new ResourceContext.Builder()
+            .withRealm(principal.getDefaultRealm()).withApplicationId("another-application")
+            .withArea("security").withFunctionalDomain("application_install").withAction("list").build();
+        ApplicationAccessException refusal = org.junit.jupiter.api.Assertions.assertThrows(ApplicationAccessException.class,
+            () -> ruleContext.checkRules(principal, otherApplication, RuleEffect.DENY));
+        org.junit.jupiter.api.Assertions.assertEquals(Code.APPLICATION_SCOPE_MISMATCH, refusal.code());
+    }
+
+    @Test
+    void theMapperKeepsApplicationScopeDetailOutOfTheResponse() {
+        jakarta.ws.rs.core.Response response = new ApplicationAccessExceptionMapper().toResponse(
+            new ApplicationAccessException(Code.APPLICATION_SCOPE_MISMATCH,
+                "Principal and resource application scopes do not match: access-console != another-application"));
+        org.junit.jupiter.api.Assertions.assertEquals(400, response.getStatus());
+        RestError error = (RestError) response.getEntity();
+        org.junit.jupiter.api.Assertions.assertEquals("APPLICATION_SCOPE_MISMATCH", error.getErrorCode());
+        org.junit.jupiter.api.Assertions.assertFalse(error.getReasonMessage().contains("another-application"), error.getReasonMessage());
     }
 
     private static PrincipalContext withApplication(PrincipalContext base) {

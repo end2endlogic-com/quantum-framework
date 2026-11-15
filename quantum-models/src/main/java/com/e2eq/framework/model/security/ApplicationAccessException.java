@@ -66,4 +66,16 @@ public class ApplicationAccessException extends IllegalArgumentException {
    public Code code() {
       return code;
    }
+
+   /**
+    * The message a REST caller may see. The application-scope refusals name server-selected
+    * scopes in their detail, so callers get a fixed sentence and the detail stays in the log.
+    */
+   public String publicMessage() {
+      return switch (code) {
+         case APPLICATION_SCOPE_REQUIRED -> "The request names no application, and this deployment requires one.";
+         case APPLICATION_SCOPE_MISMATCH -> "The request's identity and resource name different applications.";
+         default -> getMessage();
+      };
+   }
 }
