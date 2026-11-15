@@ -5,21 +5,29 @@ endif::[]
 [[mcp-server-and-client]]
 == MCP Server and Client
 
-The `quantum-mcp-server` module exposes the Query Gateway as a set of https://modelcontextprotocol.io[Model Context Protocol (MCP)] tools and resources, and provides an MCP client for calling external MCP tool providers. This enables AI assistants (Claude Desktop, Cursor, ChatGPT, and others) to discover and invoke your application's CRUDL operations, browse entity schemas, and receive query-building hints -- all through the standard MCP JSON-RPC protocol.
+The `quantum-mcp-server` module exposes the Query Gateway as a set of https://modelcontextprotocol.io[Model Context Protocol (MCP)] tools and resources, adds ontology discovery and defect tracking tools, and brings in an MCP client library for calling external MCP tool providers. This enables AI assistants (Claude Desktop, Cursor, ChatGPT, and others) to discover and invoke your application's CRUDL (create, read, update, delete, list) operations, browse entity schemas, and receive query-building hints -- all through the standard MCP JSON-RPC protocol.
 
 The module also includes a REST-based agent layer (`/api/agent/*`) that mirrors the same tool set for non-MCP integrations.
 
 === Module Overview
 
-`quantum-mcp-server` is a standalone Maven module with three key dependencies:
+`quantum-mcp-server` is a standalone Maven module. It does not depend on the `quantum-framework` aggregate; its key dependencies are:
 
 [cols="1,1,2", options="header"]
 |===
 | Dependency | Version | Purpose
 
-| `quantum-framework`
+| `quantum-query-rest`
 | `${quantum.version}`
-| Core framework (QueryGatewayResource, security, Morphia)
+| Query Gateway endpoint owner (`QueryGatewayResource`), with its security and Morphia dependencies
+
+| `quantum-rest-core`
+| `${quantum.version}`
+| `BaseResource`, used by the defect REST resource
+
+| `quantum-ontology-mongo`
+| `${quantum.version}`
+| Ontology edge reads (`ComputedEdgeReader`) and the per-realm ontology registry, used by the ontology tools
 
 | `quarkus-mcp-server-http`
 | 1.9.1
@@ -44,20 +52,25 @@ Add the module to your application's POM:
 [[mcp-server]]
 === MCP Server
 
-The MCP server exposes the Query Gateway as six tools and three resources at the `/mcp` endpoint. MCP clients discover these automatically via the `tools/list` and `resources/list` JSON-RPC methods.
+The MCP server exposes 18 tools and three resources at the `/mcp` endpoint: twelve Query Gateway tools (`McpGatewayTools`), two ontology tools (`McpOntologyTools`, see <<ontology-tools>>) and four defect tools (`McpDefectTools`, see <<defect-tools>>). MCP clients discover these automatically via the `tools/list` and `resources/list` JSON-RPC methods.
+
+The transport comes from the Quarkiverse `quarkus-mcp-server-http` extension: Streamable HTTP at `/mcp`, plus the legacy HTTP/SSE transport. The root path is the extension's build-time property `quarkus.mcp.server.http.root-path` (default `/mcp`).
 
 ==== Security
 
-The MCP server and the agent REST API require an authorized user. All endpoints and tools are protected by Quarkus Security.
+The MCP server and the agent REST API require an authenticated caller. Every tool and resource class (`McpGatewayTools`, `McpOntologyTools`, `McpDefectTools`, `McpSchemaResources`, `McpQueryHintsResource`) and `AgentResource` carry the Quarkus Security `@Authenticated` annotation.
 
 * **REST API (`/api/agent/*`):** Requires a valid Bearer JWT token in the `Authorization` header.
 * **MCP Endpoint (`/mcp`):** The MCP protocol transport (Streamable HTTP or SSE) must include the same authentication mechanism (typically a `Authorization: Bearer <token>` header) as other REST APIs.
+* **Realm:** A tool's optional `realm` argument does not switch tenants. For an authenticated caller it must equal the caller's effective realm (the principal's default realm; for the gateway tools, the principal's realm override for the `integration` area when one is set); any other value is refused. Omit it unless you want that check.
 
 You can generate a long-lived service token for use with the MCP server using the xref:{doc-root}/user-guide/auth.adoc#using-the-quantum-cli[Quantum CLI].
 
 ==== Tools
 
-Tools are defined in `McpGatewayTools` using the Quarkiverse `@Tool` and `@ToolArg` annotations. Each tool is protected with `@Authenticated` and delegates to `AgentExecuteHandler`, which routes to the `QueryGatewayResource` -- reusing the same security, realm resolution, and query execution as the REST API.
+The gateway tools are defined in `McpGatewayTools` using the Quarkiverse `@Tool` and `@ToolArg` annotations. Each tool delegates to `AgentExecuteHandler`, which routes to the `QueryGatewayResource` -- reusing the same security, realm resolution, and query execution as the REST API.
+
+Every tool returns a JSON string. A gateway tool returns the body of the matching gateway response; the HTTP status is not carried over, so check the body for an `error` field. An exception thrown by the gateway (for example a refused realm) is returned as `{"error":"ExecutionFailed","message":"..."}`.
 
 [NOTE]
 ====
@@ -70,9 +83,11 @@ deny-wins `excludedFields` at the MongoDB level. The gateway **fails closed** (H
 agent never executes an ungoverned query. `query_delete` returns "not found" for an id
 outside the caller's DataDomain rather than revealing that the row exists.
 
-`expand(...)` (aggregation) execution is currently disabled: a `query_find` with
-`expand(...)` returns HTTP 501 because the aggregation path is not yet governed by
-row- and field-level security. See
+`expand(...)` (aggregation) execution is off by default: with
+`feature.queryGateway.execution.enabled=false` a `query_find` with `expand(...)` returns the
+gateway's 501 body (`{"error":"NotImplemented", ...}`). When the property is `true`, the
+aggregation runs under the root policy and every expand target under its own row and field
+policy; a target whose policy cannot be resolved is refused (`ExpandPolicyUnresolved`). See
 xref:{doc-root}/user-guide/planner-and-query-gateway.adoc#query-gateway-governance[Planner and QueryGateway: row- and field-level governance].
 ====
 
@@ -102,37 +117,65 @@ xref:{doc-root}/user-guide/planner-and-query-gateway.adoc#query-gateway-governan
 | Count entities matching a BIAPI query
 
 | `query_export`
-| Export entities to a stream (CSV) matching a BIAPI query and column selection
+| Export entities matching a BIAPI query as CSV; inline for small results, written to a server-side temporary file for large ones
 
 | `query_import_analyze`
-| Analyze a CSV file for import, returning a preview of rows and identifying potential errors
+| Analyze CSV content for import, returning a session id, row counts and a preview of rows with their intent and validation errors
 
 | `query_import_rows`
-| List analyzed import rows from a session (supports filtering by error)
+| List analyzed import rows from a session (supports paging and filtering by error or intent)
 
 | `query_import_commit`
 | Commit an analyzed import session, persisting the valid rows to the database
 
 | `query_import_cancel`
-| Cancel an import session and clean up temporary data
+| Cancel an import session and discard its analyzed rows
 |===
 
 ===== Tool parameters
 
-`query_find` accepts these arguments:
+Required arguments are marked; all others are optional. `rootType` is an entity type simple name or fully qualified class name (use `query_rootTypes` to discover valid values).
 
-[cols="1,1,3", options="header"]
+[cols="1,3", options="header"]
 |===
-| Parameter | Type | Description
+| Tool | Arguments
 
-| `rootType` | string | Entity type simple name or FQCN (use `query_rootTypes` to discover)
-| `query` | string | BIAPI query string (e.g. `status:ACTIVE && region:West`)
-| `realm` | string | Optional tenant realm (defaults to caller's realm)
-| `limit` | integer | Optional max results (default 50)
-| `skip` | integer | Optional offset for pagination (default 0)
+| `query_rootTypes`
+| None.
+
+| `query_plan`
+| `rootType` (required), `query` (required).
+
+| `query_find`
+| `rootType` (required); `query` (BIAPI query string, e.g. `status:ACTIVE && region:West`; omit for all rows the caller may see); `realm`; `limit` (integer, default 50); `skip` (integer, default 0). The tool has no sort argument; the REST and `/api/agent/execute` forms accept `sort`.
+
+| `query_count`
+| `rootType` (required); `query`; `realm`. A query with `expand(...)` is rejected.
+
+| `query_save`
+| `rootType` (required); `entity` (required, a JSON object passed as a string; field names must match the type); `realm`. An entity with an id is updated, one without is inserted. Unparseable JSON returns `{"error":"InvalidEntity", ...}`.
+
+| `query_delete`
+| `rootType` (required); `id` (required, ObjectId hex string); `realm`.
+
+| `query_deleteMany`
+| `rootType` (required); `query` (required); `realm`. A query with `expand(...)` is rejected, and so is one that matches more than `quantum.queryGateway.deleteMany.maxMatches` entities.
+
+| `query_export`
+| `rootType` (required); `query`; `columns` (comma-separated field names); `realm`; `limit` (default: all rows); `skip` (default 0). The response has `mode` `inline` with `csvContent`, or `file` with `csvFilePath` when the row count exceeds `quantum.queryGateway.export.inlineThreshold`.
+
+| `query_import_analyze`
+| `rootType` (required); `csvContent` (required, CSV text including a header row); `columns` (required, comma-separated entity field names in CSV column order; headers are not inferred); `realm`; `fieldSeparator` (default `,`); `quoteChar` (default `"`).
+
+| `query_import_rows`
+| `sessionId` (required, from `query_import_analyze`); `rootType` (required); `realm`; `skip` (default 0); `limit` (default 50); `onlyErrors` (boolean); `intent` (`INSERT`, `UPDATE` or `SKIP`).
+
+| `query_import_commit`
+| `sessionId` (required); `rootType` (required); `realm`. Returns `imported` and `failed` counts.
+
+| `query_import_cancel`
+| `sessionId` (required); `rootType` (required); `realm`.
 |===
-
-`query_save` accepts `rootType`, `entity` (JSON object matching the schema), and optional `realm`. `query_delete` accepts `rootType`, `id` (ObjectId hex), and optional `realm`. `query_deleteMany` accepts `rootType`, `query`, and optional `realm`.
 
 ==== Resources
 
@@ -143,7 +186,7 @@ Resources are defined in `McpSchemaResources` and `McpQueryHintsResource` using 
 | Resource URI | Description
 
 | `quantum://schema`
-| Lists all available root types with class name, simple name, and collection name
+| Lists all available root types with class name, simple name, and collection name (the same response as `query_rootTypes`). There is no per-type schema resource; use `GET /api/agent/schema/{rootType}` for the fields of one type.
 
 | `quantum://query-hints`
 | BIAPI query grammar summary, example queries by intent, and tips (expand, wildcards, ontology)
@@ -154,7 +197,7 @@ Resources are defined in `McpSchemaResources` and `McpQueryHintsResource` using 
 
 ==== Connecting an MCP Client
 
-Any MCP-compatible client can connect to the `/mcp` endpoint. Example configuration for Claude Desktop (`claude_desktop_config.json`):
+Any MCP-compatible client can connect to the `/mcp` endpoint. The client must send the caller's credentials (typically an `Authorization: Bearer <token>` header) with every request; how to set a header depends on the client. Example configuration for Claude Desktop (`claude_desktop_config.json`):
 
 [source,json]
 ----
@@ -171,7 +214,7 @@ For Cursor, add the server URL in Settings > MCP Servers.
 
 Once connected, the client can:
 
-1. Call `tools/list` to discover the six gateway tools
+1. Call `tools/list` to discover the gateway, ontology and defect tools
 2. Call `resources/list` to discover schema and hint resources
 3. Call `resources/read` with `quantum://query-hints` to learn the BIAPI query syntax
 4. Call `tools/call` with `query_rootTypes` to see what entity types are available
@@ -180,7 +223,7 @@ Once connected, the client can:
 [[mcp-client]]
 === MCP Client
 
-The MCP client side uses the Quarkiverse LangChain4j MCP extension (`quarkus-langchain4j-mcp`) to connect to external MCP servers and consume their tools. Use the MCP client when you need to:
+The MCP client side is the Quarkiverse LangChain4j MCP extension (`quarkus-langchain4j-mcp`), which the module declares as a dependency so that an application can connect to external MCP servers and consume their tools. The module itself defines no MCP clients and no `quarkus.langchain4j.mcp.*` configuration; everything in this section is configuration and code you add to your application, using that extension's API. Use the MCP client when you need to:
 
 * Integrate with external tool providers (e.g. Helix MCP, Brain, HelixAI, or any MCP-compliant server)
 * Let your AI services discover and invoke tools from those servers at runtime
@@ -390,6 +433,10 @@ curl -sS -X POST \
 
 The response shape matches the corresponding Query Gateway REST endpoint (e.g. the Collection envelope for `query_find`).
 
+The request body fields are `tool` (or `name`) and `arguments` (or `params`). `sessionId` and `traceId` are accepted but are not currently used by the handler. The tool names are the twelve `query_*` gateway tools; the ontology and defect tools are MCP-only. A missing tool name returns HTTP 400 `ToolRequired`, and an unknown one HTTP 400 `UnknownTool` with the list of `availableTools`.
+
+`GET /api/agent/tools` returns `{"tools": [...], "count": 12}`. Each tool entry has `name`, `description`, `parameters` (a list of `{name, type, description}`), `area` (`integration`) and `domain` (`query`). The catalog is a static list; it is not filtered by the caller's permissions, and listing a tool grants nothing: each execution still passes the gateway's own checks.
+
 [[tenant-agent-config]]
 === Per-Tenant Agent Configuration
 
@@ -415,22 +462,27 @@ Configuration properties:
 
 | `quantum.agent.tenant.<realm>.runAsUserId`
 | string
-| Optional userId whose security context is used for tool execution
+| Optional userId intended as the security context for tool execution. Read into `TenantAgentConfig`; not applied by `AgentExecuteHandler` in this release (see below).
 
 | `quantum.agent.tenant.<realm>.enabledTools`
 | comma-separated
-| Optional list of tool names to expose (all six enabled when empty)
+| Optional list of tool names that `GET /api/agent/tools?realm=<realm>` returns (all twelve when unset or empty). It filters discovery only.
 
 | `quantum.agent.tenant.<realm>.maxFindLimit`
 | integer
-| Optional maximum number of results for `query_find`
+| Optional maximum number of results for `query_find`. Read into `TenantAgentConfig`; not applied in this release.
 |===
 
-The default implementation (`PropertyTenantAgentConfigResolver`) reads these from `application.properties` or environment variables. You can replace it by providing a CDI bean implementing `TenantAgentConfigResolver`.
+The default implementation (`PropertyTenantAgentConfigResolver`) reads these from `application.properties` or environment variables. None of the keys has a default; a realm with none of them set has no tenant configuration. You can replace the resolver by providing a CDI bean implementing `TenantAgentConfigResolver`.
+
+[IMPORTANT]
+====
+In this release the tenant configuration only affects discovery. `AgentToolsProvider` uses `enabledTools` to filter `GET /api/agent/tools` when a `realm` query parameter is given. `AgentExecuteHandler` and the MCP tools do not consult the tenant configuration: a tool left out of `enabledTools` can still be executed by a caller whose permissions allow it, `maxFindLimit` does not cap results, and execution always runs as the authenticated caller. Use permission rules to restrict what a caller may do.
+====
 
 ==== Run-As Principal
 
-When `runAsUserId` is configured, tool execution runs under that user's security context. To enable this, provide a CDI bean implementing `RunAsPrincipalResolver`:
+`RunAsPrincipalResolver` is the extension point intended for `runAsUserId`: given a realm and a userId it returns the `PrincipalContext` to run under. The interface exists, but nothing in the framework calls it yet, so providing a bean has no effect on execution today. Its shape is:
 
 [source,java]
 ----
@@ -486,7 +538,7 @@ Each `PromptStep` has `order` (int), `role` (string: `"system"` or `"user"`), an
 
 ==== CRUD Endpoints
 
-All endpoints are at `/api/agent/config` and require a `realm` query parameter.
+All endpoints are at `/api/agent/config` (`AgentConfigResource`, in the `quantum-framework` module, functional area `integration`, domain `agentConfig`) and require a `realm` query parameter; a request without it returns HTTP 400.
 
 [cols="1,2,3", options="header"]
 |===
@@ -535,7 +587,7 @@ curl -sS -X POST \
   }'
 ----
 
-NOTE: Agent configuration complements the property-based tenant configuration (<<tenant-agent-config>>). Properties set operator-level overrides (runAsUserId, maxFindLimit); Agent entities store per-use-case personas and tool filters that can be managed via API.
+NOTE: Agent configuration complements the property-based tenant configuration (<<tenant-agent-config>>). An `Agent` entity stores a per-use-case persona and tool list that can be managed via API. The framework stores and returns it; the MCP server and `/api/agent/execute` do not read `Agent` entities, so applying `enabledTools` or the prompt context is up to the application that runs the agent.
 
 [[mcp-architecture]]
 === Architecture
@@ -552,6 +604,8 @@ The following diagram shows how the MCP server, agent REST API, and MCP client r
                   | McpGatewayTools |              | AgentResource  |
                   | McpSchema*      |              +--------+-------+
                   | McpQueryHints*  |                       |
+                  | McpOntologyTools|                       |
+                  | McpDefectTools  |                       |
                   +-------+--------+                       |
                           |                                |
                           +---------- shared ----------+   |
@@ -575,14 +629,14 @@ The following diagram shows how the MCP server, agent REST API, and MCP client r
 
 Key design points:
 
-- **Shared execution path**: Both MCP tools and REST agent endpoints delegate to `AgentExecuteHandler`, which routes to `QueryGatewayResource`. Security rules, realm resolution, and query execution are identical regardless of entry point.
-- **Zero reverse dependencies**: The `quantum-mcp-server` module depends on `quantum-framework` but the framework has no knowledge of MCP. Applications that do not need MCP simply omit this module.
-- **Tenant isolation**: Realm-scoped execution, optional per-tenant tool filtering, and run-as support ensure multi-tenant safety.
+- **Shared execution path**: Both the MCP gateway tools and the REST agent endpoint delegate to `AgentExecuteHandler`, which routes to `QueryGatewayResource`. Security rules, realm resolution, and query execution are identical regardless of entry point. The ontology tools read through `ComputedEdgeReader` and the realm's ontology registry, and the defect tools through `DefectRepo`; they do not pass through `AgentExecuteHandler`.
+- **Zero reverse dependencies**: The `quantum-mcp-server` module depends on `quantum-query-rest`, `quantum-rest-core` and `quantum-ontology-mongo`; none of them knows about MCP. Applications that do not need MCP simply omit this module.
+- **Tenant isolation**: Execution is bound to the authenticated caller's effective realm and DataDomain. Per-tenant tool filtering applies to discovery only (see <<tenant-agent-config>>).
 
 [[ontology-tools]]
 === Ontology Tools
 
-In addition to the six gateway tools, the MCP server exposes two ontology discovery tools via `McpOntologyTools`:
+In addition to the twelve gateway tools, the MCP server exposes two ontology discovery tools via `McpOntologyTools`:
 
 [cols="1,3", options="header"]
 |===
@@ -597,6 +651,50 @@ In addition to the six gateway tools, the MCP server exposes two ontology discov
 
 These tools allow AI assistants to explore the entity relationship graph.
 For example, an agent can discover that an `Order` entity has a `placedInOrg` relationship to an `Organization`, then use `query_find` with appropriate filters to retrieve related data.
+
+`query_relationships` arguments:
+
+[cols="1,1,3", options="header"]
+|===
+| Parameter | Type | Description
+
+| `entityId` | string | Required. The id the entity has in the edge store (its ObjectId hex string or its refName).
+| `direction` | string | `out` (edges from the entity), `in` (edges to it) or `both`. Default `both`.
+| `predicate` | string | Optional. Only return edges with this predicate.
+| `realm` | string | Optional. Must equal the caller's effective realm.
+|===
+
+The result is `{"entityId", "direction", "count", "edges": [...]}`. Each edge has `direction` (`outgoing` or `incoming`), `predicate`, `src`, `srcType`, `dst`, `dstType`, `inferred`, and `derived` (true for an edge computed by a provider rather than read from the store). Edges are read through `ComputedEdgeReader`, so edges of LAZY and ONDEMAND computed relations (relations whose edges are computed when read instead of being stored) are included when their providers are registered.
+
+`query_predicates` arguments: `domainFilter` (only predicates whose domain, the source type, is this type), `rangeFilter` (only predicates whose range, the target type, is this type) and `realm`; all optional, and the two filters are case-insensitive. The result is `{"count", "predicates": [...]}` sorted by name; each predicate has `name`, `domain`, `range`, `transitive`, `symmetric`, `functional`, `inferred`, and, when declared, `inverseOf` and `subPropertyOf`.
+
+Security: both tools require an authenticated principal context with a default realm; `query_relationships` also requires the principal's DataDomain and reads edges only in that DataDomain. A `realm` argument that differs from the caller's effective realm is refused, and a `realm` argument cannot stand in for a missing principal. Failures are returned as JSON, for example `{"error":"RelationshipQueryFailed","message":"Requested realm 'tenant-b' does not match authenticated effective realm 'tenant-a'"}` or `{"error":"PredicateQueryFailed", ...}`; `query_predicates` returns `{"error":"NoRegistry", ...}` when the realm has no ontology registry.
+
+[[defect-tools]]
+=== Defect Tools
+
+`McpDefectTools` lets an agent file and triage defects over MCP. A defect is a `Defect` entity (collection `defect`, functional area and domain `DEFECT`), persisted through `DefectRepo` like any other Quantum entity, so it is realm-scoped, audited and subject to the caller's permission rules. The same repository is exposed as REST CRUD by `DefectResource` at `/mcp/defects`.
+
+NOTE: An application that hosts these tools must add the package `com.e2eq.framework.mcp.defect` to `quarkus.morphia.packages` so that the entity is mapped.
+
+[cols="1,3", options="header"]
+|===
+| Tool Name | Arguments and behaviour
+
+| `defect_create`
+| `title` (required), `description` (required), `severity` (`low`, `medium`, `high` or `critical`; default `medium`, and any other value is stored as `medium`), `area`, `component`, `reporter` (defaults to the caller's userId, else subject id). The defect gets a generated refName `defect-<uuid>` and status `open`. Returns the created defect.
+
+| `defect_list`
+| Optional filters `status` (`open`, `in-progress`, `resolved`, `closed`), `severity`, `area`; each is a case-insensitive exact match. Returns `{"count", "defects": [...]}`.
+
+| `defect_get`
+| `refName` (required). Returns the defect, or `{"error":"DefectNotFound", ...}`.
+
+| `defect_update`
+| `refName` (required); `status`, `resolution`, `assignedTo`, `severity`. Only non-blank arguments are applied. The status value is stored as given; it is not checked against the four status names. Returns the updated defect.
+|===
+
+A defect is returned with the fields `refName`, `title`, `description`, `severity`, `status`, `area`, `component`, `reporter`, `assignedTo`, `resolution`, `relatedRefs` and `tags`. Failures are returned as JSON with `error` set to `DefectCreateFailed`, `DefectListFailed`, `DefectGetFailed` or `DefectUpdateFailed`.
 
 [[claude-integration]]
 === Integrating with Claude
@@ -626,30 +724,29 @@ The Quantum tools appear in the tool picker and Claude can call them during conv
 
 Claude Code discovers MCP servers from project-level or user-level configuration.
 
-**Project-level** -- create `.claude/settings.json` in your repository root:
+**Project-level** -- create `.mcp.json` in your repository root. The `headers` entry carries the bearer token the server requires; `${QUANTUM_TOKEN}` is read from the environment:
 
 [source,json]
 ----
 {
   "mcpServers": {
     "quantum-mcp": {
-      "url": "http://localhost:8080/mcp"
+      "type": "http",
+      "url": "http://localhost:8080/mcp",
+      "headers": {
+        "Authorization": "Bearer ${QUANTUM_TOKEN}"
+      }
     }
   }
 }
 ----
 
-**User-level** -- edit `~/.claude/settings.local.json` to add the server globally:
+**User-level** -- add the server with the CLI instead:
 
-[source,json]
+[source,bash]
 ----
-{
-  "mcpServers": {
-    "quantum-mcp": {
-      "url": "http://localhost:8080/mcp"
-    }
-  }
-}
+claude mcp add --transport http quantum-mcp http://localhost:8080/mcp \
+  --header "Authorization: Bearer $QUANTUM_TOKEN"
 ----
 
 Once configured, Claude Code can use the Quantum tools in any conversation:
@@ -711,29 +808,29 @@ Understanding how these concepts relate helps when extending the framework or bu
 | MCP Tool
 | `@Tool`-annotated method
 | Each MCP tool is a Java method annotated with `@Tool` (Quarkiverse MCP Server extension) in `McpGatewayTools`.
-Tools are code-defined and discovered at startup via classpath scanning -- there is no database-backed tool registry.
+Tools are defined in code (`McpGatewayTools`, `McpOntologyTools`, `McpDefectTools`) and registered by the extension at build time -- there is no database-backed tool registry.
 
 | MCP Tool Name
 | Method-derived name
-| The tool name used in MCP `tools/call` (e.g., `query_find`) is defined in the `@Tool` annotation or derived from the method name.
+| The tool name used in MCP `tools/call` (e.g., `query_find`) is the Java method name; the `@Tool` annotations in this module set only a description.
 
 | MCP `tools/call`
 | `AgentExecuteHandler.execute(tool, arguments)`
-| Both the MCP server (`McpGatewayTools`) and the REST agent endpoint (`POST /api/agent/execute`) delegate to the same handler.
+| Both the MCP gateway tools (`McpGatewayTools`) and the REST agent endpoint (`POST /api/agent/execute`) delegate to the same handler. The ontology and defect tools are not routed through it.
 
 | MCP Resource
 | `SchemaService` / `QueryHintsProvider`
-| MCP resources (`quantum://schema`, `quantum://query-hints`, `quantum://permission-hints`) are backed by the same provider beans that serve the REST `/api/agent/schema` and `/api/agent/query-hints` endpoints.
+| MCP resources (`quantum://schema`, `quantum://query-hints`, `quantum://permission-hints`) are backed by the same code that serves the REST `/api/agent/schema`, `/api/agent/query-hints` and `/api/agent/permission-hints` endpoints (`QueryGatewayResource.listRootTypes`, `QueryHintsProvider`, `PermissionHintsProvider`).
 
 | MCP Client
 | `quarkus-langchain4j-mcp`
 | The framework can also _consume_ tools from external MCP servers.
-External MCP servers are configured via `ToolProviderConfig` (connection details) and `quarkus.langchain4j.mcp.*` properties.
+External MCP clients are configured with `quarkus.langchain4j.mcp.*` properties. The `ToolProviderConfig` entity (collection `tool_provider_configs`: `refName`, `displayName`, `providerType` `REST` or `MCP`, `baseUrl`) lets an application store connection details for external providers; the framework does not create MCP clients from it.
 
 | Agent Config
 | `Agent` entity
 | An `Agent` is a realm-scoped configuration envelope that pairs an LLM reference with a system prompt (PromptSteps) and a tool filter (enabledTools).
-Managed via `/api/agent/config/*` CRUD API.
+Managed via `/api/agent/config/*` CRUD API; the framework stores it but does not apply it.
 |===
 
 ==== Execution Flow Comparison
@@ -757,7 +854,7 @@ McpGatewayTools                    AgentResource
                    MongoDB
 ....
 
-Security (realm resolution, permission checks, `@FunctionalAction`) is enforced identically at the `QueryGatewayResource` level, regardless of whether the request came through MCP or REST.
+Row- and field-level governance (realm resolution, DataDomain scope, rule filters, excluded fields) is enforced at the `QueryGatewayResource` level, regardless of whether the request came through MCP or REST.
 
 [[end-to-end-example]]
 === End-to-End Example: Claude Querying a Supply Chain Application
@@ -796,20 +893,17 @@ quarkus.smallrye-jwt.enabled=true
 mp.jwt.verify.publickey.location=publicKey.pem
 mp.jwt.verify.issuer=https://myapp.example.com/issuer
 mp.jwt.verify.audiences=my-api-client
-auth.jwt.secret=${JWT_SECRET:dev-secret-change-in-prod}
-auth.jwt.expiration=60
-auth.jwt.refresh-expiration=120
 
-# --- Per-tenant agent configuration ---
-# The "default" realm: agent runs as a service user, limited to read-only tools
-quantum.agent.tenant.default.runAsUserId=agent-svc@mycompany.com
+# --- Query Gateway ---
+# Needed for query_find with expand(...); off by default
+feature.queryGateway.execution.enabled=true
+
+# --- Per-tenant agent configuration (optional; filters GET /api/agent/tools only) ---
 quantum.agent.tenant.default.enabledTools=query_rootTypes,query_plan,query_find,query_count
-quantum.agent.tenant.default.maxFindLimit=200
-
-# The "acme-corp" realm: full CRUDL access
-quantum.agent.tenant.acme-corp.runAsUserId=bot@acme-corp.com
 quantum.agent.tenant.acme-corp.enabledTools=query_rootTypes,query_plan,query_find,query_count,query_save,query_delete
 ----
+
+The tenant properties shape what `GET /api/agent/tools?realm=...` lists; they do not restrict what the MCP tools execute (see <<tenant-agent-config>>). To make an agent read-only, give its identity permission rules that allow only the read actions.
 
 ==== Step 3: Start the Application
 
@@ -835,14 +929,18 @@ The MCP endpoint is available at `http://localhost:8080/mcp`.
 }
 ----
 
-**Claude Code** -- create `.claude/settings.json` in the project root:
+**Claude Code** -- create `.mcp.json` in the project root:
 
 [source,json]
 ----
 {
   "mcpServers": {
     "supply-chain": {
-      "url": "http://localhost:8080/mcp"
+      "type": "http",
+      "url": "http://localhost:8080/mcp",
+      "headers": {
+        "Authorization": "Bearer ${QUANTUM_TOKEN}"
+      }
     }
   }
 }
@@ -894,14 +992,14 @@ ____
 * `rootType`: `"Order"`
 * `query`: `"expand(customer) && warehouseRef:ATL-WH-01"`
 
-Then calls `query_find`:
+Then calls `query_find` (this needs `feature.queryGateway.execution.enabled=true`, and `customer` must be an `EntityReference` field annotated with `@ReferenceTarget`). The `query_find` tool has no sort argument, so the rows come back in the store's order:
 
 * `rootType`: `"Order"`
 * `query`: `"expand(customer) && warehouseRef:ATL-WH-01"`
 * `limit`: `5`
 
 ____
-Here are the 5 most recent orders for ATL-WH-01, with customer details:
+Here are 5 orders for ATL-WH-01, with customer details:
 
 1. ORD-9921 -- Acme Corp (acme@example.com), 12 items, $2,340
 2. ORD-9918 -- Beta Industries (beta@example.com), 3 items, $890
@@ -932,7 +1030,7 @@ ____
 ....
 Claude Desktop / Claude Code
     |
-    | (1) MCP tools/list -> discovers 9 tools + 3 resources
+    | (1) MCP tools/list -> discovers 18 tools; resources/list -> 3 resources
     |
     | (2) MCP resources/read "quantum://query-hints"
     |     -> learns BIAPI query syntax, expand(), ontology edges
@@ -950,15 +1048,15 @@ Claude Desktop / Claude Code
     |
     | (5) MCP tools/call "query_relationships" { entityId, direction }
     |     -> McpOntologyTools.query_relationships(entityId, direction, ...)
-    |        -> OntologyEdgeRepo.findBySrc() / findByDst()
-    |           -> MongoDB edges collection
+    |        -> ComputedEdgeReader.relationshipEdgesFromSrc() / relationshipEdgesToDst()
+    |           -> stored edges plus LAZY/ONDEMAND computed edges
     |
     v
 JSON response serialized and returned to Claude
 ....
 
-At every step, the Quantum security filter validates the caller's identity, resolves the realm, and applies permission rules.
-The agent never bypasses `@FunctionalAction` checks or data scoping.
+At every step the caller must be authenticated, the realm is bound to the caller's effective realm, and the gateway applies the caller's DataDomain scope, rule filters and field exclusions.
+A gateway call without an established security context is refused (`SecurityContextMissing`) rather than run unscoped.
 
 ==== Adding Ontology Context for Richer Queries
 
@@ -994,9 +1092,17 @@ Optional properties:
 |===
 | Property | Default | Description
 
-| `quarkus.mcp.server.traffic-logging`
-| `NONE`
-| Set to `ALL` to log MCP JSON-RPC messages for debugging
+| `quarkus.mcp.server.http.root-path`
+| `/mcp`
+| Root path of the MCP HTTP endpoints (Quarkiverse MCP Server extension; fixed at build time)
+
+| `quarkus.mcp.server.traffic-logging.enabled`
+| `false`
+| Set to `true` to log MCP JSON-RPC messages for debugging (Quarkiverse MCP Server extension)
+
+| `quarkus.mcp.server.traffic-logging.text-limit`
+| `200`
+| Number of characters of each message that traffic logging writes
 
 | `feature.queryGateway.execution.enabled`
 | `false`
@@ -1004,7 +1110,27 @@ Optional properties:
 
 | `quantum.queryGateway.deleteMany.maxMatches`
 | `2000`
-| Maximum entities that `query_deleteMany` will delete in a single call
+| Maximum entities that `query_deleteMany` will delete in a single call; a query matching more is rejected and nothing is deleted
+
+| `quantum.queryGateway.export.inlineThreshold`
+| `10000`
+| `query_export` returns CSV inline when the governed row count is at or below this value, and writes a server-side temporary file above it
+
+| `quantum.ontology.expand.max-targets`
+| `1000`
+| Maximum distinct targets one page may reach through `expand(@relation)` before the query is refused
+
+| `quantum.ontology.expand.max-edges`
+| `10000`
+| Maximum edges read per page and relation for `expand(@relation)` before the query is refused
+
+| `quantum.agent.tenant.<realm>.enabledTools`
+| (unset)
+| Tool names listed by `GET /api/agent/tools?realm=<realm>`; see <<tenant-agent-config>>
+
+| `quarkus.morphia.packages`
+| (application-specific)
+| Must include `com.e2eq.framework.mcp.defect` for the defect tools
 |===
 
 See xref:{doc-root}/user-guide/ai-agent-integration.adoc[AI Agent Integration] for the full agent API design and additional scenarios.

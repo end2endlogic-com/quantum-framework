@@ -211,6 +211,8 @@ The framework exposes authenticated tenant-scoped endpoints at `/settings/email-
 | Render either an existing template by `templateKey` or inline template content
 |===
 
+The resource is mapped to functional area `SYSTEM`, functional domain `EMAIL_TEMPLATE`, like the `EmailTemplate` model. Its endpoints carry the actions `LIST`, `VIEW` (get and preview), `CREATE`, `UPDATE` and `DELETE`, so a policy that governs template administration names those actions.
+
 Example create request:
 
 [source,json]

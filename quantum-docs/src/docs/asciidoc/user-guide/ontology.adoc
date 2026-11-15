@@ -81,11 +81,11 @@ Quantum provides three cooperating modules that make ontology modeling practical
     - New edges to add (implied by property chains, inverses, or other rules).
 
 - quantum-ontology-mongo (package com.e2eq.ontology.mongo)
-  - EdgeDao: A thin DAO around an edges collection in Mongo. Each edge contains tenantId, src, predicate p, dst, inferred flag, provenance, and timestamp.
+  - OntologyEdgeRepo: The repository over the `edges` collection in Mongo. Each edge carries the DataDomain of the entity it belongs to, src, predicate p, dst, an inferred flag, provenance, and a timestamp.
   - OntologyMaterializer: Runs the Reasoner for an entity snapshot and upserts the inferred edges, so queries can be rewritten to simple in/in eq filters.
 
 - quantum-ontology-policy-bridge (package com.e2eq.ontology.policy)
-  - ListQueryRewriter: Takes a base query and rewrites it using the EdgeDao to filter by the set of source entity ids that have a specific predicate to a given destination.
+  - ListQueryRewriter: Takes a base query and rewrites it using the OntologyEdgeRepo to filter by the set of source entity ids that have a specific predicate to a given destination.
   - This integrates ontology edges with RuleContext or policy decisions: policy asks for entities related by a predicate; the rewriter converts that into an efficient Mongo query.
 
 - quantum-ontology-policy-bridge (package com.e2eq.ontology.policy.rest)
@@ -93,7 +93,7 @@ Quantum provides three cooperating modules that make ontology modeling practical
 
 These modules let you define your ontology (core), materialize derived relations (mongo), and leverage them in access and list queries (policy bridge).
 
-NOTE: In Quarkus, all ontology components are CDI-managed. Inject EdgeDao and services via @Inject; indexes are ensured automatically at startup by OntologyMongoProducers. Configure collection/database with properties ontology.mongo.database and ontology.mongo.collection.edges.
+NOTE: In Quarkus, all ontology components are CDI-managed. Inject `OntologyEdgeRepo` and the services with `@Inject`. Edges are stored in the `edges` collection of the realm's database; the indexes are declared on the `OntologyEdge` entity.
 
 === Modeling guidance: from object fields to predicates
 
@@ -118,22 +118,22 @@ NOTE: In Quarkus, all ontology components are CDI-managed. Inject EdgeDao and se
 - Ontology edge example (resilient/fast)
   - Define predicates: placedBy(order, user), memberOf(user, org), orgAncestor(org, org). Define chain placedBy ∘ memberOf ⇒ placedInOrg.
   - Materialize edges: (order --placedInOrg--> org). Each org stores its ancestor closure as orgAncestor edges (non-transitive; see <<regular-chains-and-hierarchies>>).
-  - Query becomes: where order._id in EdgeDao.srcIdsByDst(tenantId, "placedInOrg", orgX).
+  - Query becomes: where order._id in OntologyEdgeRepo.srcIdsByDst(dataDomain, "placedInOrg", orgX).
   - To include parents, add the chain placedBy ∘ memberOf ∘ orgAncestor ⇒ placedUnderOrg and declare placedInOrg a subPropertyOf placedUnderOrg; then query placedUnderOrg.
 
 === Migration: from @Reference to ontology edges
 
 - Start by introducing predicates alongside existing references; do not remove references immediately.
 - Materialize edges for hot read paths; keep provenance so you can reconstruct.
-- Gradually update queries (list screens, policy filters) to use ListQueryRewriter with EdgeDao instead of deep traversals or $lookup.
+- Gradually update queries (list screens, policy filters) to use ListQueryRewriter with OntologyEdgeRepo instead of deep traversals or $lookup.
 - Once stable, you can simplify models by removing rigid reference fields where unnecessary and rely on edges for read-side composition.
 
 === Performance and operational notes
 
-- Indexing: Create compound indexes on edges: (tenantId, p, dst) and (tenantId, src, p) to support both reverse and forward lookups.
+- Indexing: The `OntologyEdge` entity declares DataDomain-scoped compound indexes for both directions: `idx_domain_p_dst` (DataDomain, p, dst) for reverse lookups and `idx_domain_src_p` (DataDomain, src, p) for forward lookups. You do not create them yourself.
 - Write amplification vs read wins: Materialization adds write work, but dramatically improves read latency and simplifies queries.
 - Consistency: Re-materialize edges on relevant entity changes (source, destination, or intermediate) using OntologyMaterializer.
-- Multi-tenancy: Keep tenantId in the edge key and filters; the provided EdgeDao methods include tenant scoping.
+- Multi-tenancy: every edge is keyed and filtered by its DataDomain (organisation, account, tenant, data segment); the OntologyEdgeRepo methods take the DataDomain and scope every read and write to it.
 
 === How this integrates with Functional Areas/Domains
 
@@ -367,7 +367,7 @@ Comparison with direct references (@Reference/EntityReference)
 
 Operational tips for this scenario
 
-- Ensure EdgeDao has indexes on (tenantId, p, dst) and (tenantId, src, p).
+- The `OntologyEdge` entity declares its indexes (for example `idx_domain_p_dst` and `idx_domain_src_p`); Morphia creates them with the collection.
 - Use OntologyMaterializer when Order, Shipment, Customer, Address, or org hierarchy changes to keep edges fresh.
 - Keep provenance in edge.prov (rule, inputs) so you can recompute or retract edges when source data changes.
 
@@ -508,6 +508,17 @@ hasIncomingEdge(canAccessLocation, "associate-123", { tier:^[#1, #2] })
 # Combine with root entity filters
 hasEdge(placedInOrg, "OrgA", { department:"FINANCE" }) && status:PENDING
 ----
+
+Both functions resolve through the `OntologyEdgeLookup` SPI, implemented in `quantum-ontology-mongo`.
+A predicate matches whether or not its edges were ever written: stored (EAGER) edges are read from
+the edge store, and LAZY and ONDEMAND computed edges are computed. When the ontology module is not
+installed, a filter query that uses these functions fails instead of matching everything.
+
+In a permission rule, how far these lookups reach is set by `quantum.ontology.rule-edge-scope`.
+`DATA_DOMAIN` (the default) reads edges in the caller's whole DataDomain. `ACCOUNT` reads edges in
+any tenant of the caller's organisation, account and data segment, for an application whose tenants
+share one realm and whose relationships cross them. Only rule lookups are widened; chain derivation
+and every write keep the record's own DataDomain.
 
 ==== Programmatic Querying with OntologyEdgeRepo
 
@@ -907,7 +918,7 @@ This section focuses on integration and developer experience: how ontology edges
   - An OntologyMaterializer runs when entities change to derive and upsert edges into the edges collection (per tenant).
 - Policy path (authorization and list filters):
   - The permission rule language evaluates the caller’s SecurityContext/RuleContext and produces logical filters.
-  - When a rule asks for a semantic relationship (hasEdge), we use ListQueryRewriter + EdgeDao to translate that into efficient Mongo filters over ids.
+  - When a rule asks for a semantic relationship (hasEdge), we use ListQueryRewriter + OntologyEdgeRepo to translate that into efficient Mongo filters over ids.
 - Read path (queries):
   - Morphia repos apply the base data-domain filters and the rewritten ontology constraint to queries, producing fast lists without deep joins.
 
@@ -932,11 +943,11 @@ Under the hood, policy evaluation uses ListQueryRewriter.hasEdge(...), which con
 
 === Passing tenantId correctly
 
-- Always resolve tenantId from RuleContext/SecurityContext (the same source your repos use for realm/database selection).
-- EdgeDao and ListQueryRewriter already accept tenantId; never cross tenant boundaries when reading edges.
-- Index recommendation (per tenant):
-  - (tenantId, p, dst)
-  - (tenantId, src, p)
+- Always resolve the DataDomain from the caller's SecurityContext (the same source your repos use for realm/database selection).
+- OntologyEdgeRepo and ListQueryRewriter take the caller's DataDomain; never cross tenant boundaries when reading edges.
+- Indexes are declared on the `OntologyEdge` entity and are scoped by DataDomain (orgRefName, accountNum, tenantId, dataSegment):
+  - `idx_domain_p_dst`: DataDomain, p, dst
+  - `idx_domain_src_p`: DataDomain, src, p
 
 === Morphia repository integration patterns
 
@@ -1021,6 +1032,19 @@ at the document and derives `Document documentSupports Declaration` there. An in
 edge belongs to the entity whose explicit edge produced it: that entity prunes it when the edge goes
 away, and re-saving the document keeps it.
 
+[[inverse-edge-ownership]]
+The ownership rule has these consequences:
+
+- An inferred edge is never written over an asserted (explicit) or computed edge, on the entity or
+  on the other node. An inferred edge is blocked only by an asserted edge the same write writes,
+  not by a stored one that write is about to prune.
+- When an entity drops an explicit edge whose predicate has an inverse or is symmetric, the entity
+  at the other end is re-derived, so that entity's image of its own assertion comes back.
+- Deleting an entity removes its own edges and the inverse and symmetric edges it owns on other
+  nodes (`OntologyMaterializer.removeNode`), then propagates from those nodes.
+- Propagation re-derives any other node whose edge changed when a rule reads the predicate: a
+  chain step, a sub-property or a transitive property.
+
 Recursive chains (an implied predicate that is also one of the chain's steps) are retracted with
 delete-and-rederive (DRed). Under `[linkedTo, hasTag] => reaches` and
 `[linkedTo, reaches] => reaches`, two nodes linked to each other would otherwise keep each other's
@@ -1032,8 +1056,13 @@ count toward `max-rederivations`; when they do not fit, nothing is deleted, the 
 runs, and the ERROR names them.
 
 Not covered: reindex (`OntologyMaterializer.applyBulk`) and governed `ingestEdges` writes. A reindex
-re-derives every entity it touches anyway. After ingesting edges directly, run a reindex for the
-affected types.
+re-derives every entity it touches anyway, and its result does not depend on the order of the
+entities in a batch (see <<reindex-after-yaml-changes>>). After ingesting edges directly, run a
+reindex for the affected types.
+
+The write hook's own edge reads and writes are not judged by the caller's row filters: the hook runs
+after a save the caller was already allowed to make, and scopes every edge to that entity's
+DataDomain. A direct `OntologyEdge` write by a caller is still checked.
 
 [[custom-edge-providers]]
 === Custom Edge Providers: OntologyEdgeProvider and HierarchyListEdgeProvider
@@ -2262,14 +2291,34 @@ its merge fails validation, that **whole stage is skipped** with a warning (`Fai
 annotations…`, `Failed to load Morphia TBox…` or `Failed to load YAML overlay…`) and the registry is
 built without it. Check the startup log after changing annotations or `ontology.yaml`.
 
+[[realm-tbox-key]]
+=== Where a realm's TBox is stored
+
+A realm's TBox is stored and looked up under one DataDomain, the same for every caller. It is the
+realm's registered domain: the `domainContext` of the realm record (tenant, organisation, account
+and data segment), read through `SystemDirectory` (the local repositories in embedded mode, the
+control plane in remote mode). A tenant administrator who publishes a model therefore writes it
+into their own tenant, and that write is checked like any other. The key never depends on who is
+calling: an HTTP request, the reindexer and a startup thread all derive the same key from the
+realm registry (`RealmOntologyKeys`).
+
+- A realm that is not registered keeps the legacy key, in which every DataDomain field is the realm
+  name.
+- The first time a realm's registered key is used, TBoxes stored under the legacy key are moved to
+  it, so a realm that published before keeps its active model.
+- A registry or migration failure is not treated as "unregistered" or as an empty TBox. The lookup
+  fails with `RealmOntologyKeys.ResolutionException` (`REGISTRY_UNAVAILABLE`, `INCOMPLETE_DOMAIN`
+  or `MIGRATION_FAILED`) and is retried on the realm's next lookup.
+
 [[stable-relations]]
 === Stable relations: a contract consumers can bind to
 
 A view, rule or integration that queries `Customer hasShipment Shipment` should keep working when the
 modelling underneath changes, for example when purchase orders gain lines and the path becomes
 PO -> line -> shipment. Declaring the relation *stable* makes that a contract: the pack may rewrite
-how the relation is derived, but it may not remove it, narrow it or change whether it is derived
-without bumping the pack version.
+how the relation is derived, but it may not change whether it is derived without bumping the pack
+version, and it may not remove or narrow it without first publishing a stable successor
+(<<stable-relation-successors>>) and then bumping the pack version.
 
 Every rule in this section is opt-in. A property that does not declare `stability: stable` is
 `internal` and behaves exactly as before, and existing pack hashes are unchanged.
@@ -2415,11 +2464,15 @@ Enterprise TBox admission, not by the framework.
 | `stable_relation_derivation_changed`
 | The derived/asserted bit changed, in either direction.
 | `Stable relation 'hasShipment' derivation changed from 'derived' to 'asserted'`
+
+| `stable_relation_replacement_required`
+| The pack version was raised, the relation was removed, demoted or narrowed, and it has no
+  published successor (see below). Appended after all other violations.
+| `Stable relation 'hasShipment' needs a previously published stable replacement in metadata.replacedBy covering its domain and range`
 |===
 
 Violations are listed in relation-name order, then in table order. A removed relation reports only
-its removal; otherwise every check runs. The candidate is *admissible* when there are no
-violations, or when its pack `version` is greater than the active `version`:
+its removal; otherwise every check runs.
 
 [source,java]
 ----
@@ -2427,6 +2480,59 @@ StableRelationDiff.Result result = StableRelationDiff.diff(activeTBox, 1, candid
 result.violations();  // List<StableRelationDiff.Violation(relation, code, message)>
 result.admissible();
 ----
+
+The candidate is *admissible* in three cases:
+
+. There are no violations.
+. The only violations are `stable_relation_derivation_changed` and the candidate's pack `version`
+  is greater than the active `version`.
+. A relation is removed, demoted or narrowed, the candidate's pack `version` is greater than the
+  active `version`, and every such relation has a published *successor*.
+
+A version bump alone no longer admits a removal, a demotion or a narrowing.
+
+[[stable-relation-successors]]
+===== Successors for breaking migrations
+
+A successor is another stable relation that consumers move to before the old one goes away. The
+old relation names it in its metadata, under the key `replacedBy`. The diff accepts the successor
+only when all of these hold:
+
+* The *active* TBox already declares `replacedBy` on the old relation, and already declares the
+  successor as stable. The successor must be published in a release before the one that breaks
+  the old relation; declaring both in the same release is refused.
+* The candidate still declares the successor, and it is still stable.
+* The successor is not the relation itself.
+* The successor covers the old relation's domain and range, in the active TBox and in the
+  candidate: each is the same class or a superclass.
+
+So a breaking migration takes two releases:
+
+[source,yaml]
+----
+# Release N: publish the successor and point the old relation at it. Non-breaking.
+properties:
+  - id: hasShipment
+    domain: Customer
+    range: Shipment
+    stability: stable
+    derivation: derived
+    metadata:
+      replacedBy: hasDelivery
+  - id: hasDelivery
+    domain: Customer
+    range: Shipment
+    stability: stable
+    derivation: derived
+----
+
+Release N+1 may then remove, demote or narrow `hasShipment`, with a higher pack `version:`.
+Each relation's chains are omitted here for brevity. A `replacedBy` on a stable relation is part of
+the legacy `TBoxHasher` hash, so adding it persists a new TBox build.
+
+`StableRelationDiff.admissible(violations, activeVersion, candidateVersion)` has no TBoxes to
+check a successor against, so it admits only derivation changes with a version bump. Use `diff`
+to validate a migration.
 
 Allowed without a version bump: adding, removing or rewriting the chains beneath a stable relation,
 adding stable relations, widening a domain or range (for example `Customer` to `Party`), and
@@ -2441,12 +2547,14 @@ against the last TBox the same application built for the realm (the `ontology_tb
 so a refactor cannot silently drop a contract. The application is `quantum.ontology.tbox.builder`,
 else `quarkus.application.name`; applications that share a realm database are checked against
 their own builds, not each other's. A build that breaks a stable relation is refused unless the
-pack `version:` is greater than the version recorded with the last build. The refused TBox is not
+pack `version:` is greater than the version recorded with the last build and, for a removal,
+demotion or narrowing, the last build already published a successor
+(<<stable-relation-successors>>). The refused TBox is not
 persisted or cached, and loads of the realm's registry fail with
 `SourceTBoxGate.StableContractException`:
 
 ----
-Ontology for realm 'acme' breaks stable relations without a pack version bump (pack version 3, last built 3): stable_relation_removed: Stable relation 'hasShipment' was removed. Restore the relations, or raise the pack version to publish the change.
+Ontology for realm 'acme' breaks the stable relation contract (pack version 3, last built 3): stable_relation_removed: Stable relation 'hasShipment' was removed. Restore the relations, or publish a stable successor in metadata.replacedBy before removal or narrowing and raise the pack version.
 ----
 
 The message also names any source that failed to load (annotations, Morphia entities, the YAML
@@ -2501,7 +2609,12 @@ Consumer 'orders-view' binds internal relation 'hasPO': only stable relations ma
 ----
 
 `expand(@relation)` in queries enforces it (consumer `query:expand`): only stable relations can be
-expanded (see Query expansion, Expanding a named relation). Other consumers do not call it yet.
+expanded (see xref:{doc-root}/user-guide/query-expansion.adoc[Query expansion], Expanding a named
+relation). The targets of one page of results are read from the edge store and from LAZY and
+ONDEMAND providers, and merged into each row under `_rel.<relation>`. An expansion that reaches more
+than `quantum.ontology.expand.max-targets` (default 1000) distinct targets, or reads more than
+`quantum.ontology.expand.max-edges` (default 10000) edges for a page, is refused. Other consumers do
+not call the guard yet.
 
 === Materializing inferences from annotated models
 
@@ -2658,14 +2771,13 @@ TIP: For a complete, copy‑paste friendly reference of every parameter and more
 - Base path: /ontology
 - Media type: application/json
 - Security: Bearer JWT, roles user or admin
-- Multi‑tenancy: pass X-Realm: <tenant-id> header for ABox queries (and for any repo‑backed calls). TBox demos may work without it if your deployment wires an in‑memory registry.
+- Multi‑tenancy: the realm and tenant come from the caller's identity; do not send `X-Realm` on ordinary calls. TBox demos may work without a resolved realm if your deployment wires an in‑memory registry.
 
 Example (replace token and realm):
 
 [source,shell]
 ----
 curl -H "Authorization: Bearer $TOKEN" \
-     -H "X-Realm: demo" \
      http://localhost:8080/ontology/summary
 ----
 
@@ -2693,7 +2805,6 @@ curl -H "Authorization: Bearer $TOKEN" \
 Builds a neighborhood graph around a specific instance (src id + type). Useful for investigating relationships and verifying inferences.
 
 - GET /ontology/graph/instances/jointjs
-  - Headers: X-Realm: <tenant-id> (required)
   - Query params:
     - src: source id (required)
     - type: ontology class/type of the source id (required)
@@ -2706,7 +2817,6 @@ Example:
 [source,shell]
 ----
 curl -H "Authorization: Bearer $TOKEN" \
-     -H "X-Realm: demo" \
      "http://localhost:8080/ontology/graph/instances/jointjs?src=O1&type=Order&direction=both&limit=100"
 ----
 
@@ -2727,7 +2837,7 @@ Response shape:
 [source,javascript]
 ----
 async function renderJointJs(divId, url) {
-  const res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + window.token, 'X-Realm': 'demo' } });
+  const res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + window.token } });
   const { cells } = await res.json();
   const graph = new joint.dia.Graph();
   graph.fromJSON({ cells });
@@ -2856,6 +2966,7 @@ Provider-based edges
 
 - Implement OntologyEdgeProvider to contribute explicit edges not backed by fields. The extractor merges these before materialization. See <<Where ontology materialization happens>> for a full example.
 
+[[reindex-after-yaml-changes]]
 === Reindex after YAML changes
 
 If you change ontology.yaml (add properties, mark a property transitive, add chains), you should trigger a tenant-wide re-materialization so derived edges reflect the new rules.
@@ -2864,17 +2975,33 @@ REST endpoints (admin-only):
 
 [source,shell]
 ----
-# Start reindex for a realm (tenant)
+# Start reindex for a realm (returns 202 at once)
 curl -X POST "http://localhost:8080/ontology/admin/reindex?realm=default"
 
 # Check status
 curl -s "http://localhost:8080/ontology/admin/reindex/status"
+
+# Reindex with progress streamed as Server-Sent Events; force=true purges derived edges first
+curl -N -X POST "http://localhost:8080/ontology/admin/reindex/stream?realm=default&force=true"
 ----
 
 Tips:
 - Reindex discovers all @OntologyClass entities via Morphia and re-applies write-time materialization to each instance.
 - For large tenants, consider running during off-hours. The service streams per class; status shows progress.
-- If you need to purge previously derived edges before recomputing, use a force mode if exposed by your deployment (some environments wire runAsync(realm, force=true)).
+- To purge previously derived edges before recomputing, use `force=true` on the `/reindex/stream` endpoint.
+
+A reindex materializes entities in batches (`OntologyMaterializer.applyBulk`), and follows the same
+ownership rules as a single save (<<inverse-edge-ownership>>):
+
+- Inverse and symmetric edges that another entity owns join the entity's chain snapshot and are
+  kept; an entity's own images on other nodes are pruned when it no longer justifies them.
+- The result does not depend on the order of entities in a batch. After the batch is stored, nodes
+  that received an image a rule reads (a chain step, a sub-property or a transitive property), and
+  the far ends of dropped explicit edges with an inverse or symmetric predicate, are re-derived
+  from what the batch stored.
+- An entity whose explicit edges name a stable derived relation is left out; the rest of the batch
+  is materialized. The reindexer lists such entities in `failures()` and ends with status
+  `COMPLETED_WITH_ERRORS` (see <<stable-relations>>).
 
 Related: Drift-repair job
 

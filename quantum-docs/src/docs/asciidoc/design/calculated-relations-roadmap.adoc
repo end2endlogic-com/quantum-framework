@@ -4,7 +4,7 @@ endif::[]
 
 = Calculated Relations — Design and Roadmap
 
-*Status:* Implemented on `feature/ontology-enhancements` against `1.4.0-SNAPSHOT`.
+*Status:* Implemented. The work was done on `feature/ontology-enhancements` against `1.4.0-SNAPSHOT` and is part of the `1.4.2` release and the `1.4.3-SNAPSHOT` line. Version labels in the roadmap table below are the original milestones.
 *Owners:* Ontology team.
 *Scope:* `quantum-ontology-core`, `quantum-ontology-mongo`, `quantum-ontology-policy-bridge`, `quantum-cli`, `quantum-docs`.
 
@@ -35,7 +35,7 @@ For a usage-level introduction to ontology relationships, see
 xref:{doc-root}/user-guide/ontology.adoc[user-guide/ontology.adoc]
 (including the Territory → Location computed-edge example under
 _Custom Edge Providers_). A longer narrative guide also lives at
-https://github.com/end2endlogic-com/quantum-framework/blob/1.4.2-SNAPSHOT/quantum-docs/src/docs/implementing-territory-location-edges.md[`quantum-docs/src/docs/implementing-territory-location-edges.md`].
+https://github.com/end2endlogic-com/quantum-framework/blob/1.4.3-SNAPSHOT/quantum-docs/src/docs/implementing-territory-location-edges.md[`quantum-docs/src/docs/implementing-territory-location-edges.md`].
 
 == Background
 

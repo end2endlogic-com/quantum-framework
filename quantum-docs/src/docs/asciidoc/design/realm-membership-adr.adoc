@@ -8,6 +8,8 @@ endif::[]
 == Status
 Accepted (2026-06-11) — implemented incrementally on the integration branch.
 
+Amended for `1.4.3-SNAPSHOT`: decisions 4, 5 and 7 are updated below where later accepted work (application bindings, identity-only principal resolution, tenant selection) changed them. The original wording is kept where it still describes the code.
+
 == Context
 
 The framework had three half-articulated concepts: realms (a Mongo database
@@ -51,13 +53,32 @@ plans) both need these answers to be explicit.
    in one environment does not grant access in another.
    `UserRealmRole` documents are the org-membership analog: (userId, realm,
    roles[], sponsoring org, status). ADMIN in realm A / VIEWER in realm B is
-   two documents. `credential.roles[]` keeps meaning "roles in the default
-   realm" for compatibility. Invitations reuse `AccessInviteResource`.
+   two documents. `credential.roles[]` are flat roles: when the principal is
+   resolved from the credential they apply in every realm the credential can
+   enter (global by design), so a role meant for one realm or tenant belongs on
+   the `UserRealmRole` or, per application, on a `UserAppRole` binding. A token
+   issued for a realm other than the credential's home realm does not list the
+   flat roles. Invitations reuse `AccessInviteResource` (now in
+   `quantum-system-rest`), and invited roles are written to the `UserRealmRole`,
+   never to the credential.
 
 5. **The IdP unions assignments into per-realm claims.** At token issuance
-   the control plane resolves `RealmMembershipService.rolesForUser(user,
-   realm)`; the tenant plane routes by claims with no callback (JWKS
-   validation). Embedded mode resolves the same service locally.
+   the issuer adds the realm assignment's roles for the target realm to the
+   token; a tenant plane running on delegated claims
+   (`quantum.auth.trust-token-claims=true`) routes by claims with no callback
+   (JWKS validation). Embedded mode resolves the same assignments locally.
++
+*Amendment (identity-only tokens).* Authentication and authorization are now
+separated: a token proves identity, and roles and tenancy are resolved from
+records per request. `PrincipalContextResolver` (step 1) resolves identity plus
+application to realm, tenant and roles, reading application bindings
+(`UserAppRole`) before the realm assignment's application grant. A receiving
+application can ask the Auth service instead of reading claims
+(`quantum.auth.principal-source=remote`, step 2, opt-in). Tokens still carry the
+per-realm role claims described above, and the default and delegated-claims
+paths still read them; retiring the claims is a later step that is not
+implemented. See
+xref:{doc-root}/user-guide/auth.adoc#authn-authz-separation[Authentication and Authorization Are Separate].
 
 6. **Tenant decommission follows placement topology.** A dedicated tenant is
    decommissioned by revoking access, verifying a whole-database archive, and
@@ -84,8 +105,13 @@ plans) both need these answers to be explicit.
    migrated, indexed, and seeded. Admitting a participant creates the tenant
    membership and requested administrator assignment, but does not run
    migrations, base seeds, archetypes, or compatibility/demo identity setup.
-   A user has at most one active tenant DataDomain assignment in a realm until
-   token issuance supports explicit tenant selection.
+   A user has one `UserRealmRole` per realm, and it carries one default
+   DataDomain. In a `MULTI_TENANT` realm the assignment may authorize several
+   tenants (`authorizedTenantIds` / `authorizedTenantRegEx`); a request selects
+   one with `X-Tenant-Id`, and without a selection the default tenant applies.
+   A grant that reaches several tenants without an authorized default is
+   refused on save (`TENANT_DEFAULT_REQUIRED`), and identity-only resolution
+   refuses with `TENANT_SELECTION_REQUIRED` when no default can be determined.
 
 == Consequences
 
@@ -94,8 +120,15 @@ plans) both need these answers to be explicit.
   field policies shaping each org's slice.
 * Cross-realm queries stay forbidden; anything cross-realm goes through the
   control plane's denormalized registry (design review §2.2).
-* Phase C's control-plane API must expose membership resolution alongside the
-  realm catalog (same seam, same fail-loud remote behavior).
+* The control-plane API exposes membership resolution and writes alongside the
+  realm catalog (same seam, same fail-loud remote behavior), routed by
+  `quantum.directory.mode`. `membershipsForOrg` is still not in the contract.
+* Application access is a separate layer on top of realm membership:
+  `ApplicationInstall` (application installed for a tenant) and `UserAppRole`
+  (roles in one application). A binding needs an active realm assignment, never
+  grants a reserved platform role, and a group binding grants only the group's
+  owner tenant. See
+  xref:{doc-root}/user-guide/tenant-models.adoc#application-bindings[Application bindings].
 * Directory organization metadata, realm participation and user access are
   separate records. External-provider membership synchronization is not
   implemented by this ADR and must not be inferred from a product analogy.

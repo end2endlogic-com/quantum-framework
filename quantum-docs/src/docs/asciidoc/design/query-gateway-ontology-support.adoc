@@ -21,14 +21,16 @@ are present, the gateway **fails closed** with HTTP 500 `SecurityContextMissing`
 than running ungoverned. `delete` ANDs the `_id` filter with the secured filter, so an
 entity outside the caller's DataDomain returns HTTP 404 (no row-existence leak).
 
-*AGGREGATION/expand still ungoverned (501-gated):* The `expand(...)` / AGGREGATION path
-is NOT yet governed and is intentionally gated. `POST /api/query/find` returns HTTP 501
-for an AGGREGATION-mode query even when `feature.queryGateway.execution.enabled=true`,
-because a leading secured `$match` stage and an `excludedFields` `$project` have not yet
-been wired into the aggregation pipeline. `count` and `deleteMany` reject `expand(...)`
-with HTTP 400 (`InvalidQuery`). Re-enabling governed aggregation execution is the
-tracked follow-up below; see also
-xref:{doc-root}/user-guide/planner-and-query-gateway.adoc#query-gateway-governance[Planner and QueryGateway: row- and field-level governance].
+*Aggregation execution (status on `1.4.3-SNAPSHOT`):* `POST /api/query/find` executes an
+AGGREGATION-mode query (one that uses `expand(...)`) when
+`feature.queryGateway.execution.enabled=true`. The property defaults to `false`; the gateway then
+answers HTTP 501 with error `NotImplemented`. Before it plans the query the gateway resolves a
+policy for each expand stage, and it refuses the query when a stage's policy cannot be resolved.
+An earlier revision of this note said the aggregation path was ungoverned and always answered 501;
+that is no longer the case. See
+xref:{doc-root}/user-guide/planner-and-query-gateway.adoc#query-gateway-governance[Planner and QueryGateway: row- and field-level governance]
+for current behaviour. The sections below are the original design analysis and describe the code
+as it was before the work was done.
 
 This document describes how to add ontology support to the Query Gateway API (`POST /api/query/find`, `POST /api/query/plan`, and related endpoints) so that callers can use ontology edge predicates (`hasEdge`, `hasOutgoingEdge`, `hasIncomingEdge`, and optionally `hasEdgeAny`, `notHasEdge`) in the query string and get correct, tenant-scoped results.
 

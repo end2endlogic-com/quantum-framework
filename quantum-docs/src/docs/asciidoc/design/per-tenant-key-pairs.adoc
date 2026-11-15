@@ -4,16 +4,24 @@ endif::[]
 
 = Per-Tenant Key Pairs — Design
 
-*Implementation status:* Phase 1 (configurable key paths) and Phase 2 (extractable default keys) are implemented.
-`TokenUtils` reads `quantum.jwt.private-key-location` and `quantum.jwt.public-key-location` from config,
-falling back to the classpath defaults (`privateKey.pem` / `publicKey.pem`).
+*Implementation status (checked against `1.4.3-SNAPSHOT`):* Phase 1 (configurable key paths) and Phase 2 (extractable default keys) are implemented. Phase 3 (per-tenant keys) is design only: there is no `TenantKeyPair` entity, `TenantKeyResolver` or per-realm JWKS endpoint in the code.
+`TokenUtils` reads `quantum.jwt.private-key-location` and `quantum.jwt.public-key-location` from config.
+In the `dev` and `test` profiles they fall back to the classpath defaults (`privateKey.pem` / `publicKey.pem`); in any other profile `TokenUtilsConfigurer` fails startup unless both are set explicitly.
 Supports both classpath (`classpath:`) and filesystem (`file:`) paths.
 The default keys are shipped in the optional `quantum-default-keys` JAR (included as an `<optional>true</optional>` dependency);
 remove this JAR in production and configure external key locations.
 
+Three additions since Phase 2 are implemented and are still global (one key pair per service), not per tenant:
+
+* `JwtKeyResolver` is the SPI that opens key material for a location. `DefaultJwtKeyResolver` handles `file:` and classpath locations; a deployment can supply its own bean to read keys from another store.
+* `auth.jwt.key-id` sets the `kid` header on signed tokens (`TokenUtils.configureSigningKeyId`). The `quantum-oauth-server` JWKS endpoint (`GET /oauth/jwks`) advertises the same property, defaulting to `quantum-auth`.
+* `quantum.jwt.signing-enabled=false` lets a service that only verifies tokens start without a signing key.
+
 == Problem Statement
 
-Today, all tenants share a single RSA key pair (`privateKey.pem` / `publicKey.pem`) that is:
+NOTE: This section records the situation before Phase 1. Items 1 to 3 are resolved by Phases 1 and 2; one key pair per service is still shared by all tenants.
+
+Before Phase 1, all tenants shared a single RSA key pair (`privateKey.pem` / `publicKey.pem`) that is:
 
 1. **Hardcoded** — `TokenUtils` has the string `"privateKey.pem"` embedded in `generateUserToken()` and `generateRefreshToken()`.
 2. **Classpath-only** — Keys are loaded via `Thread.currentThread().getContextClassLoader().getResourceAsStream()`.
@@ -50,9 +58,9 @@ quantum.jwt.public-key-location=file:/opt/keys/verify.pem
 *Changes:*
 
 * `TokenUtils` gains a static `configure(String privateKeyLocation, String publicKeyLocation)` method.
-* A new CDI bean `TokenUtilsConfigurer` (`@ApplicationScoped`, `@Startup`) reads the config properties and calls `TokenUtils.configure()` at application startup.
+* A new CDI bean `TokenUtilsConfigurer` (`@ApplicationScoped`, `@Startup`) reads the config properties and calls `TokenUtils.configure()` at application startup. It also refuses a non-dev, non-test start without explicit key locations.
 * `generateUserToken()` and `generateRefreshToken()` use the configured location instead of the hardcoded `"privateKey.pem"`.
-* `readPrivateKey()` and `readPublicKey()` detect the `file:` prefix and use `FileInputStream` when present; otherwise fall back to classpath loading.
+* `readPrivateKey()` and `readPublicKey()` open the location through the configured `JwtKeyResolver` (`file:` uses `FileInputStream`; otherwise the classpath).
 * Cache is invalidated when `configure()` is called with different paths.
 
 === Phase 2: Extractable Default Keys (Implemented)
@@ -175,7 +183,15 @@ GET /{realm}/.well-known/jwks.json
 
 | Configurable global key paths
 | Implemented (Phase 1)
-| `quantum.jwt.private-key-location` / `quantum.jwt.public-key-location`; supports classpath + filesystem
+| `quantum.jwt.private-key-location` / `quantum.jwt.public-key-location`; supports classpath + filesystem; required outside the dev and test profiles
+
+| Key resolver SPI, signing key id, verify-only mode
+| Implemented
+| `JwtKeyResolver` / `DefaultJwtKeyResolver`; `auth.jwt.key-id`; `quantum.jwt.signing-enabled`
+
+| Global JWKS endpoint
+| Implemented (`quantum-oauth-server`)
+| `GET /oauth/jwks` serves the one configured public key; not per tenant
 
 | Default keys in optional JAR
 | Implemented (Phase 2)
@@ -206,7 +222,10 @@ GET /{realm}/.well-known/jwks.json
 | Add `configure()` method, configurable key locations, `file:` path support, cache invalidation
 
 | `TokenUtilsConfigurer.java` (new)
-| CDI `@Startup` bean that reads config properties and configures `TokenUtils`
+| CDI `@Startup` bean that reads config properties and configures `TokenUtils`; enforces explicit key locations outside dev and test
+
+| `JwtKeyResolver.java`, `DefaultJwtKeyResolver.java`
+| SPI and default bean that open key material for a configured location
 
 | `TestTokenUtilsCache.java`
 | Updated to work with configurable paths

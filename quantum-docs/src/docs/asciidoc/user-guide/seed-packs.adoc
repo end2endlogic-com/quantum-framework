@@ -413,7 +413,7 @@ datasets:
 The framework now applies seed packs via a dedicated SeedStartupRunner, independent of schema migrations. This runner discovers and applies the latest version of each seed pack for important realms (system/default/test) on application startup.
 
 Key points:
-- Discovery: SeedStartupRunner constructs a `SeedLoader` with a `FileSeedSource` pointing at the configured seed root. Set `quantum.seed.root` (for tests we default to `src/main/resources/seed-packs`). The source walks the directory tree and locates every `manifest.yaml` file.
+- Discovery: SeedStartupRunner constructs a `SeedLoader` with a `FileSeedSource` pointing at the configured seed root. Set `quantum.seed-pack.root` (default `src/main/resources/seed-packs`; when that path does not exist, `SeedPathResolver` tries `quantum-framework/<root>` and then `src/test/resources/seed-packs`). The source walks the directory tree and locates every `manifest.yaml` file. Packs under `seed-packs/` on the classpath are discovered as well.
 - Selection: For each discovered seed pack name, the runner selects the latest semantic version and builds `SeedPackRef.exact(name, version)` for application.
 - Execution: The runner builds a `SeedContext` for the target realm and calls `loader.apply(refs, context)`. Indexes declared in the manifest are created before data is upserted.
 - Idempotency + repeatable: The `MongoSeedRegistry` stores a checksum per dataset in the realm's `_seed_registry` collection. If the checksum matches on a later run, the dataset is skipped; if it changes, the dataset is re-applied.
@@ -423,12 +423,27 @@ Configuration snippet:
 
 [source,properties]
 ----
-# test profile uses a local seed root
-quantum.seed.root=src/test/resources/seed-packs
-# control seed runner behavior
-quantum.seeds.enabled=true
-quantum.seeds.apply.on-startup=true
+# seed root on the filesystem
+quantum.seed-pack.root=src/main/resources/seed-packs
+# control seed runner behavior (both default to true)
+quantum.seed-pack.enabled=true
+quantum.seed-pack.apply.on-startup=true
 ----
+
+Startup seeding and schema migration are independent. With migrations enabled (`quantum.database.migration.enabled=true`, the default) the runner waits until the realm database is migrated; with migrations disabled, a reachable, non-empty database is enough.
+
+In `quantum.mode=remote` the control plane owns the system realm, so the runner removes the system realm from its list and seeds only application realms.
+
+[#seed-startup-identity]
+=== Who startup seeds run as
+
+Seed records take the DataDomain of the identity the runner uses, so that identity decides who can see and change the seeded data. For each realm the runner picks, in order:
+
+. The realm administrator's credential. The administrator is the realm record's admin user, or `admin@<email domain>` when the record names none. Seeds run as that user in the credential's DataDomain.
+. The realm's registered domain. When the administrator has no local credential, but the realm record carries a complete `domainContext` (tenant, organisation and account), seeds run under the administrator's user id in that domain. This is the normal case when identity lives elsewhere: the realm was provisioned by the control plane, or the deployment runs with a remote directory.
+. The system user, only for a realm that has neither (a system-only realm).
+
+An incomplete `domainContext` does not count as registered. Before this rule, a registered realm without a local administrator credential was seeded in the system domain, where the realm's own users could not see or write the records.
 
 === Configuring which realms receive seeds on startup
 
@@ -438,6 +453,11 @@ By default, `SeedStartupRunner` applies seeds to the system, default, and test r
 2. **Realm flag** (`applySeedsOnStartup`): A boolean field on the Realm model/entity that, when set to `true`, includes that realm for automatic seeding.
 
 The startup runner unions both sources: realms from the config property plus realms with the `applySeedsOnStartup` flag enabled.
+
+Two further switches narrow the list:
+
+- `quantum.seed-pack.apply.honor-realm-flags` (default `true`): set `false` to ignore the `applySeedsOnStartup` flags and seed only the realms in `quantum.seed-pack.apply.realms`. A service that holds the realm catalog for a whole environment sets this, so it does not seed every tenant database the catalog points at.
+- `quantum.realm.seed-system-only` (default `false`): restricts the default set to the system realm; the test and default realms are not scanned. A realm listed explicitly in `quantum.seed-pack.apply.realms` is still seeded.
 
 Configuration examples:
 

@@ -13,8 +13,8 @@ Quantum provides consistent REST resources backed by repositories. Extend BaseRe
   - find: query by criteria (filters, pagination)
   - get: fetch by id or refName
   - list: list all within scope with paging
-  - save: create
-  - update: modify existing
+  - save: create, or replace an existing record when the body carries its id
+  - update: modify named fields of an existing record
   - delete: delete or soft-delete/archival depending on model
 - UIActionList: derive available actions based on current model state.
 - DataDomain filtering is applied across all operations to enforce multi-tenancy.
@@ -86,6 +86,30 @@ For detailed rule-base matching (URL, headers, body predicates, priorities), see
 
 - Models are returned with calculated fields (e.g., actionList) when appropriate.
 - OpenAPI annotations in your models/resources integrate with MicroProfile OpenAPI for schema docs.
+
+[[rest-crud-write-rules]]
+=== Write rules the server enforces
+
+The inherited write endpoints are `POST <resource>` (save: create, or replace when the body carries an `id`), `PUT <resource>/set?id=...&pairs=...` (update named fields), and the bulk variants `PUT <resource>/bulk/setByQuery`, `bulk/setByIds` and `bulk/setByRefAndDomain`. The server, not the request body, decides the following.
+
+*A request body cannot choose the DataDomain.* The DataDomain (organisation, account, tenant, owner, data segment) decides which tenant a row belongs to.
+
+- Create: the row gets the DataDomain the authenticated principal resolves to for the model's functional area and domain. Omit `dataDomain` from the body. A body that names a different domain is rejected with 403 `DATA_DOMAIN_NOT_PERMITTED`; echoing the caller's own domain is accepted.
+- Save with an `id`: the stored row keeps its domain. A body that changes it is rejected with 403 `DATA_DOMAIN_NOT_PERMITTED`. An `id` that exists outside the caller's scope answers 404 `ENTITY_NOT_IN_SCOPE` and is never overwritten. An `id` that does not exist anywhere is a create.
+- `PUT set` and the bulk set endpoints reject `dataDomain` and any `dataDomain.*` field with 403 `DATA_DOMAIN_NOT_UPDATABLE`.
+- With no security context the write fails closed with 500 `SECURITY_CONTEXT_MISSING`.
+
+The code is returned in the `statusMessage` of the `RestError` body. To update a record, read it through the API, change it, and send all of it back, including the `dataDomain` that was returned. Code that legitimately places rows in a specific domain (seed packs, tenant provisioning, migrations) calls the repository directly and is not affected.
+
+*`skipValidation` is read-only.* It is serialized in responses but never bound from a request body, and a CSV column named `skipValidation` is refused.
+
+*`refName` defaults to the id.* When a new record has no `refName`, the repository sets it to the record's ObjectId (hex). For `UserGroup` and `Policy` a `refName` that is given must follow the canonical rule, and changing a stored `refName` answers 409 `REFNAME_IMMUTABLE`. See xref:{doc-root}/user-guide/modeling.adoc[Modeling], Canonical refNames.
+
+*The `pairs` parameter is parsed strictly.* The grammar is `key:value` entries separated by commas, optionally enclosed in brackets: `pairs=[description:New text,status:'ON, HOLD']`.
+
+- A key is letters, digits and underscores and names a top-level field. A nested path such as `category.description:x` is rejected.
+- An unquoted value runs to the next comma and may contain colons and apostrophes (`description:O'Reilly`). Use single quotes for a value that contains a comma.
+- The whole parameter must parse. Any entry that does not fit answers 400 (`Malformed pairs entry '...'`) and nothing is applied; entries are never skipped or truncated.
 
 === Error Handling
 
@@ -225,7 +249,7 @@ Authorization and scoping:
 
 - All CSV endpoints are protected by the same @RolesAllowed("user", "admin") checks as other CRUD operations.
 - RuleContext filters and DataDomain scoping apply the same way as list/find; exports stream only what the caller may see, and imports are saved under the same permissions.
-- In multi‑realm deployments, include your X-Realm header as you do for CRUD; underlying repos resolve realm and domain context consistently.
+- The realm and domain context come from the caller's identity and application, the same as for CRUD. Do not send `X-Realm` on ordinary calls; it is an explicit override that needs authority (see <<realm-override-x-realm,Realm override>>).
 
 === Export: GET /csv
 
@@ -271,7 +295,6 @@ Examples:
 [source,bash]
 ----
 curl -H "Authorization: Bearer $JWT" \
-     -H "X-Realm: system-com" \
      "https://host/api/products/csv?requestedColumns=id,refName,price&prependHeaderRow=true&filename=products.csv&filter=active:true&sort=+refName"
 ----
 
@@ -319,7 +342,6 @@ Example (direct import):
 ----
 curl -X POST \
   -H "Authorization: Bearer $JWT" \
-  -H "X-Realm: system-com" \
   -F "file=@policies.csv" \
   "https://host/api/security/permission/policies/csv?requestedColumns=refName,principalId,description&skipHeaderRow=true&fieldSeparator=,&quoteChar=\"&quotingStrategy=QUOTE_WHERE_ESSENTIAL&charsetEncoding=UTF-8-without-BOM"
 ----
@@ -345,6 +367,7 @@ Use a two‑step flow to analyze first, then commit only valid rows.
 
 Notes and constraints:
 
+- Server-only columns are refused. A `requestedColumns` entry (or profile mapping) that names `skipValidation`, `dataDomain` or any `dataDomain.*` component answers 400 with a message naming the column, on the direct, session and profile import paths. Imported rows always take the importing principal's DataDomain; a CSV file cannot place a row in another tenant.
 - requestedColumns must reference actual model fields. Unknown fields or multiple different nested properties are rejected (only one nested property across requestedColumns is allowed when using [0]).
 - Unrecognized query parameters are rejected with HTTP 400 to prevent silent misconfiguration.
 - Very large exports should prefer streaming with sensible length settings or server‑side filters to reduce memory and time.
@@ -650,7 +673,7 @@ Core methods:
 ** A short identifier for the provider; persisted alongside credentials and used in logs/metrics.
 * LoginResponse login(String userId, String password)
 ** Credential-based login. Return a structured response:
-*** positiveResponse: includes SecurityIdentity, roles, accessToken, refreshToken, expirationTime, and realm/mongodbUrl if applicable.
+*** positiveResponse: includes SecurityIdentity, roles, accessToken, refreshToken, expirationTime, and realm. The `mongodbUrl` component remains on the record for binary compatibility; it is not populated and the login endpoint never returns the service's database URL.
 *** negativeResponse: includes error codes/reason/message for clients to act on (e.g., password change required).
 * LoginResponse refreshTokens(String refreshToken)
 ** Validate the refresh token, mint a new access token (and optionally a new refresh token), and return a positive response.
@@ -790,7 +813,7 @@ What the Quarkus OIDC extension provides
 
 Integrating with common providers
 
-- Works with providers like Keycloak, Auth0, Okta, Azure AD, Cognito, and enterprise IdPs exposing OIDC.
+- Works with any identity provider that exposes standard OIDC.
 - Configure the issuer URL and client credentials. Quarkus discovers endpoints via the provider’s .well-known/openid-configuration.
 - For roles/permissions, map provider groups/roles claims to your platform roles in the identity.
 
@@ -872,8 +895,8 @@ if (!ids.isEmpty()) {
 
 Notes
 
-- Always scope by tenantId from DomainContext/RuleContext.
-- Index edges on (tenantId, p, dst) and (tenantId, src, p) to keep queries fast.
+- Always scope edge reads by the caller's DataDomain.
+- The `OntologyEdge` entity declares DataDomain-scoped indexes on (p, dst) and (src, p), so both lookups are indexed.
 - See xref:{doc-root}/user-guide/ontology.adoc#ontology-integration-morphia-permissions-section[Integrating Ontology] for more integration options.
 
 [[ontology-aware-resource]]

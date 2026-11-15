@@ -12,7 +12,7 @@ This tutorial takes you end-to-end through building a small SaaS application on 
 It pulls in the core concepts and how-to content from the main index in a progressive, hands-on flow so you can learn by doing.
 
 Audience: Mid-level Java developers building multi-tenant SaaS on Quarkus and MongoDB.
-Prerequisites: JDK 17+, Maven, Docker (for local MongoDB), and basic familiarity with Quarkus.
+Prerequisites: a JDK (the framework targets Java 17 bytecode; its snapshot CI builds on GraalVM JDK 21.0.4), Maven, a MongoDB replica set (a single node is enough; a standalone server does not support the transactions Quantum uses), and basic familiarity with Quarkus.
 Artifacts: The docs can be built as HTML/PDF via Maven; the code snippets compile against the Quantum modules published in this repo.
 
 What you'll build: A small, tenant-aware service with domain models, REST CRUD, flexible queries, security, migrations, and seed packs for baseline data.
