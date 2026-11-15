@@ -1,0 +1,66 @@
+<?xml version='1.0' encoding='UTF-8' standalone='no'?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd"><svg height='127pt' preserveAspectRatio='xMidYMid meet' viewBox='0.00 0.00 705.00 127.00' width='705pt' xmlns:xlink='http://www.w3.org/1999/xlink' xmlns='http://www.w3.org/2000/svg'>
+<g class='graph' id='graph0' transform='scale(1 1) rotate(0) translate(4 123)'>
+<title>G</title>
+<polygon fill='white' points='-4,4 -4,-123 701,-123 701,4 -4,4' stroke='none'/>
+
+<g class='node' id='node1'>
+<title>O1</title>
+<polygon fill='none' points='67.75,-66 0,-66 0,-30 67.75,-30 67.75,-66' stroke='black'/>
+<text font-family='Times,serif' font-size='14.00' xml:space='preserve' text-anchor='middle' x='33.88' y='-42.95'>Order O1</text>
+</g>
+
+<g class='node' id='node2'>
+<title>S17</title>
+<polygon fill='none' points='299,-119 205.75,-119 205.75,-83 299,-83 299,-119' stroke='black'/>
+<text font-family='Times,serif' font-size='14.00' xml:space='preserve' text-anchor='middle' x='252.38' y='-95.95'>Shipment S17</text>
+</g>
+
+<g class='edge' id='edge1'>
+<title>O1&#45;&gt;S17</title>
+<path d='M68.21,-57.37C74.05,-58.95 80.07,-60.55 85.75,-62 121.85,-71.21 162.58,-80.82 194.62,-88.19' fill='none' stroke='black'/>
+<polygon fill='black' points='193.56,-91.54 204.09,-90.36 195.13,-84.71 193.56,-91.54' stroke='black'/>
+<text font-family='Times,serif' font-size='14.00' xml:space='preserve' text-anchor='middle' x='136.75' y='-88.95'>orderHasShipment</text>
+</g>
+
+<g class='node' id='node3'>
+<title>A42</title>
+<polygon fill='none' points='525,-66 447.5,-66 447.5,-30 525,-30 525,-66' stroke='black'/>
+<text font-family='Times,serif' font-size='14.00' xml:space='preserve' text-anchor='middle' x='486.25' y='-42.95'>Address 42</text>
+</g>
+
+<g class='edge' id='edge4'>
+<title>O1&#45;&gt;A42</title>
+<path d='M67.99,-48C146.31,-48 343.25,-48 435.77,-48' fill='none' stroke='#666666' stroke-dasharray='5,2'/>
+<polygon fill='#666666' points='435.54,-51.5 445.54,-48 435.54,-44.5 435.54,-51.5' stroke='#666666'/>
+<text font-family='Times,serif' font-size='14.00' xml:space='preserve' text-anchor='middle' x='252.38' y='-51.2'>orderShipsTo</text>
+</g>
+
+<g class='node' id='node4'>
+<title>RW</title>
+<polygon fill='none' points='697,-36 611.25,-36 611.25,0 697,0 697,-36' stroke='black'/>
+<text font-family='Times,serif' font-size='14.00' xml:space='preserve' text-anchor='middle' x='654.12' y='-12.95'>Region West</text>
+</g>
+
+<g class='edge' id='edge5'>
+<title>O1&#45;&gt;RW</title>
+<path d='M68,-45.08C138,-39.09 306.15,-25.55 447.5,-21 499.09,-19.34 557.99,-18.6 599.49,-18.27' fill='none' stroke='#666666' stroke-dasharray='5,2'/>
+<polygon fill='#666666' points='599.49,-21.77 609.46,-18.19 599.44,-14.77 599.49,-21.77' stroke='#666666'/>
+<text font-family='Times,serif' font-size='14.00' xml:space='preserve' text-anchor='middle' x='373.25' y='-30.02'>orderShipsToRegion</text>
+</g>
+
+<g class='edge' id='edge2'>
+<title>S17&#45;&gt;A42</title>
+<path d='M299.44,-91.17C335.02,-83.49 385.46,-72.4 429.5,-62 431.65,-61.49 433.84,-60.97 436.06,-60.43' fill='none' stroke='black'/>
+<polygon fill='black' points='436.85,-63.84 445.73,-58.07 435.18,-57.04 436.85,-63.84' stroke='black'/>
+<text font-family='Times,serif' font-size='14.00' xml:space='preserve' text-anchor='middle' x='373.25' y='-89.78'>shipsTo</text>
+</g>
+
+<g class='edge' id='edge3'>
+<title>A42&#45;&gt;RW</title>
+<path d='M525.31,-41.12C547.35,-37.13 575.45,-32.05 599.69,-27.66' fill='none' stroke='black'/>
+<polygon fill='black' points='600.17,-31.13 609.39,-25.91 598.92,-24.25 600.17,-31.13' stroke='black'/>
+<text font-family='Times,serif' font-size='14.00' xml:space='preserve' text-anchor='middle' x='568.12' y='-40.64'>locatedIn</text>
+</g>
+</g>
+</svg>
