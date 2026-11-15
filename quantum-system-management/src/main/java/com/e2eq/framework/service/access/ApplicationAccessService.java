@@ -1,0 +1,313 @@
+package com.e2eq.framework.service.access;
+
+import com.e2eq.framework.model.persistent.morphia.ApplicationInstallRepo;
+import com.e2eq.framework.model.persistent.morphia.ApplicationRepo;
+import com.e2eq.framework.model.persistent.morphia.UserAppRoleRepo;
+import com.e2eq.framework.model.persistent.morphia.UserGroupRepo;
+import com.e2eq.framework.model.security.Application;
+import com.e2eq.framework.model.security.ApplicationAccessException;
+import com.e2eq.framework.model.security.ApplicationAccessException.Code;
+import com.e2eq.framework.model.security.ApplicationBindingValidator;
+import com.e2eq.framework.model.security.ApplicationBindingValidator.Authority;
+import com.e2eq.framework.model.security.ApplicationInstall;
+import com.e2eq.framework.model.security.UserAppRole;
+import com.e2eq.framework.model.securityrules.PrincipalContext;
+import com.e2eq.framework.model.securityrules.SecurityCallScope;
+import com.e2eq.framework.model.securityrules.SecurityContext;
+import com.e2eq.framework.util.EnvConfigUtils;
+import com.e2eq.framework.util.SecurityUtils;
+import io.quarkus.logging.Log;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+import org.bson.types.ObjectId;
+
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.function.Supplier;
+
+/**
+ * Writes and reads of application bindings ({@link UserAppRole}) and installs
+ * ({@link ApplicationInstall}) for a caller. The realm is the caller's resolved realm; only the
+ * platform (the system principal) may name another. Who may write is decided by the existing
+ * administrator definitions ({@link AccessInviteService#administrativeAuthority}) and each role's
+ * {@code grantableBy}; the records' own rules are applied by their repositories on every save.
+ * Installs and uninstalls need the platform or a realm administrator of the tenant.
+ */
+@ApplicationScoped
+public class ApplicationAccessService {
+
+   @Inject
+   AccessInviteService accessInviteService;
+
+   @Inject
+   UserAppRoleRepo userAppRoleRepo;
+
+   @Inject
+   ApplicationInstallRepo applicationInstallRepo;
+
+   @Inject
+   ApplicationRepo applicationRepo;
+
+   @Inject
+   UserGroupRepo userGroupRepo;
+
+   @Inject
+   SecurityUtils securityUtils;
+
+   @Inject
+   EnvConfigUtils envConfigUtils;
+
+   // ------------------------------------------------------------------ bindings
+
+   /**
+    * Creates or replaces a binding. The existing row is found by id, else by (subject,
+    * application, realm); the caller must be allowed both the binding it replaces and the new one.
+    */
+   public UserAppRole putBinding(String callerRealm, UserAppRole request) {
+      Objects.requireNonNull(request, "binding");
+      Authority probe = authorityFor(callerRealm, List.of());
+      String realm = realmFor(callerRealm, request.getRealmRefName(), probe);
+      request.setRealmRefName(realm);
+      Application application = application(request.getApplicationId());
+      if (request.groupRefName() != null && system(() ->
+            userGroupRepo.findByRefName(request.getGroupRefName().trim(), envConfigUtils.getSystemRealm()).isEmpty())) {
+         throw new ApplicationAccessException(Code.BINDING_SUBJECT_INVALID,
+            "group '" + request.getGroupRefName() + "' does not exist");
+      }
+
+      Optional<UserAppRole> existing = system(() -> stored(request));
+      existing.ifPresent(current -> {
+         if (!Objects.equals(current.getRealmRefName(), realm)) {
+            throw new ApplicationAccessException(Code.REALM_MISMATCH, "binding " + current.getId() + " is in another realm");
+         }
+         requireMayGrant(realm, application, current);
+      });
+      requireMayGrant(realm, application, request);
+
+      request.setId(existing.map(UserAppRole::getId).orElse(request.getId()));
+      PrincipalContext caller = SecurityContext.getPrincipalContext().orElseThrow();
+      request.setGrantedBy(caller.getUserId());
+      request.setGrantedAt(new Date());
+      if (request.getSource() == null) {
+         request.setSource(probe == Authority.PLATFORM ? UserAppRole.SOURCE_STAFF : UserAppRole.SOURCE_TENANT_ADMIN);
+      }
+      if (request.getStatus() == null) {
+         request.setStatus(UserAppRole.STATUS_ACTIVE);
+      }
+      UserAppRole saved = system(() -> request.getId() == null
+         ? userAppRoleRepo.save(request)
+         : userAppRoleRepo.upsertById(request));
+      Log.infof("application-binding.put id=%s application=%s realm=%s subject=%s by=%s",
+         saved.getId(), saved.getApplicationId(), saved.getRealmRefName(), subject(saved), caller.getUserId());
+      return saved;
+   }
+
+   public void deleteBinding(String callerRealm, ObjectId id) {
+      UserAppRole binding = system(() -> userAppRoleRepo.findByIdWithIgnoreRules(id))
+         .orElseThrow(() -> new ApplicationAccessException(Code.NOT_FOUND, "no binding " + id));
+      Authority probe = authorityFor(callerRealm, List.of());
+      realmFor(callerRealm, binding.getRealmRefName(), probe);
+      requireMayGrant(binding.getRealmRefName(), application(binding.getApplicationId()), binding);
+      system(() -> {
+         try {
+            return userAppRoleRepo.delete(binding);
+         } catch (com.e2eq.framework.exceptions.ReferentialIntegrityViolationException e) {
+            throw new IllegalStateException(e);
+         }
+      });
+      Log.infof("application-binding.delete id=%s application=%s realm=%s subject=%s", id,
+         binding.getApplicationId(), binding.getRealmRefName(), subject(binding));
+   }
+
+   /** The bindings for an application in the caller's realm that name {@code tenantId}, which the caller administers. */
+   public List<UserAppRole> listBindings(String callerRealm, String applicationId, String tenantId) {
+      String tenant = tenantOf(tenantId);
+      if (authorityFor(callerRealm, List.of(tenant)) == Authority.NONE) {
+         throw new ApplicationAccessException(Code.ROLE_NOT_GRANTABLE,
+            "only an administrator of tenant '" + tenant + "' may list its bindings");
+      }
+      application(applicationId);
+      return system(() -> userAppRoleRepo.findByApplicationWithIgnoreRules(applicationId.trim(), callerRealm, tenant));
+   }
+
+   // ------------------------------------------------------------------ installs
+
+   /**
+    * Installs an application for a tenant of the caller's realm. With an id the install is written
+    * under it (a repeated install with the same id changes nothing); without one an existing active
+    * install for the tenant is returned as is.
+    */
+   public ApplicationInstall install(String callerRealm, ApplicationInstall request) {
+      Objects.requireNonNull(request, "install");
+      Authority probe = authorityFor(callerRealm, List.of());
+      String realm = realmFor(callerRealm, request.getRealmRefName(), probe);
+      request.setRealmRefName(realm);
+      application(request.getApplicationId());
+      requireInstallAuthority(realm, request.getTenantId());
+      if (request.getId() == null) {
+         Optional<ApplicationInstall> active = system(() -> applicationInstallRepo.findActiveWithIgnoreRules(
+            request.getApplicationId().trim(), realm, request.getTenantId().trim()));
+         if (active.isPresent()) {
+            return active.get();
+         }
+      }
+      PrincipalContext caller = SecurityContext.getPrincipalContext().orElseThrow();
+      request.setStatus(ApplicationInstall.STATUS_ACTIVE);
+      request.setInstalledBy(caller.getUserId());
+      request.setInstalledAt(new Date());
+      request.setUninstalledBy(null);
+      request.setUninstalledAt(null);
+      ApplicationInstall saved = system(() -> request.getId() == null
+         ? applicationInstallRepo.save(request)
+         : applicationInstallRepo.upsertById(request));
+      Log.infof("application-install.install id=%s application=%s realm=%s tenant=%s by=%s", saved.getId(),
+         saved.getApplicationId(), saved.getRealmRefName(), saved.getTenantId(), caller.getUserId());
+      return saved;
+   }
+
+   /**
+    * Uninstalls: the install is kept with status uninstalled, and the application's group bindings
+    * for that tenant are removed. User bindings stay but stop granting the tenant.
+    */
+   public ApplicationInstall uninstall(String callerRealm, ObjectId id) {
+      ApplicationInstall stored = system(() -> applicationInstallRepo.findByIdWithIgnoreRules(id))
+         .orElseThrow(() -> new ApplicationAccessException(Code.NOT_FOUND, "no install " + id));
+      Authority probe = authorityFor(callerRealm, List.of());
+      realmFor(callerRealm, stored.getRealmRefName(), probe);
+      requireInstallAuthority(stored.getRealmRefName(), stored.getTenantId());
+      ApplicationInstall uninstalled = stored;
+      if (!ApplicationInstall.STATUS_UNINSTALLED.equals(stored.getStatus())) {
+         PrincipalContext caller = SecurityContext.getPrincipalContext().orElseThrow();
+         stored.setStatus(ApplicationInstall.STATUS_UNINSTALLED);
+         stored.setUninstalledBy(caller.getUserId());
+         stored.setUninstalledAt(new Date());
+         uninstalled = system(() -> applicationInstallRepo.upsertById(stored));
+      }
+      ApplicationInstall done = uninstalled;
+      long removed = system(() -> userAppRoleRepo.deleteGroupBindingsForTenant(
+         done.getApplicationId(), done.getRealmRefName(), done.getTenantId()));
+      Log.infof("application-install.uninstall id=%s application=%s realm=%s tenant=%s groupBindingsRemoved=%d",
+         id, done.getApplicationId(), done.getRealmRefName(), done.getTenantId(), removed);
+      return done;
+   }
+
+   /** The installs of the caller's realm for tenants the caller administers. */
+   public List<ApplicationInstall> listInstalls(String callerRealm) {
+      List<ApplicationInstall> all = system(() -> applicationInstallRepo.findByRealmWithIgnoreRules(callerRealm));
+      List<ApplicationInstall> visible = new ArrayList<>();
+      for (ApplicationInstall install : all) {
+         if (authorityFor(callerRealm, List.of(install.getTenantId())) != Authority.NONE) {
+            visible.add(install);
+         }
+      }
+      return visible;
+   }
+
+   // ------------------------------------------------------------------ helpers
+
+   private void requireMayGrant(String realm, Application application, UserAppRole binding) {
+      List<String> tenants = ApplicationBindingValidator.tenants(binding);
+      Authority authority = authorityFor(realm, tenants);
+      if (authority == Authority.NONE) {
+         throw new ApplicationAccessException(Code.ROLE_NOT_GRANTABLE, String.format(
+            "the caller administers none or not all of the tenants %s in realm '%s'", tenants, realm));
+      }
+      ApplicationBindingValidator.requireGrantable(application, binding.getRoles(), authority);
+   }
+
+   private void requireInstallAuthority(String realm, String tenantId) {
+      if (tenantId == null || tenantId.isBlank()) {
+         throw new ApplicationAccessException(Code.INSTALL_INVALID, "tenantId is required");
+      }
+      Authority authority = authorityFor(realm, List.of(tenantId.trim()));
+      if (authority != Authority.PLATFORM && authority != Authority.REALM_ADMIN) {
+         throw new ApplicationAccessException(Code.INSTALL_NOT_AUTHORIZED, String.format(
+            "only the platform or a realm administrator of tenant '%s' may install or uninstall in realm '%s'",
+            tenantId, realm));
+      }
+   }
+
+   private Authority authorityFor(String realm, List<String> tenants) {
+      if (tenants.isEmpty()) {
+         // Only the platform has authority independent of tenants.
+         return isPlatform() ? Authority.PLATFORM : Authority.NONE;
+      }
+      return accessInviteService.administrativeAuthority(realm, tenants);
+   }
+
+   private boolean isPlatform() {
+      PrincipalContext caller = SecurityContext.getPrincipalContext().orElse(null);
+      String systemUserId = envConfigUtils.getSystemUserId();
+      return caller != null && systemUserId != null && systemUserId.equalsIgnoreCase(caller.getUserId())
+         && caller.getRoles() != null && java.util.Arrays.stream(caller.getRoles()).anyMatch("system"::equalsIgnoreCase);
+   }
+
+   /** The caller's realm; a different one only for the platform. */
+   private static String realmFor(String callerRealm, String requested, Authority authority) {
+      String named = requested == null || requested.isBlank() ? null : requested.trim();
+      if (named == null || named.equals(callerRealm)) {
+         if (callerRealm == null || callerRealm.isBlank()) {
+            throw new ApplicationAccessException(Code.REALM_MISMATCH, "the request has no resolved realm");
+         }
+         return callerRealm;
+      }
+      if (authority != Authority.PLATFORM) {
+         throw new ApplicationAccessException(Code.REALM_MISMATCH,
+            "realm '" + named + "' is not the caller's realm '" + callerRealm + "'");
+      }
+      return named;
+   }
+
+   private Application application(String applicationId) {
+      if (applicationId == null || applicationId.isBlank()) {
+         throw new ApplicationAccessException(Code.BINDING_INVALID, "applicationId is required");
+      }
+      return applicationRepo.findByRefNameWithIgnoreRules(applicationId.trim())
+         .orElseThrow(() -> new ApplicationAccessException(Code.APPLICATION_UNKNOWN,
+            "application '" + applicationId + "' is not registered"));
+   }
+
+   private Optional<UserAppRole> stored(UserAppRole request) {
+      if (request.getId() != null) {
+         Optional<UserAppRole> byId = userAppRoleRepo.findByIdWithIgnoreRules(request.getId());
+         if (byId.isPresent()) {
+            return byId;
+         }
+      }
+      String user = request.getUserId() == null || request.getUserId().isBlank() ? null : request.getUserId().trim();
+      String group = request.groupRefName();
+      if ((user == null) == (group == null) || request.getApplicationId() == null) {
+         return Optional.empty();
+      }
+      return userAppRoleRepo.findForSubjectsWithIgnoreRules(user, group == null ? List.of() : List.of(group),
+            request.getApplicationId().trim(), request.getRealmRefName()).stream()
+         .filter(binding -> group == null ? user.equals(binding.getUserId()) : group.equals(binding.getGroupRefName()))
+         .findFirst();
+   }
+
+   private String tenantOf(String tenantId) {
+      if (tenantId != null && !tenantId.isBlank()) {
+         return tenantId.trim();
+      }
+      PrincipalContext caller = SecurityContext.getPrincipalContext().orElse(null);
+      String tenant = caller == null || caller.getDataDomain() == null ? null : caller.getDataDomain().getTenantId();
+      if (tenant == null || tenant.isBlank()) {
+         throw new ApplicationAccessException(Code.BINDING_INVALID, "a tenant is required");
+      }
+      return tenant.trim();
+   }
+
+   private static String subject(UserAppRole binding) {
+      return binding.groupBinding() ? "group:" + binding.getGroupRefName() : binding.getUserId();
+   }
+
+   private <T> T system(Supplier<T> action) {
+      return SecurityCallScope.runWithContexts(
+         securityUtils.getSystemPrincipalContext(),
+         securityUtils.getSystemSecurityResourceContext(),
+         action);
+   }
+}

@@ -654,6 +654,102 @@ Resolution APIs live in `RealmMembershipService` (quantum-system):
 `rolesForUser`. Embedded deployments resolve locally; remote (tier-2)
 deployments get the same surface backed by the control-plane client (Phase C).
 
+[[application-bindings]]
+=== Application Bindings, Installs and the Public Catalog
+
+An `Application` declares its roles (`roles[].grantableBy`), owner and member
+roles, tenancy and vocabulary. Three framework records, all in the system
+realm, say who may use it where:
+
+[cols="1,3"]
+|===
+|Record |What it holds
+
+|`ApplicationInstall`
+|One row per (application, realm, tenant): `status` is `active`, `suspended`
+or `uninstalled`. A realm links to many applications through its installs. Ids
+may be supplied by the caller, and `ApplicationInstallRepo.upsertById` writes
+under that id idempotently, so a migration can keep the ids of the records it
+replaces. Only one active install per (application, realm, tenant).
+
+|`UserAppRole` (the application binding)
+|One row per (user _or_ `UserGroup`, application, realm): `roles` (only roles
+the application declares), `tenantIds` with `defaultTenantId` (required when
+there are several), optional `defaultRealm`, `status` (`active`/`suspended`),
+`source` and `grantedBy`/`grantedAt`. The application must be installed for
+every tenant. `UserAppRoleRepo` applies these rules on every save, and
+`upsertById` writes under a caller-supplied id.
+
+|`UserRealmRole`
+|Unchanged: realm membership (tenants, status, sponsor) and realm-wide roles.
+|===
+
+Refusals are typed (`ApplicationAccessException.Code`): `ROLE_NOT_DECLARED`,
+`TENANTS_REQUIRED`, `TENANT_DEFAULT_REQUIRED`, `APPLICATION_NOT_INSTALLED`,
+`APPLICATION_UNKNOWN`, `BINDING_SUBJECT_INVALID`, `BINDING_INVALID`,
+`ROLE_NOT_GRANTABLE`, `INSTALL_NOT_AUTHORIZED`, `REALM_MISMATCH`,
+`INSTALL_INVALID`, `NOT_FOUND`.
+
+==== Who may write
+
+`/api/security/userAppRole` (`GET list`, `PUT`, `DELETE id/{id}`) and
+`/api/security/applicationInstall` (`GET list`, `POST`, `POST id/{id}/uninstall`)
+work in the caller's resolved realm; only the platform may name another realm.
+The caller's authority comes from the administrator definitions access invites
+already use: the system principal is the platform; a realm administrator
+(`admin` in the realm) covers a dedicated realm, or in a pooled realm the
+tenants its assignment authorizes; a membership administrator
+(`quantum.access-invites.membership-admin-roles`) covers only the tenant of its
+request. The caller must cover every tenant of the binding (and of the binding
+it replaces), and each role's `grantableBy` decides: the platform grants any
+declared role, a realm administrator roles grantable by `realm-admin` or
+`tenant-admin`, a tenant administrator roles grantable by `tenant-admin`.
+`system` is never grantable. Installs and uninstalls need the platform or a
+realm administrator of the tenant. Uninstalling removes the application's group
+bindings for that tenant; user bindings stay but stop granting it.
+
+==== Resolution
+
+Identity-only principal resolution (`PrincipalContextResolver`, behind
+`POST /v1/auth/principal-context/resolve`) reads the bindings of the identity
+and of its system-realm groups first:
+
+* With no realm requested, the active bindings for the application choose it:
+  the one marked `defaultRealm`, else the only one; several and no default
+  refuse with `REALM_NOT_AUTHORIZED`.
+* A binding for the application in the realm admits it. Its tenants count only
+  where the application is installed and, in a shared realm, where the
+  membership also authorizes them; a shared realm needs an active membership.
+  The tenant is the requested one, else the binding's default, else the only
+  one (`TENANT_SELECTION_REQUIRED` otherwise). A dedicated realm's tenant must
+  be one the binding grants.
+* Roles are the realm-wide roles (credential, membership, legacy groups), which
+  flow into every application, plus the roles of the bindings that grant the
+  selected tenant.
+* A malformed binding, a duplicate, or a suspended user binding refuses with
+  `APPLICATION_NOT_GRANTED`; it never falls back. A binding whose tenants are
+  all uninstalled refuses the same way.
+* Only when the identity has no active binding for the application in the realm
+  does the membership's `authorizedApplications` grant decide, as before.
+
+Tokens are unchanged: no claims are added. Under `quantum.directory.mode=remote`
+the local store is not the authority and no local binding is read.
+
+==== Catalog fields and the public read
+
+`Application` also carries `appVersion`, `owner`, `lifecycleState`
+(`DRAFT`, `PREVIEW`, `ACTIVE`, `DEPRECATED`, `RETIRED`), `packRefs`,
+`launchAddresses` (environment and URL) and `signInRoute` (client id, entry URL,
+callback allowlist, authorization path). All are optional, so rows and packs
+written before them load unchanged.
+
+`GET /public/applications` is unauthenticated (`@PermitAll`). It lists the
+applications in `PREVIEW`, `ACTIVE` or `DEPRECATED` state as
+`ApplicationCatalogEntry` rows: `refName`, `displayName`, `appVersion`,
+`lifecycleState`, `launchAddresses` and `signIn` (client id, entry URL,
+authorization path). Roles, tenancy, owner, pack refs, the callback allowlist,
+data domain and audit fields are never returned.
+
 [[user-definable-facet-segmentation]]
 === User-Definable Facet Segmentation & Coordinate SPI in Multi-Tenant Environments
 
