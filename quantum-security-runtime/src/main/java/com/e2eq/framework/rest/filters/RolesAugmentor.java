@@ -92,7 +92,8 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
 
         // In an application session whose application or realm differs from the token's, the
         // session's roles replace the token's, derived exactly as SecurityFilter derives them.
-        java.util.Set<String> sessionRoles = applicationSessionRoles(identity, contextRealm, routing);
+        SessionRoles session = sessionRoles(identity, contextRealm, routing);
+        java.util.Set<String> sessionRoles = session == null ? null : session.roles();
         if (sessionSelection != null && sessionSelection.enabled()) {
             contextRealm = sessionSelection.realm(routing, identity, contextRealm, configured(sessionRealm));
         }
@@ -167,6 +168,16 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
             builder.addRole("user");
         }
 
+        // The realm these roles describe: the session's realm when it replaced the token's roles,
+        // else the realm the token was signed for. Consumers pairing roles with a realm read this.
+        if (identity.getPrincipal() instanceof org.eclipse.microprofile.jwt.JsonWebToken token) {
+            String rolesRealm = session != null ? session.realm() : signedRealm(token);
+            if (rolesRealm != null) {
+                builder.addAttribute(com.e2eq.framework.model.securityrules.PrincipalIdentityAttributes.ROLES_REALM,
+                        rolesRealm);
+            }
+        }
+
         return builder.build();
     }
 
@@ -194,6 +205,10 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
         }
         builder.addRoles(roleSet(principal.getRoles() == null ? new String[0] : principal.getRoles()));
         builder.addRole("user");
+        if (principal.getDefaultRealm() != null && !principal.getDefaultRealm().isBlank()) {
+            builder.addAttribute(com.e2eq.framework.model.securityrules.PrincipalIdentityAttributes.ROLES_REALM,
+                    principal.getDefaultRealm().trim());
+        }
         if (principal.getUserId() != null && !principal.getUserId().isBlank()) {
             builder.addAttribute("userId", principal.getUserId());
         }
@@ -229,11 +244,16 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
      * embedded ones {@code IdentityRoleResolver} on the system-realm credential.
      */
     java.util.Set<String> applicationSessionRoles(SecurityIdentity identity, String requestedRealm) {
-        return applicationSessionRoles(identity, requestedRealm, null);
+        SessionRoles session = sessionRoles(identity, requestedRealm, null);
+        return session == null ? null : session.roles();
     }
 
-    private java.util.Set<String> applicationSessionRoles(SecurityIdentity identity, String requestedRealm,
-                                                         io.vertx.ext.web.RoutingContext routing) {
+    /** An application session's roles and the realm they were resolved for. */
+    private record SessionRoles(java.util.Set<String> roles, String realm) {
+    }
+
+    private SessionRoles sessionRoles(SecurityIdentity identity, String requestedRealm,
+                                      io.vertx.ext.web.RoutingContext routing) {
         String sessionApplication = configured(sessionApplicationId);
         if (sessionApplication == null && configured(sessionRealm) == null
                 && (sessionSelection == null || !sessionSelection.enabled())) {
@@ -244,7 +264,7 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
             return null;
         }
         boolean foreign = foreignApplicationToken(identity);
-        String signed = claim(token, "realm");
+        String signed = signedRealm(token);
         String selected = sessionSelection != null && sessionSelection.enabled()
                 ? sessionSelection.realm(routing, identity, requestedRealm, configured(sessionRealm))
                 : requestedRealm != null && !requestedRealm.isBlank()
@@ -256,7 +276,7 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
             if (!foreign && !realmChanged) {
                 return null;
             }
-            return roleSet(delegatedSessionRoles(token, realm, routing));
+            return new SessionRoles(roleSet(delegatedSessionRoles(token, realm, routing)), realm);
         }
 
         String subject = claim(token, "sub");
@@ -265,22 +285,22 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
                 : credentialRepo.findBySubject(subject, envConfigUtils.getSystemRealm(), true);
         if (credential.isEmpty()) {
             // SecurityFilter refuses this request; grant nothing beyond "user" meanwhile.
-            return foreign ? java.util.Set.of() : null;
+            return foreign ? new SessionRoles(java.util.Set.of(), null) : null;
         }
         CredentialUserIdPassword cred = credential.get();
         String home = cred.getDomainContext() == null ? null : cred.getDomainContext().getDefaultRealm();
         String authorityRealm = signed != null ? signed : home;
         String realm = selected != null ? selected : authorityRealm;
         if (realm == null) {
-            return java.util.Set.of();
+            return new SessionRoles(java.util.Set.of(), null);
         }
         boolean realmChanged = !realm.equalsIgnoreCase(authorityRealm);
         if (!foreign && !realmChanged) {
             return null;
         }
         String applicationId = sessionApplication != null ? sessionApplication : claim(token, "azp");
-        return roleSet(identityRoleResolver.resolveEffectiveRoles(
-                foreign ? null : identity, cred, authorityRealm, realm, applicationId));
+        return new SessionRoles(roleSet(identityRoleResolver.resolveEffectiveRoles(
+                foreign ? null : identity, cred, authorityRealm, realm, applicationId)), realm);
     }
 
     private String[] delegatedSessionRoles(org.eclipse.microprofile.jwt.JsonWebToken token, String realm,
@@ -319,6 +339,11 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
                 com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.TOKEN_TYPE_CLAIM);
         return tokenType != null && com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.SERVICE_TOKEN_TYPE
                 .equalsIgnoreCase(tokenType.toString());
+    }
+
+    /** The realm the token was signed for (claims path only; step 4 deletes it). */
+    private static String signedRealm(org.eclipse.microprofile.jwt.JsonWebToken token) {
+        return claim(token, "realm");
     }
 
     private static String claim(org.eclipse.microprofile.jwt.JsonWebToken token, String name) {

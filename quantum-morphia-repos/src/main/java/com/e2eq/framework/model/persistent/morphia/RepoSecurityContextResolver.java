@@ -24,6 +24,7 @@ final class RepoSecurityContextResolver {
     private final EnvConfigUtils envConfigUtils;
     private final RuleContext ruleContext;
     private final String defaultRealm;
+    private final String applicationId;
 
     RepoSecurityContextResolver(
             SecurityIdentity securityIdentity,
@@ -31,6 +32,21 @@ final class RepoSecurityContextResolver {
             EnvConfigUtils envConfigUtils,
             RuleContext ruleContext,
             String defaultRealm) {
+        this(securityIdentity, credentialRepo, envConfigUtils, ruleContext, defaultRealm, null);
+    }
+
+    /**
+     * {@code applicationId}: this application's configured id ({@link ReceivingApplication}), the
+     * application of a principal context rebuilt from the identity; never the token's azp.
+     */
+    RepoSecurityContextResolver(
+            SecurityIdentity securityIdentity,
+            CredentialRepo credentialRepo,
+            EnvConfigUtils envConfigUtils,
+            RuleContext ruleContext,
+            String defaultRealm,
+            String applicationId) {
+        this.applicationId = applicationId;
         this.securityIdentity = securityIdentity;
         this.credentialRepo = credentialRepo;
         this.envConfigUtils = envConfigUtils;
@@ -118,7 +134,7 @@ final class RepoSecurityContextResolver {
 
         PrincipalContext rebuiltContext = new PrincipalContext.Builder()
                 .withDefaultRealm(contextRealm)
-                .withApplicationId(identityAttribute("azp"))
+                .withApplicationId(applicationId)
                 .withDataDomain(dataDomain)
                 .withUserId(userId)
                 .withRoles(roles)
@@ -136,14 +152,6 @@ final class RepoSecurityContextResolver {
             Log.debugf("[MorphiaRepo] Principal Context %s from SecurityIdentity for user %s, roles=%s",
                     principalContext.isEmpty() ? "built" : "rebuilt", userId, Arrays.toString(roles));
         }
-    }
-
-    private String identityAttribute(String name) {
-        if (securityIdentity == null) return null;
-        Object value = securityIdentity.getAttribute(name);
-        if (value == null) return null;
-        String text = String.valueOf(value).trim();
-        return text.isEmpty() ? null : text;
     }
 
     String getSecurityContextRealmId() {
