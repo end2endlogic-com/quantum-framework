@@ -34,6 +34,7 @@ import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.eclipse.microprofile.openapi.annotations.Operation;
 import org.eclipse.microprofile.openapi.annotations.enums.SecuritySchemeType;
 import org.eclipse.microprofile.openapi.annotations.media.Content;
+import org.eclipse.microprofile.openapi.annotations.enums.SchemaType;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 import org.eclipse.microprofile.openapi.annotations.parameters.Parameter;
 import org.eclipse.microprofile.openapi.annotations.parameters.RequestBody;
@@ -765,7 +766,7 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
    @Consumes(MediaType.APPLICATION_JSON)
    @SecurityRequirement(name = "bearerAuth")
    @APIResponses(value = {
-           @APIResponse(responseCode = "200", description = "Success", content = @Content(mediaType = "application/json", schema = @Schema(implementation = EntityReference.class))),
+           @APIResponse(responseCode = "200", description = "Success", content = @Content(mediaType = "application/json", schema = @Schema(type = SchemaType.ARRAY, implementation = BaseModel.class))),
            @APIResponse(responseCode = "400", description = "Bad Request / bad argument", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
    })
    public List<T> convertEntityRefList(@Context HttpHeaders headers, @RequestBody List<EntityReference> entityRefList) {
@@ -782,7 +783,7 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
     @Produces(MediaType.APPLICATION_JSON)
     @SecurityRequirement(name = "bearerAuth")
     @APIResponses(value = {
-            @APIResponse(responseCode = "200", description = "Success", content = @Content(mediaType = "application/json", schema = @Schema(implementation = EntityReference.class))),
+            @APIResponse(responseCode = "200", description = "Success", content = @Content(mediaType = "application/json", schema = @Schema(type = SchemaType.ARRAY, implementation = EntityReference.class))),
             @APIResponse(responseCode = "400", description = "Bad Request / bad argument", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
     })
     public List<EntityReference> getEntityRefList(@Context HttpHeaders headers,

@@ -25,6 +25,7 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.openapi.annotations.Operation;
 import org.eclipse.microprofile.openapi.annotations.media.Content;
+import org.eclipse.microprofile.openapi.annotations.enums.SchemaType;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
@@ -56,7 +57,7 @@ public class AccessInviteResource {
             + "Other callers see only the invites they created. Invite tokens are never returned.")
     @APIResponses({
         @APIResponse(responseCode = "200", description = "Invites visible to the caller",
-            content = @Content(mediaType = "application/json", schema = @Schema(implementation = AccessInviteResponse.class))),
+            content = @Content(mediaType = "application/json", schema = @Schema(type = SchemaType.ARRAY, implementation = AccessInviteResponse.class))),
         @APIResponse(responseCode = "403", description = "INVITE_NOT_AUTHORIZED",
             content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
     })
@@ -110,7 +111,7 @@ public class AccessInviteResource {
             content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class))),
         @APIResponse(responseCode = "403", description = "INVITE_REALM_NOT_ACCESSIBLE, INVITE_ROLE_NOT_GRANTABLE, INVITE_APPLICATION_NOT_GRANTABLE, INVITE_NOT_AUTHORIZED, INVITE_SCOPE_NOT_AUTHORIZED, or INVITE_SCOPE_UNRESOLVABLE",
             content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class))),
-        @APIResponse(responseCode = "409", description = "INVITE_POLICY_UNAVAILABLE (no usable acceptance policy for the realm, or the body named another policy), or a pending invite already exists for the identity",
+        @APIResponse(responseCode = "409", description = "INVITE_POLICY_UNAVAILABLE (no usable acceptance policy for the realm, or the body named another policy), or INVITE_ALREADY_PENDING (an unexpired pending invite already exists in the realm for the same email or user)",
             content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class))),
         @APIResponse(responseCode = "503", description = "The application registry could not be consulted; the invite was not created")
     })
