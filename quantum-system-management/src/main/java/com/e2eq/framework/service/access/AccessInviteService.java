@@ -930,6 +930,11 @@ public class AccessInviteService {
         return caller;
     }
 
+    /** Whether the current caller is the framework's own system principal (the platform). */
+    public boolean callerIsSystemPrincipal() {
+        return SecurityContext.getPrincipalContext().map(this::isSystemPrincipal).orElse(false);
+    }
+
     /** The framework's own system principal (seeders, jobs, internal services). */
     private boolean isSystemPrincipal(PrincipalContext caller) {
         String systemUserId = normalize(securityUtils.getEnvConfigUtils().getSystemUserId());

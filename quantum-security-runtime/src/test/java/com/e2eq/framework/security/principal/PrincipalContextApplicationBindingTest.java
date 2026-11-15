@@ -66,6 +66,19 @@ class PrincipalContextApplicationBindingTest {
     }
 
     @Test
+    void aLegacyAdmissionIsLoggedAndABindingAdmissionIsNot() {
+        world.assignments.get(ALICE + "|pooled").setAuthorizedApplications(List.of(PLANNER));
+        List<String> logged = captureResolverLog(() -> resolve(PLANNER, "pooled", "tenant-a"));
+        assertTrue(logged.stream().anyMatch(line -> line.contains(PrincipalContextResolver.LEGACY_APPLICATION_GRANT)
+                && line.contains(ALICE) && line.contains(PLANNER)), logged.toString());
+
+        world.bind(ALICE, PLANNER, "pooled", List.of("tenant-a"), null, "planner-user");
+        List<String> bound = captureResolverLog(() -> resolve(PLANNER, "pooled", "tenant-a"));
+        assertFalse(bound.stream().anyMatch(line -> line.contains(PrincipalContextResolver.LEGACY_APPLICATION_GRANT)),
+                bound.toString());
+    }
+
+    @Test
     void aBindingTakesPrecedenceOverTheRealmAssignment() {
         // The assignment grants planner in every tenant it authorizes; the binding grants tenant-a only.
         world.assignments.get(ALICE + "|pooled").setAuthorizedApplications(List.of(PLANNER));
@@ -362,6 +375,35 @@ class PrincipalContextApplicationBindingTest {
             request.tenantId(tenant);
         }
         return world.resolver().resolve(request.build()).context();
+    }
+
+    private static List<String> captureResolverLog(Runnable call) {
+        java.util.logging.Logger logger = java.util.logging.Logger.getLogger(PrincipalContextResolver.class.getName());
+        List<String> lines = new java.util.concurrent.CopyOnWriteArrayList<>();
+        java.util.logging.Handler handler = new java.util.logging.Handler() {
+            @Override
+            public void publish(java.util.logging.LogRecord record) {
+                Object[] parameters = record.getParameters();
+                String message = record.getMessage();
+                lines.add(parameters == null || parameters.length == 0 ? message
+                        : String.format(message.replace("{0}", "%s"), parameters) + " " + java.util.Arrays.toString(parameters));
+            }
+
+            @Override
+            public void flush() {
+            }
+
+            @Override
+            public void close() {
+            }
+        };
+        logger.addHandler(handler);
+        try {
+            call.run();
+        } finally {
+            logger.removeHandler(handler);
+        }
+        return lines;
     }
 
     private static List<String> roles(PrincipalContext context) {

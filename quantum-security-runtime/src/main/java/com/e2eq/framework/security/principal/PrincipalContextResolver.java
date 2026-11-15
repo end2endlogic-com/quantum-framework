@@ -111,6 +111,12 @@ public class PrincipalContextResolver {
 
     ImpersonationScriptEvaluator scriptEvaluator = new ImpersonationScriptEvaluator();
 
+    /**
+     * Log marker for an identity-mode admission the realm assignment's application grant decided
+     * because no application binding applied: what is left to migrate to bindings.
+     */
+    public static final String LEGACY_APPLICATION_GRANT = "LEGACY_APPLICATION_GRANT";
+
     public PrincipalContextResolver() {
     }
 
@@ -200,6 +206,10 @@ public class PrincipalContextResolver {
             grant = bindingGrant(effective, context.getApplicationId(), context.getDefaultRealm());
             if (grant == null) {
                 requireApplicationGranted(context, effective);
+                // Migration signal: this admission had no binding; the realm assignment decided.
+                Log.infof("%s user=%s application=%s realm=%s: no application binding applies; the realm "
+                                + "assignment's application grant decided", LEGACY_APPLICATION_GRANT,
+                        effective.getUserId(), context.getApplicationId(), context.getDefaultRealm());
             }
         } else if (request.signedClaims().foreignApplicationToken()) {
             requireSessionApplicationAdmitted(context);

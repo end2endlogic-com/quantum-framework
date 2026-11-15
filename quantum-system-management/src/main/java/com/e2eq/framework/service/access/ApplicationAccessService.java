@@ -141,7 +141,11 @@ public class ApplicationAccessService {
          binding.getApplicationId(), binding.getRealmRefName(), subject(binding));
    }
 
-   /** The bindings for an application in the caller's realm that name {@code tenantId}, which the caller administers. */
+   /**
+    * The bindings for an application in the caller's realm that name {@code tenantId}, which the
+    * caller administers. Each row shows only the tenants the caller administers: a binding that
+    * also grants another tenant does not reveal it (nor a default tenant outside them).
+    */
    public List<UserAppRole> listBindings(String callerRealm, String applicationId, String tenantId) {
       accessDirectory.requireLocalDirectory();
       String tenant = tenantOf(tenantId);
@@ -150,7 +154,28 @@ public class ApplicationAccessService {
             "only an administrator of tenant '" + tenant + "' may list its bindings");
       }
       application(applicationId);
-      return system(() -> userAppRoleRepo.findByApplicationWithIgnoreRules(applicationId.trim(), callerRealm, tenant));
+      List<UserAppRole> rows = system(() ->
+         userAppRoleRepo.findByApplicationWithIgnoreRules(applicationId.trim(), callerRealm, tenant));
+      if (isPlatform()) {
+         return rows;
+      }
+      java.util.Map<String, Boolean> administered = new java.util.HashMap<>();
+      List<UserAppRole> visible = new ArrayList<>();
+      for (UserAppRole row : rows) {
+         List<String> tenants = ApplicationBindingValidator.tenants(row).stream()
+            .filter(candidate -> administered.computeIfAbsent(candidate,
+               key -> authorityFor(callerRealm, List.of(key)) != Authority.NONE))
+            .toList();
+         if (tenants.isEmpty()) {
+            continue;
+         }
+         row.setTenantIds(new ArrayList<>(tenants));
+         if (row.getDefaultTenantId() != null && !tenants.contains(row.getDefaultTenantId().trim())) {
+            row.setDefaultTenantId(null);
+         }
+         visible.add(row);
+      }
+      return visible;
    }
 
    // ------------------------------------------------------------------ installs
@@ -337,11 +362,9 @@ public class ApplicationAccessService {
       return accessInviteService.administrativeAuthority(realm, tenants);
    }
 
+   /** The platform is the framework's system principal, by the one definition invites use. */
    private boolean isPlatform() {
-      PrincipalContext caller = SecurityContext.getPrincipalContext().orElse(null);
-      String systemUserId = envConfigUtils.getSystemUserId();
-      return caller != null && systemUserId != null && systemUserId.equalsIgnoreCase(caller.getUserId())
-         && caller.getRoles() != null && java.util.Arrays.stream(caller.getRoles()).anyMatch("system"::equalsIgnoreCase);
+      return accessInviteService.callerIsSystemPrincipal();
    }
 
    /** The caller's realm; a different one only for the platform. */

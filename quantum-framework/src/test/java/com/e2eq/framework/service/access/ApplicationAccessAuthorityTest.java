@@ -280,6 +280,30 @@ class ApplicationAccessAuthorityTest extends BaseRepoTest {
         assertEquals(0, bindingRepo.findByApplicationWithIgnoreRules(app, POOLED, null).size());
     }
 
+    // ---- listing ----------------------------------------------------------------------------
+
+    @Test
+    void anAdministratorSeesOnlyTheTenantsItAdministers() {
+        String realmAdminA = member("list-admin-a", List.of(TENANT_A), List.of("admin"));
+        String adminB = member("list-admin-b", List.of(TENANT_B), List.of(MEMBERSHIP_ADMIN));
+        String alice = member("list-alice", List.of(TENANT_A, TENANT_B), List.of("viewer"));
+        asSystem(() -> accessService.install(POOLED, install(null, null, TENANT_A)));
+        asSystem(() -> accessService.install(POOLED, install(null, null, TENANT_B)));
+        asSystem(() -> accessService.putBinding(POOLED, binding(alice, List.of(TENANT_A, TENANT_B), TENANT_B, "planner-user")));
+
+        List<UserAppRole> asAdminA = as(signedIn(realmAdminA, TENANT_A), () -> accessService.listBindings(POOLED, app, TENANT_A));
+        assertEquals(1, asAdminA.size());
+        assertEquals(List.of(TENANT_A), asAdminA.get(0).getTenantIds(), "tenant B is not shown to A's administrator");
+        assertEquals(null, asAdminA.get(0).getDefaultTenantId(), "nor is a default outside A");
+        refused(Code.ROLE_NOT_GRANTABLE, () -> as(signedIn(realmAdminA, TENANT_A), () -> accessService.listBindings(POOLED, app, TENANT_B)));
+        refused(Code.ROLE_NOT_GRANTABLE, () -> as(signedIn(adminB, TENANT_B), () -> accessService.listBindings(POOLED, app, TENANT_A)));
+
+        assertEquals(List.of(TENANT_A, TENANT_B),
+            asSystem(() -> accessService.listBindings(POOLED, app, TENANT_A)).get(0).getTenantIds());
+        assertEquals(List.of(TENANT_A, TENANT_B), bindingRepo.findByApplicationWithIgnoreRules(app, POOLED, null)
+            .get(0).getTenantIds(), "the stored row is unchanged");
+    }
+
     // ---- remote directory -----------------------------------------------------------------
 
     @Test
