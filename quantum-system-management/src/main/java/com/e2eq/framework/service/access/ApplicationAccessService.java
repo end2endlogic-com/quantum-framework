@@ -139,6 +139,10 @@ public class ApplicationAccessService {
     * Installs an application for a tenant of the caller's realm. With an id the install is written
     * under it (a repeated install with the same id changes nothing); without one an existing active
     * install for the tenant is returned as is.
+    *
+    * <p>An id that names a stored install is a write to that install: it must be in the caller's
+    * realm (any realm for the platform), the caller needs install authority over the stored tenant
+    * as well as the requested one, and its realm, tenant and application never change.
     */
    public ApplicationInstall install(String callerRealm, ApplicationInstall request) {
       Objects.requireNonNull(request, "install");
@@ -147,6 +151,24 @@ public class ApplicationAccessService {
       request.setRealmRefName(realm);
       application(request.getApplicationId());
       requireInstallAuthority(realm, request.getTenantId());
+      if (request.getId() != null) {
+         Optional<ApplicationInstall> stored = system(() -> applicationInstallRepo.findByIdWithIgnoreRules(request.getId()));
+         if (stored.isPresent()) {
+            ApplicationInstall current = stored.get();
+            if (probe != Authority.PLATFORM && !Objects.equals(current.getRealmRefName(), callerRealm)) {
+               throw new ApplicationAccessException(Code.REALM_MISMATCH,
+                  "install " + request.getId() + " is not in the caller's realm '" + callerRealm + "'");
+            }
+            requireInstallAuthority(current.getRealmRefName(), current.getTenantId());
+            if (!Objects.equals(current.getRealmRefName(), realm)
+               || !Objects.equals(current.getTenantId(), request.getTenantId().trim())
+               || !Objects.equals(current.getApplicationId(), request.getApplicationId().trim())) {
+               throw new ApplicationAccessException(Code.INSTALL_INVALID, String.format(
+                  "install %s is for application '%s', tenant '%s' in realm '%s'; those never change",
+                  current.getId(), current.getApplicationId(), current.getTenantId(), current.getRealmRefName()));
+            }
+         }
+      }
       if (request.getId() == null) {
          Optional<ApplicationInstall> active = system(() -> applicationInstallRepo.findActiveWithIgnoreRules(
             request.getApplicationId().trim(), realm, request.getTenantId().trim()));
@@ -173,10 +195,11 @@ public class ApplicationAccessService {
     * for that tenant are removed. User bindings stay but stop granting the tenant.
     */
    public ApplicationInstall uninstall(String callerRealm, ObjectId id) {
-      ApplicationInstall stored = system(() -> applicationInstallRepo.findByIdWithIgnoreRules(id))
-         .orElseThrow(() -> new ApplicationAccessException(Code.NOT_FOUND, "no install " + id));
       Authority probe = authorityFor(callerRealm, List.of());
-      realmFor(callerRealm, stored.getRealmRefName(), probe);
+      // An install of another realm reads exactly like a missing one, so ids cannot be probed.
+      ApplicationInstall stored = system(() -> applicationInstallRepo.findByIdWithIgnoreRules(id))
+         .filter(found -> probe == Authority.PLATFORM || Objects.equals(found.getRealmRefName(), callerRealm))
+         .orElseThrow(() -> new ApplicationAccessException(Code.NOT_FOUND, "no install " + id));
       requireInstallAuthority(stored.getRealmRefName(), stored.getTenantId());
       ApplicationInstall uninstalled = stored;
       if (!ApplicationInstall.STATUS_UNINSTALLED.equals(stored.getStatus())) {
