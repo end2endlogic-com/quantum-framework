@@ -36,6 +36,8 @@ public final class ApplicationDeclarationValidator {
 
    public enum Code {
       APPLICATION_ID_MISSING,
+      /** A pack carries several application rows, so no single declaration can be checked. */
+      APPLICATION_DECLARATION_AMBIGUOUS,
       ROLE_NAME_INVALID,
       ROLE_DUPLICATE,
       ROLE_RESERVED,
@@ -94,6 +96,66 @@ public final class ApplicationDeclarationValidator {
    }
 
    private ApplicationDeclarationValidator() {
+   }
+
+   /**
+    * The registry over the vocabulary an issuer already holds: who owns which area, and each held
+    * domain's actions. Rows of {@code applicationId} itself are left out, since a new pack version
+    * replaces them. An area without a {@link FunctionalArea} record is owned by the application
+    * whose domains name it.
+    */
+   public static VocabularyRegistry heldVocabulary(String applicationId,
+                                                   List<FunctionalArea> heldAreas,
+                                                   List<FunctionalDomain> heldDomains) {
+      String self = key(applicationId);
+      List<FunctionalArea> areas = heldAreas == null ? List.of() : List.copyOf(heldAreas);
+      List<FunctionalDomain> domains = heldDomains == null ? List.of() : List.copyOf(heldDomains);
+      return new VocabularyRegistry() {
+         @Override
+         public Optional<String> areaOwner(String area) {
+            String wanted = key(area);
+            if (wanted == null) {
+               return Optional.empty();
+            }
+            for (FunctionalArea held : areas) {
+               String owner = key(held.getApplicationId());
+               if (wanted.equals(key(held.getRefName())) && owner != null && !owner.equals(self)) {
+                  return Optional.of(held.getApplicationId().trim());
+               }
+            }
+            for (FunctionalDomain held : domains) {
+               String owner = key(held.getApplicationId());
+               if (wanted.equals(key(held.getArea())) && owner != null && !owner.equals(self)) {
+                  return Optional.of(held.getApplicationId().trim());
+               }
+            }
+            return Optional.empty();
+         }
+
+         @Override
+         public Optional<Set<String>> actions(String application, String area, String domain) {
+            String app = key(application);
+            String wantedArea = key(area);
+            String wantedDomain = key(domain);
+            if (app == null || wantedArea == null || wantedDomain == null) {
+               return Optional.empty();
+            }
+            for (FunctionalDomain held : domains) {
+               if (app.equals(key(held.getApplicationId())) && wantedArea.equals(key(held.getArea()))
+                     && wantedDomain.equals(key(held.getRefName()))) {
+                  Set<String> actions = new LinkedHashSet<>();
+                  for (FunctionalAction action : nonNull(held.getFunctionalActions())) {
+                     String ref = action == null ? null : key(action.getRefName());
+                     if (ref != null) {
+                        actions.add(ref);
+                     }
+                  }
+                  return Optional.of(actions);
+               }
+            }
+            return Optional.empty();
+         }
+      };
    }
 
    public static List<Diagnostic> validate(Declaration declaration,

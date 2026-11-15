@@ -53,6 +53,20 @@ public class SeedLoaderService {
     @ConfigProperty(name = "quantum.seed.batch.size", defaultValue = "1000")
     int batchSize;
 
+    @Inject
+    com.e2eq.framework.model.persistent.morphia.FunctionalAreaRepo functionalAreaRepo;
+
+    @Inject
+    com.e2eq.framework.model.persistent.morphia.FunctionalDomainRepo functionalDomainRepo;
+
+    /**
+     * How an identity pack's vocabulary diagnostics are enforced when it is applied: WARN (default)
+     * logs them and loads the pack, REFUSE refuses it. The same setting identity-contribution
+     * admission reads. Declaration errors refuse in both modes.
+     */
+    @ConfigProperty(name = "quantum.identity-contribution.vocabulary-enforcement", defaultValue = "WARN")
+    com.e2eq.framework.model.security.ApplicationDeclarationValidator.VocabularyEnforcement vocabularyEnforcement;
+
     /**
      * Creates a SeedLoader instance with all configured dependencies.
      * Auto-discovers CDI-managed seed sources (FileSeedSource and ClasspathSeedSource are now CDI beans).
@@ -72,7 +86,8 @@ public class SeedLoaderService {
                 .conflictPolicy(conflictPolicy)
                 .batchSize(batchSize)
                 .seedMetrics(seedMetrics)
-                .seedDatasetValidator(seedDatasetValidator);
+                .seedDatasetValidator(seedDatasetValidator)
+                .addPackGate(applicationDeclarationGate());
 
         // Add auto-discovered CDI-managed seed sources
         // FileSeedSource and ClasspathSeedSource are now @ApplicationScoped beans
@@ -96,6 +111,21 @@ public class SeedLoaderService {
         }
 
         return builder.build();
+    }
+
+    /** The identity-pack declaration check, over the vocabulary held in the realm being seeded. */
+    public ApplicationDeclarationGate applicationDeclarationGate() {
+        return new ApplicationDeclarationGate(vocabularyEnforcement, new ApplicationDeclarationGate.HeldVocabulary() {
+            @Override
+            public List<com.e2eq.framework.model.security.FunctionalArea> areas(String realm) {
+                return functionalAreaRepo.findAllWithIgnoreRules(realm);
+            }
+
+            @Override
+            public List<com.e2eq.framework.model.security.FunctionalDomain> domains(String realm) {
+                return functionalDomainRepo.findAllWithIgnoreRules(realm);
+            }
+        }, objectMapper);
     }
 
     /**

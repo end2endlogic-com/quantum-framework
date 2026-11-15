@@ -287,6 +287,67 @@ Annotations feed into permission rule matching:
   effect: ALLOW
 ----
 
+==== Vocabulary from code
+
+An application's functional vocabulary (area -> domain -> action) is what its code maps. The
+`quantum-vocabulary-processor` annotation processor derives it at compile time and checks the
+application's identity pack against it, so the pack, the code and the policies cannot drift apart.
+
+What the processor reads, mirroring how `SecurityFilter` resolves a request:
+
+* a concrete model (subtype of `UnversionedBaseModel`) with `@FunctionalMapping`: its area/domain
+  with the persistence actions (`LIST, VIEW, CREATE, UPDATE, DELETE`; option
+  `quantum.vocabulary.persistenceActions`);
+* every method with `@FunctionalAction` or a JAX-RS HTTP method, own or inherited (so `BaseResource`
+  endpoints count): the mapping is the `BaseResource` model's, else the method's, else the class's;
+  the action is `@FunctionalAction`, else the `/list`, `/create`, `/delete`, `/update` path keyword,
+  else the HTTP verb (see <<Default Action Mapping>>);
+* the identity pack's application row: its `roles` and its `uses` (borrowed areas). A mapping in a
+  borrowed area must name a domain `uses` lists.
+
+It writes `META-INF/quantum/vocabulary.json` (schema `quantum.vocabulary.v1`: `applicationId`,
+`contentHash`, `areas[].domains[].actions`, `uses`, `roles`, and `sources` naming where each domain
+comes from; the hash covers the vocabulary and roles, not `sources`).
+
+The pack's `functionalArea` and `functionalDomain` datasets are generated from it; the application
+row and the policies stay hand-written. In `check` mode (the default) the build fails with
+`IDENTITY_PACK_VOCABULARY_DRIFT`, one line per missing or extra area, domain or action, and the
+command that regenerates the datasets.
+
+[source,xml]
+----
+<properties>
+  <quantum.vocabulary.mode>check</quantum.vocabulary.mode>
+</properties>
+...
+<plugin>
+  <artifactId>maven-compiler-plugin</artifactId>
+  <configuration>
+    <annotationProcessorPaths combine.children="append">
+      <path>
+        <groupId>com.end2endlogic</groupId>
+        <artifactId>quantum-vocabulary-processor</artifactId>
+        <version>${quantum.version}</version>
+      </path>
+    </annotationProcessorPaths>
+    <compilerArgs combine.children="append">
+      <arg>-Aquantum.vocabulary.pack=${project.basedir}/src/main/resources/identity/acme-planner-identity</arg>
+      <arg>-Aquantum.vocabulary.mode=${quantum.vocabulary.mode}</arg>
+    </compilerArgs>
+  </configuration>
+</plugin>
+----
+
+Regenerate the datasets with `mvn clean compile -Dquantum.vocabulary.mode=write` (rows that already
+exist keep their display names and `dataDomain`). The check runs when the module compiles, so an
+edit to the pack alone is caught by the next clean build (CI), not by an up-to-date incremental one. Models that still rely on `bmFunctionalArea()` /
+`bmFunctionalDomain()` cannot be read at build time; the processor warns
+(`FUNCTIONAL_MAPPING_NOT_IN_CODE`) until they carry `@FunctionalMapping`. The processor sees the
+sources being compiled, so run it on a full module compile.
+
+When the pack is applied, `ApplicationDeclarationGate` checks it again against what other
+applications hold (see xref:{doc-root}/user-guide/seed-packs.adoc#identity-pack-declaration-gate[Seed packs]).
+
 ==== See Also
 
 - xref:{doc-root}/user-guide/modeling.adoc#prefer-annotations-for-functional-mapping-recommended[Modeling: Functional Mapping]

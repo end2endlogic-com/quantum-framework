@@ -35,8 +35,13 @@ public class FunctionalAreaRepo extends MorphiaRepo<FunctionalArea> {
 
    /** Every area, whatever its application, ignoring rules (the vocabulary registry's read). */
    public List<FunctionalArea> findAllWithIgnoreRules() {
+      return findAllWithIgnoreRules(getSecurityContextRealmId());
+   }
+
+   /** Every row held in {@code realm}, ignoring rules (what a seed apply into that realm checks against). */
+   public List<FunctionalArea> findAllWithIgnoreRules(String realm) {
       try (dev.morphia.query.MorphiaCursor<FunctionalArea> cursor =
-              morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId()).find(FunctionalArea.class).iterator()) {
+              morphiaDataStoreWrapper.getDataStore(realm).find(FunctionalArea.class).iterator()) {
          return cursor.toList();
       }
    }

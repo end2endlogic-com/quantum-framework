@@ -80,6 +80,7 @@
         <module>quantum-contract-core</module>
         <module>quantum-contract-rest</module>
         <module>quantum-rest-core</module>
+        <module>quantum-vocabulary-processor</module>
         <module>quantum-query-rest</module>
         <module>quantum-security-runtime</module>
         <module>quantum-control-plane-client</module>
@@ -292,6 +293,7 @@
                 <module>quantum-contract-core</module>
                 <module>quantum-contract-rest</module>
                 <module>quantum-rest-core</module>
+                <module>quantum-vocabulary-processor</module>
                 <module>quantum-query-rest</module>
                 <module>quantum-security-runtime</module>
                 <module>quantum-control-plane-client</module>

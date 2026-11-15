@@ -54,6 +54,7 @@ public final class SeedLoader {
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
     private final SeedDatasetValidator seedDatasetValidator;
     private final List<SeedRecordListener> recordListeners;
+    private final List<SeedPackGate> packGates;
 
     private SeedLoader(Builder builder) {
         this.seedSources = List.copyOf(builder.seedSources);
@@ -70,6 +71,7 @@ public final class SeedLoader {
         List<SeedRecordListener> sorted = new ArrayList<>(builder.recordListeners);
         sorted.sort(Comparator.comparingInt(SeedRecordListener::priority).reversed());
         this.recordListeners = List.copyOf(sorted);
+        this.packGates = List.copyOf(builder.packGates);
     }
 
     public static Builder builder() {
@@ -141,18 +143,57 @@ public final class SeedLoader {
             Log.infov("No seed packs requested for realm {0}", context.getRealm());
             return;
         }
+        // Plan every pack (includes first) before writing anything, so a refusing gate or a
+        // dependency cycle leaves the realm untouched.
         Set<String> applied = new LinkedHashSet<>();
+        List<SeedPackDescriptor> plan = new ArrayList<>();
         for (SeedPackRef ref : packRefs) {
             SeedPackDescriptor descriptor = resolution.resolve(ref);
-            applyDescriptor(descriptor, context, resolution, applied, new ArrayDeque<>());
+            planDescriptor(descriptor, resolution, applied, new ArrayDeque<>(), plan);
+        }
+        admit(plan, context);
+        for (SeedPackDescriptor descriptor : plan) {
+            applyDatasets(descriptor, context);
         }
     }
 
-    private void applyDescriptor(SeedPackDescriptor descriptor,
-                                 SeedContext context,
-                                 SeedResolution resolution,
-                                 Set<String> applied,
-                                 Deque<String> stack) {
+    /** Runs every {@link SeedPackGate} over every planned pack; any refusal stops the apply before a write. */
+    private void admit(List<SeedPackDescriptor> plan, SeedContext context) {
+        if (packGates.isEmpty()) {
+            return;
+        }
+        for (SeedPackDescriptor descriptor : plan) {
+            for (SeedPackGate gate : packGates) {
+                gate.admit(descriptor, context, dataset -> transformedRecords(descriptor, dataset, context));
+            }
+        }
+    }
+
+    /** A dataset's records as they would be persisted: parsed, then run through its transforms. */
+    private List<Map<String, Object>> transformedRecords(SeedPackDescriptor descriptor, Dataset dataset, SeedContext context) {
+        SeedCollectionResolver.ensureCollectionSet(dataset);
+        List<SeedTransform> transforms = buildTransforms(dataset);
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Map<String, Object> record : readDataset(descriptor, dataset).records()) {
+            Map<String, Object> current = new LinkedHashMap<>(record);
+            for (SeedTransform transform : transforms) {
+                if (current == null) {
+                    break;
+                }
+                current = transform.apply(current, context, dataset);
+            }
+            if (current != null && !current.isEmpty()) {
+                out.add(current);
+            }
+        }
+        return out;
+    }
+
+    private void planDescriptor(SeedPackDescriptor descriptor,
+                                SeedResolution resolution,
+                                Set<String> applied,
+                                Deque<String> stack,
+                                List<SeedPackDescriptor> plan) {
         String identity = descriptor.identity();
         if (!applied.add(identity)) {
             Log.debugf("Seed pack %s already applied", identity);
@@ -164,10 +205,10 @@ public final class SeedLoader {
         stack.push(identity);
         for (SeedPackRef include : descriptor.getManifest().getIncludeRefs()) {
             SeedPackDescriptor includeDescriptor = resolution.resolve(include);
-            applyDescriptor(includeDescriptor, context, resolution, applied, stack);
+            planDescriptor(includeDescriptor, resolution, applied, stack, plan);
         }
         stack.pop();
-        applyDatasets(descriptor, context);
+        plan.add(descriptor);
     }
 
     private void applyDatasets(SeedPackDescriptor descriptor, SeedContext context) {
@@ -729,6 +770,7 @@ public final class SeedLoader {
         private int batchSize = 200;
         private SeedMetrics seedMetrics;
         private SeedDatasetValidator seedDatasetValidator;
+        private final List<SeedPackGate> packGates = new ArrayList<>();
 
         private Builder() {
             registerTransformFactory("tenantSubstitution", new TenantSubstitutionTransform.Factory());
@@ -815,6 +857,18 @@ public final class SeedLoader {
          */
         public Builder addRecordListener(SeedRecordListener listener) {
             this.recordListeners.add(Objects.requireNonNull(listener, "listener"));
+            return this;
+        }
+
+        /**
+         * Registers a gate that admits or refuses each pack before anything of the apply is
+         * written.
+         *
+         * @see SeedPackGate
+         * @see ApplicationDeclarationGate
+         */
+        public Builder addPackGate(SeedPackGate gate) {
+            this.packGates.add(Objects.requireNonNull(gate, "gate"));
             return this;
         }
 
