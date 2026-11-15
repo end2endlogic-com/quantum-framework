@@ -44,6 +44,13 @@ Quantum uses an ANTLR-based query language (BIAPIQuery.g4) for filtering, search
 |Variable |`${...}` |`ownerId:${principalId}`, `tier:^${facet.allowedTiers}`, `zone:${coord.salesZone}`
 |===
 
+In-memory scalar equality and inequality preserve stored JSON text when the
+query operand is a string, including a typed string variable. For example,
+`dataDomain.accountNum:${pAccountId}` matches account `"0000000001"` when the
+variable contains that same string, and distinguishes it from `"1"`. This also
+applies to equality against elements of JSON arrays. Explicit numeric and date
+operands retain their existing comparison behavior.
+
 NOTE: **Dotted Variable Identifiers & Single-Variable IN**: The query grammar admits dotted variable paths (`${facet.<key>}`, `${coord.<key>}`, `${principal.<attr>}`, `${dd.<attr>}`). When paired with the list membership operator (`:^`), a single variable resolving to a Java `Collection` or array (e.g. `allowedTiers = ["TIER_1", "TIER_2"]`) can be passed without brackets (`tier:^${facet.allowedTiers}`), and the query compiler will automatically unpack the elements into a native `$in` evaluation.
 
 ==== Logical Operators
