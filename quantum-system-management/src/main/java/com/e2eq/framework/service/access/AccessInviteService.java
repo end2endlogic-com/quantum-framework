@@ -2012,7 +2012,7 @@ public class AccessInviteService {
                     && invite.getExpiresAt().after(new Date())
             );
             if (hasPending) {
-                throw new WebApplicationException("A pending invite already exists for " + email, 409);
+                throw failure(Code.INVITE_ALREADY_PENDING, "A pending invite already exists for " + email);
             }
         }
 
@@ -2023,7 +2023,7 @@ public class AccessInviteService {
                     && invite.getExpiresAt().after(new Date())
             );
             if (hasPending) {
-                throw new WebApplicationException("A pending invite already exists for " + targetUserId, 409);
+                throw failure(Code.INVITE_ALREADY_PENDING, "A pending invite already exists for " + targetUserId);
             }
         }
     }

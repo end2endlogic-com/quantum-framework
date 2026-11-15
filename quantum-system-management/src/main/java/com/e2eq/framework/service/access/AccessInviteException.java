@@ -15,6 +15,8 @@ public class AccessInviteException extends RuntimeException {
         INVITE_EXPIRED,
         /** Invite was already accepted or revoked; tokens are single-use (409). */
         INVITE_NOT_PENDING,
+        /** An unexpired pending invite already exists in the realm for the same email or user (409). */
+        INVITE_ALREADY_PENDING,
         /** A body userId/email differs from the identity bound to the invite (403). */
         INVITE_IDENTITY_MISMATCH,
         /** The invited identity already has an account; the caller must sign in as it first (401). */

@@ -6,11 +6,11 @@ import com.e2eq.framework.model.persistent.morphia.MorphiaRepo;
 import com.e2eq.framework.model.persistent.morphia.ObjectListRepo;
 import com.e2eq.framework.model.persistent.morphia.StaticDynamicListRepo;
 import com.e2eq.framework.rest.models.RestError;
-import com.e2eq.framework.rest.models.SuccessResponse;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.openapi.annotations.media.Content;
+import org.eclipse.microprofile.openapi.annotations.enums.SchemaType;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
@@ -35,7 +35,7 @@ public abstract class StaticDynamicListResource<
     @Consumes(MediaType.APPLICATION_JSON)
     @SecurityRequirement(name = "bearerAuth")
     @APIResponses(value = {
-            @APIResponse(responseCode = "200", description = "Entity found", content = @Content(mediaType = "application/json", schema = @Schema(implementation = SuccessResponse.class))),
+            @APIResponse(responseCode = "200", description = "Objects in the list", content = @Content(mediaType = "application/json", schema = @Schema(type = SchemaType.ARRAY, implementation = UnversionedBaseModel.class))),
             @APIResponse(responseCode = "404", description = "Entity not found", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
     })
     @GET
@@ -56,7 +56,7 @@ public abstract class StaticDynamicListResource<
     @Consumes(MediaType.APPLICATION_JSON)
     @SecurityRequirement(name = "bearerAuth")
     @APIResponses(value = {
-            @APIResponse(responseCode = "200", description = "Entity found", content = @Content(mediaType = "application/json", schema = @Schema(implementation = SuccessResponse.class))),
+            @APIResponse(responseCode = "200", description = "Objects in the list", content = @Content(mediaType = "application/json", schema = @Schema(type = SchemaType.ARRAY, implementation = UnversionedBaseModel.class))),
             @APIResponse(responseCode = "404", description = "Entity not found", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
     })
     public Response getLocationsForLocationListByRefName(@PathParam(value = "refName") String refName) {

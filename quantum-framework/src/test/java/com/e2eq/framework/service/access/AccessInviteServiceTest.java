@@ -441,6 +441,14 @@ class AccessInviteServiceTest extends BaseRepoTest {
         assertEquals(AccessInvite.Status.PENDING.name(), createInvite(inviter, invitee, null).getStatus());
     }
 
+    @Test
+    void secondPendingInviteForTheSameIdentityIsRefusedWithACode() {
+        String inviter = user("inviter");
+        String invitee = user("dup");
+        createInvite(inviter, invitee, null);
+        assertRefused(Code.INVITE_ALREADY_PENDING, () -> createInvite(inviter, invitee, null));
+    }
+
     // ---- resend: delivery-safe rotation -----------------------------------------------------
 
     @Test
