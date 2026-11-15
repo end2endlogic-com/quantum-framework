@@ -540,8 +540,26 @@ class ApplicationAccessAuthorityTest extends BaseRepoTest {
 
     @Test
     void filtersThatMatchNothingAnswerEmptyAndAnUnknownApplicationIsRefused() {
-        asSystem(() -> accessService.install(POOLED, install(null, POOLED, TENANT_A)));
+        ApplicationInstall ofApp = asSystem(() -> accessService.install(POOLED, install(null, POOLED, TENANT_A)));
         String system = envConfigUtils.getSystemRealm();
+        String otherApp = "bind-authority-other-app-" + suffix;
+        try {
+            asSystem(() -> applicationRepo.save(applicationRepo.ensureRegistered(otherApp, securityUtils.getSystemDataDomain())));
+            ApplicationInstall ofOther = install(null, POOLED, TENANT_A);
+            ofOther.setApplicationId(otherApp);
+            ApplicationInstall otherInstalled = asSystem(() -> accessService.install(POOLED, ofOther));
+            // Same realm and tenant, another application: the application filter tells them apart.
+            assertEquals(List.of(ofApp.getId()), ids(asSystem(() -> accessService.listInstalls(system, POOLED, app, TENANT_A))));
+            assertEquals(List.of(otherInstalled.getId()), ids(asSystem(() -> accessService.listInstalls(system, POOLED, otherApp, TENANT_A))));
+            assertEquals(List.of(ofApp.getId(), otherInstalled.getId()), ids(asSystem(() -> accessService.listInstalls(system, POOLED, null, TENANT_A)))
+                .stream().filter(id -> id.equals(ofApp.getId()) || id.equals(otherInstalled.getId())).toList());
+            // A registered application with no install in the realm answers empty.
+            assertEquals(List.of(), asSystem(() -> accessService.listInstalls(system, OTHER_REALM, otherApp, null)));
+        } finally {
+            var ds = morphiaDataStoreWrapper.getDataStore(envConfigUtils.getSystemRealm());
+            ds.find(ApplicationInstall.class).filter(Filters.eq("applicationId", otherApp)).delete(new DeleteOptions().multi(true));
+            ds.find(Application.class).filter(Filters.eq("refName", otherApp)).delete(new DeleteOptions().multi(true));
+        }
 
         assertEquals(List.of(), asSystem(() -> accessService.listInstalls(system, POOLED, app, "tenant-none.bind-authority")));
         assertEquals(List.of(), asSystem(() -> accessService.listInstalls(system, "bind-authority-empty-" + suffix, app, null)));
