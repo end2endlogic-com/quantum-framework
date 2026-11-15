@@ -86,9 +86,6 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
     SystemDirectory systemDirectory;
 
     @Inject
-    com.e2eq.framework.model.persistent.morphia.DirectoryOwnership directoryOwnership;
-
-    @Inject
     RealmMembershipService realmMembershipService;
 
     @Inject
@@ -1789,10 +1786,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                     if (ValidateUtils.isValidEmailAddress(userId)) {
                         // if so then look for a realm defined for the user
                         String emailDomain = userId.substring(userId.indexOf("@") + 1);
-                        // Under a remote directory the local catalog is a stale copy: ask the owner.
-                        Optional<Realm> orealm = directoryOwnership == null || directoryOwnership.ownedHere()
-                                ? realmRepo.findByEmailDomain(emailDomain)
-                                : systemDirectory.findRealmByEmailDomain(emailDomain);
+                        Optional<Realm> orealm = realmRepo.findByEmailDomain(emailDomain);
                         if (orealm.isPresent()) {
                             Realm realm = orealm.get();
                             domainContext = realm.getDomainContext();
