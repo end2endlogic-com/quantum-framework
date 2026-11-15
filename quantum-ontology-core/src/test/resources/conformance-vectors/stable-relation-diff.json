@@ -1,6 +1,6 @@
 {
   "name": "stable-relation-diff",
-  "description": "Admission diff of a candidate TBox against the active TBox for every relation that is stable in the active TBox. Violations are always reported; a candidate is admissible when it has no violations, or when its pack version is greater than the active version. Allowed without a version bump: adding, removing or rewriting the chains beneath a stable relation, adding stable relations, widening domain or range, and label/alias/metadata changes. The diff does not validate the candidate; validation runs separately.",
+  "description": "Admission diff of a candidate TBox against the active TBox for every relation that is stable in the active TBox. Violations are always reported; a candidate is admissible when it has no violations, or with a greater version and a published stable successor for removed, demoted or narrowed relations. Allowed without a version bump: adding, removing or rewriting the chains beneath a stable relation, adding stable relations, widening domain or range, and label/alias/metadata changes. The diff does not validate the candidate; validation runs separately.",
   "active": {
     "version": 1,
     "id": "orders",
@@ -277,9 +277,14 @@
             "relation": "hasShipment",
             "code": "stable_relation_removed",
             "message": "Stable relation 'hasShipment' was removed"
+          },
+          {
+            "relation": "hasShipment",
+            "code": "stable_relation_replacement_required",
+            "message": "Stable relation 'hasShipment' needs a previously published stable replacement in metadata.replacedBy covering its domain and range"
           }
         ],
-        "admissible": true
+        "admissible": false
       }
     },
     {

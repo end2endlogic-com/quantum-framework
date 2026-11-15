@@ -16,7 +16,7 @@ import java.util.TreeMap;
  *
  * <p>The rules are the admission rules ({@link StableRelationDiff}): a source change that removes,
  * demotes, narrows or re-derives a stable relation is admissible only when the pack {@code version:}
- * is greater than the baseline's. A baseline without a recorded version (built before versions were
+ * is greater than the baseline's, with a published successor for retirement or narrowing. A baseline without a recorded version (built before versions were
  * recorded) cannot show a bump, so a breaking change against it is refused. A relation that is stable only because of an annotation is
  * reported too: storage annotations change on refactor, so stable relations belong in the pack.</p>
  */
@@ -35,7 +35,7 @@ public final class SourceTBoxGate {
 
     /**
      * @param violations       broken stable-relation guarantees, empty when there is no baseline
-     * @param admissible       true when there are none, or the pack version was bumped
+     * @param admissible       true when there are none, or the migration satisfies the version and replacement checks
      * @param stableOutsidePack stable relations the pack does not declare stable, sorted
      */
     public record Outcome(List<StableRelationDiff.Violation> violations, boolean admissible,
@@ -69,7 +69,7 @@ public final class SourceTBoxGate {
         }
     }
 
-    /** Thrown when a source TBox breaks a stable relation without a pack version bump. */
+    /** Thrown when a source TBox breaks a stable relation without satisfying the migration requirements. */
     public static final class StableContractException extends RefusedException {
         private final List<StableRelationDiff.Violation> violations;
 
@@ -86,7 +86,7 @@ public final class SourceTBoxGate {
         private static String message(String realm, List<StableRelationDiff.Violation> violations,
                                       Integer baselineVersion, int candidateVersion, List<String> sourceFailures) {
             StringBuilder sb = new StringBuilder("Ontology for realm '").append(realm)
-                    .append("' breaks stable relations without a pack version bump (pack version ")
+                    .append("' breaks the stable relation contract (pack version ")
                     .append(candidateVersion).append(", last built ")
                     .append(baselineVersion != null ? baselineVersion.toString() : "unversioned").append("): ");
             sb.append(String.join("; ", violations.stream()
@@ -94,7 +94,7 @@ public final class SourceTBoxGate {
             if (!sourceFailures.isEmpty()) {
                 sb.append(". Sources that failed to load: ").append(String.join("; ", sourceFailures));
             }
-            return sb.append(". Restore the relations, or raise the pack version to publish the change.").toString();
+            return sb.append(". Restore the relations, or publish a stable successor in metadata.replacedBy before removal or narrowing and raise the pack version.").toString();
         }
     }
 
@@ -104,10 +104,9 @@ public final class SourceTBoxGate {
      * {@code baselineVersion} is null when the baseline recorded no pack version.
      */
     public static Outcome check(TBox baseline, Integer baselineVersion, TBox candidate, int candidateVersion, TBox pack) {
-        List<StableRelationDiff.Violation> violations = StableRelationDiff.violations(baseline, candidate);
-        boolean admissible = violations.isEmpty() || (baselineVersion != null
-                && StableRelationDiff.admissible(violations, baselineVersion, candidateVersion));
-        return new Outcome(violations, admissible, stableOutsidePack(candidate, pack));
+        StableRelationDiff.Result diff = StableRelationDiff.diff(baseline,
+                baselineVersion == null ? candidateVersion : baselineVersion, candidate, candidateVersion);
+        return new Outcome(diff.violations(), diff.admissible(), stableOutsidePack(candidate, pack));
     }
 
     /** Stable relations of {@code merged} that {@code pack} does not declare stable, sorted. */

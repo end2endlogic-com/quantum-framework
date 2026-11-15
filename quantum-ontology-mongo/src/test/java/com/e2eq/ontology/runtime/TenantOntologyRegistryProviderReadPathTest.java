@@ -173,14 +173,13 @@ public class TenantOntologyRegistryProviderReadPathTest {
     }
 
     @Test
-    void aPackVersionBumpPublishesTheRemoval() {
+    void aPackVersionBumpAloneRefusesTheRemoval() {
         withConfig(null, () -> {
             OntologyTBoxRepo legacyRepo = mock(OntologyTBoxRepo.class);
             // The module's ontology.yaml declares version 1
-            OntologyRegistry registry = sourceProvider(legacyRepo, baselineWithStableRelation(0))
-                    .getRegistryForRealm(REALM);
-            assertFalse(registry.propertyOf("orderContract").isPresent());
-            verify(legacyRepo).save(any(OntologyTBox.class));
+            TenantOntologyRegistryProvider provider = sourceProvider(legacyRepo, baselineWithStableRelation(0));
+            assertThrows(SourceTBoxGate.StableContractException.class, () -> provider.getRegistryForRealm(REALM));
+            verify(legacyRepo, never()).save(any(OntologyTBox.class));
         });
     }
 
