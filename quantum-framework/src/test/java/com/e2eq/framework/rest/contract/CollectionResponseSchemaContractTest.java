@@ -95,10 +95,13 @@ class CollectionResponseSchemaContractTest {
         assertEquals(new TreeSet<>(List.of(
                 "Fixtures#badArray 200",
                 "Fixtures#badBuilderEntity 200",
+                "Fixtures#badConstructed 200",
                 "Fixtures#badLocal 200",
                 "Fixtures#badResponseOk 200",
+                "Fixtures#badTypeVariable 200",
                 "Fixtures#badTypedList 200",
-                "Fixtures#badUni 201")),
+                "Fixtures#badUni 201",
+                "Fixtures#badWithMediaType 200")),
             new TreeSet<>(scan.violations.stream().map(v -> v.substring(v.lastIndexOf('$') + 1)).toList()));
     }
 
@@ -202,6 +205,9 @@ class CollectionResponseSchemaContractTest {
         if (type instanceof WildcardType w && w.getUpperBounds().length == 1) {
             return isCollection(w.getUpperBounds()[0]);
         }
+        if (type instanceof java.lang.reflect.TypeVariable<?> v) {
+            return Arrays.stream(v.getBounds()).anyMatch(CollectionResponseSchemaContractTest::isCollection);
+        }
         return false;
     }
 
@@ -242,6 +248,10 @@ class CollectionResponseSchemaContractTest {
                 continue;
             }
             AbstractInsnNode arg = previousReal(insn);
+            // ok(entity, mediaType|String|Variant): step over a second argument pushed by one instruction.
+            if (Type.getArgumentTypes(call.desc).length == 2 && arg != null && isSinglePush(arg)) {
+                arg = previousReal(arg);
+            }
             while (arg != null && arg.getOpcode() == Opcodes.CHECKCAST) {
                 arg = previousReal(arg);
             }
@@ -260,6 +270,11 @@ class CollectionResponseSchemaContractTest {
             || (BUILDER.equals(call.owner) && "entity".equals(call.name));
     }
 
+    private static boolean isSinglePush(AbstractInsnNode insn) {
+        int op = insn.getOpcode();
+        return op == Opcodes.GETSTATIC || op == Opcodes.LDC || op == Opcodes.ALOAD || op == Opcodes.ACONST_NULL;
+    }
+
     private static AbstractInsnNode previousReal(AbstractInsnNode insn) {
         AbstractInsnNode p = insn.getPrevious();
         while (p != null && p.getOpcode() < 0) { // labels, line numbers, frames
@@ -270,6 +285,9 @@ class CollectionResponseSchemaContractTest {
 
     private static boolean producesCollection(AbstractInsnNode insn, MethodNode method) {
         if (insn instanceof MethodInsnNode call) {
+            if ("<init>".equals(call.name)) { // new ArrayList<>(..): the constructed type is the owner
+                return isCollectionDescriptor(Type.getObjectType(call.owner));
+            }
             return isCollectionDescriptor(Type.getReturnType(call.desc));
         }
         if (insn instanceof FieldInsnNode field) {
@@ -312,6 +330,9 @@ class CollectionResponseSchemaContractTest {
         Enumeration<URL> roots = loader.getResources(path);
         while (roots.hasMoreElements()) {
             URL url = roots.nextElement();
+            if (url.getPath().contains("/test-classes/")) {
+                continue; // production resources only; test fixtures may be deliberately wrong
+            }
             if ("file".equals(url.getProtocol())) {
                 File dir = new File(URLDecoder.decode(url.getPath(), StandardCharsets.UTF_8));
                 collect(dir, rootPackage, names);
@@ -394,6 +415,18 @@ class CollectionResponseSchemaContractTest {
             List<Item> found = listItems();
             return Response.ok(found).build();
         }
+
+        @jakarta.ws.rs.GET
+        @APIResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = Item.class)))
+        public Response badConstructed() { return Response.ok(new ArrayList<>(listItems())).build(); }
+
+        @jakarta.ws.rs.GET
+        @APIResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = Item.class)))
+        public Response badWithMediaType() { return Response.ok(listItems(), jakarta.ws.rs.core.MediaType.APPLICATION_JSON_TYPE).build(); }
+
+        @jakarta.ws.rs.GET
+        @APIResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = Item.class)))
+        public <C extends List<Item>> C badTypeVariable() { return null; }
 
         @jakarta.ws.rs.GET
         @APIResponse(responseCode = "200", content = @Content(schema = @Schema(type = SchemaType.ARRAY, implementation = Item.class)))

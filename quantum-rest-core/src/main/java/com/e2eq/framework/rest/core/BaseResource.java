@@ -766,7 +766,7 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
    @Consumes(MediaType.APPLICATION_JSON)
    @SecurityRequirement(name = "bearerAuth")
    @APIResponses(value = {
-           @APIResponse(responseCode = "200", description = "Success", content = @Content(mediaType = "application/json", schema = @Schema(type = SchemaType.ARRAY, implementation = BaseModel.class))),
+           @APIResponse(responseCode = "200", description = "Success", content = @Content(mediaType = "application/json", schema = @Schema(type = SchemaType.ARRAY, implementation = UnversionedBaseModel.class))),
            @APIResponse(responseCode = "400", description = "Bad Request / bad argument", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
    })
    public List<T> convertEntityRefList(@Context HttpHeaders headers, @RequestBody List<EntityReference> entityRefList) {
