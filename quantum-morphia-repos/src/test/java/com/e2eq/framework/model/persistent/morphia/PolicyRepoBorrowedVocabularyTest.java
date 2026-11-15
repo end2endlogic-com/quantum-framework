@@ -93,6 +93,50 @@ class PolicyRepoBorrowedVocabularyTest {
     }
 
     @Test
+    void borrowedOnlyApplicationCannotWriteWildcards() {
+        PolicyRepo repo = repo(List.of(), ownerIntake("CREATE"));
+        for (Rule rule : List.of(rule("registration-intake", "SECURITY", "*", "*"),
+                                 rule("registration-intake", "*", "*", "*"),
+                                 rule("registration-intake", "OTHER", "*", "VIEW"))) {
+            PolicyAdmissionRefusedException refused = assertThrows(PolicyAdmissionRefusedException.class,
+                () -> repo.setDefaultValues(policy("registration-intake", rule)));
+            assertEquals(Code.POLICY_WILDCARD_OUTSIDE_APPLICATION, refused.code());
+        }
+    }
+
+    @Test
+    void wildcardDomainOverABorrowedAreaIsRefusedEvenWhenTheApplicationOwnsOtherAreas() {
+        PolicyRepo repo = repo(List.of(domain(BORROWER, "LICENSING", "LICENSE_REQUEST", "VIEW")), ownerIntake("CREATE"));
+        PolicyAdmissionRefusedException refused = assertThrows(PolicyAdmissionRefusedException.class,
+            () -> repo.setDefaultValues(policy("registration-intake", rule("registration-intake", "SECURITY", "*", "CREATE"))));
+        assertEquals(Code.POLICY_WILDCARD_OUTSIDE_APPLICATION, refused.code());
+
+        // Over an area it owns, a wildcard domain is admitted as before.
+        repo.setDefaultValues(policy("registration-intake", rule("registration-intake", "LICENSING", "*", "VIEW")));
+    }
+
+    @Test
+    void borrowedReferenceTheOwnerDoesNotHoldIsNoVocabulary() {
+        // Even a wildcard rule is refused before the wildcard shortcut: nothing is held to lend.
+        PolicyRepo repo = repo(List.of(), List.of());
+        PolicyAdmissionRefusedException refused = assertThrows(PolicyAdmissionRefusedException.class,
+            () -> repo.setDefaultValues(policy("registration-intake", rule("registration-intake", "SECURITY", "*", "*"))));
+        assertEquals(Code.USES_UNKNOWN, refused.code());
+    }
+
+    @Test
+    void borrowedRoleCheckDoesNotDependOnThePrincipalType() {
+        PolicyRepo repo = repo(List.of(), ownerIntake("CREATE"));
+        Application application = repo.applicationRepo.findByRefNameWithIgnoreRules(BORROWER).orElseThrow();
+        application.setRoles(List.of(role("registration-intake")));
+        Policy asUser = policy("user", rule("user", "SECURITY", "REGISTRATION_INTAKE", "CREATE"));
+        asUser.setPrincipalType(Policy.PrincipalType.USER);
+
+        PolicyAdmissionRefusedException refused = assertThrows(PolicyAdmissionRefusedException.class, () -> repo.setDefaultValues(asUser));
+        assertEquals(Code.POLICY_BORROWED_FOREIGN_ROLE, refused.code());
+    }
+
+    @Test
     void ownedDomainWinsOverABorrowedReferenceOfTheSameKey() {
         // dev/prod still hold licensing 1.1.0's owned REGISTRATION_INTAKE row; it is judged as owned.
         PolicyRepo repo = repo(List.of(domain(BORROWER, "SECURITY", "REGISTRATION_INTAKE", "CREATE", "VIEW", "DECIDE")), List.of());

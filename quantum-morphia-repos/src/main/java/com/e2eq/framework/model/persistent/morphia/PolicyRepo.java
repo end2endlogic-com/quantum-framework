@@ -55,7 +55,8 @@ public class PolicyRepo extends MorphiaRepo<Policy> {
     * through {@code uses} and the owning application actually holds (that domain, that action).
     * Anything else is refused with a {@link PolicyAdmissionRefusedException} naming the
     * {@link ApplicationDeclarationValidator.Code}. A borrowed rule must grant one of the
-    * application's own declared roles when it declares any.
+    * application's own declared roles when it declares any, and a wildcard area or domain is admitted
+    * only over vocabulary the application owns.
     */
    private void validatePolicyScopeAndVocabulary(Policy policy) {
       String applicationId = required(policy.getApplicationId(), "Policy.applicationId is required");
@@ -73,7 +74,13 @@ public class PolicyRepo extends MorphiaRepo<Policy> {
          addDomain(owned, domain);
       }
       Map<String, Borrowed> borrowed = borrowedVocabulary(application.get(), applicationId, owned.keySet());
-      if (owned.isEmpty() && borrowed.isEmpty()) {
+      boolean holdsBorrowed = borrowed.values().stream().anyMatch(use -> use.actions() != null);
+      if (owned.isEmpty() && !holdsBorrowed && !borrowed.isEmpty()) {
+         throw new PolicyAdmissionRefusedException(Code.USES_UNKNOWN,
+            applicationId + " owns no functional domains and borrows " + new java.util.TreeSet<>(borrowed.keySet())
+               + ", which their owners do not hold; the owners' vocabulary must be registered first");
+      }
+      if (owned.isEmpty() && !holdsBorrowed) {
          throw new IllegalArgumentException(
             "No functional-domain vocabulary is registered for application: " + applicationId
                + ". Seed that application's functionalDomain catalog before its policies.");
@@ -90,9 +97,22 @@ public class PolicyRepo extends MorphiaRepo<Policy> {
             throw new IllegalArgumentException("Every policy rule must declare a SecurityURI header");
          }
          SecurityURIHeader header = rule.getSecurityURI().getHeader();
-         if (wildcard(header.getArea()) || wildcard(header.getFunctionalDomain())) continue;
-         String key = axis(header.getArea()) + "/" + axis(header.getFunctionalDomain());
          String where = "Policy rule '" + rule.getName() + "'";
+         if (wildcard(header.getArea()) || wildcard(header.getFunctionalDomain())) {
+            // A wildcard reaches every domain of the area (or every area). An application may write
+            // one over vocabulary it owns (unchanged); never over an area it only borrows, and never
+            // when it owns no vocabulary at all.
+            boolean ownsArea = !wildcard(header.getArea()) && ownsArea(owned.keySet(), axis(header.getArea()));
+            boolean borrowedArea = !wildcard(header.getArea()) && !ownsArea
+               && borrowed.keySet().stream().anyMatch(k -> k.startsWith(axis(header.getArea()) + "/"));
+            if (owned.isEmpty() || borrowedArea) {
+               throw new PolicyAdmissionRefusedException(Code.POLICY_WILDCARD_OUTSIDE_APPLICATION,
+                  where + " names area '" + header.getArea() + "' domain '" + header.getFunctionalDomain() + "', which reaches"
+                     + " beyond what " + applicationId + " owns; name each borrowed domain");
+            }
+            continue;
+         }
+         String key = axis(header.getArea()) + "/" + axis(header.getFunctionalDomain());
          Set<String> actions = owned.get(key);
          if (actions != null) {
             requireAction(actions, header, where, key, applicationId);
@@ -110,10 +130,11 @@ public class PolicyRepo extends MorphiaRepo<Policy> {
                   + ", but " + use.owner() + " holds no such domain");
          }
          requireAction(use.actions(), header, where, key, use.owner());
+         // Rules are assembled by header identity whatever the principal type, so the check does not
+         // depend on principalType (as ApplicationDeclarationValidator's POLICY_BORROWED_FOREIGN_ROLE).
          String role = !wildcard(header.getIdentity()) ? axis(header.getIdentity())
             : policy.getPrincipalId() == null ? null : axis(policy.getPrincipalId());
-         boolean rolePrincipal = policy.getPrincipalType() == null || policy.getPrincipalType() == Policy.PrincipalType.ROLE;
-         if (rolePrincipal && !declaredRoles.isEmpty() && (role == null || !declaredRoles.contains(role))) {
+         if (!declaredRoles.isEmpty() && (role == null || !declaredRoles.contains(role))) {
             throw new PolicyAdmissionRefusedException(Code.POLICY_BORROWED_FOREIGN_ROLE,
                where + " grants borrowed " + key + " to '" + role + "', which is not a role of " + applicationId);
          }
@@ -155,6 +176,10 @@ public class PolicyRepo extends MorphiaRepo<Policy> {
          }
       }
       return out;
+   }
+
+   private static boolean ownsArea(Set<String> ownedKeys, String area) {
+      return ownedKeys.stream().anyMatch(k -> k.startsWith(area + "/"));
    }
 
    private static void addDomain(Map<String, Set<String>> vocabulary, com.e2eq.framework.model.security.FunctionalDomain domain) {
