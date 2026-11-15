@@ -6,6 +6,8 @@ import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.QuarkusTestProfile;
 import io.quarkus.test.junit.TestProfile;
+import io.quarkus.test.security.TestSecurity;
+import io.restassured.RestAssured;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -54,6 +56,18 @@ class ApplicationAccessRequireApplicationTest extends ApplicationAccessAuthority
         PrincipalContext noApplication = super.signedIn(admin, TENANT_A);
         refused(Code.APPLICATION_SCOPE_REQUIRED, () -> as(noApplication,
             () -> accessService.install(POOLED, install(null, null, TENANT_A))));
+    }
+
+    @Test
+    @TestSecurity(user = "system@system.com", roles = {"admin"})
+    void anHttpRequestWhoseIdentityNamesNoApplicationIsATyped400() {
+        // The identity carries no azp, so pre-authorization cannot name an application.
+        // It used to answer 500 AUTHORIZATION_CHECK_FAILED.
+        io.restassured.response.Response response = RestAssured.given()
+            .when().get("/api/security/applicationInstall/list")
+            .then().extract().response();
+        org.junit.jupiter.api.Assertions.assertEquals(400, response.getStatusCode(), response.asString());
+        org.junit.jupiter.api.Assertions.assertEquals("APPLICATION_SCOPE_REQUIRED", response.jsonPath().getString("code"));
     }
 
     private static PrincipalContext withApplication(PrincipalContext base) {

@@ -1507,17 +1507,38 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                 }
             }
         } catch (Exception e) {
-            Log.errorf(e, "Pre-authorization check failed for user=%s, path=%s",
-                principalContext.getUserId(), requestContext.getUriInfo().getPath());
-            requestContext.abortWith(
-                Response.status(Response.Status.INTERNAL_SERVER_ERROR)
-                    .entity(apiError(
-                        "AUTHORIZATION_CHECK_FAILED",
-                        "Authorization check failed. See server diagnostics for details."
-                    ))
-                    .build()
-            );
+            if (e instanceof com.e2eq.framework.model.security.ApplicationAccessException refusal) {
+                Log.warnf("Pre-authorization refused for user=%s, path=%s: %s",
+                    principalContext.getUserId(), requestContext.getUriInfo().getPath(), refusal.code());
+            } else {
+                Log.errorf(e, "Pre-authorization check failed for user=%s, path=%s",
+                    principalContext.getUserId(), requestContext.getUriInfo().getPath());
+            }
+            requestContext.abortWith(preAuthorizationFailure(e));
         }
+    }
+
+    /**
+     * A typed application-scope refusal (no application, or principal and resource disagree)
+     * keeps its declared status and code; any other failure stays a generic 500 whose detail
+     * lives only in the server log.
+     */
+    static Response preAuthorizationFailure(Exception e) {
+        if (e instanceof com.e2eq.framework.model.security.ApplicationAccessException refusal) {
+            return Response.status(refusal.code().httpStatus())
+                .entity(apiError(refusal.code().name(), switch (refusal.code()) {
+                    case APPLICATION_SCOPE_REQUIRED -> "The request names no application, and this deployment requires one.";
+                    case APPLICATION_SCOPE_MISMATCH -> "The request's identity and resource name different applications.";
+                    default -> "The request was refused.";
+                }))
+                .build();
+        }
+        return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+            .entity(apiError(
+                "AUTHORIZATION_CHECK_FAILED",
+                "Authorization check failed. See server diagnostics for details."
+            ))
+            .build();
     }
 
     /**
