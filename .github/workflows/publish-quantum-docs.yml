@@ -79,9 +79,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_ACTOR: ${{ github.actor }}
         run: |
-          mvn -B -pl quantum-docs -am \
+          mvn -B -pl quantum-docs \
             -P"${{ steps.profile.outputs.profile }}" \
             -DskipTests \
             -Dgpg.skip=true \
             -Dmaven.javadoc.skip=true \
-            package deploy
+            deploy
