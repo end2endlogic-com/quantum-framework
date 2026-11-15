@@ -181,6 +181,16 @@ class RemotePrincipalSettingsTest {
                 () -> deployed.check(LaunchMode.NORMAL, RemotePrincipalSettings.declaresRemote(nested)));
         assertTrue(RemotePrincipalSettings.declaresRemote(config("prod", Map.of(key, "${MODE:remote"))),
                 "an unbalanced declaration fails closed");
+        SmallRyeConfig strayBrace = new SmallRyeConfigBuilder()
+                .withProfile("prod")
+                .withSources(new PropertiesConfigSource(
+                        Map.of("%prod." + key, "${MODE:${DEFAULT_MODE:remote}}}"), "application.properties", 250))
+                .withSources(new PropertiesConfigSource(Map.of(key, ""), "env", 300))
+                .build();
+        assertTrue(RemotePrincipalSettings.declaresRemote(strayBrace),
+                "an unmatched closing brace fails closed");
+        assertThrows(PrincipalSourceConfigurationException.class,
+                () -> deployed.check(LaunchMode.NORMAL, RemotePrincipalSettings.declaresRemote(strayBrace)));
     }
 
     @Test

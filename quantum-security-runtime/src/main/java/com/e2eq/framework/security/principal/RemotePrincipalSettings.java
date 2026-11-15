@@ -181,7 +181,7 @@ public class RemotePrincipalSettings {
      * The declared value with {@code ${name}} / {@code ${name:default}} expressions expanded,
      * nested ones included, against the effective configuration (a blank or missing name takes
      * its default), so {@code ${MODE:${DEFAULT_MODE:remote}}} declares remote. A declaration that
-     * cannot be analysed (unbalanced braces) counts as declaring remote: fail closed.
+     * cannot be analysed (unbalanced braces, an unmatched {@code }} included) counts as declaring remote: fail closed.
      */
     static String expand(Config config, String value) {
         if (value == null || !value.contains("${")) {
@@ -203,10 +203,10 @@ public class RemotePrincipalSettings {
         while (i < value.length()) {
             int start = value.indexOf("${", i);
             if (start < 0) {
-                out.append(value, i, value.length());
+                out.append(literal(value, i, value.length()));
                 break;
             }
-            out.append(value, i, start);
+            out.append(literal(value, i, start));
             int end = matchingBrace(value, start + 2);
             String body = value.substring(start + 2, end);
             int colon = topLevelColon(body);
@@ -224,6 +224,15 @@ public class RemotePrincipalSettings {
             i = end + 1;
         }
         return out.toString();
+    }
+
+    /** Text outside any expression; a stray closing brace means the declaration is unbalanced. */
+    private static String literal(String value, int from, int to) {
+        String text = value.substring(from, to);
+        if (text.indexOf('}') >= 0) {
+            throw new IllegalArgumentException("unbalanced expression");
+        }
+        return text;
     }
 
     private static int matchingBrace(String value, int from) {
