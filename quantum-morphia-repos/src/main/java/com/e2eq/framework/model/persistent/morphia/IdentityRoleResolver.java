@@ -148,10 +148,20 @@ public class IdentityRoleResolver {
      * If identity resolves to a credential (userId), include the user's implied roles; otherwise, treat it as a role.
      */
     public Set<String> resolveRolesForIdentity(String identity, String realm, SecurityIdentity securityIdentity) {
+        return resolveRolesForIdentity(identity, realm, null, securityIdentity);
+    }
+
+    /**
+     * As {@link #resolveRolesForIdentity(String, String, SecurityIdentity)}, counting only the user groups
+     * that apply to {@code applicationId} (its own groups and {@code *} groups), the way a request to that
+     * application resolves them. A blank {@code applicationId} counts every group.
+     */
+    public Set<String> resolveRolesForIdentity(String identity, String realm, String applicationId,
+                                               SecurityIdentity securityIdentity) {
         LinkedHashSet<String> out = new LinkedHashSet<>();
         if (identity == null || identity.isBlank()) return out;
         out.add(identity);
-        Map<String, EnumSet<RoleSource>> provenance = resolveRoleSources(identity, realm, securityIdentity);
+        Map<String, EnumSet<RoleSource>> provenance = resolveRoleSources(identity, realm, applicationId, securityIdentity);
         if (!provenance.isEmpty()) {
             out.addAll(provenance.keySet());
         }

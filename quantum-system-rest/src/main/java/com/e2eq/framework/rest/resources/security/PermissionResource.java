@@ -44,6 +44,12 @@ public class PermissionResource {
    FunctionalDomainRepo functionalDomainRepo;
 
    @Inject
+   com.e2eq.framework.model.persistent.morphia.FunctionalAreaRepo functionalAreaRepo;
+
+   @Inject
+   com.e2eq.framework.model.persistent.morphia.ApplicationRepo applicationRepo;
+
+   @Inject
    RuleContext ruleContext;
 
    @Inject
@@ -453,7 +459,18 @@ public class PermissionResource {
    @Produces(MediaType.APPLICATION_JSON)
    @Authenticated
    @SecurityRequirement(name = "bearerAuth")
-   public Response functionalDomains(@QueryParam("includeActions") @DefaultValue("false") boolean includeActions) {
+   public Response functionalDomains(@QueryParam("includeActions") @DefaultValue("false") boolean includeActions,
+                                     @org.eclipse.microprofile.openapi.annotations.parameters.Parameter(
+                                             description = "Answer only this application's registered vocabulary "
+                                                     + "(its FunctionalArea and FunctionalDomain rows); 404 APPLICATION_UNKNOWN "
+                                                     + "when the application is not registered. Without it, the union as before.")
+                                     @QueryParam("applicationId") String applicationId) {
+      if (applicationId != null && !applicationId.isBlank()) {
+         String app = applicationId.trim();
+         Response unknown = unknownApplication(app);
+         if (unknown != null) return unknown;
+         return Response.ok(shapeVocabulary(registeredVocabulary(app), includeActions)).build();
+      }
       // Unified structure: area -> domain -> actions (case-insensitive)
       Map<String, Map<String, Set<String>>> areaDomainActions = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
 
@@ -504,6 +521,96 @@ public class PermissionResource {
          }
       }
 
+      return Response.ok(shapeVocabulary(areaDomainActions, includeActions)).build();
+   }
+
+   /**
+    * The functional areas an application owns, as registered with this service (its identity
+    * contribution's {@code functionalArea} rows). {@code applicationId} is required: an area belongs
+    * to exactly one application.
+    */
+   @GET
+   @Path("/fd/areas")
+   @Produces(MediaType.APPLICATION_JSON)
+   @Authenticated
+   @SecurityRequirement(name = "bearerAuth")
+   @org.eclipse.microprofile.openapi.annotations.Operation(operationId = "listApplicationFunctionalAreas",
+           summary = "An application's functional areas",
+           description = "The FunctionalArea records the application owns, as registered with this service "
+                   + "(its identity contribution), sorted by refName.")
+   @org.eclipse.microprofile.openapi.annotations.responses.APIResponse(responseCode = "200", description = "The areas",
+           content = @org.eclipse.microprofile.openapi.annotations.media.Content(mediaType = MediaType.APPLICATION_JSON,
+                   schema = @org.eclipse.microprofile.openapi.annotations.media.Schema(
+                           type = org.eclipse.microprofile.openapi.annotations.enums.SchemaType.ARRAY,
+                           implementation = FunctionalArea.class)))
+   @org.eclipse.microprofile.openapi.annotations.responses.APIResponse(responseCode = "400", description = "applicationId is required")
+   @org.eclipse.microprofile.openapi.annotations.responses.APIResponse(responseCode = "404", description = "APPLICATION_UNKNOWN")
+   public Response functionalAreas(@QueryParam("applicationId") String applicationId) {
+      if (applicationId == null || applicationId.isBlank()) {
+         return Response.status(Response.Status.BAD_REQUEST).entity("applicationId is required").build();
+      }
+      String app = applicationId.trim();
+      Response unknown = unknownApplication(app);
+      if (unknown != null) return unknown;
+      List<FunctionalArea> areas = new ArrayList<>(ownedBy(functionalAreaRepo.getAllList(), FunctionalArea::getApplicationId, app));
+      areas.sort(Comparator.comparing(a -> safe(a.getRefName()), String.CASE_INSENSITIVE_ORDER));
+      return Response.ok(areas).build();
+   }
+
+   /** 404 naming the application when it is not registered here; {@code null} when it is. */
+   private Response unknownApplication(String applicationId) {
+      if (applicationRepo.findByRefNameWithIgnoreRules(applicationId).isPresent()) {
+         return null;
+      }
+      return Response.status(Response.Status.NOT_FOUND)
+              .entity(Map.of("code", "APPLICATION_UNKNOWN",
+                      "message", "application '" + applicationId + "' is not registered with this service"))
+              .build();
+   }
+
+   /** Rows tagged with exactly {@code applicationId} ('*' and untagged rows are nobody's own). */
+   private static <T> List<T> ownedBy(List<T> rows, java.util.function.Function<T, String> tag, String applicationId) {
+      List<T> out = new ArrayList<>();
+      if (rows == null) return out;
+      for (T row : rows) {
+         if (row == null) continue;
+         String owner = tag.apply(row);
+         if (owner != null && owner.trim().equalsIgnoreCase(applicationId)) out.add(row);
+      }
+      return out;
+   }
+
+   /**
+    * One application's registered vocabulary: its FunctionalArea rows (an area may hold no domain yet)
+    * and its FunctionalDomain rows with their declared actions. Code discovered in this service and other
+    * applications' rows are not part of it.
+    */
+   private Map<String, Map<String, Set<String>>> registeredVocabulary(String applicationId) {
+      Map<String, Map<String, Set<String>>> out = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+      for (FunctionalArea area : ownedBy(functionalAreaRepo.getAllList(), FunctionalArea::getApplicationId, applicationId)) {
+         String name = safe(area.getRefName());
+         if (!name.isEmpty()) out.computeIfAbsent(name, k -> new TreeMap<>(String.CASE_INSENSITIVE_ORDER));
+      }
+      for (FunctionalDomain fd : ownedBy(functionalDomainRepo.getAllList(), FunctionalDomain::getApplicationId, applicationId)) {
+         String area = safe(fd.getArea());
+         String domain = safe(fd.getRefName());
+         if (area.isEmpty() || domain.isEmpty()) continue;
+         Set<String> actions = ensureAreaDomain(out, area, domain);
+         boolean declaredAny = false;
+         if (fd.getFunctionalActions() != null) {
+            for (com.e2eq.framework.model.security.FunctionalAction a : fd.getFunctionalActions()) {
+               if (a == null) continue;
+               String ref = safe(a.getRefName());
+               if (!ref.isEmpty()) { actions.add(ref); declaredAny = true; }
+            }
+         }
+         if (!declaredAny) addDefaultActions(actions);
+      }
+      return out;
+   }
+
+   /** area -> sorted domains, or with {@code includeActions} area -> domain -> sorted actions. */
+   private static Object shapeVocabulary(Map<String, Map<String, Set<String>>> areaDomainActions, boolean includeActions) {
       if (!includeActions) {
          // area -> sorted list of domains (union from both sources)
          Map<String, List<String>> result = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
@@ -512,7 +619,7 @@ public class PermissionResource {
             domains.sort(String::compareToIgnoreCase);
             result.put(e.getKey(), domains);
          }
-         return Response.ok(result).build();
+         return result;
       }
 
       // includeActions=true: area -> domain -> sorted list of actions
@@ -526,7 +633,7 @@ public class PermissionResource {
          }
          out.put(e.getKey(), dom);
       }
-      return Response.ok(out).build();
+      return out;
    }
 
    private static Set<String> ensureAreaDomain(Map<String, Map<String, Set<String>>> areaDomainActions,
@@ -607,7 +714,7 @@ public class PermissionResource {
    }
 
 
-   private String safe(String s) { return (s == null) ? "" : s.trim(); }
+   private static String safe(String s) { return (s == null) ? "" : s.trim(); }
 
    private Set<Class<?>> listClasses(String packageName) {
       try {
@@ -669,7 +776,7 @@ public class PermissionResource {
       DataDomain dd = new DataDomain(org, acct, tenant, seg, ownerId);
 
       // Resolve roles using centralized resolver: includes token roles, credential roles, and user group roles when identity is a userId
-      Set<String> resolvedIdentities = identityRoleResolver.resolveRolesForIdentity(req.identity, realm, securityIdentity);
+      Set<String> resolvedIdentities = identityRoleResolver.resolveRolesForIdentity(req.identity, realm, applicationId, securityIdentity);
       // PrincipalContext.roles should contain only role names; remove the userId if present
       if (resolvedIdentities != null) {
          resolvedIdentities.remove(req.identity);
@@ -737,7 +844,7 @@ public class PermissionResource {
       // Enrich roleAssignments with provenance (IDP, CREDENTIAL, USERGROUP)
       try {
          Map<String, java.util.EnumSet<com.e2eq.framework.model.auth.RoleSource>> provenance =
-                 identityRoleResolver.resolveRoleSources(req.identity, realm, securityIdentity);
+                 identityRoleResolver.resolveRoleSources(req.identity, realm, applicationId, securityIdentity);
 
          // Ensure all final roles are covered in the assignments, even if no sources are known
          for (String r : roles) {
@@ -774,7 +881,7 @@ public class PermissionResource {
       }
 
       // Determine implied identities using centralized resolver. If identity is a role, returned set will just contain it.
-      Set<String> identities = identityRoleResolver.resolveRolesForIdentity(req.identity, realm, securityIdentity);
+      Set<String> identities = identityRoleResolver.resolveRolesForIdentity(req.identity, realm, applicationId, securityIdentity);
       // Ensure the original identity is included
       identities.add(req.identity);
 
@@ -881,7 +988,7 @@ public class PermissionResource {
       DataDomain dd = new DataDomain(org, acct, tenant, seg, ownerId);
 
       // Resolve identities (roles) and include the original identity
-      Set<String> identities = identityRoleResolver.resolveRolesForIdentity(req.identity, realm, securityIdentity);
+      Set<String> identities = identityRoleResolver.resolveRolesForIdentity(req.identity, realm, applicationId, securityIdentity);
       if (identities == null) identities = new HashSet<>();
       // Remove the userId if present so set holds only roles; but we will still add identity explicitly below for index completeness
       identities.remove(req.identity);
