@@ -1,6 +1,7 @@
 package com.e2eq.framework.util.security;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -54,6 +55,32 @@ class TokenClaimReaderGuardTest {
                 "byte[] b = Base64.getUrlDecoder().decode(parts[1]);\n"
                         + "String t = json.get(\"tenantId\").asText();");
         assertEquals(Map.of("tenantId", List.of(2)), hits);
+    }
+
+    @Test
+    void commentsConcatenationAndLineBreaksDoNotHideReads() {
+        String jwt = "import org.eclipse.microprofile.jwt.JsonWebToken;\n";
+        assertEquals(Map.of("realm", List.of(2)),
+                TokenClaimReaderScan.scanText(jwt + "/* why */ jwt.getClaim(\"realm\");"));
+        assertTrue(TokenClaimReaderScan.scanText(jwt + "int x = 1; // jwt.getClaim(\"realm\")").isEmpty());
+        assertTrue(TokenClaimReaderScan.scanText(jwt + "String u = \"https://x\"; // \"realm\"").isEmpty());
+        assertEquals(Map.of("dynamic", List.of(2)),
+                TokenClaimReaderScan.scanText(jwt + "jwt.getClaim(\"re\" + \"alm\");"));
+        assertTrue(TokenClaimReaderScan.scanText(jwt + "jwt.getClaim(\n  \"sub\");").isEmpty());
+        assertEquals(Map.of("groups", List.of(2)), TokenClaimReaderScan.scanText(jwt + "jwt.getGroups(\n);"));
+        assertTrue(TokenClaimReaderScan.scanText(jwt + "jwt.getClaim(Claims.sub);").isEmpty());
+        assertEquals(Map.of("realm", List.of(1)),
+                TokenClaimReaderScan.scanText("var t = p.token(); t.getClaim (\"realm\");"));
+        assertEquals(Map.of("realm", List.of(2)), TokenClaimReaderScan.scanText(
+                "import io.quarkus.security.identity.SecurityIdentity;\nObject r = identity.getAttribute(\"realm\");"));
+    }
+
+    @Test
+    void duplicateAllowlistEntriesFail(@TempDir Path root) throws IOException {
+        Path allowlist = root.resolve("allow");
+        Files.writeString(allowlist, "a.java | realm | 0 | must-move | TODO\na.java | realm | 9 | must-move | TODO\n");
+        assertThrows(IllegalArgumentException.class, () -> TokenClaimReaderScan.loadAllowlist(allowlist));
+        assertThrows(IllegalArgumentException.class, () -> TokenClaimReaderScan.scan(root.resolve("absent")));
     }
 
     @Test

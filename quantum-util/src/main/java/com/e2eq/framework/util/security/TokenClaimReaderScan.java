@@ -2,7 +2,6 @@ package com.e2eq.framework.util.security;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.nio.charset.MalformedInputException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
@@ -27,10 +26,11 @@ import java.util.regex.Pattern;
  * Step 4 of the rollout stops minting {@link #REMOVED_CLAIMS}; every reader of them breaks then.
  *
  * <p>The scan is plain source scanning of claim names over {@code .java} and {@code .kt} main
- * sources (test sources and generated output are skipped). In a file that names a JWT API
- * ({@code JsonWebToken}, {@code getClaim(} ...) or decodes one by hand ({@code getUrlDecoder}) it counts exact string literals of a removed
- * claim, {@code getGroups()}, {@code getAudience()} and {@code Claims.groups|aud|azp}, plus
- * {@code getClaim(<computed name>)} as the pseudo-claim {@code dynamic}. Counts per
+ * sources (test sources and generated output are skipped; comments are ignored; calls may span
+ * lines). In a file that touches a token (a JWT API, {@code getClaim(}, a hand decoder via
+ * {@code getUrlDecoder}, or {@code SecurityIdentity} attributes) it counts exact string literals
+ * of a removed claim, {@code getGroups()}, {@code getAudience()} and {@code Claims.<removed>},
+ * plus {@code getClaim(<anything but one literal>)} as the pseudo-claim {@code dynamic}. Counts per
  * (file, claim) must not exceed the allowlist, so the readers that exist today stay green and a
  * new one fails the build. The same rules and allowlist format are used by
  * {@code check_token_claim_readers.py} for Python and TypeScript.
@@ -58,21 +58,25 @@ public final class TokenClaimReaderScan {
 
     private static final Set<String> SKIP_DIRS = Set.of(
             "node_modules", "venv", "dist", "build", "target", "coverage", "__pycache__",
-            "test", "tests", "__tests__", "testing", "generated");
+            "test", "tests", "__tests__", "generated");
     private static final Pattern TEST_FILE = Pattern.compile("(Test|Tests|IT)\\.(java|kt)$");
-    private static final List<String> TOKEN_MARKERS = List.of(
-            "JsonWebToken", "JwtClaims", "JWTClaimsSet", "DecodedJWT", "io.jsonwebtoken",
-            "getClaim(", "org.eclipse.microprofile.jwt", "Jwt.claims", "Jwt.upn", "Jwt.subject",
-            "getUrlDecoder");
+    private static final Pattern TOKEN_MARKERS = Pattern.compile(
+            "JsonWebToken|JwtClaims|JWTClaimsSet|DecodedJWT|io\\.jsonwebtoken|org\\.eclipse\\.microprofile\\.jwt"
+                    + "|\\bgetClaim\\s*\\(|\\bJwt\\.(?:claims|upn|subject)\\b|getUrlDecoder");
+    private static final Pattern GET_ATTRIBUTE = Pattern.compile("\\bgetAttribute\\s*\\(");
     private static final String NAMES = String.join("|", REMOVED_CLAIMS);
+    /** Identity claims a token keeps, plus standard OIDC profile claims. */
+    private static final String IDENTITY =
+            "iss|sub|upn|userId|iat|exp|nbf|jti|token_type|auth_time|raw_token|email|preferred_username|full_name";
     private static final Pattern LITERAL =
             Pattern.compile("(?<![\\w$.])([\"'])(" + NAMES + ")\\1");
     private static final Pattern GET_GROUPS = Pattern.compile("\\bgetGroups\\s*\\(\\s*\\)");
     private static final Pattern GET_AUDIENCE = Pattern.compile("\\bgetAudience\\s*\\(\\s*\\)");
-    private static final Pattern CLAIMS_ENUM = Pattern.compile("\\bClaims\\.(groups|aud|azp)\\b");
-    private static final Pattern DYNAMIC_CLAIM =
-            Pattern.compile("\\bgetClaim\\s*\\(\\s*(?![\"'\\s]|Claims\\.)");
-    private static final Pattern COMMENT_LINE = Pattern.compile("^\\s*(//|#|\\*|/\\*)");
+    private static final Pattern CLAIMS_ENUM = Pattern.compile("\\bClaims\\.(" + NAMES + ")\\b");
+    /** getClaim(anything but one literal or a Claims constant), "re" + "alm" included. */
+    private static final Pattern DYNAMIC_CLAIM = Pattern.compile(
+            "\\bgetClaim\\s*\\((?!\\s*(?:\"[^\"\\\\\\n]*\"|'[^'\\\\\\n]*'|Claims\\.(?:" + IDENTITY + "|" + NAMES
+                    + "))\\s*\\))");
 
     private TokenClaimReaderScan() {
     }
@@ -88,43 +92,96 @@ public final class TokenClaimReaderScan {
     public record Entry(String path, String claim, int count, String classification, String note) {
     }
 
-    /** Claim to line numbers of reads in one JVM source text; empty when it names no JWT API. */
+    /** Claim to line numbers of reads in one JVM source text; empty when it touches no token. */
     public static Map<String, List<Integer>> scanText(String text) {
+        String code = stripComments(text);
         Map<String, List<Integer>> hits = new TreeMap<>();
-        if (TOKEN_MARKERS.stream().noneMatch(text::contains)) {
+        boolean touchesToken = TOKEN_MARKERS.matcher(code).find()
+                || (code.contains("SecurityIdentity") && GET_ATTRIBUTE.matcher(code).find());
+        if (!touchesToken) {
             return hits;
         }
-        String[] lines = text.split("\\R", -1);
-        for (int i = 0; i < lines.length; i++) {
-            String line = lines[i];
-            if (COMMENT_LINE.matcher(line).find()) {
-                continue;
-            }
-            int lineno = i + 1;
-            Matcher m = LITERAL.matcher(line);
-            while (m.find()) {
-                hits.computeIfAbsent(m.group(2), k -> new ArrayList<>()).add(lineno);
-            }
-            count(hits, GET_GROUPS.matcher(line), "groups", lineno);
-            count(hits, GET_AUDIENCE.matcher(line), "aud", lineno);
-            Matcher e = CLAIMS_ENUM.matcher(line);
-            while (e.find()) {
-                hits.computeIfAbsent(e.group(1), k -> new ArrayList<>()).add(lineno);
-            }
-            count(hits, DYNAMIC_CLAIM.matcher(line), DYNAMIC, lineno);
+        Matcher m = LITERAL.matcher(code);
+        while (m.find()) {
+            add(hits, code, m.group(2), m.start());
         }
+        count(hits, code, GET_GROUPS.matcher(code), "groups");
+        count(hits, code, GET_AUDIENCE.matcher(code), "aud");
+        Matcher e = CLAIMS_ENUM.matcher(code);
+        while (e.find()) {
+            add(hits, code, e.group(1), e.start());
+        }
+        count(hits, code, DYNAMIC_CLAIM.matcher(code), DYNAMIC);
+        hits.values().forEach(lines -> lines.sort(null));
         return hits;
     }
 
-    private static void count(Map<String, List<Integer>> hits, Matcher m, String claim, int lineno) {
+    private static void count(Map<String, List<Integer>> hits, String code, Matcher m, String claim) {
         while (m.find()) {
-            hits.computeIfAbsent(claim, k -> new ArrayList<>()).add(lineno);
+            add(hits, code, claim, m.start());
         }
+    }
+
+    private static void add(Map<String, List<Integer>> hits, String code, String claim, int pos) {
+        int line = 1;
+        for (int i = 0; i < pos; i++) {
+            if (code.charAt(i) == '\n') {
+                line++;
+            }
+        }
+        hits.computeIfAbsent(claim, k -> new ArrayList<>()).add(line);
+    }
+
+    /** Blanks out comments, keeping offsets and newlines, without touching string or text-block literals. */
+    static String stripComments(String text) {
+        char[] out = text.toCharArray();
+        int n = text.length();
+        int i = 0;
+        while (i < n) {
+            char c = text.charAt(i);
+            if (c == '"' || c == '\'') {
+                boolean triple = c == '"' && text.startsWith("\"\"\"", i);
+                String end = triple ? "\"\"\"" : String.valueOf(c);
+                i += end.length();
+                while (i < n && !text.startsWith(end, i)) {
+                    if (text.charAt(i) == '\\') {
+                        i++;
+                    } else if (text.charAt(i) == '\n' && !triple) {
+                        break;
+                    }
+                    i++;
+                }
+                i += end.length();
+                continue;
+            }
+            if (text.startsWith("//", i)) {
+                while (i < n && text.charAt(i) != '\n') {
+                    out[i++] = ' ';
+                }
+                continue;
+            }
+            if (text.startsWith("/*", i)) {
+                int close = text.indexOf("*/", i + 2);
+                close = close < 0 ? n : close + 2;
+                for (int j = i; j < close; j++) {
+                    if (out[j] != '\n') {
+                        out[j] = ' ';
+                    }
+                }
+                i = close;
+                continue;
+            }
+            i++;
+        }
+        return new String(out);
     }
 
     /** Every claim reader under {@code root}, in path order. */
     public static List<Reader> scan(Path root) {
         Path base = root.toAbsolutePath().normalize();
+        if (!Files.isDirectory(base)) {
+            throw new IllegalArgumentException(base + " is not a directory");
+        }
         List<Reader> readers = new ArrayList<>();
         try {
             Files.walkFileTree(base, new SimpleFileVisitor<>() {
@@ -143,12 +200,7 @@ public final class TokenClaimReaderScan {
                     if (!(name.endsWith(".java") || name.endsWith(".kt")) || TEST_FILE.matcher(name).find()) {
                         return FileVisitResult.CONTINUE;
                     }
-                    String text;
-                    try {
-                        text = Files.readString(file, StandardCharsets.UTF_8);
-                    } catch (MalformedInputException notUtf8) {
-                        return FileVisitResult.CONTINUE;
-                    }
+                    String text = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
                     String rel = base.relativize(file).toString().replace('\\', '/');
                     scanText(text).forEach((claim, lines) -> readers.add(new Reader(rel, claim, List.copyOf(lines))));
                     return FileVisitResult.CONTINUE;
@@ -194,7 +246,9 @@ public final class TokenClaimReaderScan {
             }
             Entry entry = new Entry(parts[0].strip(), claim, Integer.parseInt(parts[2].strip()),
                     parts[3].strip(), parts[4].strip());
-            entries.put(entry.path() + "|" + claim, entry);
+            if (entries.putIfAbsent(entry.path() + "|" + claim, entry) != null) {
+                throw new IllegalArgumentException(where + ": duplicate entry for " + entry.path() + " | " + claim);
+            }
         }
         return entries;
     }
