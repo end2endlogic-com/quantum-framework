@@ -11,12 +11,10 @@ import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 
 import java.net.URI;
-import java.util.HashSet;
-import java.util.Set;
 
 @TopCommand
 @Command(name = "generate-token", mixinStandardHelpOptions = true,
-         description = "Generates a Service Token for the Quantum Framework.")
+         description = "Issues an identity-only service token (Auth contract 4.10.0). Run it as the realm admin.")
 public class ServiceTokenCLI implements java.util.concurrent.Callable<Integer> {
 
     @Option(names = {"-u", "--user"}, description = "User ID", required = true)
@@ -25,20 +23,16 @@ public class ServiceTokenCLI implements java.util.concurrent.Callable<Integer> {
     @Option(names = {"-p", "--password"}, description = "Password", required = true, interactive = true)
     String password;
 
-    @Option(names = {"-r", "--roles"}, description = "Comma-separated list of roles", split = ",")
-    Set<String> roles = new HashSet<>();
-
-    @Option(names = {"-e", "--expires"}, description = "Expiration in seconds (-1 for no expiration)", defaultValue = "3600")
-    long expirationSeconds;
+    @Option(names = {"-k", "--kind"}, description = "application (runs as itself) or delegating (may act for "
+            + "identities of its realm). The token carries no roles: grant the service's userId what it needs.",
+            defaultValue = "application")
+    String kind;
 
     @Option(names = {"-d", "--description"}, description = "Description for the service token")
     String description;
 
-    @Option(names = {"--realm"}, description = "Realm to stamp into the generated service token")
+    @Option(names = {"--realm"}, description = "Realm to issue in (sent as X-Realm; the caller must administer it)")
     String realm;
-
-    @Option(names = {"--audience", "--audiences"}, description = "Comma-separated application audiences", split = ",")
-    Set<String> audiences = new HashSet<>();
 
     @Option(names = {"--url"}, description = "Base URL of the Quantum API", defaultValue = "http://localhost:8080")
     String baseUrl;
@@ -59,17 +53,18 @@ public class ServiceTokenCLI implements java.util.concurrent.Callable<Integer> {
                 System.err.println("Authentication failed: no access token received.");
                 return 1;
             }
-            ServiceTokenRequest mint = new ServiceTokenRequest();
-            mint.setRoles(new java.util.ArrayList<>(roles));
-            mint.setExpirationSeconds(expirationSeconds == -1 ? null : expirationSeconds);
-            mint.setDescription(description);
-            mint.setRealm(realm);
-            mint.setAudiences(new java.util.ArrayList<>(audiences));
-            ServiceTokenResponse result = client.mintServiceToken("Bearer " + login.getAccessToken(), mint);
+            ServiceTokenRequest issue = new ServiceTokenRequest();
+            issue.setKind(kind);
+            if (description != null) {
+                issue.setDescription(description);
+            }
+            ServiceTokenResponse result = client.mintServiceToken("Bearer " + login.getAccessToken(), realm, issue);
             if (result == null || result.getToken() == null || result.getToken().isBlank()) {
                 System.err.println("Service token response did not contain a token.");
                 return 1;
             }
+            // The token grants nothing until this identity is granted access (Access page or a binding).
+            System.err.println("Service userId to grant: " + result.getUserId());
             System.out.println(result.getToken());
             return 0;
         } catch (Exception failure) {

@@ -363,7 +363,7 @@ Both produce standard RS256-signed JWTs. The claims that matter to a receiver ar
 
 | `aud`
 | `["acme-orders"]`
-| Audience. An application-scoped user token carries the set of applications the user is authorized for in the realm (`*` for a wildcard grant). Tokens minted without application scoping use the fixed audience `b2bi-api-client`. Refresh tokens use `b2bi-api-client-refresh`. An identity-agnostic service token carries no `aud`.
+| Audience. An application-scoped user token carries the set of applications the user is authorized for in the realm (`*` for a wildcard grant). Tokens minted without application scoping use the fixed audience `b2bi-api-client`. Refresh tokens use `b2bi-api-client-refresh`. A service token carries no `aud`.
 
 | `azp`
 | `acme-orders`
@@ -482,149 +482,98 @@ An `EMAIL` credential may set a password as an optional second sign-in method; e
 
 For integrations that cannot perform interactive login -- MCP servers, cron jobs, webhook handlers, CI/CD pipelines, partner APIs -- the framework provides **service tokens**: long-lived JWTs with a dedicated credential record.
 
-==== Generating a Service Token
+==== Issuing a Service Token
 
-Service tokens are minted at `POST /security/service-token`. The endpoint is served by the service that owns sign-in (`quantum-auth-service` in the reference architecture). The framework modules in this repository supply the request record (`ServiceTokenRequest`), the minting primitives (`CustomTokenAuthProvider.generateServiceToken` and `generateBoundUserToken`) and the CLI client; they do not expose the endpoint themselves.
+Service tokens are issued at `POST /security/service-token`. The endpoint is served by the service that owns sign-in (`quantum-auth-service` in the reference architecture, contract 4.10.0). The framework modules in this repository supply the signing primitive (`CustomTokenAuthProvider.generateServiceIdentityToken`), the local-credential resolution in `SecurityFilter`, and the CLI client. They do not expose the endpoint themselves.
+
+A service token is identity only (`IDENTITY_ONLY_TOKENS_DESIGN.md` section 4). Each application gets one token, issued by the admin of its realm. Its claims are `iss`, `sub`, `userId`, `iat`, `exp`, `jti` (the credential id), `scope` and `token_type: service`. It carries no roles, groups, realm, tenant, `aud` or `azp`. Its `exp` is fixed 100 years ahead only because the JWT validator requires one. Nobody chooses an expiry.
 
 [source,bash]
 ----
 curl -sS -X POST \
-  -H 'Authorization: Bearer <access-token>' \
+  -H 'Authorization: Bearer <realm-admin-access-token>' \
+  -H 'X-Realm: <realm>' \
   -H 'Content-Type: application/json' \
   http://localhost:8080/security/service-token \
-  -d '{
-    "roles": ["user"],
-    "expirationSeconds": 31536000,
-    "description": "MCP server integration token"
-  }'
+  -d '{"kind": "application", "description": "MCP server integration"}'
 ----
 
-Alternatively, you can use the **Quantum CLI** tool to generate service tokens interactively or via command-line arguments.
+`kind` is `application` (the service runs as itself in the realm) or `delegating` (the service may also act for identities of its realm with `X-Acting-On-Behalf-Of-UserId` or `-Subject`). The response returns `token`, `credentialId`, `subject`, `userId`, `kind`, `realm` and, when present, `tenantId` and `description`. The token is returned only once.
 
 [[using-the-quantum-cli]]
 ===== Using the Quantum CLI
 
-The Quantum CLI (`quantum-cli` module) provides a `generate-token` command that handles authentication and token generation in a single step.
-
-**Build the CLI:**
+The Quantum CLI (`quantum-cli` module) provides a `generate-token` command that signs in as the realm admin and issues the token in one step.
 
 [source,bash]
 ----
 mvn clean package -pl quantum-cli -am
-----
-
-The executable JAR is located at `quantum-cli/target/quarkus-app/quarkus-run.jar`.
-
-**Usage:**
-
-[source,bash]
-----
 java -jar quantum-cli/target/quarkus-app/quarkus-run.jar \
   --user admin@company.com \
-  --roles admin,system \
-  --expires -1 \
+  --kind application \
+  --realm my-realm \
   --description "MCP Server Token" \
   --url http://localhost:8080
 ----
 
-**Command Options:**
+*   `-u, --user`: (Required) The realm admin to sign in as.
+*   `-p, --password`: (Required) Prompted for when not given.
+*   `-k, --kind`: `application` (default) or `delegating`.
+*   `-d, --description`: Optional description for the service credential.
+*   `--realm`: Sent as `X-Realm` to issue in a realm the admin administers.
+*   `--url`: The base URL of the Quantum API (default `http://localhost:8080`).
 
-*   `-u, --user`: (Required) The User ID to authenticate as.
-*   `-p, --password`: (Required) The password for authentication. You will be prompted for it if not provided.
-*   `-r, --roles`: Comma-separated list of roles to embed in the token.
-*   `-e, --expires`: Expiration in seconds (default `3600`). Use `-1` for a non-expiring token.
-*   `-d, --description`: Optional description for the service token.
-*   `--realm`, `--audience`: Sent as the request's `realm` and `audiences`. Both are kept for wire compatibility and ignored for an identity-agnostic token.
-*   `--url`: The base URL of the Quantum API (defaults to `http://localhost:8080`).
+The CLI prints the token on standard output and the service's `userId` on standard error. Grant that `userId` access before the token is used. The 4.x options `--roles`, `--expires` and `--audience` are gone.
 
-The CLI signs in at `/security/login`, calls `/security/service-token` with the access token, and prints the token.
-
-Response of the endpoint, as the CLI's client contract (`cli-auth.openapi.yaml`) reads it:
-
-[source,json]
-----
-{
-  "token": "eyJhbGciOiJSUzI1NiIsInR5cCI6...",
-  "subject": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-  "roles": ["user"],
-  "nonExpiring": false,
-  "expires_at": "<expiry, absent or null for a non-expiring token>",
-  "description": "MCP server integration token"
-}
-----
-
-==== Request Parameters
+==== Request Fields
 
 [cols="1,1,1,3", options="header"]
 |===
 | Field | Type | Required | Description
 
-| `roles`
-| string array
+| `kind`
+| string
 | Yes
-| Roles to embed in the token and store on the credential (e.g., `["user"]`, `["agent-read"]`). Give the token only the roles it needs.
+| `application` or `delegating`.
 
-| `expirationSeconds`
-| long
-| For an identity-agnostic token, no. For a token bound to the caller, yes.
-| Seconds until expiry. When `null` on an identity-agnostic token, the token is issued for approximately 100 years. A token bound to the caller rejects a null duration and rejects a duration longer than 366 days.
+| `realm`
+| string
+| No
+| Must equal the caller's resolved realm. Select another realm with `X-Realm`.
 
 | `description`
 | string
 | No
-| Human-readable label for the credential (e.g., `"Nightly sync job"`, `"MCP integration"`).
-
-| `userId`
-| string
-| No
-| The caller's own user id. When present, the issued JWT is that user's token for `applicationRef`. A value other than the caller's user id is refused.
-
-| `applicationRef`
-| string
-| For a token bound to the caller, yes. For an identity-agnostic token, no.
-| The one service the token is for; it becomes the token's `aud` and `azp`. Omit it, and omit `userId`, to mint an identity-agnostic token.
-
-| `realm`, `audiences`
-| string, string array
-| No
-| Retained for wire compatibility. Ignored for an identity-agnostic token: a service token identifies its caller and is not bound to a realm or a resource. A token bound to the caller uses the caller's own realm.
-
-| `authorizedTenantIds`
-| string array
-| No
-| Tenants the service may select within its realm.
+| Human-readable label for the credential.
 |===
 
-==== Who may mint
+No other field is accepted. The 4.x fields `roles`, `expirationSeconds`, `audiences`, `authorizedTenantIds`, `userId` and `applicationRef` are refused by name with `SERVICE_TOKEN_FIELD_RETIRED`.
 
-Two permissions control this endpoint. They are roles on the caller's token. Neither is implied by `admin` or `user`, and neither implies the other.
+==== Who may issue
 
-* `mint-own-service-token` — the caller may mint a token for their own user and one service (`applicationRef`). If `userId` is omitted, the token is still bound to the caller. The JWT carries that user, realm, and tenant, `aud` and `azp` set to that service, a finite `exp`, and a `jti` credential id. It does not set `token_type` to `service`. This mint does not require `mint-agnostic-service-token`.
-* `mint-agnostic-service-token` — required to mint an identity-agnostic service token, the credential for a multi-tenant or multi-user service. The request names neither a user nor one service. Holding this permission does not block a caller who also holds `mint-own-service-token` from minting an identity and service specific token, and it does not let the caller mint a token for someone else.
-
-A request that names a `userId` other than the caller's is refused. If `X-Acting-On-Behalf-Of-UserId` disagrees with the bound user, the mint is refused. The header does not choose the payer.
+A realm admin acting as themselves, meaning an identity Auth resolves with the `admin` role in the realm. Services, impersonated or delegated callers, and external members are refused with `REALM_ADMIN_REQUIRED` or `EXTERNAL_OPERATION_REFUSED`, whatever roles they hold. There are no mint permissions. `mint-own-service-token` and `mint-agnostic-service-token` are retired and grant nothing.
 
 ==== What Happens on the Backend
 
-When you call `POST /security/service-token`, the Auth service:
+When a realm admin calls `POST /security/service-token`, the Auth service:
 
-1. **Validates the caller** -- the endpoint allows `mint-own-service-token` or `mint-agnostic-service-token`. An identity-agnostic token requires the second permission. A token for the caller and one service requires the first, and names that service in `applicationRef`.
-2. **Looks up the caller's credential** -- from the JWT `sub` claim, the framework finds the caller's `CredentialUserIdPassword` in the system realm.
-3. **Creates a new `SERVICE_TOKEN` credential** with:
-   * `userId`: `svc:<uuid>` (auto-generated, not user-controlled)
-   * `subject`: A new UUID
-   * `credentialType`: `SERVICE_TOKEN`
-   * `parentCredentialSubject`: The caller's subject (for audit trail)
-   * `roles`: From the request
-   * `domainContext`: Inherited from the caller's credential (same realm, tenant, org)
-   * `issuer`: The configured `mp.jwt.verify.issuer`
-4. **Saves the credential** to MongoDB.
-5. **Links it to the caller's UserProfile** via `additionalCredentialRefs` so the token can be traced to its creator.
-6. **Signs and returns the JWT**. For a token bound to the caller and one service, the stored credential id is signed as `jti`, the JWT subject and `userId` are the caller's, and `aud` and `azp` are that service. That JWT does not set `token_type` to `service`. An identity-agnostic token keeps the generated service subject and sets `token_type` to `service`.
+1. **Resolves the caller** through the principal-context resolver and requires a realm admin acting as themselves.
+2. **Checks the realm** is the caller's resolved realm and is active.
+3. **Creates a `SERVICE_TOKEN` credential** with:
+   * `subject`: a new UUID. `userId` is `svc-<subject>`.
+   * `serviceKind`: `APPLICATION` or `DELEGATING`.
+   * `roles`: none. `authorizedRealms`: the one realm.
+   * `domainContext`: the caller's tenant, org and account in that realm.
+   * `parentCredentialSubject`: the issuing admin (audit trail).
+4. **Signs and returns** the identity-only JWT. If signing fails, the credential is removed.
+
+==== Granting, revoking, rotating
+
+A newly issued service is allowed nothing (`APPLICATION_NOT_GRANTED`). Grant its `userId` access on the realm's Access page or with an application binding, as for any member. The resolver reads those grants, so a change applies within the receivers' 60-second resolution cache window without a new token. To revoke, deactivate the credential: the next uncached resolution refuses with `PRINCIPAL_DISABLED`. To rotate, issue a new token, deploy it, and deactivate the old credential.
 
 ==== Using a Service Token
 
-The service token is used like any other JWT -- pass it in the `Authorization` header:
+The service token is used like any other JWT. Pass it in the `Authorization` header:
 
 [source,bash]
 ----
@@ -633,36 +582,32 @@ curl -sS -X GET \
   http://localhost:8080/api/query/rootTypes
 ----
 
-The `SecurityFilter` validates the token. An identity-agnostic service token is looked up by its service `sub`. A token bound to the caller is that user's token: its `sub` and `userId` are the caller's, and its `jti` names the revocable credential record. A consumer that checks only the signature, issuer, and expiry accepts that token until `exp`; it does not see a later revocation of the credential record.
+A receiver in remote mode asks Auth for the context. Elsewhere, `SecurityFilter` recognises a service token from the token itself (`token_type: service` with a `jti`) and never sends it down a claims path, which would place a service in the system realm. In the application that holds the credential store (Auth itself) the token resolves on the local credential path, from its home realm, tenant and grants, and no roles come from the token. Its credential must be present, active and record a `serviceKind`, or the request is refused with 401. A service token never impersonates (403), and only a `delegating` one may send `X-Acting-On-Behalf-Of-*` (403 otherwise). A receiver that does not hold the credential, or that trusts token claims (`trust-token-claims`), refuses a service token with 401. Move it to remote mode first.
 
 ==== Example: Configuring an MCP Server with a Service Token
 
-Generate a token for your MCP integration:
+Issue a token for your MCP integration as the realm admin:
 
 [source,bash]
 ----
-# Login as admin first
 ACCESS_TOKEN=$(curl -sS -X POST \
   -H 'Content-Type: application/json' \
   http://localhost:8080/security/login \
   -d '{"userId": "admin@mycompany.com", "password": "admin-secret"}' \
   | jq -r '.access_token')
 
-# Generate a service token with read-only roles
 SERVICE_TOKEN=$(curl -sS -X POST \
   -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H 'Content-Type: application/json' \
   http://localhost:8080/security/service-token \
-  -d '{
-    "roles": ["user"],
-    "expirationSeconds": 31536000,
-    "description": "MCP integration - read-only"
-  }' | jq -r '.token')
+  -d '{"kind": "application", "description": "MCP integration - read-only"}' | jq -r '.token')
 
 echo "Service token: $SERVICE_TOKEN"
 ----
 
-Then configure your MCP client to use it via a bridge that includes the token:
+Then grant the returned `userId` read access on the Access page.
+
+Configure your MCP client to use it through a bridge that includes the token:
 
 [source,json]
 ----
