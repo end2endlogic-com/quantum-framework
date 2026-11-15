@@ -240,6 +240,30 @@ loader.apply(List.of(
 Callers can also use `loader.applyArchetype("FulfillmentPlus", ctx)` to resolve an archetype defined
 in any manifest.
 
+[#identity-pack-declaration-gate]
+== Identity pack declaration gate
+
+`SeedLoader` plans every requested pack (includes first) and runs each registered `SeedPackGate`
+before it writes anything, so a refusal leaves the realm as it was. `SeedLoaderService` registers
+`ApplicationDeclarationGate`, which checks any pack with an `application` dataset (an application
+identity pack) with `ApplicationDeclarationValidator`: the application row's roles, owner and
+member roles, tenancy and `uses`, its areas and domains, and every policy rule against the
+vocabulary the application declares or borrows and what other applications already hold in the
+realm. A rule naming an undeclared domain or action is `POLICY_TRIPLE_UNDECLARED`.
+
+`quantum.identity-contribution.vocabulary-enforcement` (the setting identity-contribution admission
+reads) decides the outcome:
+
+* `WARN` (default): vocabulary diagnostics are logged as
+  `identity-pack.declaration.warning pack=... app=... code=...` and the pack loads;
+* `REFUSE`: they refuse the pack.
+
+Declaration errors (reserved or undeclared roles, invalid tenancy, malformed rows, rows tagged for
+another application) refuse in both modes. A refusal is
+`ApplicationDeclarationRefusedException` (`IDENTITY_PACK_DECLARATION_REFUSED`), naming the pack, the
+application and each offending reference. Callers that build a `SeedLoader` themselves add the gate
+with `builder.addPackGate(seedLoaderService.applicationDeclarationGate())`.
+
 == Extensibility hooks
 
 * Implement `SeedSource` to load manifests from custom storage (S3, Git, curated seed DB…).
@@ -247,6 +271,8 @@ in any manifest.
   transformations (for example JMESPath projections or deterministic ObjectId mapping).
 * Swap in a different `SeedRepository`/`SeedRegistry` to write to alternative datastores or change the
   idempotency policy.
+* Register a `SeedPackGate` with `builder.addPackGate(...)` to admit or refuse packs before anything
+  is written.
 
 == Operational tips
 
