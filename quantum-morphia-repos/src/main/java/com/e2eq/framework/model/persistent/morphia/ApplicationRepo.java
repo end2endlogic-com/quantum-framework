@@ -35,6 +35,24 @@ public class ApplicationRepo extends MorphiaRepo<Application> {
     }
 
     /**
+     * Applications in a lifecycle state the public catalog lists, rule-free: the signed-out
+     * catalog has no principal. Callers expose only {@code ApplicationCatalogEntry} fields.
+     */
+    public java.util.List<Application> findCataloguedWithIgnoreRules() {
+        java.util.List<String> states = java.util.Arrays.stream(
+                com.e2eq.framework.model.security.ApplicationLifecycleState.values())
+            .filter(com.e2eq.framework.model.security.ApplicationLifecycleState::catalogued)
+            .map(Enum::name)
+            .toList();
+        try (var cursor = morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId())
+                .find(Application.class)
+                .filter(dev.morphia.query.filters.Filters.in("lifecycleState", states))
+                .iterator()) {
+            return cursor.toList();
+        }
+    }
+
+    /**
      * Idempotently registers an application in the global registry (system
      * realm). Provisioning uses this so creating a realm for a new application
      * also creates the application record — the registry is derived from use,
