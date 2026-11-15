@@ -28,7 +28,6 @@ class ApplicationBindingValidatorTest {
    @Test
    void anUndeclaredRoleIsRefused() {
       refused(Code.ROLE_NOT_DECLARED, binding(List.of("t1"), null, "planner-superuser"), planner(), ALL_INSTALLED);
-      refused(Code.ROLE_NOT_DECLARED, binding(List.of("t1"), null, "system"), planner(), ALL_INSTALLED);
       Application legacy = new Application();
       legacy.setRefName("planner");
       refused(Code.ROLE_NOT_DECLARED, binding(List.of("t1"), null, "planner-user"), legacy, ALL_INSTALLED);
@@ -99,6 +98,23 @@ class ApplicationBindingValidatorTest {
       assertGrantRefused(app, List.of("system"), Authority.PLATFORM);
       assertEquals(Code.ROLE_NOT_DECLARED, assertThrows(ApplicationAccessException.class,
          () -> ApplicationBindingValidator.requireGrantable(app, List.of("undeclared"), Authority.PLATFORM)).code());
+   }
+
+   @Test
+   void thePlatformsReservedRolesAreNeverBoundWhateverGrantableBySays() {
+      // An application row that declares the platform's roles anyway, grantable by anyone.
+      Application app = planner();
+      for (String reserved : ApplicationDeclarationValidator.RESERVED_ROLES) {
+         app.getRoles().add(role(reserved, ApplicationRole.GRANTABLE_BY_TENANT_ADMIN));
+      }
+      for (String reserved : List.of("system", "admin", "user", "Admin", " user ")) {
+         refused(Code.ROLE_NOT_GRANTABLE, binding(List.of("t1"), null, reserved), app, ALL_INSTALLED);
+         for (Authority authority : Authority.values()) {
+            assertGrantRefused(app, List.of(reserved), authority);
+         }
+      }
+      // And for an application that does not declare them.
+      refused(Code.ROLE_NOT_GRANTABLE, binding(List.of("t1"), null, "admin"), planner(), ALL_INSTALLED);
    }
 
    // --- harness ---

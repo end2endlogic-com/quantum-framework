@@ -20,8 +20,11 @@ import java.util.stream.Collectors;
  */
 public final class ApplicationBindingValidator {
 
-   /** Never grantable through a binding. */
-   public static final String SYSTEM_ROLE = "system";
+   /**
+    * Never grantable through a binding, whatever an application's {@code grantableBy} says: the
+    * platform's own roles ({@link ApplicationDeclarationValidator#RESERVED_ROLES}).
+    */
+   public static final Set<String> RESERVED_ROLES = ApplicationDeclarationValidator.RESERVED_ROLES;
 
    /**
     * Who is writing a binding, from the existing framework administrator definitions: the system
@@ -39,7 +42,7 @@ public final class ApplicationBindingValidator {
 
    /**
     * Structural rules: one subject, application and realm named, known status and source, roles
-    * the application declares, at least one tenant, a default among several, and an install for
+    * the application declares and none of the platform's reserved roles, at least one tenant, a default among several, and an install for
     * every tenant.
     *
     * @param application the registered application, or null when none is registered
@@ -70,6 +73,7 @@ public final class ApplicationBindingValidator {
       }
       Set<String> declared = declaredRoles(application).keySet();
       for (String role : nonNull(binding.getRoles())) {
+         requireNotReserved(role);
          if (!nonBlank(role) || !declared.contains(role.trim())) {
             throw new ApplicationAccessException(Code.ROLE_NOT_DECLARED, String.format(
                "role '%s' is not declared by application '%s' (declared: %s)",
@@ -103,15 +107,16 @@ public final class ApplicationBindingValidator {
    /**
     * Each role's {@link ApplicationRole#getGrantableBy()} decides: the platform grants any declared
     * role, a realm administrator those grantable by realm-admin or tenant-admin, a tenant
-    * administrator those grantable by tenant-admin. {@code system} is never grantable.
+    * administrator those grantable by tenant-admin. The platform's reserved roles never are.
     */
    public static void requireGrantable(Application application, Collection<String> roles, Authority authority) {
       Map<String, ApplicationRole> declared = declaredRoles(application);
       for (String role : roles == null ? List.<String>of() : roles) {
          String name = trim(role);
-         if (name == null || SYSTEM_ROLE.equalsIgnoreCase(name)) {
+         if (name == null) {
             throw new ApplicationAccessException(Code.ROLE_NOT_GRANTABLE, "role '" + role + "' is never grantable");
          }
+         requireNotReserved(name);
          ApplicationRole declaredRole = declared.get(name);
          if (declaredRole == null) {
             throw new ApplicationAccessException(Code.ROLE_NOT_DECLARED,
@@ -122,6 +127,13 @@ public final class ApplicationBindingValidator {
                "role '%s' of application '%s' is grantable by %s; the caller is %s",
                name, application.getRefName(), nonNull(declaredRole.getGrantableBy()), authority));
          }
+      }
+   }
+
+   private static void requireNotReserved(String role) {
+      if (role != null && RESERVED_ROLES.contains(role.trim().toLowerCase(Locale.ROOT))) {
+         throw new ApplicationAccessException(Code.ROLE_NOT_GRANTABLE,
+            "role '" + role.trim() + "' belongs to the platform and is never granted by a binding");
       }
    }
 
