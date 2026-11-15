@@ -10,6 +10,7 @@ import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import org.bson.types.ObjectId;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
+import org.eclipse.microprofile.openapi.annotations.enums.SchemaType;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
 import java.util.List;
@@ -58,6 +59,7 @@ public abstract class StaticDynamicList<T extends UnversionedBaseModel> extends 
     @NotNull
     private Mode mode;
 
+    @Schema(type = SchemaType.ARRAY, implementation = UnversionedBaseModel.class)
     public abstract List<T> getItems();
     public abstract void setItems(List<T> items);
 
