@@ -27,7 +27,7 @@ public class UserRealmRoleRepo extends MorphiaRepo<UserRealmRole> {
     @Override
     protected void requireWritable() {
         if (directoryOwnership != null) {
-            directoryOwnership.requireOwnedHere("user realm roles");
+            directoryOwnership.requireMembershipsOwnedHere("user realm roles");
         }
     }
 

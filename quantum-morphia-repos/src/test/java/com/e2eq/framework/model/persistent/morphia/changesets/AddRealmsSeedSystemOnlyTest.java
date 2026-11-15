@@ -61,7 +61,7 @@ class AddRealmsSeedSystemOnlyTest {
         AddRealms changeSet = newChangeSet(realmRepo, false);
         changeSet.directoryOwnership = new DirectoryOwnership() {
             @Override
-            public boolean ownedHere() {
+            public boolean catalogOwnedHere() {
                 return false;
             }
         };
@@ -70,6 +70,23 @@ class AddRealmsSeedSystemOnlyTest {
 
         assertTrue(realmRepo.savedRefNames().isEmpty(),
                 "under a remote directory no default realm is written to this service's copy");
+    }
+
+    @Test
+    void remoteMembershipsAloneStillSeedTheLocalCatalog() throws Exception {
+        RecordingRealmRepo realmRepo = new RecordingRealmRepo();
+        AddRealms changeSet = newChangeSet(realmRepo, true);
+        changeSet.directoryOwnership = new DirectoryOwnership() {
+            @Override
+            public boolean membershipsOwnedHere() {
+                return false;
+            }
+        };
+
+        changeSet.execute(session("system-com"), mongoClient(), emitter());
+
+        assertEquals(List.of("system-com"), realmRepo.savedRefNames(),
+                "the catalog is seeded wherever it is owned, whatever the membership routing");
     }
 
     // ---- helpers ----------------------------------------------------------------------------

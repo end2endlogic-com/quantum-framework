@@ -57,6 +57,10 @@ public class QuantumModeConfig implements DirectoryRouting {
     @ConfigProperty(name = "quantum.directory.mode")
     Optional<String> configuredDirectoryMode = Optional.empty();
 
+    /** Older catalog-only override; ignored when {@code quantum.directory.mode} is set. */
+    @ConfigProperty(name = "quantum.system.directory.mode")
+    Optional<String> configuredCatalogOverride = Optional.empty();
+
     @ConfigProperty(name = "quantum.directory.base-url")
     Optional<String> configuredDirectoryBaseUrl = Optional.empty();
 
@@ -68,6 +72,7 @@ public class QuantumModeConfig implements DirectoryRouting {
 
     private QuantumMode mode;
     private Optional<String> directoryMode = Optional.empty();
+    private Optional<String> catalogOverride = Optional.empty();
 
     /**
      * Non-CDI construction (unit tests, embedding): validates exactly like the
@@ -87,7 +92,19 @@ public class QuantumModeConfig implements DirectoryRouting {
     public static QuantumModeConfig of(String configuredMode, Optional<String> systemServiceBaseUrl,
                                        Optional<String> directoryMode, Optional<String> directoryBaseUrl,
                                        Optional<String> directoryToken) {
+        return of(configuredMode, systemServiceBaseUrl, directoryMode, directoryBaseUrl, directoryToken,
+            Optional.empty());
+    }
+
+    /**
+     * Non-CDI construction with the older catalog-only override
+     * ({@code quantum.system.directory.mode}) as well.
+     */
+    public static QuantumModeConfig of(String configuredMode, Optional<String> systemServiceBaseUrl,
+                                       Optional<String> directoryMode, Optional<String> directoryBaseUrl,
+                                       Optional<String> directoryToken, Optional<String> catalogOverride) {
         QuantumModeConfig config = new QuantumModeConfig();
+        config.configuredCatalogOverride = catalogOverride;
         config.configuredMode = configuredMode;
         config.systemServiceBaseUrl = systemServiceBaseUrl;
         config.configuredDirectoryMode = directoryMode;
@@ -107,12 +124,20 @@ public class QuantumModeConfig implements DirectoryRouting {
                     "Unknown quantum.directory.mode '" + value + "'; expected 'local' or 'remote'.");
             }
         });
+        catalogOverride = directoryMode.isPresent() ? Optional.empty()
+            : present(configuredCatalogOverride).map(value -> value.toLowerCase(Locale.ROOT));
+        catalogOverride.ifPresent(value -> {
+            if (!DIRECTORY_LOCAL.equals(value) && !DIRECTORY_REMOTE.equals(value)) {
+                throw new IllegalStateException(
+                    "Unknown quantum.system.directory.mode '" + value + "'; expected 'local' or 'remote'.");
+            }
+        });
         if (mode == QuantumMode.REMOTE && directoryBaseUrl().isEmpty()) {
             throw new IllegalStateException(
                 "quantum.mode=remote requires quantum.directory.base-url (or the older "
                 + "quantum.system-service.base-url) to be set (the control-plane service endpoint).");
         }
-        if (membershipsRemote() && directoryBaseUrl().isEmpty()) {
+        if ((membershipsRemote() || catalogRemote()) && directoryBaseUrl().isEmpty()) {
             throw new IllegalStateException(
                 "quantum.directory.mode=remote requires quantum.directory.base-url "
                 + "(the quantum-auth-service that owns the directory).");
@@ -153,6 +178,19 @@ public class QuantumModeConfig implements DirectoryRouting {
     @Override
     public boolean membershipsRemote() {
         return directoryMode.map(DIRECTORY_REMOTE::equals).orElseGet(this::isRemote);
+    }
+
+    /**
+     * True when the realm catalog is read and written through the remote directory:
+     * {@code quantum.directory.mode} when set (it covers the catalog and memberships together),
+     * else the older catalog-only {@code quantum.system.directory.mode}, else {@code quantum.mode}.
+     */
+    @Override
+    public boolean catalogRemote() {
+        if (directoryMode.isPresent()) {
+            return membershipsRemote();
+        }
+        return catalogOverride.map(DIRECTORY_REMOTE::equals).orElseGet(this::isRemote);
     }
 
     /** The directory endpoint: {@code quantum.directory.base-url}, else the older key. */

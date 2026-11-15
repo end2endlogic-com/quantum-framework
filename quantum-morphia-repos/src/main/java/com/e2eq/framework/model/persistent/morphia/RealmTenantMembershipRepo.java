@@ -16,7 +16,7 @@ public class RealmTenantMembershipRepo extends MorphiaRepo<RealmTenantMembership
     @Override
     protected void requireWritable() {
         if (directoryOwnership != null) {
-            directoryOwnership.requireOwnedHere("realm memberships");
+            directoryOwnership.requireMembershipsOwnedHere("realm memberships");
         }
     }
 

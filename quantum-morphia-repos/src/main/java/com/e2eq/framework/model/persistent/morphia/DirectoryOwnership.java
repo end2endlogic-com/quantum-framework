@@ -8,15 +8,15 @@ import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 
 /**
- * Whether this service owns the directory records (the realm catalog, realm memberships and user
- * realm roles) it keeps in its system realm, as {@link DirectoryRouting} (the one parser of
- * {@code quantum.directory.mode} and {@code quantum.mode}) decides.
+ * Whether this service owns the directory records it keeps in its system realm, as
+ * {@link DirectoryRouting} (the one parser of the directory mode keys) decides. The realm catalog
+ * and the memberships (realm memberships, user realm roles) are routed separately, because the
+ * older catalog-only setting sends the catalog to the owner while memberships stay here.
  *
- * <p>Under a remote directory another service owns them. A local copy is then no authority, and a
- * write to it is a second copy that drifts from the owner's, so every write is refused with
- * {@code DIRECTORY_REMOTE} (409): the record must be written at the owner, through the remote
- * directory client. Without quantum-system on the classpath there is no remote directory, so the
- * records are owned here.</p>
+ * <p>Records held by a remote owner have no authority here. A write to the local copy is a second
+ * copy that drifts from the owner's, so every write is refused with {@code DIRECTORY_REMOTE} (409):
+ * the record must be written at the owner, through the remote directory client. Without
+ * quantum-system on the classpath there is no remote directory, so everything is owned here.</p>
  */
 @ApplicationScoped
 public class DirectoryOwnership {
@@ -36,17 +36,32 @@ public class DirectoryOwnership {
       this.routing = routing;
    }
 
-   /** True unless the directory is held by a remote owner. */
-   public boolean ownedHere() {
+   /** True unless the realm catalog is held by a remote owner. */
+   public boolean catalogOwnedHere() {
+      return routing == null || !routing.catalogRemote();
+   }
+
+   /** True unless realm memberships and user realm roles are held by a remote owner. */
+   public boolean membershipsOwnedHere() {
       return routing == null || !routing.membershipsRemote();
    }
 
-   /** Refuses with {@code DIRECTORY_REMOTE} unless this service owns {@code records}. */
-   public void requireOwnedHere(String records) {
-      if (!ownedHere()) {
-         throw new ApplicationAccessException(Code.DIRECTORY_REMOTE,
-            records + " are held by the remote directory owner (quantum.directory.mode=remote);"
-               + " write them there, not to this service's copy");
+   /** Refuses with {@code DIRECTORY_REMOTE} unless this service owns the realm catalog. */
+   public void requireCatalogOwnedHere(String records) {
+      if (!catalogOwnedHere()) {
+         throw refused(records);
       }
+   }
+
+   /** Refuses with {@code DIRECTORY_REMOTE} unless this service owns the memberships. */
+   public void requireMembershipsOwnedHere(String records) {
+      if (!membershipsOwnedHere()) {
+         throw refused(records);
+      }
+   }
+
+   private static ApplicationAccessException refused(String records) {
+      return new ApplicationAccessException(Code.DIRECTORY_REMOTE,
+         records + " are held by the remote directory owner; write them there, not to this service's copy");
    }
 }

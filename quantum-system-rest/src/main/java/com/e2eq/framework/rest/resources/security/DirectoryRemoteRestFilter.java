@@ -18,11 +18,12 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * The realm catalog, realm membership and user realm role endpoints under a remote directory
- * ({@code quantum.directory.mode=remote}, as {@link DirectoryOwnership} reads it).
+ * The realm catalog, realm membership and user realm role endpoints when a remote directory owner
+ * holds those records, as {@link DirectoryOwnership} reads it. The catalog ({@link RealmResource})
+ * follows catalog ownership; memberships and user realm roles follow membership ownership, so the
+ * older catalog-only setting closes the catalog endpoints alone.
  *
- * <p>The directory owner holds those records; this service's copy stopped changing when it went
- * remote. Reading it would answer from a stale copy, and writing it would fork it (the repositories
+ * <p>For records the owner holds, this service's copy stopped changing when they went remote. Reading it would answer from a stale copy, and writing it would fork it (the repositories
  * refuse that too). So every endpoint of {@link RealmResource}, {@link RealmTenantMembershipResource}
  * and {@link UserRealmRoleResource} is refused with {@code DIRECTORY_REMOTE} (409), except the ones
  * that read and write at the owner through {@code RealmMembershipService}: the application and
@@ -54,16 +55,28 @@ public class DirectoryRemoteRestFilter implements ContainerRequestFilter {
 
    @Override
    public void filter(ContainerRequestContext requestContext) {
-      if (directoryOwnership == null || directoryOwnership.ownedHere() || resourceInfo == null) {
+      if (directoryOwnership == null || resourceInfo == null) {
          return;
       }
-      String refused = refusedEndpoint(resourceInfo.getResourceClass(), resourceInfo.getResourceMethod());
+      Class<?> resourceClass = resourceInfo.getResourceClass();
+      if (ownedHere(resourceClass)) {
+         return;
+      }
+      String refused = refusedEndpoint(resourceClass, resourceInfo.getResourceMethod());
       if (refused != null) {
          requestContext.abortWith(new ApplicationAccessExceptionMapper().toResponse(
             new ApplicationAccessException(ApplicationAccessException.Code.DIRECTORY_REMOTE,
-               "the realm directory is held by the remote directory owner (quantum.directory.mode=remote);"
+               "these records are held by the remote directory owner;"
                   + " this service's copy is not served: use the owner's directory (" + refused + ")")));
       }
+   }
+
+   /** Whether this service owns the records the resource serves: the catalog, or the memberships. */
+   private boolean ownedHere(Class<?> resourceClass) {
+      if (resourceClass != null && RealmResource.class.isAssignableFrom(resourceClass)) {
+         return directoryOwnership.catalogOwnedHere();
+      }
+      return directoryOwnership.membershipsOwnedHere();
    }
 
    /** The endpoint's name when it is a directory endpoint not served at the owner; null otherwise. */

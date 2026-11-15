@@ -366,7 +366,8 @@ public class UserRealmRoleResource extends BaseResource<UserRealmRole, UserRealm
 
    /**
     * The (user, realm) assignment, whatever its status, from the directory owner: this service's
-    * system realm when it owns the directory, the remote owner otherwise.
+    * system realm when it owns the directory, the remote owner otherwise. A failure at a remote
+    * owner propagates as {@link ControlPlaneException} and keeps the owner's status.
     */
    private Optional<UserRealmRole> loadMembership(String userId, String realmRefName) {
       return realmMembershipService.realmsForUser(userId).stream()
@@ -376,23 +377,12 @@ public class UserRealmRoleResource extends BaseResource<UserRealmRole, UserRealm
 
    /**
     * Writes the assignment at the directory owner, so a grant never lands in a copy the owner does
-    * not hold. A refusal or failure at a remote owner is reported, never retried locally.
+    * not hold. A refusal or failure at a remote owner is a {@link ControlPlaneException}, which
+    * {@code ControlPlaneExceptionMapper} reports with the owner's status (reads and writes alike);
+    * it is never retried locally.
     */
    private Response writeAssignment(UserRealmRole membership, java.util.function.Function<UserRealmRole, Response> written) {
-      UserRealmRole saved;
-      try {
-         saved = realmMembershipService.upsertUserRealmRole(membership);
-      } catch (ControlPlaneException e) {
-         int owner = e.httpStatus().orElse(0);
-         int status = owner >= 400 && owner < 500 ? owner : Response.Status.BAD_GATEWAY.getStatusCode();
-         return Response.status(status)
-             .entity(RestError.builder()
-                 .status(status)
-                 .statusMessage("The directory owner did not write the assignment: " + e.getMessage())
-                 .build())
-             .build();
-      }
-      return written.apply(saved);
+      return written.apply(realmMembershipService.upsertUserRealmRole(membership));
    }
 
    private Response notFound(String userId, String realmRefName) {

@@ -88,4 +88,43 @@ class QuantumModeConfigDirectoryTest {
         config.configuredDirectoryToken = Optional.of("new-token");
         assertEquals(Optional.of("new-token"), config.directoryToken());
     }
+
+    @Test
+    void theOlderCatalogOnlyOverrideRoutesTheCatalogAlone() {
+        QuantumModeConfig config = QuantumModeConfig.of("embedded", Optional.empty(),
+            Optional.empty(), Optional.of("https://auth.test"), Optional.empty(), Optional.of(" Remote "));
+
+        assertTrue(config.catalogRemote(), "the catalog is the owner's");
+        assertFalse(config.membershipsRemote(), "memberships stay on the deployment mode");
+
+        QuantumModeConfig localCatalog = QuantumModeConfig.of("remote", Optional.of("https://control.test"),
+            Optional.empty(), Optional.empty(), Optional.empty(), Optional.of("local"));
+        assertFalse(localCatalog.catalogRemote());
+        assertTrue(localCatalog.membershipsRemote());
+    }
+
+    @Test
+    void withoutTheOverrideTheCatalogMovesWithTheMemberships() {
+        assertFalse(QuantumModeConfig.of("embedded", Optional.empty()).catalogRemote());
+        assertTrue(QuantumModeConfig.of("remote", Optional.of("https://control.test")).catalogRemote());
+        assertTrue(QuantumModeConfig.of("embedded", Optional.empty(),
+            Optional.of("remote"), Optional.of("https://auth.test")).catalogRemote());
+    }
+
+    @Test
+    void theDirectoryModeWinsOverTheOlderOverride() {
+        QuantumModeConfig config = QuantumModeConfig.of("embedded", Optional.empty(),
+            Optional.of("local"), Optional.empty(), Optional.empty(), Optional.of("remote"));
+
+        assertFalse(config.catalogRemote());
+        assertFalse(config.membershipsRemote());
+    }
+
+    @Test
+    void aBadOrEndpointlessCatalogOverrideFailsAtStartup() {
+        assertThrows(IllegalStateException.class, () -> QuantumModeConfig.of("embedded", Optional.empty(),
+            Optional.empty(), Optional.of("https://auth.test"), Optional.empty(), Optional.of("sideways")));
+        assertThrows(IllegalStateException.class, () -> QuantumModeConfig.of("embedded", Optional.empty(),
+            Optional.empty(), Optional.empty(), Optional.empty(), Optional.of("remote")));
+    }
 }

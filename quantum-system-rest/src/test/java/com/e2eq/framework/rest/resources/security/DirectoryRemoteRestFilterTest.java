@@ -53,13 +53,41 @@ class DirectoryRemoteRestFilterTest {
         assertNull(filter(false, UserRealmRoleResource.class, method(UserRealmRoleResource.class, "listAssignedUsers")));
     }
 
-    /** Runs the filter for one endpoint; the response it aborted with, or null when it let it through. */
+    /**
+     * The older catalog-only setting: the owner holds the realm catalog, this service still holds
+     * the memberships. The catalog endpoints stop serving the stale copy; the membership and user
+     * realm role endpoints keep serving this service's own records.
+     */
+    @Test
+    void aCatalogOnlyRemoteClosesTheCatalogEndpointsAlone() {
+        Response catalog = filter(true, false, RealmResource.class, method(BaseResource.class, "getCount"));
+        assertNotNull(catalog, "a read of the stale realm catalog is refused");
+        assertEquals(409, catalog.getStatus());
+        assertNotNull(filter(true, false, RealmResource.class, method(RealmResource.class, "accessible")));
+
+        assertNull(filter(true, false, RealmTenantMembershipResource.class, method(BaseResource.class, "byId")));
+        assertNull(filter(true, false, UserRealmRoleResource.class,
+            method(UserRealmRoleResource.class, "listAssignedUsers")));
+    }
+
+    /** Runs the filter for one endpoint with the catalog and memberships routed together. */
     private static Response filter(boolean remote, Class<?> resourceClass, Method method) {
+        return filter(remote, remote, resourceClass, method);
+    }
+
+    /** Runs the filter for one endpoint; the response it aborted with, or null when it let it through. */
+    private static Response filter(boolean catalogRemote, boolean membershipsRemote, Class<?> resourceClass,
+                                   Method method) {
         DirectoryRemoteRestFilter filter = new DirectoryRemoteRestFilter();
         filter.directoryOwnership = new DirectoryOwnership() {
             @Override
-            public boolean ownedHere() {
-                return !remote;
+            public boolean catalogOwnedHere() {
+                return !catalogRemote;
+            }
+
+            @Override
+            public boolean membershipsOwnedHere() {
+                return !membershipsRemote;
             }
         };
         filter.resourceInfo = new ResourceInfo() {

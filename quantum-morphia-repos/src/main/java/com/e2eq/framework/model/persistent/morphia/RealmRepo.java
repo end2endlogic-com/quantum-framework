@@ -29,7 +29,7 @@ public class RealmRepo extends MorphiaRepo<Realm> {
    @Override
    protected void requireWritable() {
       if (directoryOwnership != null) {
-         directoryOwnership.requireOwnedHere("realm catalog entries");
+         directoryOwnership.requireCatalogOwnedHere("realm catalog entries");
       }
    }
 

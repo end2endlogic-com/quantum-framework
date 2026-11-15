@@ -163,6 +163,19 @@ What a remote directory changes for the service that reads it:
 * Access-invite acceptance writes the realm assignment at the directory owner,
   and a rollback undoes the grant there. A new assignment that cannot be
   deleted remotely is emptied and suspended.
+* The local copy of records the owner holds is frozen. Every write to it
+  (`RealmRepo` for the realm catalog; `RealmTenantMembershipRepo` and
+  `UserRealmRoleRepo` for memberships) refuses with `DIRECTORY_REMOTE` (409),
+  and the `/security/realm`, `/security/realm-memberships` and
+  `/security/user-realm-roles` endpoints refuse with `DIRECTORY_REMOTE` instead
+  of serving the stale copy. The application and tenant grant endpoints
+  (`/security/user-realm-roles/{userId}/{realm}/applications` and `…/tenants`)
+  stay open and read and write at the owner. The default realms are not seeded
+  into a catalog the owner holds.
+* The catalog and the memberships are guarded separately. Under the older
+  catalog-only setting (`quantum.system.directory.mode=remote` with
+  `quantum.directory.mode` unset) only the catalog writes and endpoints are
+  refused; memberships stay local and writable.
 
 Every remote failure raises a typed `ControlPlaneException`, and nothing falls
 back to local storage:
@@ -176,6 +189,11 @@ back to local storage:
 |`REJECTED` |non-2xx answer; `httpStatus()` holds the status
 |`CONTRACT_VIOLATION` |2xx answer with an empty body or a mismatched identity
 |===
+
+A REST endpoint that hits one of these answers with the owner's status when the
+owner refused with a 4xx, and with 502 Bad Gateway otherwise
+(`ControlPlaneExceptionMapper`, in quantum-system-rest). The `RestError`
+`reasonMessage` carries the kind. Before 1.4.3 these failures surfaced as 500.
 
 `membershipsForOrg` is the one call the contract does not expose yet. It
 still fails loud in remote mode.

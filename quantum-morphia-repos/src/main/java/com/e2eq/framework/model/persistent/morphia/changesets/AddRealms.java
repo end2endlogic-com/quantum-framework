@@ -124,7 +124,7 @@ public class AddRealms extends ChangeSetBase {
 
     @Override
     public void execute(MorphiaSession session, MongoClient mongoClient, MultiEmitter<? super String> emitter) throws Exception {
-        if (directoryOwnership != null && !directoryOwnership.ownedHere()) {
+        if (directoryOwnership != null && !directoryOwnership.catalogOwnedHere()) {
             // The realm catalog is the remote directory owner's, which seeds its own default realms;
             // a local copy here would be a second catalog that drifts from it.
             Log.info("Skipping default realms: the realm catalog is held by the remote directory owner");

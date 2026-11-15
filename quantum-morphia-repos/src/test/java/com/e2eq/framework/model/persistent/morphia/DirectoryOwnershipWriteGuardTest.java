@@ -13,6 +13,7 @@ import org.junit.jupiter.api.function.Executable;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -27,9 +28,12 @@ class DirectoryOwnershipWriteGuardTest {
     void theRecordsAreOwnedHereByDefault() {
         DirectoryOwnership unrouted = new DirectoryOwnership();
         unrouted.init();
-        assertTrue(unrouted.ownedHere(), "without quantum-system there is no remote directory");
-        unrouted.requireOwnedHere("realm memberships");
-        assertTrue(ownership(false).ownedHere());
+        assertTrue(unrouted.catalogOwnedHere(), "without quantum-system there is no remote directory");
+        assertTrue(unrouted.membershipsOwnedHere());
+        unrouted.requireMembershipsOwnedHere("realm memberships");
+        unrouted.requireCatalogOwnedHere("realm catalog entries");
+        assertTrue(ownership(false).catalogOwnedHere());
+        assertTrue(ownership(false).membershipsOwnedHere());
         new RealmRepo().requireWritable(); // a repo outside CDI has no routing: local
     }
 
@@ -62,10 +66,53 @@ class DirectoryOwnershipWriteGuardTest {
     @Test
     void aLocalDirectoryKeepsItsWrites() {
         DirectoryOwnership local = ownership(false);
-        assertTrue(local.ownedHere());
+        assertTrue(local.catalogOwnedHere());
+        assertTrue(local.membershipsOwnedHere());
         RealmRepo repo = new RealmRepo();
         repo.directoryOwnership = local;
         repo.requireWritable();
+    }
+
+    /**
+     * The older catalog-only setting (quantum.system.directory.mode=remote, quantum.directory.mode
+     * unset): the owner holds the realm catalog, this service still holds the memberships. Catalog
+     * writes are refused; membership and user realm role writes are not.
+     */
+    @Test
+    void aCatalogOnlyRemoteRefusesCatalogWritesAndKeepsMembershipWrites() {
+        DirectoryOwnership catalogOnly = new DirectoryOwnership();
+        catalogOnly.routing(new DirectoryRouting() {
+            @Override
+            public boolean membershipsRemote() {
+                return false;
+            }
+
+            @Override
+            public boolean catalogRemote() {
+                return true;
+            }
+        });
+        assertFalse(catalogOnly.catalogOwnedHere());
+        assertTrue(catalogOnly.membershipsOwnedHere());
+
+        RealmRepo realms = new RealmRepo();
+        realms.directoryOwnership = catalogOnly;
+        assertRefused(() -> realms.save((dev.morphia.Datastore) null, new Realm()));
+        assertRefused(realms::requireWritable);
+
+        RealmTenantMembershipRepo memberships = new RealmTenantMembershipRepo();
+        memberships.directoryOwnership = catalogOnly;
+        memberships.requireWritable();
+        UserRealmRoleRepo roles = new UserRealmRoleRepo();
+        roles.directoryOwnership = catalogOnly;
+        roles.requireWritable();
+    }
+
+    @Test
+    void aRoutingThatDoesNotRouteTheCatalogAloneHoldsItWithTheMemberships() {
+        DirectoryRouting together = () -> true;
+        assertTrue(together.catalogRemote());
+        assertFalse(ownership(true).catalogOwnedHere());
     }
 
     private static void assertRefused(Executable write) {
