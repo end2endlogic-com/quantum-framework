@@ -117,6 +117,38 @@ class ApplicationBindingValidatorTest {
       refused(Code.ROLE_NOT_GRANTABLE, binding(List.of("t1"), null, "admin"), planner(), ALL_INSTALLED);
    }
 
+   @Test
+   void privilegedRoleNamesAreNeverBoundWhateverGrantableBySays() {
+      // Binding roles join the global roles, so a name @RolesAllowed checks or the platform
+      // recognizes would grant platform authority: refused without case, configured ones too.
+      List<String> configured = List.of("membership-admin");
+      Application app = planner();
+      List<String> privileged = List.of("platformAdmin", "PLATFORMADMIN", "tenantAdmin", "TenantAdmin", "ANONYMOUS",
+         "anonymous", "membership-admin", "Membership-Admin");
+      privileged.forEach(name -> app.getRoles().add(role(name, ApplicationRole.GRANTABLE_BY_TENANT_ADMIN)));
+      for (String name : privileged) {
+         ApplicationAccessException saved = assertThrows(ApplicationAccessException.class,
+            () -> ApplicationBindingValidator.validate(binding(List.of("t1"), null, name), app, ALL_INSTALLED, configured));
+         assertEquals(Code.ROLE_NOT_GRANTABLE, saved.code(), name);
+         for (Authority authority : Authority.values()) {
+            ApplicationAccessException granted = assertThrows(ApplicationAccessException.class,
+               () -> ApplicationBindingValidator.requireGrantable(app, List.of(name), authority, configured));
+            assertEquals(Code.ROLE_NOT_GRANTABLE, granted.code(), name + " by " + authority);
+         }
+      }
+      // An application's own role that merely resembles one is still grantable.
+      app.getRoles().add(role("membership-admin-viewer", ApplicationRole.GRANTABLE_BY_TENANT_ADMIN));
+      ApplicationBindingValidator.requireGrantable(app, List.of("membership-admin-viewer"), Authority.TENANT_ADMIN, configured);
+   }
+
+   @Test
+   void aSuspendedBindingIsSavedWithoutAnInstall() {
+      UserAppRole suspended = binding(List.of("t1"), null, "planner-user");
+      suspended.setStatus(UserAppRole.STATUS_SUSPENDED);
+      ApplicationBindingValidator.validate(suspended, planner(), tenant -> false);
+      refused(Code.APPLICATION_NOT_INSTALLED, binding(List.of("t1"), null, "planner-user"), planner(), tenant -> false);
+   }
+
    // --- harness ---
 
    private static void assertGrantRefused(Application app, List<String> roles, Authority authority) {

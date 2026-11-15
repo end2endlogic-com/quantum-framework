@@ -1,6 +1,7 @@
 package com.e2eq.framework.system.config;
 
 import com.e2eq.framework.api.system.QuantumMode;
+import com.e2eq.framework.model.persistent.morphia.DirectoryRouting;
 import io.quarkus.logging.Log;
 import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -42,7 +43,7 @@ import java.util.Optional;
  * base URL aborts startup.
  */
 @ApplicationScoped
-public class QuantumModeConfig {
+public class QuantumModeConfig implements DirectoryRouting {
 
     public static final String DIRECTORY_LOCAL = "local";
     public static final String DIRECTORY_REMOTE = "remote";
@@ -149,6 +150,7 @@ public class QuantumModeConfig {
     }
 
     /** True when realm memberships are read and written through the remote directory. */
+    @Override
     public boolean membershipsRemote() {
         return directoryMode.map(DIRECTORY_REMOTE::equals).orElseGet(this::isRemote);
     }

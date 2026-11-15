@@ -290,6 +290,28 @@ class ApplicationAccessIntegrationTest extends BaseRepoTest {
         assertEquals(UserAppRole.STATUS_SUSPENDED, groupRow("held-" + app).getStatus(), "only the uninstall's suspensions are undone");
     }
 
+    @Test
+    void replayingAnUninstallOfAStaleIdSuspendsNothing() {
+        ApplicationInstall first;
+        ApplicationInstall second;
+        try (SecuritySession ignored = asSystem()) {
+            first = accessService.install(realm, install(null, "tenant-a"));
+            bindingRepo.save(groupBinding("planners-" + app, "tenant-a", UserAppRole.STATUS_ACTIVE, UserAppRole.SOURCE_STAFF));
+            accessService.uninstall(realm, first.getId());
+            second = accessService.install(realm, install(null, "tenant-a"));
+            assertFalse(first.getId().equals(second.getId()), "the reinstall is a new install");
+            assertEquals(UserAppRole.STATUS_ACTIVE, groupRow("planners-" + app).getStatus());
+
+            // The first uninstall, replayed: the install is already uninstalled, so nothing changes.
+            assertEquals(ApplicationInstall.STATUS_UNINSTALLED, accessService.uninstall(realm, first.getId()).getStatus());
+        }
+        assertEquals(UserAppRole.STATUS_ACTIVE, groupRow("planners-" + app).getStatus(),
+            "a stale uninstall does not suspend the bindings the reinstall reactivated");
+        assertNull(groupRow("planners-" + app).getSuspendedBy());
+        assertTrue(installRepo.isInstalled(app, realm, "tenant-a"));
+        assertEquals(ApplicationInstall.STATUS_ACTIVE, installRepo.findByIdWithIgnoreRules(second.getId()).orElseThrow().getStatus());
+    }
+
     // --- public catalog -------------------------------------------------------------------
 
     @Test

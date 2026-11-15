@@ -63,6 +63,9 @@ public final class PrincipalFixture {
     public final Map<String, String> groupOwners = new HashMap<>();
     /** The binding store is held by a remote directory. */
     public boolean remoteDirectory;
+
+    /** The deployment's configured membership-administrator roles. */
+    public List<String> membershipAdminRoles = List.of();
     /** Every applicationId the role resolver was asked about. */
     public final List<String> roleApplications = new ArrayList<>();
 
@@ -209,6 +212,11 @@ public final class PrincipalFixture {
         @Override
         public boolean bindingsReadable() {
             return !world.remoteDirectory;
+        }
+
+        @Override
+        public List<String> alsoReservedRoles() {
+            return world.membershipAdminRoles;
         }
 
         @Override

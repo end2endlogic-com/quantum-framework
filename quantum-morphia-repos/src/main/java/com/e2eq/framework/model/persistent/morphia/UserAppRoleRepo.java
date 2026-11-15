@@ -15,6 +15,7 @@ import dev.morphia.query.filters.Filter;
 import dev.morphia.query.filters.Filters;
 import dev.morphia.transactions.MorphiaSession;
 import jakarta.enterprise.context.ApplicationScoped;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.bson.types.ObjectId;
 
 import java.util.ArrayList;
@@ -33,6 +34,19 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 @ApplicationScoped
 public class UserAppRoleRepo extends MorphiaRepo<UserAppRole> {
+
+   /**
+    * The deployment's membership-administrator roles (the access-invite setting). They confer
+    * administrative authority, so no binding grants them ({@link ApplicationBindingValidator#RESERVED_ROLES}).
+    */
+   @ConfigProperty(name = "quantum.access-invites.membership-admin-roles")
+   Optional<List<String>> membershipAdminRoles = Optional.empty();
+
+   /** Roles reserved beyond {@link ApplicationBindingValidator#RESERVED_ROLES}: the configured membership-administrator roles. */
+   public List<String> alsoReservedRoles() {
+      return membershipAdminRoles == null ? List.of() : membershipAdminRoles.orElse(List.of()).stream()
+         .filter(Objects::nonNull).map(String::trim).filter(role -> !role.isEmpty()).toList();
+   }
 
    @Override
    public String getSecurityContextRealmId() {
@@ -216,7 +230,7 @@ public class UserAppRoleRepo extends MorphiaRepo<UserAppRole> {
          : datastore.find(Application.class).filter(Filters.eq("refName", binding.getApplicationId())).first();
       ApplicationBindingValidator.validate(binding, application, tenant ->
          ApplicationInstallRepo.findActive(datastore, binding.getApplicationId(), binding.getRealmRefName(), tenant)
-            .isPresent());
+            .isPresent(), alsoReservedRoles());
       Filter subject = binding.groupBinding()
          ? Filters.eq("groupRefName", binding.getGroupRefName())
          : Filters.eq("userId", binding.getUserId());

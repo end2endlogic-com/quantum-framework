@@ -91,8 +91,18 @@ public class ApplicationAccessService {
 
       Optional<UserAppRole> existing = system(() -> stored(request));
       existing.ifPresent(current -> {
+         // A binding of another realm reads exactly like a missing one, so ids cannot be probed.
          if (!Objects.equals(current.getRealmRefName(), realm)) {
-            throw new ApplicationAccessException(Code.REALM_MISMATCH, "binding " + current.getId() + " is in another realm");
+            throw new ApplicationAccessException(Code.NOT_FOUND, "no binding " + current.getId());
+         }
+         // A binding id keeps its subject and application, as an install id keeps its tenant:
+         // rewriting one by id must not hand another identity's binding (and its defaultRealm) over.
+         if (!Objects.equals(trimmed(current.getUserId()), trimmed(request.getUserId()))
+               || !Objects.equals(current.groupRefName(), request.groupRefName())
+               || !Objects.equals(trimmed(current.getApplicationId()), trimmed(request.getApplicationId()))) {
+            throw new ApplicationAccessException(Code.BINDING_SUBJECT_INVALID, String.format(
+               "binding %s is %s's for application '%s'; a binding's subject and application never change",
+               current.getId(), subject(current), current.getApplicationId()));
          }
          requireMayGrant(realm, application, current);
       });
@@ -111,10 +121,9 @@ public class ApplicationAccessService {
       // Provenance is the server's: whatever the request says, the writer's authority decides.
       request.setSource(probe == Authority.PLATFORM ? UserAppRole.SOURCE_STAFF : UserAppRole.SOURCE_TENANT_ADMIN);
       if (request.getStatus() == null) {
-         request.setStatus(UserAppRole.STATUS_ACTIVE);
+         request.setStatus(existing.map(UserAppRole::getStatus).orElse(UserAppRole.STATUS_ACTIVE));
       }
-      request.setSuspendedBy(UserAppRole.STATUS_SUSPENDED.equals(request.getStatus())
-         ? "user:" + caller.getUserId() : null);
+      request.setSuspendedBy(suspendedBy(request, existing.orElse(null), caller));
       UserAppRole saved = system(() -> request.getId() == null
          ? userAppRoleRepo.save(request)
          : userAppRoleRepo.upsertById(request));
@@ -125,9 +134,11 @@ public class ApplicationAccessService {
 
    public void deleteBinding(String callerRealm, ObjectId id) {
       accessDirectory.requireLocalDirectory();
-      UserAppRole binding = system(() -> userAppRoleRepo.findByIdWithIgnoreRules(id))
-         .orElseThrow(() -> new ApplicationAccessException(Code.NOT_FOUND, "no binding " + id));
       Authority probe = authorityFor(callerRealm, List.of());
+      // A binding of another realm reads exactly like a missing one, so ids cannot be probed.
+      UserAppRole binding = system(() -> userAppRoleRepo.findByIdWithIgnoreRules(id))
+         .filter(found -> probe == Authority.PLATFORM || Objects.equals(found.getRealmRefName(), callerRealm))
+         .orElseThrow(() -> new ApplicationAccessException(Code.NOT_FOUND, "no binding " + id));
       realmFor(callerRealm, binding.getRealmRefName(), probe);
       requireMayGrant(binding.getRealmRefName(), application(binding.getApplicationId()), binding);
       system(() -> {
@@ -257,7 +268,8 @@ public class ApplicationAccessService {
          .orElseThrow(() -> new ApplicationAccessException(Code.NOT_FOUND, "no install " + id));
       requireInstallAuthority(stored.getRealmRefName(), stored.getTenantId());
       ApplicationInstall uninstalled = stored;
-      if (!ApplicationInstall.STATUS_UNINSTALLED.equals(stored.getStatus())) {
+      boolean changed = !ApplicationInstall.STATUS_UNINSTALLED.equals(stored.getStatus());
+      if (changed) {
          PrincipalContext caller = SecurityContext.getPrincipalContext().orElseThrow();
          stored.setStatus(ApplicationInstall.STATUS_UNINSTALLED);
          stored.setUninstalledBy(caller.getUserId());
@@ -265,8 +277,13 @@ public class ApplicationAccessService {
          uninstalled = system(() -> applicationInstallRepo.upsertById(stored));
       }
       ApplicationInstall done = uninstalled;
-      long suspended = system(() -> userAppRoleRepo.suspendGroupBindingsForUninstall(
-         done.getApplicationId(), done.getRealmRefName(), done.getTenantId(), done.getId()));
+      // Only the call that moves the install to uninstalled suspends, and only when no other
+      // install is active for the tenant: replaying an uninstall of a stale id (uninstall A,
+      // reinstall as B, uninstall A again) must not suspend the bindings B reactivated.
+      boolean suspend = changed && system(() -> applicationInstallRepo.findActiveWithIgnoreRules(
+         done.getApplicationId(), done.getRealmRefName(), done.getTenantId())).isEmpty();
+      long suspended = suspend ? system(() -> userAppRoleRepo.suspendGroupBindingsForUninstall(
+         done.getApplicationId(), done.getRealmRefName(), done.getTenantId(), done.getId())) : 0L;
       Log.infof("application-install.uninstall id=%s application=%s realm=%s tenant=%s groupBindingsSuspended=%d",
          id, done.getApplicationId(), done.getRealmRefName(), done.getTenantId(), suspended);
       return done;
@@ -294,7 +311,8 @@ public class ApplicationAccessService {
          throw new ApplicationAccessException(Code.ROLE_NOT_GRANTABLE, String.format(
             "the caller administers none or not all of the tenants %s in realm '%s'", tenants, realm));
       }
-      ApplicationBindingValidator.requireGrantable(application, binding.getRoles(), authority);
+      ApplicationBindingValidator.requireGrantable(application, binding.getRoles(), authority,
+         userAppRoleRepo.alsoReservedRoles());
    }
 
    /**
@@ -408,6 +426,26 @@ public class ApplicationAccessService {
             request.getApplicationId().trim(), request.getRealmRefName()).stream()
          .filter(binding -> group == null ? user.equals(binding.getUserId()) : group.equals(binding.getGroupRefName()))
          .findFirst();
+   }
+
+   /**
+    * Who suspended the binding. An uninstall's marker survives a rewrite that keeps the binding
+    * suspended, so the reinstall still reactivates it; otherwise a suspension is the writer's.
+    */
+   private static String suspendedBy(UserAppRole request, UserAppRole existing, PrincipalContext caller) {
+      if (!UserAppRole.STATUS_SUSPENDED.equals(request.getStatus())) {
+         return null;
+      }
+      if (existing != null && UserAppRole.STATUS_SUSPENDED.equals(existing.getStatus())
+            && existing.getSuspendedBy() != null
+            && existing.getSuspendedBy().startsWith(UserAppRole.SUSPENDED_BY_UNINSTALL)) {
+         return existing.getSuspendedBy();
+      }
+      return "user:" + caller.getUserId();
+   }
+
+   private static String trimmed(String value) {
+      return value == null || value.isBlank() ? null : value.trim();
    }
 
    private String tenantOf(String tenantId) {

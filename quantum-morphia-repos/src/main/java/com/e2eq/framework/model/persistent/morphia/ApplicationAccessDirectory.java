@@ -8,9 +8,10 @@ import com.e2eq.framework.model.security.UserAppRole;
 import com.e2eq.framework.model.security.UserGroup;
 import com.e2eq.framework.model.security.UserProfile;
 import com.e2eq.framework.util.EnvConfigUtils;
+import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.util.List;
 import java.util.Objects;
@@ -22,7 +23,7 @@ import java.util.Optional;
  * application's installs. Everything is in the system realm.
  *
  * <p>Under a remote directory ({@code quantum.directory.mode=remote}, or {@code quantum.mode=remote}
- * when the directory mode is unset, as {@code QuantumModeConfig#membershipsRemote}) this service
+ * when the directory mode is unset, as {@code QuantumModeConfig#membershipsRemote} decides) this service
  * is not the directory owner: no local binding or install is an authority. Bindings are then not
  * readable here ({@link #bindingsReadable()}), {@link #bindingsFor} refuses, and writes refuse
  * ({@link #requireLocalDirectory()}) with {@code DIRECTORY_REMOTE}. Nothing here reads the remote
@@ -50,23 +51,29 @@ public class ApplicationAccessDirectory {
    @Inject
    EnvConfigUtils envConfigUtils;
 
-   @ConfigProperty(name = "quantum.directory.mode")
-   Optional<String> directoryMode = Optional.empty();
+   @Inject
+   Instance<DirectoryRouting> routings;
 
-   @ConfigProperty(name = "quantum.mode")
-   Optional<String> quantumMode = Optional.empty();
+   private DirectoryRouting routing;
+
+   @PostConstruct
+   void init() {
+      routing = routings != null && routings.isResolvable() ? routings.get() : null;
+   }
+
+   /** Package-private for tests: the routing this directory reads. */
+   void routing(DirectoryRouting routing) {
+      this.routing = routing;
+   }
 
    /**
-    * Whether this service owns the binding store: false under {@code quantum.directory.mode=remote}
-    * or, when that is unset, {@code quantum.mode=remote}.
+    * Whether this service owns the binding store: false when {@code QuantumModeConfig#membershipsRemote}
+    * (the one parser of {@code quantum.directory.mode} and {@code quantum.mode}) says the directory
+    * is remote. Without quantum-system on the classpath there is no remote directory client, so
+    * the directory is local.
     */
    public boolean bindingsReadable() {
-      Optional<String> explicit = directoryMode == null ? Optional.empty()
-         : directoryMode.map(String::trim).filter(value -> !value.isEmpty());
-      if (explicit.isPresent()) {
-         return !"remote".equalsIgnoreCase(explicit.get());
-      }
-      return quantumMode == null || quantumMode.map(String::trim).filter("remote"::equalsIgnoreCase).isEmpty();
+      return routing == null || !routing.membershipsRemote();
    }
 
    /** Refuses with {@code DIRECTORY_REMOTE} unless this service owns the binding store. */
@@ -91,6 +98,11 @@ public class ApplicationAccessDirectory {
       }
       return userAppRoleRepo.findForSubjectsWithIgnoreRules(
          credential.getUserId(), groupRefNames(credential), applicationId, realmRefName);
+   }
+
+   /** Roles no binding grants beyond {@code ApplicationBindingValidator.RESERVED_ROLES}: the configured membership-administrator roles. */
+   public List<String> alsoReservedRoles() {
+      return userAppRoleRepo == null ? List.of() : userAppRoleRepo.alsoReservedRoles();
    }
 
    public Optional<Application> application(String refName) {

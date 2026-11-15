@@ -49,6 +49,7 @@ import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Who may write application bindings and installs, against real Mongo and the framework's
@@ -333,6 +334,115 @@ class ApplicationAccessAuthorityTest extends BaseRepoTest {
         assertEquals(0, bindingRepo.findByApplicationWithIgnoreRules(app, POOLED, null).size());
     }
 
+    @Test
+    void aBindingIdKeepsItsSubjectAndApplication() {
+        String alice = member("subject-alice", List.of(TENANT_A), List.of("viewer"));
+        String mallory = member("subject-mallory", List.of(TENANT_A), List.of(MEMBERSHIP_ADMIN));
+        asSystem(() -> accessService.install(POOLED, install(null, null, TENANT_A)));
+        UserAppRole forAlice = binding(alice, List.of(TENANT_A), null, "planner-user");
+        forAlice.setDefaultRealm(true);
+        UserAppRole aliceBinding = asSystem(() -> accessService.putBinding(POOLED, forAlice));
+        String owned = group("subject-owned", TENANT_A);
+
+        // Naming alice's id, an administrator cannot move her binding (and its defaultRealm) to itself.
+        UserAppRole moved = binding(mallory, List.of(TENANT_A), null, "planner-user");
+        moved.setId(aliceBinding.getId());
+        moved.setDefaultRealm(true);
+        refused(Code.BINDING_SUBJECT_INVALID, () -> as(signedIn(mallory, TENANT_A), () -> accessService.putBinding(POOLED, moved)));
+        refused(Code.BINDING_SUBJECT_INVALID, () -> asSystem(() -> accessService.putBinding(POOLED, moved)));
+        // Nor turn it into a group binding.
+        UserAppRole toGroup = groupBinding(owned, List.of(TENANT_A), null, "planner-user");
+        toGroup.setId(aliceBinding.getId());
+        refused(Code.BINDING_SUBJECT_INVALID, () -> asSystem(() -> accessService.putBinding(POOLED, toGroup)));
+
+        UserAppRole stored = bindingRepo.findByIdWithIgnoreRules(aliceBinding.getId()).orElseThrow();
+        assertEquals(alice, stored.getUserId());
+        assertEquals(Boolean.TRUE, stored.getDefaultRealm());
+        // The same subject under its id is an ordinary update.
+        UserAppRole same = binding(alice, List.of(TENANT_A), null, "planner-user");
+        same.setId(aliceBinding.getId());
+        same.setDefaultRealm(true);
+        assertEquals(aliceBinding.getId(), asSystem(() -> accessService.putBinding(POOLED, same)).getId());
+    }
+
+    @Test
+    void privilegedRoleNamesAreNeverBound() {
+        String alice = member("privileged-alice", List.of(TENANT_A), List.of("viewer"));
+        asSystem(() -> accessService.install(POOLED, install(null, null, TENANT_A)));
+        List<String> privileged = List.of("platformAdmin", "tenantAdmin", "ANONYMOUS", MEMBERSHIP_ADMIN, "admin", "System");
+        // An application row that declares them anyway, grantable by a tenant administrator.
+        asSystem(() -> {
+            Application application = applicationRepo.findByRefNameWithIgnoreRules(app).orElseThrow();
+            privileged.forEach(name -> application.getRoles().add(
+                ApplicationRole.builder().name(name).grantableBy(List.of(ApplicationRole.GRANTABLE_BY_TENANT_ADMIN)).build()));
+            return applicationRepo.save(application);
+        });
+        for (String role : privileged) {
+            refused(Code.ROLE_NOT_GRANTABLE, () -> asSystem(() -> accessService.putBinding(POOLED,
+                binding(alice, List.of(TENANT_A), null, role))));
+            UserAppRole direct = binding(alice, List.of(TENANT_A), null, role);
+            direct.setRealmRefName(POOLED);
+            refused(Code.ROLE_NOT_GRANTABLE, () -> asSystem(() -> bindingRepo.save(direct)));
+        }
+        assertEquals(0, bindingRepo.findByApplicationWithIgnoreRules(app, POOLED, null).size());
+    }
+
+    @Test
+    void aBindingIdOfAnotherRealmReadsLikeAMissingOne() {
+        String adminA = member("foreign-binding-admin", List.of(TENANT_A), List.of(MEMBERSHIP_ADMIN));
+        String alice = member("foreign-binding-alice", List.of(TENANT_A), List.of("viewer"));
+        asSystem(() -> accessService.install(POOLED, install(null, null, TENANT_A)));
+        UserAppRole pooled = asSystem(() -> accessService.putBinding(POOLED, binding(alice, List.of(TENANT_A), null, "planner-user")));
+
+        UserAppRole rewrite = binding(alice, List.of(TENANT_A), null, "planner-user");
+        rewrite.setId(pooled.getId());
+        rewrite.setRealmRefName(OTHER_REALM);
+        refused(Code.NOT_FOUND, () -> asSystem(() -> accessService.putBinding(OTHER_REALM, rewrite)));
+        ApplicationAccessException foreign = refused(Code.NOT_FOUND, () -> as(signedIn(adminA, TENANT_A), () -> {
+            accessService.deleteBinding(OTHER_REALM, pooled.getId());
+            return null;
+        }));
+        ObjectId missing = new ObjectId();
+        ApplicationAccessException absent = refused(Code.NOT_FOUND, () -> as(signedIn(adminA, TENANT_A), () -> {
+            accessService.deleteBinding(OTHER_REALM, missing);
+            return null;
+        }));
+        assertEquals(foreign.getMessage().replace(pooled.getId().toString(), "<id>"),
+            absent.getMessage().replace(missing.toString(), "<id>"), "a foreign id reads like a missing one");
+        assertTrue(bindingRepo.findByIdWithIgnoreRules(pooled.getId()).isPresent());
+    }
+
+    @Test
+    void anUninstallsSuspensionSurvivesARewriteAndTheReinstallReactivatesIt() {
+        String adminA = member("marker-admin-a", List.of(TENANT_A), List.of(MEMBERSHIP_ADMIN));
+        String owned = group("marker-owned", TENANT_A);
+        ApplicationInstall installed = asSystem(() -> accessService.install(POOLED, install(null, null, TENANT_A)));
+        UserAppRole saved = as(signedIn(adminA, TENANT_A),
+            () -> accessService.putBinding(POOLED, groupBinding(owned, List.of(TENANT_A), null, "planner-user")));
+        asSystem(() -> accessService.uninstall(POOLED, installed.getId()));
+        String marker = UserAppRole.SUSPENDED_BY_UNINSTALL + installed.getId();
+        assertEquals(marker, bindingRepo.findByIdWithIgnoreRules(saved.getId()).orElseThrow().getSuspendedBy());
+
+        // While uninstalled the suspended binding stays editable, and keeps the uninstall's marker
+        // whether the rewrite names the status or leaves it out.
+        UserAppRole named = groupBinding(owned, List.of(TENANT_A), null, "planner-user", "planner-admin");
+        named.setStatus(UserAppRole.STATUS_SUSPENDED);
+        UserAppRole rewritten = asSystem(() -> accessService.putBinding(POOLED, named));
+        assertEquals(UserAppRole.STATUS_SUSPENDED, rewritten.getStatus());
+        assertEquals(marker, rewritten.getSuspendedBy());
+        UserAppRole unnamed = groupBinding(owned, List.of(TENANT_A), null, "planner-user");
+        assertEquals(marker, asSystem(() -> accessService.putBinding(POOLED, unnamed)).getSuspendedBy());
+        // Activating it while the application is uninstalled is refused.
+        UserAppRole active = groupBinding(owned, List.of(TENANT_A), null, "planner-user");
+        active.setStatus(UserAppRole.STATUS_ACTIVE);
+        refused(Code.APPLICATION_NOT_INSTALLED, () -> asSystem(() -> accessService.putBinding(POOLED, active)));
+
+        asSystem(() -> accessService.install(POOLED, install(null, null, TENANT_A)));
+        UserAppRole after = bindingRepo.findByIdWithIgnoreRules(saved.getId()).orElseThrow();
+        assertEquals(UserAppRole.STATUS_ACTIVE, after.getStatus(), "the reinstall reactivates the rewritten binding");
+        assertEquals(java.util.List.of("planner-user"), after.getRoles());
+    }
+
     // ---- listing ----------------------------------------------------------------------------
 
     @Test
@@ -361,8 +471,8 @@ class ApplicationAccessAuthorityTest extends BaseRepoTest {
 
     @Test
     void underARemoteDirectoryBindingAndInstallCallsRefuse() {
-        java.util.Optional<String> before = accessDirectoryMode();
-        setAccessDirectoryMode(java.util.Optional.of("remote"));
+        Object before = accessDirectoryRouting();
+        setAccessDirectoryRouting((com.e2eq.framework.model.persistent.morphia.DirectoryRouting) () -> true);
         try {
             refused(Code.DIRECTORY_REMOTE, () -> asSystem(() -> accessService.install(POOLED, install(null, null, TENANT_A))));
             refused(Code.DIRECTORY_REMOTE, () -> asSystem(() -> accessService.uninstall(POOLED, new ObjectId())));
@@ -375,7 +485,7 @@ class ApplicationAccessAuthorityTest extends BaseRepoTest {
             refused(Code.DIRECTORY_REMOTE, () -> asSystem(() -> accessService.listInstalls(POOLED)));
             refused(Code.DIRECTORY_REMOTE, () -> asSystem(() -> accessService.listBindings(POOLED, app, TENANT_A)));
         } finally {
-            setAccessDirectoryMode(before);
+            setAccessDirectoryRouting(before);
         }
         assertEquals(0, installRepo.findByRealmWithIgnoreRules(POOLED).stream()
             .filter(install -> app.equals(install.getApplicationId())).count());
@@ -386,18 +496,17 @@ class ApplicationAccessAuthorityTest extends BaseRepoTest {
     @Inject
     com.e2eq.framework.model.persistent.morphia.ApplicationAccessDirectory accessDirectory;
 
-    @SuppressWarnings("unchecked")
-    private java.util.Optional<String> accessDirectoryMode() {
+    private Object accessDirectoryRouting() {
         try {
-            return (java.util.Optional<String>) directoryModeField().get(unproxied());
+            return routingField().get(unproxied());
         } catch (ReflectiveOperationException e) {
             throw new IllegalStateException(e);
         }
     }
 
-    private void setAccessDirectoryMode(java.util.Optional<String> mode) {
+    private void setAccessDirectoryRouting(Object routing) {
         try {
-            directoryModeField().set(unproxied(), mode);
+            routingField().set(unproxied(), routing);
         } catch (ReflectiveOperationException e) {
             throw new IllegalStateException(e);
         }
@@ -407,9 +516,9 @@ class ApplicationAccessAuthorityTest extends BaseRepoTest {
         return accessDirectory instanceof io.quarkus.arc.ClientProxy proxy ? proxy.arc_contextualInstance() : accessDirectory;
     }
 
-    private static java.lang.reflect.Field directoryModeField() throws NoSuchFieldException {
+    private static java.lang.reflect.Field routingField() throws NoSuchFieldException {
         java.lang.reflect.Field field = com.e2eq.framework.model.persistent.morphia.ApplicationAccessDirectory.class
-            .getDeclaredField("directoryMode");
+            .getDeclaredField("routing");
         field.setAccessible(true);
         return field;
     }

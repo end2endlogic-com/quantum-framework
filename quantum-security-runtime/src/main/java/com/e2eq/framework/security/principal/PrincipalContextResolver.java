@@ -207,7 +207,7 @@ public class PrincipalContextResolver {
             if (grant == null) {
                 requireApplicationGranted(context, effective);
                 // Migration signal: this admission had no binding; the realm assignment decided.
-                Log.infof("%s user=%s application=%s realm=%s: no application binding applies; the realm "
+                Log.debugf("%s user=%s application=%s realm=%s: no application binding applies; the realm "
                                 + "assignment's application grant decided", LEGACY_APPLICATION_GRANT,
                         effective.getUserId(), context.getApplicationId(), context.getDefaultRealm());
             }
@@ -690,11 +690,10 @@ public class PrincipalContextResolver {
     // ------------------------------------------------------------------ application bindings
 
     /**
-     * The realm an identity-only request runs in when it names none. The identity's own active
-     * bindings for the application decide first, among the realms its credential may use: the one
-     * marked {@code defaultRealm}, else the only one; several and no default refuse with
-     * {@code REALM_NOT_AUTHORIZED}. Group bindings never choose a realm. With no usable binding,
-     * {@link #applicationRealm} decides.
+     * The realm an identity-only request runs in when it names none. Among the realms its
+     * credential may use, the identity's own active binding marked {@code defaultRealm} decides;
+     * several marked refuse with {@code REALM_NOT_AUTHORIZED}. A binding without the mark never
+     * chooses a realm, nor does a group binding: {@link #applicationRealm} decides.
      */
     String identityRealm(CredentialUserIdPassword credential, String applicationId) {
         String bound = bindingRealm(credential, applicationId);
@@ -734,12 +733,9 @@ public class PrincipalContextResolver {
                     "%s has several default realms %s for application '%s'; the realm must be selected explicitly",
                     credential.getUserId(), defaults, applicationId));
         }
-        if (allowed.size() == 1) {
-            return allowed.get(0);
-        }
-        throw refusal(PrincipalResolutionError.REALM_NOT_AUTHORIZED, String.format(
-                "%s is bound to application '%s' in several realms %s and marks none as default; the realm must "
-                        + "be selected explicitly", credential.getUserId(), applicationId, allowed));
+        // Without an explicit default the application's realm decides, even for a single binding:
+        // only the subject or the platform marks a binding's realm as the default.
+        return null;
     }
 
     /**
@@ -861,8 +857,8 @@ public class PrincipalContextResolver {
                 .isPresent();
     }
 
-    private static void requireWellFormed(UserAppRole binding, CredentialUserIdPassword credential,
-                                          Application application, String applicationId, String realmRefName) {
+    private void requireWellFormed(UserAppRole binding, CredentialUserIdPassword credential,
+                                   Application application, String applicationId, String realmRefName) {
         boolean subjectMatches = binding.groupBinding()
                 || (binding.getUserId() != null && binding.getUserId().trim().equals(credential.getUserId()));
         boolean scopeMatches = binding.getApplicationId() != null
@@ -876,7 +872,10 @@ public class PrincipalContextResolver {
         }
         try {
             // Installs are checked per tenant afterwards, so an uninstalled tenant narrows the grant.
-            ApplicationBindingValidator.validate(binding, application, tenant -> true);
+            // Reserved roles (the platform's, and the configured membership-administrator roles)
+            // would join the global roles, so a row granting one is refused, not filtered.
+            ApplicationBindingValidator.validate(binding, application, tenant -> true,
+                    accessDirectory.alsoReservedRoles());
         } catch (ApplicationAccessException malformed) {
             throw refusal(PrincipalResolutionError.APPLICATION_NOT_GRANTED, String.format(
                     "binding %s for application '%s' in realm '%s' is malformed: %s",
@@ -915,8 +914,8 @@ public class PrincipalContextResolver {
     }
 
     /**
-     * Tenant selection under a binding. A dedicated realm is its one tenant, which the binding
-     * must grant. In a shared realm the identity needs an active membership; the tenants it may
+     * Tenant selection under a binding. The identity needs an active realm assignment in either
+     * tenancy. A dedicated realm is its one tenant, which the binding must grant. In a shared realm the identity needs an active membership; the tenants it may
      * use are those the binding grants (installed) that the membership also authorizes. The tenant
      * is the requested one, else the binding's default, else the only one; several and no default
      * fail {@code TENANT_SELECTION_REQUIRED}.
@@ -930,6 +929,16 @@ public class PrincipalContextResolver {
                         "Realm '" + effectiveRealm + "' is not registered"));
         Set<String> bound = grant.tenants();
         if (realm.getTenancyMode() != RealmTenancyMode.MULTI_TENANT) {
+            // A binding admits only a current member: a suspended or removed realm assignment
+            // ends access even though the binding remains.
+            boolean member = realmMembershipService != null && realmMembershipService
+                    .assignmentForUser(context.getUserId(), effectiveRealm)
+                    .filter(PrincipalContextResolver::activeAssignment)
+                    .isPresent();
+            if (!member) {
+                throw refusal(PrincipalResolutionError.TENANT_NOT_AUTHORIZED,
+                        "Principal has no active membership in realm '" + effectiveRealm + "'");
+            }
             DomainContext realmContext = realm.getDomainContext();
             String realmTenant = realmContext == null ? null : realmContext.getTenantId();
             if (realmTenant == null || !bound.contains(realmTenant)) {

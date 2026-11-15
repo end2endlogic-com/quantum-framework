@@ -210,15 +210,48 @@ class PrincipalContextApplicationBindingTest {
     }
 
     @Test
-    void theBindingsRealmIsUsedWhenTheRequestNamesNone() {
-        world.bind(ALICE, PLANNER, "pooled", List.of("tenant-a"), null, "planner-user");
+    void onlyAnExplicitDefaultRealmChoosesTheRealmWhenTheRequestNamesNone() {
+        String unbound = resolveRealmOrRefusal(PLANNER);
+        UserAppRole pooled = world.bind(ALICE, PLANNER, "pooled", List.of("tenant-a"), null, "planner-user");
+        assertEquals(unbound, resolveRealmOrRefusal(PLANNER), "a binding without defaultRealm leaves the realm to the application");
+
+        pooled.setDefaultRealm(true);
         assertEquals("pooled", resolve(PLANNER, null, null).getDefaultRealm());
 
         UserAppRole dedicated = world.bind(ALICE, PLANNER, "acme-D2", List.of("acme-two"), null, "planner-user");
-        refused(PrincipalResolutionError.REALM_NOT_AUTHORIZED, () -> resolve(PLANNER, null, null));
+        assertEquals("pooled", resolve(PLANNER, null, null).getDefaultRealm(), "an unmarked binding does not compete");
 
         dedicated.setDefaultRealm(true);
+        refused(PrincipalResolutionError.REALM_NOT_AUTHORIZED, () -> resolve(PLANNER, null, null));
+        pooled.setDefaultRealm(false);
         assertEquals("acme-D2", resolve(PLANNER, null, null).getDefaultRealm());
+    }
+
+    @Test
+    void aDedicatedRealmBindingNeedsAnActiveAssignment() {
+        world.bind(ALICE, PLANNER, "acme-D2", List.of("acme-two"), null, "planner-user");
+        assertEquals("acme-two", resolve(PLANNER, "acme-D2", null).getDataDomain().getTenantId());
+
+        world.assignments.get(ALICE + "|acme-D2").setStatus(com.e2eq.framework.model.security.UserRealmRole.STATUS_SUSPENDED);
+        refused(PrincipalResolutionError.TENANT_NOT_AUTHORIZED, () -> resolve(PLANNER, "acme-D2", null));
+
+        world.assignments.remove(ALICE + "|acme-D2");
+        refused(PrincipalResolutionError.TENANT_NOT_AUTHORIZED, () -> resolve(PLANNER, "acme-D2", null));
+    }
+
+    @Test
+    void aBindingOfAPrivilegedRoleRefusesAndDoesNotFallBack() {
+        world.membershipAdminRoles = List.of("membership-admin");
+        world.declare("privileged", "platformAdmin", "TenantAdmin", "anonymous", "membership-admin", "Admin");
+        world.install("privileged", "pooled", "tenant-a");
+        world.assignments.get(ALICE + "|pooled").setAuthorizedApplications(List.of("privileged"));
+        UserAppRole binding = world.bind(ALICE, "privileged", "pooled", List.of("tenant-a"), null, "planner-user");
+        for (String role : List.of("platformAdmin", "TenantAdmin", "anonymous", "membership-admin", "Admin")) {
+            binding.setRoles(new java.util.ArrayList<>(List.of(role)));
+            PrincipalResolutionException refusal = refused(PrincipalResolutionError.APPLICATION_NOT_GRANTED,
+                    () -> resolve("privileged", "pooled", "tenant-a"));
+            assertTrue(refusal.getMessage().contains("never granted by a binding"), refusal.getMessage());
+        }
     }
 
     @Test
@@ -397,11 +430,15 @@ class PrincipalContextApplicationBindingTest {
             public void close() {
             }
         };
+        // The legacy admission logs at DEBUG: capture it at every level.
+        java.util.logging.Level level = logger.getLevel();
+        logger.setLevel(java.util.logging.Level.ALL);
         logger.addHandler(handler);
         try {
             call.run();
         } finally {
             logger.removeHandler(handler);
+            logger.setLevel(level);
         }
         return lines;
     }

@@ -21,10 +21,17 @@ import java.util.stream.Collectors;
 public final class ApplicationBindingValidator {
 
    /**
-    * Never grantable through a binding, whatever an application's {@code grantableBy} says: the
-    * platform's own roles ({@link ApplicationDeclarationValidator#RESERVED_ROLES}).
+    * Never grantable through a binding, whatever an application's {@code grantableBy} says,
+    * compared without case. Binding roles join the principal's global roles, so a bound name that
+    * a {@code @RolesAllowed} check or the platform recognizes would grant platform authority: the
+    * platform's own roles ({@link ApplicationDeclarationValidator#RESERVED_ROLES}), the platform
+    * and tenant administrator roles, and the anonymous marker. A deployment's configured
+    * membership-administrator roles are reserved too; callers pass them as {@code alsoReserved}.
     */
-   public static final Set<String> RESERVED_ROLES = ApplicationDeclarationValidator.RESERVED_ROLES;
+   public static final Set<String> RESERVED_ROLES = Set.copyOf(java.util.stream.Stream.concat(
+         ApplicationDeclarationValidator.RESERVED_ROLES.stream(),
+         java.util.stream.Stream.of("platformadmin", "tenantadmin", "anonymous"))
+      .collect(Collectors.toSet()));
 
    /**
     * Who is writing a binding, from the existing framework administrator definitions: the system
@@ -49,6 +56,17 @@ public final class ApplicationBindingValidator {
     * @param installed   whether the application is installed (active) for a tenant of the binding's realm
     */
    public static void validate(UserAppRole binding, Application application, Predicate<String> installed) {
+      validate(binding, application, installed, Set.of());
+   }
+
+   /**
+    * {@link #validate(UserAppRole, Application, Predicate)} with {@code alsoReserved} (the
+    * deployment's membership-administrator roles) refused like {@link #RESERVED_ROLES}. A
+    * suspended binding grants nothing, so it is saved without an install: an uninstall's
+    * suspended bindings stay editable until a reinstall reactivates them.
+    */
+   public static void validate(UserAppRole binding, Application application, Predicate<String> installed,
+                               Collection<String> alsoReserved) {
       Objects.requireNonNull(binding, "binding");
       boolean user = nonBlank(binding.getUserId());
       boolean group = nonBlank(binding.getGroupRefName());
@@ -73,7 +91,7 @@ public final class ApplicationBindingValidator {
       }
       Set<String> declared = declaredRoles(application).keySet();
       for (String role : nonNull(binding.getRoles())) {
-         requireNotReserved(role);
+         requireNotReserved(role, alsoReserved);
          if (!nonBlank(role) || !declared.contains(role.trim())) {
             throw new ApplicationAccessException(Code.ROLE_NOT_DECLARED, String.format(
                "role '%s' is not declared by application '%s' (declared: %s)",
@@ -95,6 +113,9 @@ public final class ApplicationBindingValidator {
             "a binding for several tenants " + tenants + " needs a defaultTenantId among them");
       }
       Objects.requireNonNull(installed, "installed");
+      if (UserAppRole.STATUS_SUSPENDED.equals(binding.getStatus())) {
+         return;
+      }
       for (String tenant : tenants) {
          if (!installed.test(tenant)) {
             throw new ApplicationAccessException(Code.APPLICATION_NOT_INSTALLED, String.format(
@@ -110,13 +131,19 @@ public final class ApplicationBindingValidator {
     * administrator those grantable by tenant-admin. The platform's reserved roles never are.
     */
    public static void requireGrantable(Application application, Collection<String> roles, Authority authority) {
+      requireGrantable(application, roles, authority, Set.of());
+   }
+
+   /** {@link #requireGrantable(Application, Collection, Authority)} with {@code alsoReserved} refused too. */
+   public static void requireGrantable(Application application, Collection<String> roles, Authority authority,
+                                       Collection<String> alsoReserved) {
       Map<String, ApplicationRole> declared = declaredRoles(application);
       for (String role : roles == null ? List.<String>of() : roles) {
          String name = trim(role);
          if (name == null) {
             throw new ApplicationAccessException(Code.ROLE_NOT_GRANTABLE, "role '" + role + "' is never grantable");
          }
-         requireNotReserved(name);
+         requireNotReserved(name, alsoReserved);
          ApplicationRole declaredRole = declared.get(name);
          if (declaredRole == null) {
             throw new ApplicationAccessException(Code.ROLE_NOT_DECLARED,
@@ -130,8 +157,18 @@ public final class ApplicationBindingValidator {
       }
    }
 
-   private static void requireNotReserved(String role) {
-      if (role != null && RESERVED_ROLES.contains(role.trim().toLowerCase(Locale.ROOT))) {
+   /** Whether {@code role} is reserved: one of {@link #RESERVED_ROLES} or {@code alsoReserved}, without case. */
+   public static boolean reserved(String role, Collection<String> alsoReserved) {
+      if (role == null || role.isBlank()) {
+         return false;
+      }
+      String name = role.trim().toLowerCase(Locale.ROOT);
+      return RESERVED_ROLES.contains(name) || (alsoReserved != null && alsoReserved.stream()
+         .filter(Objects::nonNull).map(value -> value.trim().toLowerCase(Locale.ROOT)).anyMatch(name::equals));
+   }
+
+   private static void requireNotReserved(String role, Collection<String> alsoReserved) {
+      if (reserved(role, alsoReserved)) {
          throw new ApplicationAccessException(Code.ROLE_NOT_GRANTABLE,
             "role '" + role.trim() + "' belongs to the platform and is never granted by a binding");
       }
