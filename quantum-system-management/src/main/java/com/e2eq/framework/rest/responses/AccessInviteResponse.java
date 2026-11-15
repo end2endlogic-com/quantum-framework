@@ -24,6 +24,8 @@ public class AccessInviteResponse {
     private List<String> authorizedApplications;
     /** Id of the acceptance policy governing the invite. */
     private String acceptancePolicy;
+    /** {@code external} for an invite that makes the invitee an outsider of the tenant; absent for a member invite. */
+    private String kind;
     /** The inviter's resolved partition snapshotted at creation (the invitee's placement source). */
     private com.e2eq.framework.model.security.InviteScope scope;
     private String status;
