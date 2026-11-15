@@ -69,9 +69,9 @@ class ApplicationAccessAuthorityTest extends BaseRepoTest {
 
     static final String MEMBERSHIP_ADMIN = "membership-admin";
     private static final String PASSWORD = "B1nd-Authority-P@ssw0rd!";
-    private static final String POOLED = "bind-authority-pooled";
+    static final String POOLED = "bind-authority-pooled";
     private static final String OTHER_REALM = "bind-authority-other";
-    private static final String TENANT_A = "tenant-a.bind-authority";
+    static final String TENANT_A = "tenant-a.bind-authority";
     private static final String TENANT_B = "tenant-b.bind-authority";
 
     @Inject

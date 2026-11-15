@@ -36,7 +36,14 @@ public class ApplicationAccessException extends IllegalArgumentException {
        * Bindings and installs are held by the remote directory ({@code quantum.directory.mode=remote});
        * this service neither writes nor reads them.
        */
-      DIRECTORY_REMOTE(409);
+      DIRECTORY_REMOTE(409),
+      /**
+       * The request names no application while application-scoped policy evaluation is required
+       * ({@code quantum.security.policy-scope.require-application=true}).
+       */
+      APPLICATION_SCOPE_REQUIRED(400),
+      /** The request's principal and resource name different applications. */
+      APPLICATION_SCOPE_MISMATCH(400);
 
       private final int httpStatus;
 

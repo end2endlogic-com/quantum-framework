@@ -1,11 +1,14 @@
 package com.e2eq.framework.service.access;
 
+import com.e2eq.framework.model.security.ApplicationAccessException.Code;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.QuarkusTestProfile;
 import io.quarkus.test.junit.TestProfile;
+import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
 
@@ -43,6 +46,14 @@ class ApplicationAccessRequireApplicationTest extends ApplicationAccessAuthority
                 securityUtils.getSystemSecurityResourceContext().getFunctionalDomain(),
                 securityUtils.getSystemSecurityResourceContext().getAction()),
             action);
+    }
+
+    @Test
+    void aRequestWithoutAnApplicationIsRefusedWithATypedCode() {
+        String admin = member("scope-admin", List.of(TENANT_A), List.of("admin"));
+        PrincipalContext noApplication = super.signedIn(admin, TENANT_A);
+        refused(Code.APPLICATION_SCOPE_REQUIRED, () -> as(noApplication,
+            () -> accessService.install(POOLED, install(null, null, TENANT_A))));
     }
 
     private static PrincipalContext withApplication(PrincipalContext base) {

@@ -20,6 +20,7 @@ import com.e2eq.framework.model.securityrules.SecurityContext;
 import com.e2eq.framework.util.EnvConfigUtils;
 import com.e2eq.framework.util.SecurityUtils;
 import io.quarkus.logging.Log;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.bson.types.ObjectId;
@@ -43,6 +44,9 @@ import java.util.function.Supplier;
  */
 @ApplicationScoped
 public class ApplicationAccessService {
+
+   @ConfigProperty(name = "quantum.security.policy-scope.require-application", defaultValue = "false")
+   boolean requireApplicationScope;
 
    @Inject
    AccessInviteService accessInviteService;
@@ -467,9 +471,10 @@ public class ApplicationAccessService {
 
    /**
     * Runs repository work as the system principal once this service has decided the caller's
-    * authority. The raised scope keeps the caller's application, so deployments that require an
+    * authority. The raised scope keeps the request's application, so deployments that require an
     * application on every policy evaluation ({@code quantum.security.policy-scope.require-application})
-    * accept the write, and it records the caller it acts on behalf of.
+    * accept the write. It marks the caller as acting-on-behalf-of on the principal; audit records keep
+    * the actor in this service's own fields ({@code grantedBy}, {@code installedBy}, ...).
     */
    private <T> T system(Supplier<T> action) {
       PrincipalContext caller = SecurityContext.getPrincipalContext().orElse(null);
@@ -477,6 +482,10 @@ public class ApplicationAccessService {
       PrincipalContext system = securityUtils.getSystemPrincipalContext();
       ResourceContext systemResource = securityUtils.getSystemSecurityResourceContext();
       if (applicationId == null) {
+         if (requireApplicationScope) {
+            throw new ApplicationAccessException(Code.APPLICATION_SCOPE_REQUIRED,
+               "the request names no application, and this deployment requires one");
+         }
          return SecurityCallScope.runWithContexts(system, systemResource, action);
       }
       PrincipalContext.Builder principal = new PrincipalContext.Builder()
@@ -500,14 +509,20 @@ public class ApplicationAccessService {
       return SecurityCallScope.runWithContexts(principal.build(), resource, action);
    }
 
-   /** The application of the request: the caller's principal first, then the request's resource. */
+   /**
+    * The application of the request, resolved as {@code RuleContext} does: the resource's, else the
+    * principal's; the two must agree when both are set.
+    */
    private static String callerApplicationId(PrincipalContext caller) {
       String fromPrincipal = caller == null ? null : trimmed(caller.getApplicationId());
-      if (fromPrincipal != null) {
-         return fromPrincipal;
-      }
-      return SecurityContext.getResourceContext()
+      String fromResource = SecurityContext.getResourceContext()
          .map(resource -> trimmed(resource.getApplicationId()))
          .orElse(null);
+      if (fromPrincipal != null && fromResource != null && !fromPrincipal.equals(fromResource)) {
+         throw new ApplicationAccessException(Code.APPLICATION_SCOPE_MISMATCH,
+            "the request's principal names application '" + fromPrincipal
+               + "' and its resource names '" + fromResource + "'");
+      }
+      return fromResource != null ? fromResource : fromPrincipal;
    }
 }
