@@ -4,6 +4,9 @@ import com.e2eq.framework.model.security.Application;
 import com.e2eq.framework.model.security.ApplicationAccessException;
 import com.e2eq.framework.model.security.ApplicationAccessException.Code;
 import com.e2eq.framework.model.security.ApplicationInstall;
+import com.e2eq.framework.model.persistent.base.ActiveStatus;
+import com.mongodb.MongoException;
+import com.mongodb.client.model.Indexes;
 import dev.morphia.Datastore;
 import dev.morphia.query.filters.Filters;
 import dev.morphia.transactions.MorphiaSession;
@@ -13,6 +16,7 @@ import org.bson.types.ObjectId;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Application installs, in the system realm next to the application registry. Every save checks
@@ -123,10 +127,39 @@ public class ApplicationInstallRepo extends MorphiaRepo<ApplicationInstall> {
       return datastore.find(ApplicationInstall.class).filter(Filters.eq("_id", id)).first();
    }
 
+   /** One active install per (application, realm, tenant). */
+   public static final String UNIQUE_ACTIVE_INSTALL_INDEX = "uidx_application_install_active";
+
+   private final AtomicBoolean uniqueIndexReady = new AtomicBoolean();
+
+   /**
+    * The unique index behind {@link #requireValid}'s second-active-install check, so concurrent
+    * installs cannot both pass it: (applicationId, realmRefName, tenantId) over active installs
+    * (a partial index on {@code status: active}; uninstalled rows may repeat).
+    */
+   public void ensureUniqueIndex() {
+      if (uniqueIndexReady.get()) {
+         return;
+      }
+      var datastore = morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId());
+      String collection = datastore.getMapper().getEntityModel(ApplicationInstall.class).collectionName();
+      try {
+         ValidatedWritesOnly.ensureUniqueIndex(datastore.getDatabase().getCollection(collection),
+            UNIQUE_ACTIVE_INSTALL_INDEX, Indexes.ascending("applicationId", "realmRefName", "tenantId"),
+            new org.bson.Document("status", ApplicationInstall.STATUS_ACTIVE));
+      } catch (MongoException e) {
+         throw new IllegalStateException("Cannot create unique index " + UNIQUE_ACTIVE_INSTALL_INDEX + " on "
+            + collection + ": several active installs exist for one (application, realm, tenant); uninstall the "
+            + "extra ones, then retry", e);
+      }
+      uniqueIndexReady.set(true);
+   }
+
    void requireValid(Datastore datastore, ApplicationInstall install) {
       if (install == null) {
          throw new ApplicationAccessException(Code.INSTALL_INVALID, "install is required");
       }
+      ensureUniqueIndex();
       if (blank(install.getTenantId()) || blank(install.getApplicationId()) || blank(install.getRealmRefName())) {
          throw new ApplicationAccessException(Code.INSTALL_INVALID, "tenantId, applicationId and realmRefName are required");
       }
@@ -150,6 +183,67 @@ public class ApplicationInstallRepo extends MorphiaRepo<ApplicationInstall> {
                   install.getApplicationId(), install.getTenantId(), install.getRealmRefName(), other.getId()));
             });
       }
+   }
+
+
+   // ------------------------------------------------------------------ writes that skip validation
+
+   private static final java.util.Set<String> PERSISTED_FIELDS = ValidatedWritesOnly.persistedFields(ApplicationInstall.class);
+
+   /** Every persisted field: field-pair and bulk updates cannot bypass {@link #requireValid}. */
+   @Override
+   protected java.util.Set<String> serverOwnedFields() {
+      return PERSISTED_FIELDS;
+   }
+
+   @Override
+   public ApplicationInstall merge(ApplicationInstall entity) {
+      throw ValidatedWritesOnly.refused(Code.INSTALL_INVALID, "merge", ApplicationInstall.class);
+   }
+
+   @Override
+   public ApplicationInstall merge(Datastore datastore, ApplicationInstall entity) {
+      throw ValidatedWritesOnly.refused(Code.INSTALL_INVALID, "merge", ApplicationInstall.class);
+   }
+
+   @Override
+   public ApplicationInstall merge(MorphiaSession session, ApplicationInstall entity) {
+      throw ValidatedWritesOnly.refused(Code.INSTALL_INVALID, "merge", ApplicationInstall.class);
+   }
+
+   @Override
+   public List<ApplicationInstall> merge(List<ApplicationInstall> entities) {
+      throw ValidatedWritesOnly.refused(Code.INSTALL_INVALID, "merge", ApplicationInstall.class);
+   }
+
+   @Override
+   public List<ApplicationInstall> merge(Datastore datastore, List<ApplicationInstall> entities) {
+      throw ValidatedWritesOnly.refused(Code.INSTALL_INVALID, "merge", ApplicationInstall.class);
+   }
+
+   @Override
+   public List<ApplicationInstall> merge(MorphiaSession session, List<ApplicationInstall> entities) {
+      throw ValidatedWritesOnly.refused(Code.INSTALL_INVALID, "merge", ApplicationInstall.class);
+   }
+
+   @Override
+   public long updateActiveStatus(ObjectId id, ActiveStatus activeStatus) {
+      throw ValidatedWritesOnly.refused(Code.INSTALL_INVALID, "updateActiveStatus", ApplicationInstall.class);
+   }
+
+   @Override
+   public long updateActiveStatus(Datastore datastore, ObjectId id, ActiveStatus activeStatus) {
+      throw ValidatedWritesOnly.refused(Code.INSTALL_INVALID, "updateActiveStatus", ApplicationInstall.class);
+   }
+
+   @Override
+   public long updateActiveStatus(String id, ActiveStatus activeStatus) {
+      throw ValidatedWritesOnly.refused(Code.INSTALL_INVALID, "updateActiveStatus", ApplicationInstall.class);
+   }
+
+   @Override
+   public long updateActiveStatus(String realmId, String id, ActiveStatus activeStatus) {
+      throw ValidatedWritesOnly.refused(Code.INSTALL_INVALID, "updateActiveStatus", ApplicationInstall.class);
    }
 
    private static boolean blank(String value) {

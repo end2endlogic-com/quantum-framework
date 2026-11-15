@@ -4,6 +4,7 @@ import com.e2eq.framework.model.persistent.base.BaseModel;
 import dev.morphia.annotations.Entity;
 import dev.morphia.annotations.Field;
 import dev.morphia.annotations.Index;
+import dev.morphia.annotations.IndexOptions;
 import dev.morphia.annotations.Indexes;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import lombok.Data;
@@ -41,8 +42,12 @@ import java.util.List;
 @EqualsAndHashCode(callSuper = true)
 @ToString(callSuper = true)
 @Indexes({
-   @Index(fields = {@Field("userId"), @Field("applicationId"), @Field("realmRefName")}),
-   @Index(fields = {@Field("groupRefName"), @Field("applicationId"), @Field("realmRefName")})
+   @Index(fields = {@Field("userId"), @Field("applicationId"), @Field("realmRefName")},
+      options = @IndexOptions(unique = true, name = "uidx_user_app_role_user",
+         partialFilter = "{ 'userId': { '$type': 'string' } }")),
+   @Index(fields = {@Field("groupRefName"), @Field("applicationId"), @Field("realmRefName")},
+      options = @IndexOptions(unique = true, name = "uidx_user_app_role_group",
+         partialFilter = "{ 'groupRefName': { '$type': 'string' } }"))
 })
 public class UserAppRole extends BaseModel {
 

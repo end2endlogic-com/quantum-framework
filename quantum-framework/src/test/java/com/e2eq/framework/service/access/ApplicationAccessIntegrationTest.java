@@ -164,6 +164,73 @@ class ApplicationAccessIntegrationTest extends BaseRepoTest {
         }
     }
 
+    @Test
+    void uniqueIndexesStopDuplicatesThatSkipTheRepository() {
+        try (SecuritySession ignored = asSystem()) {
+            installRepo.upsertById(install(new ObjectId(), "tenant-a"));
+            bindingRepo.save(binding(null, "alice", List.of("tenant-a"), null, "planner-user"));
+        }
+        var ds = morphiaDataStoreWrapper.getDataStore(envConfigUtils.getSystemRealm());
+        List<String> bindingIndexes = indexNames(ds, UserAppRole.class);
+        assertTrue(bindingIndexes.containsAll(List.of(UserAppRoleRepo.UNIQUE_USER_BINDING_INDEX,
+            UserAppRoleRepo.UNIQUE_GROUP_BINDING_INDEX)), bindingIndexes.toString());
+        assertTrue(indexNames(ds, ApplicationInstall.class).contains(ApplicationInstallRepo.UNIQUE_ACTIVE_INSTALL_INDEX));
+
+        try (SecuritySession ignored = asSystem()) {
+            // Straight to the datastore, past requireValid: Mongo itself refuses the second row.
+            assertThrows(com.mongodb.MongoWriteException.class,
+                () -> ds.save(binding(null, "alice", List.of("tenant-a"), null, "planner-admin")));
+            ApplicationInstall second = install(null, "tenant-a");
+            assertThrows(com.mongodb.MongoWriteException.class, () -> ds.save(second));
+            // Uninstalled rows for the same tenant may repeat.
+            ApplicationInstall gone = install(null, "tenant-a");
+            gone.setStatus(ApplicationInstall.STATUS_UNINSTALLED);
+            ApplicationInstall goneAgain = install(null, "tenant-a");
+            goneAgain.setStatus(ApplicationInstall.STATUS_UNINSTALLED);
+            ds.save(gone);
+            ds.save(goneAgain);
+        }
+        assertEquals(3, installRepo.findByRealmWithIgnoreRules(realm).size());
+    }
+
+    @Test
+    void writesThatWouldSkipValidationAreRefused() {
+        UserAppRole saved;
+        ApplicationInstall installed;
+        try (SecuritySession ignored = asSystem()) {
+            installed = installRepo.upsertById(install(new ObjectId(), "tenant-a"));
+            saved = bindingRepo.save(binding(null, "alice", List.of("tenant-a"), null, "planner-user"));
+        }
+        ObjectId bindingId = saved.getId();
+        ObjectId installId = installed.getId();
+        try (SecuritySession ignored = asSystem()) {
+            assertThrows(SecurityException.class, () -> bindingRepo.update(bindingId,
+                org.apache.commons.lang3.tuple.Pair.of("roles", List.of("planner-superuser"))));
+            assertThrows(SecurityException.class, () -> bindingRepo.updateManyByIds(List.of(bindingId),
+                org.apache.commons.lang3.tuple.Pair.of("tenantIds", List.of("tenant-z"))));
+            assertThrows(SecurityException.class, () -> installRepo.update(installId,
+                org.apache.commons.lang3.tuple.Pair.of("status", ApplicationInstall.STATUS_ACTIVE)));
+            refused(Code.BINDING_INVALID, () -> bindingRepo.merge(saved));
+            refused(Code.BINDING_INVALID, () -> bindingRepo.updateActiveStatus(bindingId,
+                com.e2eq.framework.model.persistent.base.ActiveStatus.INACTIVE));
+            refused(Code.INSTALL_INVALID, () -> installRepo.merge(installed));
+            refused(Code.INSTALL_INVALID, () -> installRepo.updateActiveStatus(installId,
+                com.e2eq.framework.model.persistent.base.ActiveStatus.INACTIVE));
+        }
+        assertEquals(List.of("planner-user"), bindingRepo.findByIdWithIgnoreRules(bindingId).orElseThrow().getRoles());
+    }
+
+    private static List<String> indexNames(dev.morphia.MorphiaDatastore ds, Class<?> type) {
+        List<String> names = new ArrayList<>();
+        String collection = ds.getMapper().getEntityModel(type).collectionName();
+        for (Document index : ds.getDatabase().getCollection(collection).listIndexes()) {
+            if (Boolean.TRUE.equals(index.get("unique"))) {
+                names.add(index.getString("name"));
+            }
+        }
+        return names;
+    }
+
     // --- service authority and uninstall -------------------------------------------------
 
     @Test

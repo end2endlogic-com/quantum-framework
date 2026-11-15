@@ -5,6 +5,9 @@ import com.e2eq.framework.model.security.ApplicationAccessException;
 import com.e2eq.framework.model.security.ApplicationAccessException.Code;
 import com.e2eq.framework.model.security.ApplicationBindingValidator;
 import com.e2eq.framework.model.security.UserAppRole;
+import com.e2eq.framework.model.persistent.base.ActiveStatus;
+import com.mongodb.MongoException;
+import com.mongodb.client.model.Indexes;
 import dev.morphia.Datastore;
 import dev.morphia.UpdateOptions;
 import dev.morphia.query.updates.UpdateOperators;
@@ -19,6 +22,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Application bindings ({@link UserAppRole}), in the system realm next to credentials and realm
@@ -171,8 +175,42 @@ public class UserAppRoleRepo extends MorphiaRepo<UserAppRole> {
             Filters.eq("tenantIds", List.of(tenantId)));
    }
 
+   /** One binding per (user, application, realm). */
+   public static final String UNIQUE_USER_BINDING_INDEX = "uidx_user_app_role_user";
+   /** One binding per (group, application, realm). */
+   public static final String UNIQUE_GROUP_BINDING_INDEX = "uidx_user_app_role_group";
+
+   private final AtomicBoolean uniqueIndexesReady = new AtomicBoolean();
+
+   /**
+    * The unique indexes behind {@link #requireValid}'s duplicate check, so concurrent writers
+    * cannot both pass it: (userId, applicationId, realmRefName) over user bindings and
+    * (groupRefName, applicationId, realmRefName) over group bindings.
+    */
+   public void ensureUniqueIndexes() {
+      if (uniqueIndexesReady.get()) {
+         return;
+      }
+      var datastore = morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId());
+      String collection = datastore.getMapper().getEntityModel(UserAppRole.class).collectionName();
+      var raw = datastore.getDatabase().getCollection(collection);
+      try {
+         ValidatedWritesOnly.ensureUniqueIndex(raw, UNIQUE_USER_BINDING_INDEX,
+            Indexes.ascending("userId", "applicationId", "realmRefName"),
+            new org.bson.Document("userId", new org.bson.Document("$type", "string")));
+         ValidatedWritesOnly.ensureUniqueIndex(raw, UNIQUE_GROUP_BINDING_INDEX,
+            Indexes.ascending("groupRefName", "applicationId", "realmRefName"),
+            new org.bson.Document("groupRefName", new org.bson.Document("$type", "string")));
+      } catch (MongoException e) {
+         throw new IllegalStateException("Cannot create the unique binding indexes on " + collection
+            + ": duplicate (subject, application, realm) bindings exist; merge them, then retry", e);
+      }
+      uniqueIndexesReady.set(true);
+   }
+
    void requireValid(Datastore datastore, UserAppRole binding) {
       Objects.requireNonNull(binding, "binding");
+      ensureUniqueIndexes();
       normalize(binding);
       Application application = binding.getApplicationId() == null ? null
          : datastore.find(Application.class).filter(Filters.eq("refName", binding.getApplicationId())).first();
@@ -193,6 +231,67 @@ public class UserAppRoleRepo extends MorphiaRepo<UserAppRole> {
             binding.groupBinding() ? "group " + binding.getGroupRefName() : binding.getUserId(),
             other.getId(), binding.getApplicationId(), binding.getRealmRefName()));
       }
+   }
+
+
+   // ------------------------------------------------------------------ writes that skip validation
+
+   private static final java.util.Set<String> PERSISTED_FIELDS = ValidatedWritesOnly.persistedFields(UserAppRole.class);
+
+   /** Every persisted field: field-pair and bulk updates cannot bypass {@link #requireValid}. */
+   @Override
+   protected java.util.Set<String> serverOwnedFields() {
+      return PERSISTED_FIELDS;
+   }
+
+   @Override
+   public UserAppRole merge(UserAppRole entity) {
+      throw ValidatedWritesOnly.refused(Code.BINDING_INVALID, "merge", UserAppRole.class);
+   }
+
+   @Override
+   public UserAppRole merge(Datastore datastore, UserAppRole entity) {
+      throw ValidatedWritesOnly.refused(Code.BINDING_INVALID, "merge", UserAppRole.class);
+   }
+
+   @Override
+   public UserAppRole merge(MorphiaSession session, UserAppRole entity) {
+      throw ValidatedWritesOnly.refused(Code.BINDING_INVALID, "merge", UserAppRole.class);
+   }
+
+   @Override
+   public List<UserAppRole> merge(List<UserAppRole> entities) {
+      throw ValidatedWritesOnly.refused(Code.BINDING_INVALID, "merge", UserAppRole.class);
+   }
+
+   @Override
+   public List<UserAppRole> merge(Datastore datastore, List<UserAppRole> entities) {
+      throw ValidatedWritesOnly.refused(Code.BINDING_INVALID, "merge", UserAppRole.class);
+   }
+
+   @Override
+   public List<UserAppRole> merge(MorphiaSession session, List<UserAppRole> entities) {
+      throw ValidatedWritesOnly.refused(Code.BINDING_INVALID, "merge", UserAppRole.class);
+   }
+
+   @Override
+   public long updateActiveStatus(ObjectId id, ActiveStatus activeStatus) {
+      throw ValidatedWritesOnly.refused(Code.BINDING_INVALID, "updateActiveStatus", UserAppRole.class);
+   }
+
+   @Override
+   public long updateActiveStatus(Datastore datastore, ObjectId id, ActiveStatus activeStatus) {
+      throw ValidatedWritesOnly.refused(Code.BINDING_INVALID, "updateActiveStatus", UserAppRole.class);
+   }
+
+   @Override
+   public long updateActiveStatus(String id, ActiveStatus activeStatus) {
+      throw ValidatedWritesOnly.refused(Code.BINDING_INVALID, "updateActiveStatus", UserAppRole.class);
+   }
+
+   @Override
+   public long updateActiveStatus(String realmId, String id, ActiveStatus activeStatus) {
+      throw ValidatedWritesOnly.refused(Code.BINDING_INVALID, "updateActiveStatus", UserAppRole.class);
    }
 
    private static void normalize(UserAppRole binding) {
