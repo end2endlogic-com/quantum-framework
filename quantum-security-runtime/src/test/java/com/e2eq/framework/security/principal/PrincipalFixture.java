@@ -3,9 +3,12 @@ package com.e2eq.framework.security.principal;
 import com.e2eq.framework.api.system.SystemDirectory;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.base.EntityReference;
+import com.e2eq.framework.model.persistent.morphia.ApplicationAccessDirectory;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.model.persistent.morphia.IdentityRoleResolver;
 import com.e2eq.framework.model.security.AccountType;
+import com.e2eq.framework.model.security.Application;
+import com.e2eq.framework.model.security.ApplicationRole;
 import com.e2eq.framework.model.security.CredentialType;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.DataDomainPolicy;
@@ -15,6 +18,7 @@ import com.e2eq.framework.model.security.Realm;
 import com.e2eq.framework.model.security.RealmTenancyMode;
 import com.e2eq.framework.model.security.RealmTenantMembership;
 import com.e2eq.framework.model.security.ServiceKind;
+import com.e2eq.framework.model.security.UserAppRole;
 import com.e2eq.framework.model.security.UserRealmRole;
 import com.e2eq.framework.system.membership.RealmMembershipService;
 import com.e2eq.framework.util.EnvConfigUtils;
@@ -50,6 +54,11 @@ public final class PrincipalFixture {
     public final Map<String, Realm> realms = new HashMap<>();
     public final Map<String, UserRealmRole> assignments = new HashMap<>();
     public final List<RealmTenantMembership> memberships = new ArrayList<>();
+    /** Application bindings, registered applications, installs ("app|realm|tenant") and group members. */
+    public final List<UserAppRole> bindings = new ArrayList<>();
+    public final Map<String, Application> applications = new HashMap<>();
+    public final Set<String> installs = new LinkedHashSet<>();
+    public final Map<String, List<String>> groupsOfUser = new HashMap<>();
     /** Every applicationId the role resolver was asked about. */
     public final List<String> roleApplications = new ArrayList<>();
 
@@ -167,6 +176,81 @@ public final class PrincipalFixture {
         }
     }
 
+    public final ApplicationAccessDirectory access = new FixtureAccess(this);
+
+    @jakarta.enterprise.inject.Vetoed
+    static final class FixtureAccess extends ApplicationAccessDirectory {
+        private final PrincipalFixture world;
+
+        FixtureAccess(PrincipalFixture world) {
+            this.world = world;
+        }
+
+        @Override
+        public List<UserAppRole> bindingsFor(CredentialUserIdPassword credential, String applicationId, String realm) {
+            List<String> groups = world.groupsOfUser.getOrDefault(credential.getUserId(), List.of());
+            return world.bindings.stream()
+                    .filter(b -> Objects.equals(applicationId, b.getApplicationId()))
+                    .filter(b -> realm == null || realm.equals(b.getRealmRefName()))
+                    .filter(b -> credential.getUserId().equals(b.getUserId())
+                            || (b.getGroupRefName() != null && groups.contains(b.getGroupRefName())))
+                    .toList();
+        }
+
+        @Override
+        public Optional<Application> application(String refName) {
+            return Optional.ofNullable(world.applications.get(refName));
+        }
+
+        @Override
+        public boolean installed(String applicationId, String realm, String tenantId) {
+            return world.installs.contains(applicationId + "|" + realm + "|" + tenantId);
+        }
+    }
+
+    /** Registers {@code refName} declaring {@code roles}, each grantable by a tenant admin. */
+    public Application declare(String refName, String... roles) {
+        Application application = new Application();
+        application.setRefName(refName);
+        for (String role : roles) {
+            application.getRoles().add(ApplicationRole.builder().name(role)
+                    .grantableBy(List.of(ApplicationRole.GRANTABLE_BY_TENANT_ADMIN)).build());
+        }
+        applications.put(refName, application);
+        return application;
+    }
+
+    public void install(String applicationId, String realm, String tenant) {
+        installs.add(applicationId + "|" + realm + "|" + tenant);
+    }
+
+    /** A user binding. */
+    public UserAppRole bind(String userId, String applicationId, String realm, List<String> tenants,
+                            String defaultTenant, String... roles) {
+        UserAppRole binding = new UserAppRole();
+        binding.setUserId(userId);
+        binding.setApplicationId(applicationId);
+        binding.setRealmRefName(realm);
+        binding.setTenantIds(new ArrayList<>(tenants));
+        binding.setDefaultTenantId(defaultTenant);
+        binding.setRoles(new ArrayList<>(List.of(roles)));
+        binding.setStatus(UserAppRole.STATUS_ACTIVE);
+        bindings.add(binding);
+        return binding;
+    }
+
+    /** A group binding. */
+    public UserAppRole bindGroup(String group, String applicationId, String realm, String tenant, String... roles) {
+        UserAppRole binding = new UserAppRole();
+        binding.setGroupRefName(group);
+        binding.setApplicationId(applicationId);
+        binding.setRealmRefName(realm);
+        binding.setTenantIds(new ArrayList<>(List.of(tenant)));
+        binding.setRoles(new ArrayList<>(List.of(roles)));
+        bindings.add(binding);
+        return binding;
+    }
+
     public PrincipalFixture() {
         env.setSystemRealm(SYSTEM_REALM);
         realm("acme-D1", RealmTenancyMode.SINGLE_TENANT, "acme", "acme-org", "acme-acct");
@@ -205,7 +289,7 @@ public final class PrincipalFixture {
 
     public PrincipalContextResolver resolver() {
         return new PrincipalContextResolver(directory, membership, credentialRepo, roleResolver, securityUtils, env,
-                new ImpersonationScriptEvaluator());
+                new ImpersonationScriptEvaluator(), access);
     }
 
     public CredentialUserIdPassword credential(String userId) {
