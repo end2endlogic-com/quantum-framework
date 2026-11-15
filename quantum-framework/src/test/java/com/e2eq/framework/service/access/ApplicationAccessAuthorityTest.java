@@ -145,6 +145,28 @@ class ApplicationAccessAuthorityTest extends BaseRepoTest {
         userIds.clear();
     }
 
+    @Inject
+    AccessInviteService inviteService;
+
+    @Test
+    void permissionInspectionRequiresAuthorityOverEveryTargetTenant() {
+        String admin = member("inspection-admin", List.of(TENANT_A), List.of("admin"));
+        String own = member("inspection-own", List.of(TENANT_A), List.of("viewer"));
+        String foreign = member("inspection-foreign", List.of(TENANT_B), List.of("viewer"));
+        String shared = member("inspection-shared", List.of(TENANT_A, TENANT_B), List.of("viewer"));
+        String membershipAdmin = member("inspection-membership-admin", List.of(TENANT_A), List.of(MEMBERSHIP_ADMIN));
+        assertTrue(as(signedIn(admin, TENANT_A), () -> inviteService.mayInspectPermissions(POOLED, own, null)));
+        for (String target : List.of(foreign, shared, "missing-inspection-user")) {
+            org.junit.jupiter.api.Assertions.assertFalse(as(signedIn(admin, TENANT_A),
+                () -> inviteService.mayInspectPermissions(POOLED, target, TENANT_A)));
+        }
+        org.junit.jupiter.api.Assertions.assertFalse(as(signedIn(admin, TENANT_A),
+            () -> inviteService.mayInspectPermissions(POOLED, own, TENANT_B)));
+        org.junit.jupiter.api.Assertions.assertFalse(as(signedIn(membershipAdmin, TENANT_A),
+            () -> inviteService.mayInspectPermissions(POOLED, own, TENANT_A)));
+        assertTrue(asSystem(() -> inviteService.mayInspectPermissions(POOLED, foreign, TENANT_B)));
+    }
+
     // ---- installs by id -------------------------------------------------------------------
 
     @Test
