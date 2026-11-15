@@ -292,6 +292,9 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
          response.setStatusCode(Response.Status.OK.getStatusCode());
          response.setMessage(String.format("Count: %d", count));
          return response;
+      } catch (com.e2eq.framework.model.security.ApplicationAccessException e) {
+         // A typed access refusal keeps its own status and code (see ApplicationAccessExceptionMapper).
+         throw e;
       } catch (IllegalArgumentException | ValidationException e) {
          RestError error = RestError.builder()
                  .status(Response.Status.BAD_REQUEST.getStatusCode())
@@ -889,6 +892,9 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
          collection.setRealm(realmId == null ? repo.getDatabaseName() : realmId);
 
          return collection;
+      } catch (com.e2eq.framework.model.security.ApplicationAccessException e) {
+         // A typed access refusal keeps its own status and code (see ApplicationAccessExceptionMapper).
+         throw e;
       } catch (IllegalArgumentException | ValidationException e) {
          RestError error = RestError.builder()
                  .status(Response.Status.BAD_REQUEST.getStatusCode())
@@ -1114,6 +1120,9 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
            response.setStatusCode(Response.Status.OK.getStatusCode());
            response.setMessage(String.format("Updated: %d", modified));
            return Response.ok(response).build();
+       } catch (com.e2eq.framework.model.security.ApplicationAccessException e) {
+          // A typed access refusal keeps its own status and code (see ApplicationAccessExceptionMapper).
+          throw e;
        } catch (IllegalArgumentException | ValidationException | InvalidStateTransitionException e) {
            RestError error = RestError.builder()
                    .status(Response.Status.BAD_REQUEST.getStatusCode())
@@ -1153,6 +1162,9 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
            response.setStatusCode(Response.Status.OK.getStatusCode());
            response.setMessage(String.format("Updated: %d", modified));
            return Response.ok(response).build();
+       } catch (com.e2eq.framework.model.security.ApplicationAccessException e) {
+          // A typed access refusal keeps its own status and code (see ApplicationAccessExceptionMapper).
+          throw e;
        } catch (IllegalArgumentException | ValidationException | InvalidStateTransitionException e) {
            RestError error = RestError.builder()
                    .status(Response.Status.BAD_REQUEST.getStatusCode())
@@ -1194,6 +1206,9 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
            response.setStatusCode(Response.Status.OK.getStatusCode());
            response.setMessage(String.format("Updated: %d", modified));
            return Response.ok(response).build();
+       } catch (com.e2eq.framework.model.security.ApplicationAccessException e) {
+          // A typed access refusal keeps its own status and code (see ApplicationAccessExceptionMapper).
+          throw e;
        } catch (IllegalArgumentException | ValidationException | InvalidStateTransitionException e) {
            RestError error = RestError.builder()
                    .status(Response.Status.BAD_REQUEST.getStatusCode())

@@ -18,7 +18,7 @@ public class ApplicationAccessExceptionMapper implements ExceptionMapper<Applica
             .status(status.getStatusCode())
             .statusMessage(status.getReasonPhrase())
             .errorCode(exception.code().name())
-            .reasonMessage(exception.getMessage())
+            .reasonMessage(exception.publicMessage())
             .build();
         return Response.status(status)
             .type(MediaType.APPLICATION_JSON_TYPE)

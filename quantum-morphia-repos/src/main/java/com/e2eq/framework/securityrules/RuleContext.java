@@ -194,13 +194,16 @@ public class RuleContext {
         String resourceApplication = normalizeScope(resourceContext == null ? null : resourceContext.getApplicationId());
         if (principalApplication != null && resourceApplication != null
                 && !principalApplication.equals(resourceApplication)) {
-            throw new IllegalArgumentException(
+            throw new com.e2eq.framework.model.security.ApplicationAccessException(
+                    com.e2eq.framework.model.security.ApplicationAccessException.Code.APPLICATION_SCOPE_MISMATCH,
                     "Principal and resource application scopes do not match: "
                             + principalApplication + " != " + resourceApplication);
         }
         String applicationId = resourceApplication != null ? resourceApplication : principalApplication;
         if (requireApplicationScope && applicationId == null) {
-            throw new IllegalStateException("Application-scoped authorization requires an applicationId");
+            throw new com.e2eq.framework.model.security.ApplicationAccessException(
+                    com.e2eq.framework.model.security.ApplicationAccessException.Code.APPLICATION_SCOPE_REQUIRED,
+                    "Application-scoped authorization requires an applicationId");
         }
         return applicationId;
     }
