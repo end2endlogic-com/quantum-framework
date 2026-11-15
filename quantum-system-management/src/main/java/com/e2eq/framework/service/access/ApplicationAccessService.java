@@ -11,6 +11,7 @@ import com.e2eq.framework.model.security.ApplicationBindingValidator;
 import com.e2eq.framework.model.security.ApplicationBindingValidator.Authority;
 import com.e2eq.framework.model.security.ApplicationInstall;
 import com.e2eq.framework.model.security.UserAppRole;
+import com.e2eq.framework.model.security.UserGroup;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import com.e2eq.framework.model.securityrules.SecurityContext;
@@ -72,10 +73,8 @@ public class ApplicationAccessService {
       String realm = realmFor(callerRealm, request.getRealmRefName(), probe);
       request.setRealmRefName(realm);
       Application application = application(request.getApplicationId());
-      if (request.groupRefName() != null && system(() ->
-            userGroupRepo.findByRefName(request.getGroupRefName().trim(), envConfigUtils.getSystemRealm()).isEmpty())) {
-         throw new ApplicationAccessException(Code.BINDING_SUBJECT_INVALID,
-            "group '" + request.getGroupRefName() + "' does not exist");
+      if (request.groupRefName() != null) {
+         requireGroupBindable(request, probe);
       }
 
       Optional<UserAppRole> existing = system(() -> stored(request));
@@ -239,6 +238,30 @@ public class ApplicationAccessService {
             "the caller administers none or not all of the tenants %s in realm '%s'", tenants, realm));
       }
       ApplicationBindingValidator.requireGrantable(application, binding.getRoles(), authority);
+   }
+
+   /**
+    * A group binding grants exactly the group's owner tenant (the caller's authority over it is
+    * then checked like any binding's). A group with no owner tenant may be bound by the platform only.
+    */
+   private void requireGroupBindable(UserAppRole request, Authority probe) {
+      UserGroup group = system(() -> userGroupRepo.findByRefNameWithIgnoreRules(
+            envConfigUtils.getSystemRealm(), request.groupRefName()))
+         .orElseThrow(() -> new ApplicationAccessException(Code.BINDING_SUBJECT_INVALID,
+            "group '" + request.getGroupRefName() + "' does not exist"));
+      String owner = group.getOwnerTenantId() == null || group.getOwnerTenantId().isBlank()
+         ? null : group.getOwnerTenantId().trim();
+      if (owner == null) {
+         if (probe != Authority.PLATFORM) {
+            throw new ApplicationAccessException(Code.ROLE_NOT_GRANTABLE,
+               "group '" + group.getRefName() + "' has no owner tenant; only the platform may bind it");
+         }
+         return;
+      }
+      if (!ApplicationBindingValidator.tenants(request).equals(List.of(owner))) {
+         throw new ApplicationAccessException(Code.BINDING_INVALID, String.format(
+            "a binding of group '%s' grants exactly its owner tenant '%s'", group.getRefName(), owner));
+      }
    }
 
    private void requireInstallAuthority(String realm, String tenantId) {

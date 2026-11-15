@@ -7,6 +7,7 @@ import com.e2eq.framework.model.persistent.morphia.ApplicationInstallRepo;
 import com.e2eq.framework.model.persistent.morphia.ApplicationRepo;
 import com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper;
 import com.e2eq.framework.model.persistent.morphia.UserAppRoleRepo;
+import com.e2eq.framework.model.persistent.morphia.UserGroupRepo;
 import com.e2eq.framework.model.security.Application;
 import com.e2eq.framework.model.security.ApplicationAccessException;
 import com.e2eq.framework.model.security.ApplicationAccessException.Code;
@@ -18,6 +19,7 @@ import com.e2eq.framework.model.security.Realm;
 import com.e2eq.framework.model.security.RealmTenancyMode;
 import com.e2eq.framework.model.security.RealmTenantMembership;
 import com.e2eq.framework.model.security.UserAppRole;
+import com.e2eq.framework.model.security.UserGroup;
 import com.e2eq.framework.model.security.UserProfile;
 import com.e2eq.framework.model.security.UserRealmRole;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
@@ -87,6 +89,9 @@ class ApplicationAccessAuthorityTest extends BaseRepoTest {
     AuthProviderFactory authProviderFactory;
 
     @Inject
+    UserGroupRepo userGroupRepo;
+
+    @Inject
     EnvConfigUtils envConfigUtils;
 
     @Inject
@@ -104,6 +109,7 @@ class ApplicationAccessAuthorityTest extends BaseRepoTest {
     private String suffix;
     private String app;
     private final List<String> userIds = new ArrayList<>();
+    private final List<String> groupRefNames = new ArrayList<>();
 
     @BeforeEach
     void setUp() {
@@ -133,6 +139,8 @@ class ApplicationAccessAuthorityTest extends BaseRepoTest {
         system.find(UserProfile.class).filter(Filters.in("userId", userIds)).delete(new DeleteOptions().multi(true));
         morphiaDataStoreWrapper.getDataStore(POOLED).find(UserProfile.class)
             .filter(Filters.in("userId", userIds)).delete(new DeleteOptions().multi(true));
+        system.find(UserGroup.class).filter(Filters.in("refName", groupRefNames)).delete(new DeleteOptions().multi(true));
+        groupRefNames.clear();
         userIds.clear();
     }
 
@@ -176,7 +184,64 @@ class ApplicationAccessAuthorityTest extends BaseRepoTest {
         assertEquals(TENANT_B, installRepo.findByIdWithIgnoreRules(ofB.getId()).orElseThrow().getTenantId());
     }
 
+    // ---- group bindings -------------------------------------------------------------------
+
+    @Test
+    void aGroupBindingGrantsExactlyTheGroupsOwnerTenant() {
+        String adminA = member("group-admin-a", List.of(TENANT_A), List.of(MEMBERSHIP_ADMIN));
+        String adminB = member("group-admin-b", List.of(TENANT_B), List.of(MEMBERSHIP_ADMIN));
+        String owned = group("owned", TENANT_A);
+        asSystem(() -> accessService.install(POOLED, install(null, null, TENANT_A)));
+        asSystem(() -> accessService.install(POOLED, install(null, null, TENANT_B)));
+
+        refused(Code.BINDING_INVALID, () -> as(signedIn(adminA, TENANT_A),
+            () -> accessService.putBinding(POOLED, groupBinding(owned, List.of(TENANT_A, TENANT_B), TENANT_A, "planner-user"))));
+        refused(Code.BINDING_INVALID, () -> as(signedIn(adminB, TENANT_B),
+            () -> accessService.putBinding(POOLED, groupBinding(owned, List.of(TENANT_B), null, "planner-user"))));
+        refused(Code.ROLE_NOT_GRANTABLE, () -> as(signedIn(adminB, TENANT_B),
+            () -> accessService.putBinding(POOLED, groupBinding(owned, List.of(TENANT_A), null, "planner-user"))));
+        refused(Code.BINDING_INVALID, () -> asSystem(
+            () -> accessService.putBinding(POOLED, groupBinding(owned, List.of(TENANT_B), null, "planner-user"))));
+
+        UserAppRole saved = as(signedIn(adminA, TENANT_A),
+            () -> accessService.putBinding(POOLED, groupBinding(owned, List.of(TENANT_A), null, "planner-user")));
+        assertEquals(List.of(TENANT_A), saved.getTenantIds());
+    }
+
+    @Test
+    void aGroupWithoutAnOwnerTenantIsBoundByThePlatformOnly() {
+        String adminA = member("ownerless-admin-a", List.of(TENANT_A), List.of(MEMBERSHIP_ADMIN));
+        String ownerless = group("ownerless", null);
+        asSystem(() -> accessService.install(POOLED, install(null, null, TENANT_A)));
+
+        refused(Code.ROLE_NOT_GRANTABLE, () -> as(signedIn(adminA, TENANT_A),
+            () -> accessService.putBinding(POOLED, groupBinding(ownerless, List.of(TENANT_A), null, "planner-user"))));
+        assertEquals(ownerless, asSystem(() -> accessService.putBinding(POOLED,
+            groupBinding(ownerless, List.of(TENANT_A), null, "planner-user"))).getGroupRefName());
+    }
+
     // ---- fixtures -------------------------------------------------------------------------
+
+    /** A system-realm group owned by {@code ownerTenant} (none when null). */
+    String group(String label, String ownerTenant) {
+        String refName = ("BIND_GROUP_" + label + "_" + suffix).toUpperCase(java.util.Locale.ROOT).replace('-', '_');
+        groupRefNames.add(refName);
+        asSystem(() -> {
+            UserGroup group = new UserGroup();
+            group.setRefName(refName);
+            group.setDisplayName(refName);
+            group.setOwnerTenantId(ownerTenant);
+            group.setDataDomain(securityUtils.getSystemDataDomain());
+            return userGroupRepo.save(envConfigUtils.getSystemRealm(), group);
+        });
+        return refName;
+    }
+
+    UserAppRole groupBinding(String group, List<String> tenants, String defaultTenant, String... roles) {
+        UserAppRole binding = binding(null, tenants, defaultTenant, roles);
+        binding.setGroupRefName(group);
+        return binding;
+    }
 
     ApplicationInstall install(ObjectId id, String realm, String tenant) {
         ApplicationInstall install = new ApplicationInstall();

@@ -59,6 +59,8 @@ public final class PrincipalFixture {
     public final Map<String, Application> applications = new HashMap<>();
     public final Set<String> installs = new LinkedHashSet<>();
     public final Map<String, List<String>> groupsOfUser = new HashMap<>();
+    /** Owner tenant per group; {@link #bindGroup} sets the bound tenant when none is set. */
+    public final Map<String, String> groupOwners = new HashMap<>();
     /** Every applicationId the role resolver was asked about. */
     public final List<String> roleApplications = new ArrayList<>();
 
@@ -203,6 +205,11 @@ public final class PrincipalFixture {
         }
 
         @Override
+        public String groupOwnerTenant(String groupRefName) {
+            return world.groupOwners.get(groupRefName);
+        }
+
+        @Override
         public boolean installed(String applicationId, String realm, String tenantId) {
             return world.installs.contains(applicationId + "|" + realm + "|" + tenantId);
         }
@@ -239,8 +246,9 @@ public final class PrincipalFixture {
         return binding;
     }
 
-    /** A group binding. */
+    /** A group binding; the group is owned by {@code tenant} unless an owner is already set. */
     public UserAppRole bindGroup(String group, String applicationId, String realm, String tenant, String... roles) {
+        groupOwners.putIfAbsent(group, tenant);
         UserAppRole binding = new UserAppRole();
         binding.setGroupRefName(group);
         binding.setApplicationId(applicationId);
@@ -358,7 +366,7 @@ public final class PrincipalFixture {
         return policy;
     }
 
-    private static CredentialUserIdPassword.RealmEntry realmEntry(String realm) {
+    static CredentialUserIdPassword.RealmEntry realmEntry(String realm) {
         CredentialUserIdPassword.RealmEntry entry = new CredentialUserIdPassword.RealmEntry();
         entry.setRealmRefName(realm);
         return entry;

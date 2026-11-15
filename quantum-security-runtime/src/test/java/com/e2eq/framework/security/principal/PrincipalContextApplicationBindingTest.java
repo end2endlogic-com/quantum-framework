@@ -124,6 +124,56 @@ class PrincipalContextApplicationBindingTest {
         refused(PrincipalResolutionError.APPLICATION_NOT_GRANTED, () -> resolve(PLANNER, "pooled", "tenant-a"));
     }
 
+    @Test
+    void aGroupBindingDoesNotReachMembersOfAnotherTenant() {
+        // bob is in the group but a member of tenant-b only; the group belongs to tenant-a.
+        bob(List.of("tenant-b"));
+        world.groupsOfUser.put(BOB, List.of("planners"));
+        world.bindGroup("planners", PLANNER, "pooled", "tenant-a", "planner-admin");
+        refused(PrincipalResolutionError.APPLICATION_NOT_GRANTED, () -> resolveAs(BOB, PLANNER, "pooled", "tenant-b"));
+
+        // Ignored, not a refusal: the realm assignment's grant still decides for bob.
+        world.assignments.get(BOB + "|pooled").setAuthorizedApplications(List.of(PLANNER));
+        PrincipalContext context = resolveAs(BOB, PLANNER, "pooled", "tenant-b");
+        assertEquals("tenant-b", context.getDataDomain().getTenantId());
+        assertFalse(roles(context).contains("planner-admin"), "the other tenant's group grants bob nothing");
+    }
+
+    @Test
+    void anInactiveMembershipInTheOwnerTenantTurnsTheGroupBindingOff() {
+        world.groupsOfUser.put(ALICE, List.of("planners"));
+        world.bindGroup("planners", PLANNER, "pooled", "tenant-a", "planner-admin");
+        world.assignments.get(ALICE + "|pooled").setStatus(com.e2eq.framework.model.security.UserRealmRole.STATUS_INVITED);
+        refused(PrincipalResolutionError.APPLICATION_NOT_GRANTED, () -> resolve(PLANNER, "pooled", "tenant-a"));
+    }
+
+    @Test
+    void aGroupBindingNeverChoosesTheRealm() {
+        world.groupsOfUser.put(ALICE, List.of("planners"));
+        world.bindGroup("planners", PLANNER, "pooled", "tenant-a", "planner-admin");
+        assertFalse("pooled".equals(resolveRealmOrRefusal(PLANNER)), "only alice's own bindings pick a realm");
+        assertEquals("pooled", resolve(PLANNER, "pooled", null).getDefaultRealm(), "named, the realm applies");
+    }
+
+    @Test
+    void aMalformedGroupBindingRefusesOnlyTheMembersItAppliesTo() {
+        bob(List.of("tenant-b"));
+        world.groupsOfUser.put(ALICE, List.of("planners"));
+        world.groupsOfUser.put(BOB, List.of("planners"));
+        world.assignments.get(BOB + "|pooled").setAuthorizedApplications(List.of(PLANNER));
+        // Owned by tenant-a but granting tenant-b too: malformed.
+        world.groupOwners.put("planners", "tenant-a");
+        UserAppRole malformed = world.bindGroup("planners", PLANNER, "pooled", "tenant-a", "planner-admin");
+        malformed.setTenantIds(new java.util.ArrayList<>(List.of("tenant-a", "tenant-b")));
+        malformed.setDefaultTenantId("tenant-a");
+
+        PrincipalResolutionException refusal =
+                refused(PrincipalResolutionError.APPLICATION_NOT_GRANTED, () -> resolve(PLANNER, "pooled", "tenant-a"));
+        assertTrue(refusal.getMessage().contains("owner tenant"), refusal.getMessage());
+        assertEquals("tenant-b", resolveAs(BOB, PLANNER, "pooled", "tenant-b").getDataDomain().getTenantId(),
+                "bob is not a member of the owner tenant; the binding does not apply to him");
+    }
+
     // --- realms ----------------------------------------------------------------------------
 
     @Test
@@ -240,8 +290,30 @@ class PrincipalContextApplicationBindingTest {
 
     // --- harness ---------------------------------------------------------------------------
 
+    private static final String BOB = "bob@acme";
+
+    /** bob: homed in acme-D1, a member of the pooled realm for {@code tenants}. */
+    private void bob(List<String> tenants) {
+        world.credential(BOB, "sub-bob", "acme-D1", "acme", "user")
+                .setAuthorizedRealms(List.of(world.realmEntry("pooled")));
+        world.assign(BOB, "pooled", List.of("pool-user")).setAuthorizedTenantIds(tenants);
+    }
+
+    /** The realm alice runs in for the application when the request names none, or the refusal. */
+    private String resolveRealmOrRefusal(String applicationId) {
+        try {
+            return resolve(applicationId, null, null).getDefaultRealm();
+        } catch (PrincipalResolutionException refused) {
+            return refused.error().name();
+        }
+    }
+
     private PrincipalContext resolve(String applicationId, String realm, String tenant) {
-        PrincipalContextRequest.Builder request = world.identity(ALICE).applicationId(applicationId);
+        return resolveAs(ALICE, applicationId, realm, tenant);
+    }
+
+    private PrincipalContext resolveAs(String userId, String applicationId, String realm, String tenant) {
+        PrincipalContextRequest.Builder request = world.identity(userId).applicationId(applicationId);
         if (realm != null) {
             request.realm(realm);
         }

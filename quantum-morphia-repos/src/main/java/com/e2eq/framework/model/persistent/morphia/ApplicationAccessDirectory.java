@@ -74,6 +74,18 @@ public class ApplicationAccessDirectory {
       return applicationInstallRepo.isInstalled(applicationId, realmRefName, tenantId);
    }
 
+   /** The owner tenant of a system-realm group, or null when the group has none or does not exist. */
+   public String groupOwnerTenant(String groupRefName) {
+      if (groupRefName == null || groupRefName.isBlank()) {
+         return null;
+      }
+      return userGroupRepo.findByRefNameWithIgnoreRules(envConfigUtils.getSystemRealm(), groupRefName.trim())
+         .map(UserGroup::getOwnerTenantId)
+         .map(String::trim)
+         .filter(owner -> !owner.isEmpty())
+         .orElse(null);
+   }
+
    /** RefNames of the system-realm groups the credential's profile belongs to. */
    List<String> groupRefNames(CredentialUserIdPassword credential) {
       if (credential.getSubject() == null) {

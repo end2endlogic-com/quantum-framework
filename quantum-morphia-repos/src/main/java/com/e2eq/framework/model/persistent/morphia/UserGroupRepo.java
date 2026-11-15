@@ -85,6 +85,14 @@ public class UserGroupRepo extends MorphiaRepo<UserGroup> {
       return userGroups;
    }
 
+   /** The group with {@code refName} in {@code realm}, without security rules (principal resolution, system writes). */
+   public java.util.Optional<UserGroup> findByRefNameWithIgnoreRules(@NotNull String realm, @NotNull String refName) {
+      return java.util.Optional.ofNullable(morphiaDataStoreWrapper.getDataStore(realm)
+         .find(getPersistentClass())
+         .filter(Filters.eq("refName", refName))
+         .first());
+   }
+
    /**
     * @deprecated Use {@link #findByUserProfileRefWithIgnoreRules(String, EntityReference)} instead.
     * This method calls getListByQuery which requires a PrincipalContext to be set.

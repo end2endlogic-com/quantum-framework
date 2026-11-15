@@ -66,9 +66,11 @@ import java.util.function.Supplier;
  * <p>In {@link PrincipalContextRequest.Mode#IDENTITY} the identity's application bindings
  * ({@link UserAppRole}, its own and its groups') decide first: a binding for the application in
  * the realm admits it, its tenants (narrowed to the membership's and to installed ones) and default
- * decide the tenant, and its roles for the selected tenant join the realm-wide roles. Only when no
- * binding exists does the realm assignment's application grant decide. A binding that breaks the
- * binding rules, or a suspended one, refuses; it never falls back.
+ * decide the tenant, and its roles for the selected tenant join the realm-wide roles. A group's
+ * binding applies only to members with an active membership in the group's owner tenant, and only
+ * the identity's own bindings choose a realm. Only when no binding applies does the realm
+ * assignment's application grant decide. A binding that breaks the binding rules, or a suspended
+ * one, refuses; it never falls back.
  *
  * <p>{@link PrincipalContextRequest.Mode#IDENTITY} reads nothing from the token beyond the
  * identity, refuses with typed {@link PrincipalResolutionException}s, applies the default-tenant
@@ -671,10 +673,11 @@ public class PrincipalContextResolver {
     // ------------------------------------------------------------------ application bindings
 
     /**
-     * The realm an identity-only request runs in when it names none. The identity's active
+     * The realm an identity-only request runs in when it names none. The identity's own active
      * bindings for the application decide first, among the realms its credential may use: the one
      * marked {@code defaultRealm}, else the only one; several and no default refuse with
-     * {@code REALM_NOT_AUTHORIZED}. With no usable binding, {@link #applicationRealm} decides.
+     * {@code REALM_NOT_AUTHORIZED}. Group bindings never choose a realm. With no usable binding,
+     * {@link #applicationRealm} decides.
      */
     String identityRealm(CredentialUserIdPassword credential, String applicationId) {
         String bound = bindingRealm(credential, applicationId);
@@ -687,6 +690,7 @@ public class PrincipalContextResolver {
         }
         List<UserAppRole> active = accessDirectory.bindingsFor(credential, applicationId.trim(), null).stream()
                 .filter(Objects::nonNull)
+                .filter(binding -> !binding.groupBinding())
                 .filter(UserAppRole::active)
                 .filter(binding -> !blank(binding.getRealmRefName()))
                 .toList();
@@ -699,7 +703,7 @@ public class PrincipalContextResolver {
             return null;
         }
         List<String> defaults = active.stream()
-                .filter(binding -> !binding.groupBinding() && Boolean.TRUE.equals(binding.getDefaultRealm()))
+                .filter(binding -> Boolean.TRUE.equals(binding.getDefaultRealm()))
                 .map(binding -> binding.getRealmRefName().trim())
                 .filter(allowed::contains)
                 .distinct()
@@ -722,10 +726,14 @@ public class PrincipalContextResolver {
 
     /**
      * What the identity's bindings grant for the application in the realm, or {@code null} when
-     * there is no active binding (the realm assignment's grant then decides). Every binding read
-     * is checked again against the binding rules and the registered application; one that fails,
-     * a duplicate, or a suspended user binding refuses with {@code APPLICATION_NOT_GRANTED}.
-     * Tenants whose install is gone do not count, and a binding left with none refuses.
+     * no binding applies (the realm assignment's grant then decides). The identity's own binding
+     * always applies. A group binding applies only to members with an active membership in the
+     * group's owner tenant (in a binding of a group without one, in one of the binding's tenants);
+     * for anyone else it is ignored. Every applying binding is checked again against the binding
+     * rules and the registered application, and a group binding must grant exactly its group's
+     * owner tenant: one that fails, a duplicate, or a suspended user binding refuses with
+     * {@code APPLICATION_NOT_GRANTED}. Tenants whose install is gone do not count, and bindings
+     * left with none refuse.
      */
     ApplicationGrant bindingGrant(CredentialUserIdPassword credential, String applicationId, String realmRefName) {
         if (accessDirectory == null || blank(applicationId) || blank(realmRefName)) {
@@ -745,15 +753,38 @@ public class PrincipalContextResolver {
                     "%s has %d bindings for application '%s' in realm '%s'; one is allowed",
                     credential.getUserId(), own.size(), app, realmRefName));
         }
-        for (UserAppRole binding : rows) {
+        List<UserAppRole> applying = new java.util.ArrayList<>();
+        for (UserAppRole binding : own) {
             requireWellFormed(binding, credential, application, app, realmRefName);
+            applying.add(binding);
+        }
+        for (UserAppRole binding : rows) {
+            if (!binding.groupBinding()) {
+                continue;
+            }
+            String owner = accessDirectory.groupOwnerTenant(binding.groupRefName());
+            List<String> reach = owner != null ? List.of(owner) : ApplicationBindingValidator.tenants(binding);
+            if (reach.stream().noneMatch(tenant -> activeMember(credential.getUserId(), realmRefName, tenant))) {
+                continue;
+            }
+            requireWellFormed(binding, credential, application, app, realmRefName);
+            if (owner != null && !ApplicationBindingValidator.tenants(binding).equals(List.of(owner))) {
+                throw refusal(PrincipalResolutionError.APPLICATION_NOT_GRANTED, String.format(
+                        "binding %s of group '%s' for application '%s' in realm '%s' is malformed: it must grant "
+                                + "exactly the group's owner tenant '%s'",
+                        binding.getId(), binding.groupRefName(), app, realmRefName, owner));
+            }
+            applying.add(binding);
+        }
+        if (applying.isEmpty()) {
+            return null;
         }
         if (!own.isEmpty() && !own.get(0).active()) {
             throw refusal(PrincipalResolutionError.APPLICATION_NOT_GRANTED, String.format(
                     "%s's binding for application '%s' in realm '%s' is %s",
                     credential.getUserId(), app, realmRefName, own.get(0).getStatus()));
         }
-        List<UserAppRole> active = rows.stream().filter(UserAppRole::active).toList();
+        List<UserAppRole> active = applying.stream().filter(UserAppRole::active).toList();
         if (active.isEmpty()) {
             return null;
         }
@@ -770,6 +801,30 @@ public class PrincipalContextResolver {
                     app, credential.getUserId(), realmRefName));
         }
         return grant;
+    }
+
+    /**
+     * Whether {@code userId} has an active membership in {@code tenantId} of the realm: an active
+     * realm assignment that authorizes the tenant or, in a dedicated realm, whose one tenant it is.
+     */
+    private boolean activeMember(String userId, String realmRefName, String tenantId) {
+        if (realmMembershipService == null || blank(tenantId)) {
+            return false;
+        }
+        Optional<UserRealmRole> assignment = realmMembershipService.assignmentForUser(userId, realmRefName)
+                .filter(PrincipalContextResolver::activeAssignment);
+        if (assignment.isEmpty()) {
+            return false;
+        }
+        if (AccessibleTenantResolver.isAuthorized(assignment.get(), tenantId)) {
+            return true;
+        }
+        return systemDirectory.findRealmByRefName(realmRefName)
+                .filter(realm -> realm.getTenancyMode() != RealmTenancyMode.MULTI_TENANT)
+                .map(Realm::getDomainContext)
+                .map(DomainContext::getTenantId)
+                .filter(tenantId.trim()::equals)
+                .isPresent();
     }
 
     private static void requireWellFormed(UserAppRole binding, CredentialUserIdPassword credential,
