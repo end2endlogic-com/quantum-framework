@@ -22,6 +22,17 @@ import java.util.stream.Collectors;
 @ApplicationScoped
 public class RealmRepo extends MorphiaRepo<Realm> {
 
+   @jakarta.inject.Inject
+   DirectoryOwnership directoryOwnership;
+
+   /** Realm catalog entries are the directory owner's; under a remote directory no write lands in this copy. */
+   @Override
+   protected void requireWritable() {
+      if (directoryOwnership != null) {
+         directoryOwnership.requireCatalogOwnedHere("realm catalog entries");
+      }
+   }
+
    @Inject
    EnvConfigUtils envConfigUtils;
 

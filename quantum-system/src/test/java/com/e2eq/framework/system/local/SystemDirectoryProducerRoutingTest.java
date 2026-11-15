@@ -19,9 +19,12 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 class SystemDirectoryProducerRoutingTest {
 
     private static SystemDirectoryProducer producer(QuantumModeConfig config, Optional<String> olderOverride) {
+        // The older catalog-only override is read by QuantumModeConfig, the one parser of the mode keys.
+        QuantumModeConfig routed = QuantumModeConfig.of(config.mode().name().toLowerCase(),
+            config.systemServiceBaseUrl(), config.directoryMode(), config.directoryBaseUrl(),
+            config.directoryToken(), olderOverride);
         SystemDirectoryProducer producer = new SystemDirectoryProducer();
-        producer.quantumModeConfig = config;
-        producer.directoryModeOverride = olderOverride;
+        producer.quantumModeConfig = routed;
         return producer;
     }
 
@@ -36,6 +39,13 @@ class SystemDirectoryProducerRoutingTest {
         assertInstanceOf(LocalSystemDirectory.class,
             producer(QuantumModeConfig.of("remote", Optional.of("https://control.test")), Optional.of("local"))
                 .systemDirectory());
+    }
+
+    @Test
+    void theOlderCatalogOnlyOverrideSendsAnEmbeddedCatalogRemote() {
+        QuantumModeConfig config = QuantumModeConfig.of("embedded", Optional.of("https://control.test"));
+
+        assertInstanceOf(RemoteSystemDirectory.class, producer(config, Optional.of("remote")).systemDirectory());
     }
 
     @Test

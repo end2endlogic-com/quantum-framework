@@ -2,8 +2,8 @@ package com.e2eq.framework.system.membership;
 
 import com.e2eq.framework.model.persistent.morphia.RealmTenantMembershipRepo;
 import com.e2eq.framework.system.config.QuantumModeConfig;
-import com.e2eq.framework.api.system.SystemDirectory;
 import com.e2eq.framework.system.remote.ControlPlaneException;
+import com.e2eq.framework.util.EnvConfigUtils;
 import com.e2eq.framework.system.remote.RemoteMembershipClient;
 import com.e2eq.framework.model.persistent.morphia.UserRealmRoleRepo;
 import com.e2eq.framework.model.security.RealmTenantMembership;
@@ -43,7 +43,7 @@ public class RealmMembershipService {
     QuantumModeConfig quantumModeConfig;
 
     @Inject
-    SystemDirectory systemDirectory;
+    EnvConfigUtils envConfigUtils;
 
     @Inject
     JsonWebToken jwt;
@@ -86,7 +86,7 @@ public class RealmMembershipService {
                 + "this query from a tier-2 deployment; failing loud, no local fallback.");
         }
         return membershipRepo.findByOrganizationRefNameWithIgnoreRules(
-            systemDirectory.systemRealmId(), orgRefName);
+            localSystemRealmId(), orgRefName);
     }
 
     /** Every org/account participating in a realm (the collaboration roster). */
@@ -95,7 +95,7 @@ public class RealmMembershipService {
             return remote().membersOfRealm(realmRefName);
         }
         return membershipRepo.findByRealmRefNameWithIgnoreRules(
-            systemDirectory.systemRealmId(), realmRefName);
+            localSystemRealmId(), realmRefName);
     }
 
     /** Create or update an org/account membership through the owning control plane. */
@@ -111,7 +111,7 @@ public class RealmMembershipService {
             // a refusal or outage surfaces as ControlPlaneException.
             return remote().upsertRealmMembership(membership);
         }
-        String systemRealmId = systemDirectory.systemRealmId();
+        String systemRealmId = localSystemRealmId();
         Optional<RealmTenantMembership> existingMembership = membershipRepo.findByRealmRefNameWithIgnoreRules(
                 systemRealmId, membership.getRealmRefName()).stream()
             .filter(existing -> java.util.Objects.equals(existing.getRefName(), membership.getRefName())
@@ -152,7 +152,7 @@ public class RealmMembershipService {
                 .findFirst();
         }
         return membershipRepo.findByRealmRefNameWithIgnoreRules(
-                systemDirectory.systemRealmId(), realmRefName)
+                localSystemRealmId(), realmRefName)
             .stream()
             .filter(membership -> RealmTenantMembership.MEMBERSHIP_ROLE_OWNER.equals(
                 membership.getMembershipRole()))
@@ -165,7 +165,7 @@ public class RealmMembershipService {
             return remote().realmsForUser(userId);
         }
         return userRealmRoleRepo.findByUserIdWithIgnoreRules(
-            userId, systemDirectory.systemRealmId());
+            userId, localSystemRealmId());
     }
 
     /** Create or update a user's role assignment through the owning control plane. */
@@ -185,7 +185,7 @@ public class RealmMembershipService {
             // The control plane retains authority over existing storage scope.
             return remote().upsertUserRealmRole(assignment);
         }
-        String systemRealmId = systemDirectory.systemRealmId();
+        String systemRealmId = localSystemRealmId();
         Optional<UserRealmRole> existingRole = userRealmRoleRepo.findAssignmentForRealmWithIgnoreRules(
                 assignment.getUserId(), assignment.getRealmRefName(), systemRealmId);
         if (existingRole.isPresent()) {
@@ -242,7 +242,7 @@ public class RealmMembershipService {
                 .orElse(List.of());
         }
         return userRealmRoleRepo.findActiveRolesForRealmWithIgnoreRules(
-            userId, realmRefName, systemDirectory.systemRealmId());
+            userId, realmRefName, localSystemRealmId());
     }
 
     /** Resolve an active user's complete assignment within one realm. */
@@ -270,5 +270,15 @@ public class RealmMembershipService {
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException("SHA-256 is required for stable control-plane identities", exception);
         }
+    }
+
+    /**
+     * This service's own system realm, where memberships live while they are local. Read from
+     * configuration, not from {@link com.e2eq.framework.api.system.SystemDirectory}: the realm
+     * catalog can be remote while memberships stay local (the older catalog-only
+     * {@code quantum.system.directory.mode=remote}), and a remote catalog has no local system realm.
+     */
+    String localSystemRealmId() {
+        return envConfigUtils.getSystemRealm();
     }
 }

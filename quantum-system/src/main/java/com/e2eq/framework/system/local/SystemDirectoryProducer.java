@@ -1,6 +1,5 @@
 package com.e2eq.framework.system.local;
 
-import com.e2eq.framework.api.system.QuantumMode;
 import com.e2eq.framework.api.system.SystemDirectory;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.model.persistent.morphia.RealmRepo;
@@ -12,7 +11,6 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Produces;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.jwt.JsonWebToken;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.util.Optional;
 
@@ -35,18 +33,11 @@ import java.util.Optional;
 @ApplicationScoped
 public class SystemDirectoryProducer {
 
-    static final String MODE_LOCAL = "local";
-    static final String MODE_REMOTE = "remote";
-
     @Inject RealmRepo realmRepo;
     @Inject CredentialRepo credentialRepo;
     @Inject EnvConfigUtils envConfigUtils;
     @Inject QuantumModeConfig quantumModeConfig;
     @Inject JsonWebToken jwt;
-
-    /** Older catalog-only override; ignored when {@code quantum.directory.mode} is set. */
-    @ConfigProperty(name = "quantum.system.directory.mode")
-    Optional<String> directoryModeOverride;
 
     @Produces
     @ApplicationScoped
@@ -61,19 +52,8 @@ public class SystemDirectoryProducer {
             // only the realm catalog from the directory owner.
             return quantumModeConfig.isRemote() ? remote() : new SplitSystemDirectory(local(), remote());
         }
-        String effective = directoryModeOverride
-            .map(v -> v.trim().toLowerCase())
-            .orElseGet(() -> quantumModeConfig.mode() == QuantumMode.REMOTE ? MODE_REMOTE : MODE_LOCAL);
-        switch (effective) {
-            case MODE_LOCAL:
-                return local();
-            case MODE_REMOTE:
-                return remote();
-            default:
-                throw new IllegalStateException(
-                    "Unknown quantum.system.directory.mode '" + directoryModeOverride.orElse(null)
-                    + "'; expected 'local' or 'remote'.");
-        }
+        // Unset: the older routing, as QuantumModeConfig (the one parser of the mode keys) reads it.
+        return quantumModeConfig.catalogRemote() ? remote() : local();
     }
 
     private SystemDirectory local() {
