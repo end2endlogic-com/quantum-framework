@@ -219,6 +219,19 @@ Resolve request field: `actingOnBehalfOf { userId | subject }`. Response field:
 Applications still on 1.4.2 keep working during steps 1-3 because tokens keep
 their claims until step 4.
 
+### Guard: no new claim readers
+
+Until step 4 lands, nothing stops new code from reading the claims it removes.
+`TokenClaimReaderGuardTest` (quantum-util) fails the build when main sources
+read `groups`, `roles`, `realm`, `realmRegEx`, `tenant`, `tenantId`,
+`orgRefName`, `accountNum`, `aud` or `azp` from a token, or call
+`getClaim(<computed name>)`, more often than
+`security/token-claim-readers.allowlist` permits. Each existing reader is
+listed with its class (`resolver`, `issuer`, `remote-gated`, `must-move`,
+`not-a-claim`) and the rollout step that removes it; counts only go down.
+Applications run the same check from a test with
+`TokenClaimReaderScan.assertNoNewReaders(root, allowlist)`.
+
 ## Decisions (accepted 2026-11-12)
 
 1. Cache window of 60 seconds for grant changes and revocation to take effect.
