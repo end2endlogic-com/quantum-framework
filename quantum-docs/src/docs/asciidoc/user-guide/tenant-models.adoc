@@ -1,3 +1,7 @@
+ifndef::doc-root[]
+:doc-root: ..
+endif::[]
+
 [[tenant-models]]
 == Multi‑Tenancy Models
 
@@ -379,12 +383,15 @@ Access invites are exposed at:
 - `POST /access/invites/{refName}/revoke`
 - `POST /access/invites/{refName}/resend`
 - `POST /access/invites/accept`
+- `GET /access/members?tenantId=...` (the members of one tenant; see <<membership-administrators>>)
 
 All but `accept` require an authenticated caller in the target tenant. Invite acceptance is `@PermitAll` because the recipient may not yet have tenant access.
 
+The invite service, its acceptance policies and both resources are part of `quantum-system-management` (`AccessInviteService`) and `quantum-system-rest` (`AccessInviteResource`, `AccessMemberResource`), so a service that includes those modules, such as a central auth service, serves `/access/invites` and `/access/members`. They are not in `quantum-framework`; the Java packages are unchanged.
+
 ===== Realm-scoped invites
 
-*One realm per invite.* An invite is for exactly one realm: the realm of the request context (`realm` / `X-Realm`). Granting access to five realms takes five invites. A request whose optional `realm` names a different realm, whose `realms` names more than one realm, or that uses a wildcard or pattern is refused with `400 INVITE_SINGLE_REALM_REQUIRED`.
+*One realm per invite.* An invite is for exactly one realm: the realm the request runs in, as resolved for the signed-in caller. A caller whose own realm is the target sends no `X-Realm`; an operator acting in another realm uses the explicit override and needs the authority for it. Granting access to five realms takes five invites. A request whose optional `realm` names a different realm, whose `realms` names more than one realm, or that uses a wildcard or pattern is refused with `400 INVITE_SINGLE_REALM_REQUIRED`.
 
 *The inviter must be able to access that realm.* The request header is not trusted on its own; the realm must be registered, and the service checks it against the inviter's own credential, with the same precedence as sign-in. The realm is accessible when it is:
 
@@ -395,6 +402,14 @@ All but `accept` require an authenticated caller in the target tenant. Invite ac
 The system realm is never accessible this way; only the framework system user can invite into it. Any other realm is refused with `403 INVITE_REALM_NOT_ACCESSIBLE`.
 
 *Realm administrator.* The framework system principal, or a caller that can access the realm and holds `admin` there (as a flat credential role or in its `UserRealmRole` for the realm). Listing returns every invite to a realm administrator and only the caller's own invites to anyone else. Reading, revoking, and resending an invite require the inviter or a realm administrator.
+
+[[membership-administrators]]
+*Tenant-scoped membership administrators.* Realm `admin` reaches every tenant's data in a pooled realm, so it is the wrong grant for someone who only manages one organization's people. Two settings, both unset by default, add narrower authority. With both unset, behaviour is as described above.
+
+* `quantum.access-invites.membership-admin-roles`: a comma-separated list of roles. A caller that holds one of them in its active `UserRealmRole` for the realm is a membership administrator of the tenant of its request. It may list, read, resend and revoke that tenant's invites and list its members. A flat credential role never counts (flat roles reach every realm), and an `invited` or `suspended` assignment grants nothing. In a pooled realm the role counts only when the assignment authorizes exactly that one tenant by id (`authorizedTenantIds` with one entry and no `authorizedTenantRegEx`): realm roles apply in every tenant an assignment authorizes, so a role held across several tenants cannot say which one it was granted for.
+* `quantum.access-invites.create-roles`: when set, creating an invite needs one of these roles in the caller's active realm assignment, or realm administrator or the system principal; otherwise `403 INVITE_NOT_AUTHORIZED`. In a pooled realm the role counts only for the one tenant the assignment authorizes, and only in a request for it. When unset, any caller that can access the realm may invite (subject to the role and application rules below).
+
+`GET /access/members` lists the realm assignments of one tenant, whatever their status (`tenantId` defaults to the tenant of the request; `400 INVALID_REQUEST` when there is none). In a dedicated realm that is every assignment; in a pooled realm only assignments that name the tenant in `authorizedTenantIds`, so operator grants that reach it through `authorizedTenantRegEx` are not exposed. It is open to the system principal, a realm administrator (in a pooled realm only for tenants its assignment authorizes) and a membership administrator of that tenant. Credentials and tokens are never returned.
 
 *Grantable roles and applications.* An inviter can grant only roles it holds in that same realm: its flat credential roles plus the roles of its `UserRealmRole` for the realm (`403 INVITE_ROLE_NOT_GRANTABLE`). Only the framework system user can grant `system`. Applications named in `authorizedApplications` must be registered; a realm administrator may grant any of them (and the admin-only `*`), anyone else only applications its own `UserRealmRole` grant for the realm already includes (`403 INVITE_APPLICATION_NOT_GRANTABLE`). The inviter's realm access, roles, and applications are checked again when the invite is accepted, so an inviter that has since lost them can no longer hand them out (invites created by the framework system principal are exempt). Because flat roles apply in every realm a user can access, inviting an existing account that cannot yet access the realm also brings its flat roles into the realm; the inviter must hold those roles in the realm too (other than the baseline `user`), otherwise acceptance is refused with `403 INVITE_ROLE_NOT_GRANTABLE`.
 
@@ -647,18 +662,18 @@ relationship policies (`hasEdge`) and field-level exclusions.
 where carrier, supplier, and customer orgs collaborate on the same sales
 orders and fulfillment plans, each seeing their own slice.
 
-|GitHub-like multi-realm identity
+|Multi-realm identity
 |Users hold ONE global identity and N per-realm role assignments
 (`UserRealmRole`): ADMIN in realm A, VIEWER in realm B.
 |Consultants, partners, and platform operators who work across several
 tenants without duplicate accounts.
 |===
 
-=== The GitHub-Like Identity Model, Mapped
+=== The Multi-Realm Identity Model, Mapped
 
 [cols="1,1,2"]
 |===
-|GitHub concept |Quantum primitive |Notes
+|Concept |Quantum primitive |Notes
 
 |Account
 |Credential (system realm)
@@ -668,34 +683,45 @@ tenants without duplicate accounts.
 |Organization + Account entities
 |Carry DataDomain identity inside realms.
 
-|Org membership + role
+|Membership of a realm, with roles
 |`UserRealmRole` (userId, realmRefName, roles[], sponsoringOrgRefName)
 |ADMIN in A / VIEWER in B = two documents. `status`: active/invited/suspended.
 
-|Repository
+|Unit of placement
 |Realm
 |The unit of placement and lifecycle (own database, migrations, seeds).
 
-|Repo transfer / ownership
+|Ownership of a realm
 |`RealmTenantMembership.membershipRole = owner`
 |Exactly one owner per realm; owner holds lifecycle and billing authority.
 
 |Invitation
-|AccessInvite (`/access-invites`)
+|AccessInvite (`/access/invites`)
 |Existing invite flow grants a user into a realm; on acceptance a
 `UserRealmRole` records the granted roles.
 
-|Token scopes
-|JWT per-realm role claims
-|At issuance the IdP resolves `RealmMembershipService.rolesForUser(user,
-realm)`; the tenant plane validates via JWKS and routes by claims — no
-callback to the control plane per request.
+|Roles in an application
+|`UserAppRole` (application binding)
+|Roles a user or group holds in one application in one realm, for named
+tenants. See <<application-bindings>>.
+
+|What a request may do
+|Resolved per request from these records
+|The token proves identity only. On the default path the sign-in still copies
+the realm assignment's roles into the token, and they are honored only in
+that realm. With the remote principal source the
+receiving application asks Auth on each request and reads no role, realm or
+tenant claim. See
+xref:{doc-root}/user-guide/auth.adoc#authn-authz-separation[Authentication and Authorization Are Separate].
 |===
 
 Resolution APIs live in `RealmMembershipService` (quantum-system):
 `membershipsForOrg`, `membersOfRealm`, `ownerOfRealm`, `realmsForUser`,
-`rolesForUser`. Embedded deployments resolve locally; remote (tier-2)
-deployments get the same surface backed by the control-plane client (Phase C).
+`rolesForUser`. Where they read from follows directory routing
+(`quantum.directory.mode`, see the control-plane architecture guide): a local
+directory resolves from the system realm; a remote one calls the directory
+owner through the generated control-plane client and never falls back to local
+storage. `membershipsForOrg` is not available remotely and fails explicitly.
 
 [[application-bindings]]
 === Application Bindings, Installs and the Public Catalog
@@ -741,7 +767,18 @@ Refusals are typed (`ApplicationAccessException.Code`): `ROLE_NOT_DECLARED`,
 `TENANTS_REQUIRED`, `TENANT_DEFAULT_REQUIRED`, `APPLICATION_NOT_INSTALLED`,
 `APPLICATION_UNKNOWN`, `BINDING_SUBJECT_INVALID`, `BINDING_INVALID`,
 `ROLE_NOT_GRANTABLE`, `INSTALL_NOT_AUTHORIZED`, `REALM_MISMATCH`,
-`INSTALL_INVALID`, `NOT_FOUND`, `DIRECTORY_REMOTE`.
+`INSTALL_INVALID`, `NOT_FOUND`, `DIRECTORY_REMOTE`, `APPLICATION_SCOPE_REQUIRED`,
+`APPLICATION_SCOPE_MISMATCH`. REST callers receive them as a `RestError` whose
+`errorCode` is the code (400, 403, 404 or 409 by code).
+
+Binding and install writes run their repository work as the system principal
+after the service has decided the caller's authority, and that scope keeps the
+application of the request. Where application-scoped policy evaluation is
+required (`quantum.security.policy-scope.require-application=true`, default
+`false`), a request that names no application is refused with
+`400 APPLICATION_SCOPE_REQUIRED` rather than running without one, and a request
+whose principal and resource name different applications is refused with
+`400 APPLICATION_SCOPE_MISMATCH`.
 
 ==== Who may write
 

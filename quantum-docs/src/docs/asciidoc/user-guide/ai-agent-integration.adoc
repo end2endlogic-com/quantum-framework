@@ -3,24 +3,23 @@ ifndef::doc-root[]
 endif::[]
 
 // AI Agent Integration
-// Recommendations for framework APIs to support AI agents similar to
-// Palantir AIP / agentic enterprise patterns (e.g. AIPCon 6 – Agentic Operating System for the Enterprise).
+// Framework APIs that support AI agents: tool discovery, schema, query and permission hints, and unified execute.
 
 [[ai-agent-integration]]
 = AI Agent Integration
 
-This section describes APIs to add to the framework to support AI agent integration, aligned with patterns discussed in agentic enterprise systems (e.g. Palantir AIP: session management, retrieval context, and tools for action-taking agents).
+This section describes the framework APIs that support AI agent integration: tool discovery, schema, query and permission hints, and a unified execute endpoint over the Query Gateway. It began as a design document, so it also describes parts that are not built yet; the <<agent-api-summary>> states which is which, and each proposed part is marked as a proposal where it is described.
 
-Reference: https://www.youtube.com/watch?v=SePXznjZ-1A["Agentic Operating System for the Enterprise | Palantir's AIP Lead Jack Dobson at AIPCon 6"].
+The implemented agent REST API (`/api/agent/*`) and the native MCP server live in the `quantum-mcp-server` module; see xref:{doc-root}/user-guide/mcp-server-and-client.adoc[MCP Server and Client] for the reference.
 
 == Goals
 
 * Let agents *discover* what they can do (tools, schema) without hard-coding endpoint URLs.
 * Let agents *execute* governed actions (query, save, delete) with existing security (realm, permissions, `@FunctionalAction`).
 * *Multi-tenant:* Each tenant (realm) has its own agent configuration and tool instances; tools list and execute are scoped by tenant.
-* *Tenant runAs:* Tenant configuration can specify a `runAsUserId` so tool execution runs under that user's security context (PrincipalContext), integrating with the overall security and policy framework.
+* *Tenant runAs (proposal):* Tenant configuration can specify a `runAsUserId` so tool execution runs under that user's security context (PrincipalContext). The property is read today but not applied; execution runs as the authenticated caller.
 * Provide *retrieval context* (ontology, type schemas) so the agent can build valid requests and inject context into the LLM.
-* Support *session/trace* for audit and multi-turn correlation.
+* Support *session/trace* for audit and multi-turn correlation (proposal; the execute request accepts `sessionId` and `traceId` but does not use them yet).
 
 == Query Gateway as the Single Integration Point (CRUDL)
 
@@ -28,14 +27,14 @@ For **CRUDL** (Create, Read, Update, Delete, List) over entity data, agents and 
 
 **Why the gateway is sufficient:**
 
-* **One set of endpoints** — `GET /api/query/rootTypes`, `POST /api/query/plan`, `POST /api/query/find`, `POST /api/query/save`, `POST /api/query/delete`, `POST /api/query/deleteMany` cover List (rootTypes + find), Read (find), Create/Update (save), and Delete (delete, deleteMany).
-* **Type-agnostic** — The gateway accepts a `rootType` (e.g. `Location`, `Order`) and a query or entity body; there is no need for the agent to know or call domain-specific resources (e.g. `/orders`, `/products`). The same six operations work for every entity type.
-* **Single security surface** — One resource (`QueryGatewayResource`) with one `@FunctionalMapping` (area/domain) and method-level `@FunctionalAction`; permission and realm resolution are consistent for all CRUDL.
-* **Simpler agents and bridges** — An AI agent or MCP bridge can implement exactly six tool shapes (rootTypes, plan, find, save, delete, deleteMany) and one base path (`/api/query`). No need to discover or maintain many REST paths per domain.
+* **One set of endpoints** — `GET /api/query/rootTypes`, `POST /api/query/plan`, `POST /api/query/find`, `POST /api/query/count`, `POST /api/query/save`, `POST /api/query/delete`, `POST /api/query/deleteMany` cover List (rootTypes + find), Read (find, count), Create/Update (save), and Delete (delete, deleteMany). `POST /api/query/export` and `POST /api/query/import/{analyze,rows,commit,cancel}` add CSV export and import.
+* **Type-agnostic** — The gateway accepts a `rootType` (e.g. `Location`, `Order`) and a query or entity body; there is no need for the agent to know or call domain-specific resources (e.g. `/orders`, `/products`). The same operations work for every entity type.
+* **Single security surface** — One resource (`QueryGatewayResource`) with one `@FunctionalMapping` (area `integration`, domain `query`) and method-level `@FunctionalAction`; permission and realm resolution are consistent for all CRUDL.
+* **Simpler agents and bridges** — An AI agent or MCP bridge implements one tool shape per gateway operation (twelve in all) and one base path (`/api/query`). No need to discover or maintain many REST paths per domain.
 
 **Implications for agent and MCP design:**
 
-* **Tools** — Agent/MCP tools should map directly to gateway operations (query_rootTypes, query_plan, query_find, query_save, query_delete, query_deleteMany). No separate tools per entity or per domain resource.
+* **Tools** — Agent/MCP tools map directly to gateway operations (query_rootTypes, query_plan, query_find, query_count, query_save, query_delete, query_deleteMany, query_export, and the four query_import_* tools). No separate tools per entity or per domain resource.
 * **Schema** — Discovery and schema can be gateway-derived: `rootTypes` lists available types; optional per-type schema (e.g. `GET /api/agent/schema/{rootType}`) can be built from the same Morphia metadata the gateway uses.
 * **Optional agent layer** — A thin layer (`GET /api/agent/tools`, `POST /api/agent/execute`, `GET /api/agent/schema`) can sit on top of the gateway to provide tool discovery, unified execute, and schema for LLMs; implementation delegates to the gateway and does not duplicate logic.
 * **Domain REST resources** — Domain-specific resources (e.g. `BaseResource`/`OntologyAwareResource` subclasses with paths like `/orders`, `/shipments`) remain for human-driven UIs and workflows. Agents and MCP use the gateway for CRUDL unless a future design explicitly adds agent-only tools that call those resources.
@@ -54,8 +53,8 @@ The agent APIs and MCP bridge are abstract until you see how they are used in pr
 **Flow:**
 
 1. The AI client (or your app) connects to an MCP server that is configured to call your Quantum backend (`QUANTUM_BASE_URL`, `QUANTUM_AUTH_TOKEN`).
-2. The default agent discovery surface exposes twelve gateway tools, including count, export, and the import lifecycle. The LLM chooses `query_find` and calls it with something like: `rootType: "Order"`, `query: "orderNumber:ORD-8842"`, `realm: "acme-corp"`.
-3. The bridge sends `POST /api/agent/execute` with `tool: "query_find"` and those `arguments`. The backend runs the query in the correct realm with your existing security and data scoping.
+2. The default agent discovery surface exposes twelve gateway tools, including count, export, and the import lifecycle. The LLM chooses `query_find` and calls it with something like: `rootType: "Order"`, `query: "orderNumber:ORD-8842"`.
+3. The bridge sends `POST /api/agent/execute` with `tool: "query_find"` and those `arguments`. The backend runs the query in the caller's effective realm with your existing security and data scoping. A `realm` argument is optional and cannot select another tenant: for an authenticated caller it must equal that effective realm or the call is refused.
 4. The LLM gets back a list of matching orders (or none) and answers: “Order ORD-8842 is Shipped, delivered last Tuesday.”
 
 **Why it matters:** Support doesn’t need to learn your UI or query syntax. They ask in natural language; the agent uses the *same* gateway and permissions as your human-driven app.
@@ -68,7 +67,7 @@ The agent APIs and MCP bridge are abstract until you see how they are used in pr
 **Flow:**
 
 1. The analyst’s client uses MCP to talk to your bridge. The bridge has already called `GET /api/agent/tools` and `GET /api/agent/schema` so the LLM knows there are types like `Location`, `Order`, and that it can run `query_find` with a BIAPI query string.
-2. The LLM might first call `query_find` with `rootType: "Location"`, `query: "region:West && status:ACTIVE"`, `realm: "acme-corp"`, `page: { limit: 50 }`.
+2. The LLM might first call `query_find` with `rootType: "Location"`, `query: "region:West && status:ACTIVE"`, `page: { limit: 50 }`.
 3. It then calls `query_find` again for `Order` with a query that filters by date and optionally by location (if the schema shows how orders link to locations). Your gateway returns rows; the LLM summarizes or charts them.
 
 **Why it matters:** The analyst never writes BIAPI or touches `/api/query` directly. Discovery (tools + schema) is enough for the LLM to build valid `rootType` and `query` arguments.
@@ -91,13 +90,15 @@ The agent APIs and MCP bridge are abstract until you see how they are used in pr
 
 **Who:** A tenant (e.g. “acme-corp”) has an automated bot that creates or updates records (e.g. syncing from an external system). The bot should run with a fixed service identity for audit and security.
 
-**Flow:**
+**Flow today:**
 
-1. You configure the tenant: `quantum.agent.tenant.acme-corp.runAsUserId=bot-sync@acme-corp`, and optionally `enabledTools=query_find,query_save`, `maxFindLimit=100`.
-2. When the MCP bridge (or any client) calls `POST /api/agent/execute` with `arguments.realm: "acme-corp"`, the backend loads tenant config and sees `runAsUserId`. If your app provides a `RunAsPrincipalResolver`, the backend runs the gateway call *as* `bot-sync@acme-corp` (that user’s permissions and data scope).
-3. The caller (e.g. an API key for the sync job) only needs permission to call the agent API for that tenant; the actual data access is under the service user. Audit logs can record both caller and runAs user.
+1. Give the bot its own identity in the tenant's realm (for example a service token for `bot-sync@acme-corp`) and permission rules that allow only the gateway actions it needs.
+2. The MCP bridge (or any client) calls `POST /api/agent/execute` with that token. The backend runs the gateway call as the authenticated caller, in the caller's effective realm, with that identity's permissions and data scope.
+3. Optionally set `quantum.agent.tenant.acme-corp.enabledTools=query_find,query_save` so that `GET /api/agent/tools?realm=acme-corp` lists only those tools. This shapes discovery; it does not restrict execution.
 
-**Why it matters:** Bots and integrations get a clear, tenant-scoped identity and limits without you building separate “bot-only” APIs.
+**Proposed (not implemented):** a tenant-level `runAsUserId`, resolved through a `RunAsPrincipalResolver` bean, so that a caller with permission to use the agent API runs the gateway call as a configured service user, and a `maxFindLimit` cap. `PropertyTenantAgentConfigResolver` already reads `quantum.agent.tenant.<realm>.runAsUserId` and `.maxFindLimit`, but `AgentExecuteHandler` does not apply them.
+
+**Why it matters:** Bots and integrations get a clear, tenant-scoped identity without you building separate “bot-only” APIs.
 
 === Scenario 5: One integration test as the “contract” for the bridge
 
@@ -124,7 +125,7 @@ The agent APIs and MCP bridge are abstract until you see how they are used in pr
 3. The UI shows the suggestions; the user selects which to accept and clicks "Accept selected."
 4. The frontend calls the Query Gateway `POST /api/query/save` (rootType Obligation) for each accepted suggestion, persisting new Obligation records.
 
-**Why it matters:** The framework's agent tools (query_find, schema) can feed context into an LLM or rule engine; the "suggest" capability is implemented as a domain REST endpoint in the app (psa-app), not as a seventh gateway tool. User acceptance keeps humans in the loop before data is written. The full design is PSA-specific and lives in the psa-app repository: `doc/design/regulatory-obligations-agent-design.adoc` (Regulatory Obligations — Agent-Driven Suggestions and User Acceptance).
+**Why it matters:** The framework's agent tools (query_find, schema) can feed context into an LLM or rule engine; the "suggest" capability is implemented as a domain REST endpoint in the app (psa-app), not as an additional gateway tool. User acceptance keeps humans in the loop before data is written. The full design is PSA-specific and lives in the psa-app repository: `doc/design/regulatory-obligations-agent-design.adoc` (Regulatory Obligations — Agent-Driven Suggestions and User Acceptance).
 
 == Integrating the query grammar into the agent framework
 
@@ -156,7 +157,7 @@ Developers and agents need to know *what query string* to use for questions like
 === Example: "Did you know you could use expand on Order with customer?"
 
 1. The agent surfaces a hint from `didYouKnow`: "You can use expand(path) to get a combined result set. Instead of fetching an order and then its customer in a second call, use expand(customer) in the query string. Example: expand(customer) && status:ACTIVE for rootType Order."
-2. The developer (or another agent) can then use `query_find` with `query: "expand(customer) && status:ACTIVE"` and `rootType: "Order"` to get orders with nested customer objects. If AGGREGATION execution is enabled, the result set looks like: each order has a `customer` field populated with the related entity.
+2. The developer (or another agent) can then use `query_find` with `query: "expand(customer) && status:ACTIVE"` and `rootType: "Order"` to get orders with nested customer objects. If AGGREGATION execution is enabled (`feature.queryGateway.execution.enabled=true`; it is `false` by default), the result set looks like: each order has a `customer` field populated with the related entity.
 
 === Expand and ontology in the same flow
 
@@ -204,7 +205,7 @@ xref:{doc-root}/user-guide/permission-resource.adoc[Permission Resource].
 
 === Evaluate API (full allow/deny matrix for an identity)
 
-**Endpoint:** `POST /system/permissions/evaluate`
+**Endpoint:** `POST /system/permissions/fd/evaluate` (optional query parameter `useIndex`, default `true`). The `checkEndpoint`/`evaluateEndpoint` strings returned by `GET /api/agent/permission-hints` still name `POST /system/permissions/evaluate`; the resource path is `/system/permissions/fd/evaluate`.
 
 **Purpose:** Get allow/deny decisions for *all* area/functionalDomain/action combinations (or a subset) for a given identity. Use this to compare "what APIs does this scenario need?" with "what does this identity have?" and identify **gaps** for least-privilege.
 
@@ -230,7 +231,7 @@ xref:{doc-root}/user-guide/permission-resource.adoc[Permission Resource].
 **Workflow:**
 
 1. **Scenario → required APIs** — From the scenario description, list the operations (e.g. "support user must list locations, then find orders for a customer"). Map each to (area, functionalDomain, action): e.g. list locations → integration/query/listRootTypes and integration/query/find with rootType=Location; find orders → integration/query/find with rootType=Order.
-2. **Current policies** — Call `POST /system/permissions/evaluate` for the identity that would execute (e.g. `support@acme.com` or role `SUPPORT`). You get allow/deny per (area, domain, action), and per-action `rule` (winning rule name).
+2. **Current policies** — Call `POST /system/permissions/fd/evaluate` for the identity that would execute (e.g. `support@acme.com` or role `SUPPORT`). You get allow/deny per (area, domain, action), and per-action `rule` (winning rule name).
 3. **Gaps** — Required (area, domain, action) pairs that are DENY or not present in the allow matrix are gaps. Optionally run `POST /system/permissions/check` per gap to get `winningRuleName` for each denial.
 4. **Suggest minimal rules** — For each gap, suggest one ALLOW rule (identity, area, functionalDomain, action, priority). Prefer a single role-based ALLOW with the minimum scope (e.g. only the actions needed) rather than broad wildcards. Example: "Add ALLOW rule for identity=SUPPORT, area=integration, functionalDomain=query, action in [listRootTypes, find], priority=500."
 
@@ -240,25 +241,25 @@ xref:{doc-root}/user-guide/permission-resource.adoc[Permission Resource].
 
 **Endpoint:** `GET /api/agent/permission-hints`
 
-**Purpose:** Return a short description of the check and evaluate APIs, how to map "entity" and "action" to area/functionalDomain/action (e.g. Query Gateway mapping), example check requests, and "did you know" hints so the agent can answer permission questions and suggest rule changes. See the Summary Table and MCP Bridge Configuration for the optional call from the bridge.
+**Purpose:** Return a short description of the check and evaluate APIs, how to map "entity" and "action" to area/functionalDomain/action (e.g. Query Gateway mapping), example check requests, and "did you know" hints so the agent can answer permission questions and suggest rule changes. The response fields are `checkEndpoint`, `evaluateEndpoint`, `areaDomainActionMapping`, `exampleCheckRequests` and `didYouKnow`. The same content is available to MCP clients as the resource `quantum://permission-hints`.
 
 [[multi-tenancy-and-tenant-specific-configuration]]
 == Multi-Tenancy and Tenant-Specific Configuration
 
-Agent integration is **multi-tenant**: each tenant (realm) has its own configuration and tool instances.
+Agent integration is **multi-tenant**: execution is scoped to the caller's tenant (realm), and each realm can have its own tool-discovery configuration.
 
-* **Realm scope** — Tools list and execute are scoped by tenant (realm). The effective realm is resolved from the request (e.g. `realm` query param, `arguments.realm`, or `X-Realm` header), then the principal's default realm, then configured default.
-* **Per-tenant configuration** — Each tenant can have:
-  * _runAsUserId_ (optional): The userId to use as the security context when executing agent tools for that tenant. When set, the backend runs the gateway under that user's PrincipalContext so that permissions and data scoping apply as that user (same pattern as impersonation). This integrates with the overall security and policy framework.
-  * _enabledTools_ (optional): List of tool names enabled for that tenant; GET /api/agent/tools returns only those tools for the requested realm.
-  * _limits_ (optional): Per-tenant limits (e.g. max find limit).
-* **Caller permission** — The caller must be allowed to use the agent API for the target tenant; the actual execution runs under the tenant's runAs user (if configured) or the caller. Audit logs record both caller and runAs user when runAs is used.
+* **Realm scope** — For an authenticated caller, execute runs in the caller's effective realm: the principal's default realm (which already reflects an accepted `X-Realm` override), or the principal's realm override for the `integration` area when one is set. `arguments.realm` is optional and must equal that realm; a different value is refused with HTTP 403. The configured default realm (`quantum.realm.testRealm`) is used only when no principal is present or rules are explicitly ignored (bootstrap and migration code).
+* **Per-tenant configuration** — `quantum.agent.tenant.<realm>.*` properties, read by `PropertyTenantAgentConfigResolver` (replaceable with your own `TenantAgentConfigResolver` bean):
+  * _enabledTools_ (optional): comma-separated tool names; `GET /api/agent/tools?realm=<realm>` returns only those tools. Without the `realm` query parameter, or without this property, all twelve are listed. It filters discovery only; execute does not check it.
+  * _runAsUserId_ (optional, proposal): the userId to use as the security context when executing agent tools for that tenant. Read into `TenantAgentConfig` but not applied.
+  * _maxFindLimit_ (optional, proposal): a per-tenant cap on find results. Read but not applied.
+* **Caller permission** — Execution always runs as the authenticated caller, so the caller's permission rules and data scope decide what a tool call may do.
 
 **Secrets (global vs tenant-level):** Application-wide secrets (e.g. JWT signing key, vault connection) are **global** and tenant-independent; they are resolved at startup. Per-tenant secrets (e.g. LLM API keys for hosted providers like OpenAI, Claude, or Gemini) are **tenant-level** and must be resolved per realm at request time—prefer a vault with realm-scoped paths or a tenant config store that references vault keys. See xref:{doc-root}/user-guide/secrets-and-vault.adoc[Secrets and Vault Configuration] for the two-level model and how to configure HashiCorp Vault or AWS Secrets Manager.
 
 **Token consumption and allocation:** Per-tenant token pools can be assigned to different sets of APIs and Tools/LLM configurations for usage-based billing. Record LLM usage (by tenant and runAsUserId) and API call usage (by tenant and caller); allocate token types (API_CALL, LLM_REQUEST, LLM_INPUT_TOKENS, LLM_OUTPUT_TOKENS) scoped to API identifiers and/or tool names and LLM config keys. See xref:{doc-root}/user-guide/usage-and-token-allocation.adoc[Usage Metering and Token Allocation].
 
-See the implementation design (`docs/design/AI_AGENT_INTEGRATION_DESIGN.md`) for the data model (e.g. AgentTenantConfig), storage options, and runAs resolution.
+See the implementation design (`docs/design/AI_AGENT_INTEGRATION_DESIGN.md`) for the proposed data model, storage options, and runAs resolution.
 
 == Gateway-Centric Agent APIs
 
@@ -268,7 +269,7 @@ See the implementation design (`docs/design/AI_AGENT_INTEGRATION_DESIGN.md`) for
 
 **Endpoint:** `GET /api/agent/tools`. The default catalog contains the twelve tools below; realm-specific configuration can restrict the returned set.
 
-**Response shape (conceptual):**
+**Response shape:** `{ "tools": [...], "count": 12 }`.
 
 * List of tools, one per gateway operation:
   * `query_rootTypes` — list entity types (maps to `GET /api/query/rootTypes`).
@@ -279,19 +280,19 @@ See the implementation design (`docs/design/AI_AGENT_INTEGRATION_DESIGN.md`) for
   * `query_delete` — delete one entity by id (maps to `POST /api/query/delete`).
   * `query_deleteMany` — delete many by query (maps to `POST /api/query/deleteMany`).
   * `query_export` — export entities (maps to `POST /api/query/export`).
-  * `query_import_analyze` — analyze CSV for import (maps to `POST /api/query/importAnalyze`).
-  * `query_import_rows` — list import rows (maps to `POST /api/query/importRows`).
-  * `query_import_commit` — commit import (maps to `POST /api/query/importCommit`).
-  * `query_import_cancel` — cancel import (maps to `POST /api/query/importCancel`).
-* Each tool includes: `name`, `description` (for the LLM), `parameters` (JSON Schema for the request body), and optional `area`/`domain`/`action` for permission alignment.
+  * `query_import_analyze` — analyze CSV for import (maps to `POST /api/query/import/analyze`).
+  * `query_import_rows` — list import rows (maps to `POST /api/query/import/rows`).
+  * `query_import_commit` — commit import (maps to `POST /api/query/import/commit`).
+  * `query_import_cancel` — cancel import (maps to `POST /api/query/import/cancel`).
+* Each tool includes: `name`, `description` (for the LLM), `parameters` (a list of `{ name, type, description }` entries, not a JSON Schema), and `area` (`integration`) and `domain` (`query`) for permission alignment. The entry has no `action` field; the functional actions are `listRootTypes`, `plan`, `find`, `count`, `save`, `delete`, `deleteMany`, `export`, `importAnalyze`, `importRows`, `importCommit` and `importCancel`.
 
 **Implementation notes:**
 
 * `AgentToolsProvider` defines the discovery catalog and `AgentExecuteHandler` dispatches these gateway operations using their request DTOs.
-* Discovery is not an authorization grant. Each execution still requires the principal to pass the gateway action and realm checks.
-* Response format can align with OpenAI function calling or MCP tool definitions so agents and MCP bridges consume it directly.
+* Discovery is not an authorization grant, and the catalog is not filtered by the caller's permissions. Each execution still requires the principal to pass the gateway's realm and data-scope checks.
+* A bridge converts the `parameters` list into the tool-definition format its client expects (for example an MCP input schema).
 
-**Why:** Agents discover a single CRUDL surface (the gateway) instead of many domain endpoints; aligns with "Tools" in Palantir AIP while keeping integration simple.
+**Why:** Agents discover a single CRUDL surface (the gateway) instead of many domain endpoints.
 
 ---
 
@@ -299,15 +300,15 @@ See the implementation design (`docs/design/AI_AGENT_INTEGRATION_DESIGN.md`) for
 
 **Purpose:** Expose type schemas (and optional ontology metadata) so the agent can build valid gateway payloads: `rootType`, `query`, and entity bodies. All schema is **gateway-derived**—the same types the gateway already uses.
 
-**Suggested endpoints:**
+**Endpoints:**
 
-* `GET /api/agent/schema` — list of entity types; **reuse or wrap `GET /api/query/rootTypes`** so there is a single source of truth. Optionally add per-type field metadata (name, type, required).
-* `GET /api/agent/schema/{rootType}` — JSON Schema (or equivalent) for one root type (fields, types, constraints) so the agent can construct valid `find`/`save` bodies. Derive from the same Morphia `EntityModel` the gateway uses.
-* Optional: `GET /api/agent/ontology` — high-level ontology summary (entity kinds, relations) for retrieval context; can wrap ontology modules if present, but CRUDL schema stays gateway-centric.
+* `GET /api/agent/schema` — list of entity types. It returns the same response as `GET /api/query/rootTypes` (`rootTypes` with `className`, `simpleName`, `collectionName`, and `count`), so there is a single source of truth.
+* `GET /api/agent/schema/{rootType}` — a JSON Schema-like structure for one root type (simple name or fully qualified class name): `type` (`object`), `title` (the simple class name) and `properties`, one entry per non-static field of the class and its superclasses with a `type` of `string`, `integer`, `number`, `boolean`, `array` or `object`. It carries no required-field or constraint information. An unknown or ambiguous `rootType` returns HTTP 400.
+* Proposal (not implemented): `GET /api/agent/ontology` — a high-level ontology summary (entity kinds, relations) for retrieval context. Over MCP, the `query_predicates` and `query_relationships` tools already expose the ontology's relation types and an entity's edges.
 
 **Implementation notes:**
 
-* Schema should be derived from the same Morphia mapping the gateway uses (e.g. `EntityModel`, `@Property`, `@Reference`); no separate schema store.
+* `SchemaService` resolves the type through the same Morphia mapping the gateway uses and reads the fields by reflection; there is no separate schema store.
 * Keep responses concise so they fit in LLM context windows.
 * Agents that only use the gateway need only `rootTypes` and optional per-type schema; ontology is an optional enrichment.
 
@@ -319,27 +320,29 @@ See the implementation design (`docs/design/AI_AGENT_INTEGRATION_DESIGN.md`) for
 
 **Purpose:** Single HTTP entry point for the agent to execute a gateway "tool" by name and arguments, so the agent does not need to know individual gateway paths. The implementation **delegates only to the Query Gateway**.
 
-**Suggested endpoint:** `POST /api/agent/execute` (or `POST /api/agent/tools/execute`).
+**Endpoint:** `POST /api/agent/execute`.
 
-**Request shape (conceptual):**
+**Request shape:**
 
 * `tool` (or `name`): one of `query_rootTypes`, `query_plan`, `query_find`, `query_count`, `query_save`, `query_delete`, `query_deleteMany`, `query_export`, `query_import_*`.
 * `arguments` (or `params`): JSON object matching the gateway request body for that operation (e.g. `rootType`, `query`, `page` for `query_find`; `rootType`, `entity` for `query_save`).
-* Optional: `sessionId`, `traceId` for audit and multi-turn correlation.
+* Optional: `sessionId`, `traceId`. They are accepted in the body but not used yet.
 
-**Response:** Same as the underlying gateway operation (e.g. find result, save result, delete result, or error).
+**Response:** Same as the underlying gateway operation (e.g. find result, save result, delete result, or error). A missing tool name returns HTTP 400 `{"error":"ToolRequired"}`; an unknown one returns HTTP 400 `{"error":"UnknownTool", "availableTools":[...]}`.
 
 **Implementation notes:**
 
-* **Delegate only to `QueryGatewayResource`** — no branching to domain resources. Map `tool` to the corresponding gateway method (plan, find, save, delete, deleteMany, rootTypes) and pass `arguments` as the request body. One integration point, one security surface.
-* Security: same realm resolution, permission checks (`@FunctionalAction`), and data scoping as the gateway.
-* Optional: validate `tool` and `arguments` against the schema from `GET /api/agent/tools` to return clear errors.
+* `AgentExecuteHandler` **delegates only to `QueryGatewayResource`** — no branching to domain resources. It maps `tool` to the corresponding gateway method and converts `arguments` to that method's request type. One integration point, one security surface.
+* Security: same realm resolution and row- and field-level data scoping as the gateway. The endpoint itself is `@FunctionalAction("execute")` in area `integration`, domain `query`.
+* `arguments` are not validated against the catalog from `GET /api/agent/tools`; the gateway's own validation applies (for example `rootType is required`).
 
 **Why:** Agent calls one execute endpoint; the server translates to the appropriate gateway call. No need for the agent (or MCP bridge) to integrate across the REST API space for CRUDL.
 
 ---
 
 === 4. Session / Trace Headers (Audit and Multi-Turn)
+
+NOTE: Proposal. The framework does not read `X-Agent-Session-Id` or `X-Agent-Trace-Id` today.
 
 **Purpose:** Allow agent runtimes to pass a session and/or trace ID so that all requests belonging to one conversation or run can be correlated and audited.
 
@@ -359,6 +362,8 @@ See the implementation design (`docs/design/AI_AGENT_INTEGRATION_DESIGN.md`) for
 ---
 
 === 5. Retrieval Context Endpoint (Optional, RAG-Like)
+
+NOTE: Proposal. `/api/agent/context` is not implemented; use `query_find` for retrieval context today.
 
 **Purpose:** Allow the agent to request a chunk of "context" (e.g. entities or ontology neighborhood) to inject into the LLM. Prefer **gateway-based** context where possible.
 
@@ -388,11 +393,22 @@ The https://modelcontextprotocol.io[Model Context Protocol (MCP)] is an open sta
 
 === How MCP Maps to the Framework (Gateway-Centric)
 
-| MCP concept | Purpose | Framework equivalent (native or bridge) |
-|-------------|---------|------------------------------------------------|
-| **Tools** | Actions the LLM can call (`tools/list`, `tools/call`) | 12+ tools: `query_rootTypes`, `query_plan`, `query_find`, `query_save`, `query_delete`, `query_deleteMany`, `query_count`, `query_export`, `query_import_*` → `QueryGatewayResource` (or `POST /api/agent/execute`) |
-| **Resources** | Read-only data for context (`resources/list`, `resources/read`) | `quantum://schema`, `quantum://query-hints`, `quantum://permission-hints`. |
-| **Prompts** (optional) | Parameterized prompt templates | Domain prompts that invoke the six gateway tools (e.g. "List active locations", "Find orders for customer X") |
+[cols="1,2,3", options="header"]
+|===
+| MCP concept | Purpose | Framework equivalent (native or bridge)
+
+| **Tools**
+| Actions the LLM can call (`tools/list`, `tools/call`)
+| Twelve gateway tools: `query_rootTypes`, `query_plan`, `query_find`, `query_save`, `query_delete`, `query_deleteMany`, `query_count`, `query_export`, `query_import_*` → `QueryGatewayResource` (or `POST /api/agent/execute`). The native MCP server adds `query_relationships`, `query_predicates` and four `defect_*` tools.
+
+| **Resources**
+| Read-only data for context (`resources/list`, `resources/read`)
+| `quantum://schema`, `quantum://query-hints`, `quantum://permission-hints`.
+
+| **Prompts** (optional)
+| Parameterized prompt templates
+| None are defined by the framework. A bridge or application can add domain prompts that invoke the gateway tools (e.g. "List active locations", "Find orders for customer X").
+|===
 
 MCP uses JSON-RPC over stdio (local) or HTTP (SSE / Streamable HTTP) for remote servers. Cursor and Claude support both; ChatGPT and Gemini can use remote MCP when they support the protocol.
 
@@ -451,19 +467,32 @@ This section defines the **configuration contract** between an MCP bridge and th
 
 The bridge must be configured with at least the backend base URL and an auth token. All HTTP requests from the bridge to the backend use these values.
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `QUANTUM_BASE_URL` | Yes | Base URL of the Quantum REST API (e.g. `https://your-app.example.com`). No trailing slash. |
-| `QUANTUM_AUTH_TOKEN` | Yes | Bearer token or API key for authentication. Sent as `Authorization: Bearer <token>` (or as required by the app). |
-| `QUANTUM_REALM` | No | Default realm for tool calls when the user/agent does not pass `realm` in arguments. When set, the bridge can add `realm` to every execute payload. |
+[cols="1,1,3", options="header"]
+|===
+| Variable | Required | Description
+
+| `QUANTUM_BASE_URL`
+| Yes
+| Base URL of the Quantum REST API (e.g. `https://your-app.example.com`). No trailing slash.
+
+| `QUANTUM_AUTH_TOKEN`
+| Yes
+| Bearer token for authentication. Sent as `Authorization: Bearer <token>`.
+
+| `QUANTUM_REALM`
+| No
+| Realm the bridge passes as the `realm` query parameter of `GET /api/agent/tools` to get that realm's tool list. It need not be added to execute payloads: execution runs in the token's effective realm, and a `realm` argument that differs from it is refused.
+|===
+
+These variables are a convention for a bridge you write; the framework does not ship a bridge and does not read them.
 
 ==== HTTP Endpoints the Bridge Calls
 
 The bridge implements MCP `tools/list`, `tools/call`, and optionally `resources/list` / `resources/read` by calling the following agent endpoints:
 
 * **MCP `tools/list`** → `GET {baseUrl}/api/agent/tools?realm={realm}`
-  Returns `{ "tools": [ { "name", "description", "parameters", "area", "domain", "action" }, ... ], "count" }`.
-  Use optional `realm` when `QUANTUM_REALM` is set or the client requests a tenant.
+  Returns `{ "tools": [ { "name", "description", "parameters", "area", "domain" }, ... ], "count" }`.
+  Use optional `realm` when `QUANTUM_REALM` is set, to apply that realm's `enabledTools` filter.
 
 * **MCP `tools/call`** → `POST {baseUrl}/api/agent/execute`
   Body: `{ "tool": "<name>", "arguments": { "rootType"?, "query"?, "entity"?, "id"?, "realm"?, "page"?, "sort"?, ... }, "sessionId"?, "traceId"? }`.
@@ -478,7 +507,7 @@ The bridge implements MCP `tools/list`, `tools/call`, and optionally `resources/
   Returns JSON Schema-like `{ "type", "title", "properties", ... }` for the given root type (simple name or FQCN).
 * **Query hints** (optional) → `GET {baseUrl}/api/agent/query-hints` — Returns query grammar summary, example queries (e.g. "Locations in Atlanta" → `city:Atlanta`), and "did you know" hints (e.g. expand(customer) for combined result sets). Inject into LLM context so the agent can answer "what is the query string to retrieve X?" and suggest expand/ontology usage.
 
-All requests must include the auth header (e.g. `Authorization: Bearer <QUANTUM_AUTH_TOKEN>`). Optional headers for audit: `X-Agent-Session-Id`, `X-Agent-Trace-Id`.
+All requests must include the auth header (e.g. `Authorization: Bearer <QUANTUM_AUTH_TOKEN>`).
 
 ==== Request/Response Examples (Bridge → Backend)
 
@@ -491,11 +520,11 @@ Authorization: Bearer <token>
 Response 200:
 {
   "tools": [
-    { "name": "query_rootTypes", "description": "...", "parameters": { "type": "object", "properties": {}, "required": [] }, "area": "integration", "domain": "query", "action": "listRootTypes" },
-    { "name": "query_find", "description": "...", "parameters": { ... }, "area": "integration", "domain": "query", "action": "find" },
+    { "name": "query_rootTypes", "description": "List available entity types (root types) that can be used with the gateway", "parameters": [], "area": "integration", "domain": "query" },
+    { "name": "query_plan", "description": "Returns query execution plan (FILTER vs AGGREGATION mode) for a rootType and query", "parameters": [ { "name": "rootType", "type": "string", "description": "Entity type simple or FQCN" }, { "name": "query", "type": "string", "description": "BIAPI query string" } ], "area": "integration", "domain": "query" },
     ...
   ],
-  "count": 6
+  "count": 12
 }
 ....
 
@@ -511,11 +540,8 @@ Content-Type: application/json
   "arguments": {
     "rootType": "CodeList",
     "query": "refName:ACTIVE",
-    "realm": "my-tenant",
     "page": { "limit": 10, "skip": 0 }
-  },
-  "sessionId": "sess-123",
-  "traceId": "trace-456"
+  }
 }
 
 Response 200: (same as POST /api/query/find; Collection envelope)
@@ -605,12 +631,10 @@ When the backend is used by an MCP bridge with tenant-specific agent config, set
 
 ....
 # Per-tenant agent config (optional)
-quantum.agent.tenant.defaultRealm.runAsUserId=agent-service-user
 quantum.agent.tenant.defaultRealm.enabledTools=query_rootTypes,query_plan,query_find,query_save
-quantum.agent.tenant.defaultRealm.maxFindLimit=100
 ....
 
-The bridge does not need to know these values; the backend applies them when handling `/api/agent/tools` and `/api/agent/execute`.
+The bridge does not need to know this value; the backend applies it when handling `GET /api/agent/tools?realm=defaultRealm`. It does not restrict `/api/agent/execute` (see <<multi-tenancy-and-tenant-specific-configuration>>).
 
 ==== Integration Test as Example
 
@@ -622,10 +646,9 @@ mvn -pl quantum-framework -Dtest=AgentMcpBridgeFlowIT test
 
 === Implementation Order for MCP
 
-1. Implement the **agent REST APIs** (tools discovery, schema, optional execute) as in the Summary Table.
-2. Build and document a **bridge** (Option A): one MCP server that implements tools (and optionally resources) by calling those REST APIs; document base URL and auth env vars.
-3. Add **Cursor/Claude config examples** to the framework docs (e.g. in this guide or a dedicated MCP section).
-4. Optionally add **native MCP** in the backend (Option B) later for a single-deployment story.
+1. The **agent REST APIs** (tools discovery, schema, hints, execute) are implemented; see the <<agent-api-summary>>.
+2. **Native MCP** (Option A) is implemented by the `quantum-mcp-server` module.
+3. A **bridge** (Option B) is something you build when you need one: an MCP server that implements tools (and optionally resources) by calling the agent REST APIs, configured with a base URL and an auth token.
 
 === MCP References
 
@@ -638,45 +661,103 @@ mvn -pl quantum-framework -Dtest=AgentMcpBridgeFlowIT test
 
 ---
 
+[[agent-api-summary]]
 == Summary Table
 
 **CRUDL is fully covered by the Query Gateway** (`/api/query`). The agent APIs below are a thin discovery/schema/execute layer on top of the gateway; they do not introduce a second CRUDL surface or require integration across domain REST resources.
 
-| API | Method | Purpose |
-|-----|--------|--------|
-| `/api/query/*` (existing) | GET/POST | **Single integration point:** rootTypes, plan, find, count, save, delete, deleteMany, export, import for all entity types. |
-| `/api/agent/tools` | GET | Discover the 12+ gateway tools (names, descriptions, parameters); permission-filtered. |
-| `/api/agent/schema` | GET | List entity types (wrap or reuse `GET /api/query/rootTypes`) and optional field metadata. |
-| `/api/agent/schema/{rootType}` | GET | JSON Schema for one root type (gateway-derived Morphia metadata). |
-| `/api/agent/query-hints` | GET | Query grammar summary, example queries by intent, and "did you know" hints (expand, ontology). |
-| `/api/agent/permission-hints` | GET | Permission check/evaluate API summary, area/domain/action mapping. |
-| `/api/agent/ontology` | GET | Optional: ontology summary for retrieval context. |
-| `/api/agent/execute` | POST | Execute one of the gateway tools by name + arguments (delegate to `QueryGatewayResource`). |
-| `/api/agent/config/*` | GET/POST/DELETE | CRUD for Agent configuration (LLM reference, prompt context, enabled tools). Realm-scoped. See xref:{doc-root}/user-guide/mcp-server-and-client.adoc#agent-config-api[Agent Configuration API]. |
-| `/api/agent/context` | POST/GET | Optional: retrieval context (gateway find or optional ontology). |
-| (headers) | - | `X-Agent-Session-Id`, `X-Agent-Trace-Id` for audit and multi-turn. |
+[cols="2,1,1,4", options="header"]
+|===
+| API | Method | Status | Purpose
+
+| `/api/query/*`
+| GET/POST
+| Implemented
+| **Single integration point:** rootTypes, plan, find, count, save, delete, deleteMany, export, import for all entity types.
+
+| `/api/agent/tools`
+| GET
+| Implemented
+| Discover the twelve gateway tools (names, descriptions, parameters). Optional `realm` query parameter applies that realm's `enabledTools` filter. Not filtered by the caller's permissions.
+
+| `/api/agent/schema`
+| GET
+| Implemented
+| List entity types (same response as `GET /api/query/rootTypes`).
+
+| `/api/agent/schema/{rootType}`
+| GET
+| Implemented
+| JSON Schema-like field list for one root type.
+
+| `/api/agent/query-hints`
+| GET
+| Implemented
+| Query grammar summary, example queries by intent, and "did you know" hints (expand, ontology).
+
+| `/api/agent/permission-hints`
+| GET
+| Implemented
+| Permission check/evaluate API summary, area/domain/action mapping.
+
+| `/api/agent/execute`
+| POST
+| Implemented
+| Execute one of the gateway tools by name + arguments (delegates to `QueryGatewayResource`).
+
+| `/api/agent/config/*`
+| GET/POST/DELETE
+| Implemented
+| CRUD for Agent configuration (LLM reference, prompt context, enabled tools). Realm-scoped; stored, not applied by the framework. See xref:{doc-root}/user-guide/mcp-server-and-client.adoc#agent-config-api[Agent Configuration API].
+
+| `/mcp`
+| JSON-RPC
+| Implemented
+| Native MCP server (`quantum-mcp-server`): 18 tools and three resources.
+
+| `/api/agent/ontology`
+| GET
+| Proposal
+| Ontology summary for retrieval context.
+
+| `/api/agent/context`
+| POST/GET
+| Proposal
+| Retrieval context (gateway find or optional ontology).
+
+| (headers)
+| -
+| Proposal
+| `X-Agent-Session-Id`, `X-Agent-Trace-Id` for audit and multi-turn.
+
+| Tenant `runAsUserId`, `maxFindLimit`
+| -
+| Proposal
+| Properties are read; execution does not apply them.
+|===
 
 == Implementation Order
 
 1. *Treat the gateway as the single CRUDL integration point* — agents and MCP use only `/api/query` (and optional agent layer) for CRUDL; no per-domain REST integration.
-2. *Tools discovery* (`GET /api/agent/tools`) — enumerate the six gateway operations; enables agents to know what they can call.
+2. *Tools discovery* (`GET /api/agent/tools`) — enumerate the twelve gateway operations; enables agents to know what they can call.
 3. *Schema for agents* (`GET /api/agent/schema`, `GET /api/agent/schema/{rootType}`) — gateway-derived from `rootTypes` and Morphia metadata.
-4. *Session/trace headers* — low effort, high value for audit and debugging.
+4. *Session/trace headers* — not built yet; low effort, high value for audit and debugging.
 5. *Unified execute* (`POST /api/agent/execute`) — delegate only to `QueryGatewayResource`.
 6. *Agent configuration* (`/api/agent/config/*`) — CRUD for Agent entities (LLM ref, prompt context, tool filter); realm-scoped.
-7. *Retrieval context* (`POST /api/agent/context`) and *ontology summary* — optional; prefer gateway find for context.
+7. *Retrieval context* (`POST /api/agent/context`) and *ontology summary* — not built yet; optional; prefer gateway find for context.
+
+Steps 1-3, 5 and 6 are implemented.
 
 == Security and Governance
 
-* All new agent endpoints delegate to the **Query Gateway** for CRUDL; they use the same security filter, realm resolution, and data scoping as `QueryGatewayResource`.
-* Tools discovery lists only the six gateway tools and only if the current principal is allowed (e.g. integration/query area and corresponding action).
-* Unified execute must not bypass `@FunctionalAction` or permission checks; it calls the same gateway logic—no delegation to domain resources for CRUDL.
-* Prefer existing patterns: `PrincipalContext`, `SecurityContext`, and optional `X-Realm` for tenant isolation.
+* All agent endpoints require an authenticated caller (`@Authenticated` on `AgentResource`) and delegate to the **Query Gateway** for CRUDL; they use the same realm resolution and data scoping as `QueryGatewayResource`.
+* The gateway fails closed: without an established `PrincipalContext` and `ResourceContext` it refuses the request (`SecurityContextMissing`) rather than run an unscoped query.
+* Tools discovery lists the twelve gateway tools (or a realm's `enabledTools` subset). The list is static and is not filtered by the caller's permissions. The agent endpoints declare the functional actions `listTools`, `listSchema`, `getSchema`, `getQueryHints`, `getPermissionHints` and `execute` in area `integration`, domain `query`, so permission rules can target them.
+* Unified execute calls the same gateway logic as the REST gateway—no delegation to domain resources for CRUDL.
+* Prefer existing patterns: `PrincipalContext`, `SecurityContext`, and the principal's realm for tenant isolation.
 
 == References
 
 * **Architecture design:** `docs/design/AI_AGENT_TOOL_REFACTOR_CLARIFICATION.md` in the framework repo — current agent/tool architecture, data flow, key files, and what was removed.
 * **Implementation design:** `docs/design/AI_AGENT_INTEGRATION_DESIGN.md` in the framework repo — API specs, DTOs, backend classes, MCP bridge, implementation phases, and testing strategy.
-* Palantir Foundry – Use AIP Agents through Foundry APIs: https://palantir.com/docs/foundry/agent-studio/foundry-apis/
-* AIP Agent Studio overview: https://www.palantir.com/docs/foundry/agent-studio/overview
-* Video: https://www.youtube.com/watch?v=SePXznjZ-1A["Agentic Operating System for the Enterprise | Palantir's AIP Lead Jack Dobson at AIPCon 6"]
+* **Reference:** xref:{doc-root}/user-guide/mcp-server-and-client.adoc[MCP Server and Client] — tools, resources, agent REST API and configuration as implemented.

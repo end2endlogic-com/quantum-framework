@@ -11,7 +11,7 @@ endif::[]
 
 = Quantum Framework Documentation
 
-This documentation provides user guides and tutorials for mid-level Java developers to build SaaS applications with multi-tenancy on the Quantum framework, in a structure similar to Spring’s reference documentation. Artifacts are generated as HTML and PDF via Maven.
+This documentation provides user guides and tutorials for mid-level Java developers to build SaaS applications with multi-tenancy on the Quantum framework. Artifacts are generated as HTML and PDF via Maven.
 
 == Quick links
 
@@ -25,6 +25,13 @@ This documentation provides user guides and tutorials for mid-level Java develop
 - Multiple Auth Providers: xref:{doc-root}/user-guide/multiple-auth-providers.adoc#multiple-auth-providers[Multi-provider auth, OIDC, and per-tenant key pairs]
 - MCP Server and Client: xref:{doc-root}/user-guide/mcp-server-and-client.adoc#mcp-server-and-client[MCP integration with Claude, agent tools, and end-to-end examples]
 - AI Agent Integration: xref:{doc-root}/user-guide/ai-agent-integration.adoc#ai-agent-integration[AI Agent APIs (tools, schema, execute)]
+- Control plane: xref:{doc-root}/user-guide/control-plane-architecture.adoc[Embedded and remote deployment modes]
+- Application registration: xref:{doc-root}/user-guide/application-registration.adoc[Registering an application with its environment]
+- Configuration: xref:{doc-root}/appendix/configuration.adoc#configuration[Configuration reference] and xref:{doc-root}/appendix/glossary.adoc#glossary[Glossary]
+
+This documentation describes the `1.4.3-SNAPSHOT` development line. `1.4.2` is the released long-term-support version.
+
+Every page is reachable from the Reference Guide below, which lists the topics that are not included in this single document as links.
 
 [[executive-brief-section]]
 == Executive Brief

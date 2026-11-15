@@ -5,20 +5,22 @@ endif::[]
 [[oauth-server]]
 === OAuth Server Module
 
-The `quantum-oauth-server` is an optional module that turns any Quantum application into an OAuth 2.0 authorization server with discovery and user-info endpoints. When added, your application exposes standard OAuth endpoints (`/oauth/authorize`, `/oauth/token`, `/oauth/jwks`, `/.well-known/openid-configuration`, `/oauth/userinfo`) so external clients can authenticate using industry-standard OAuth flows -- without requiring an external identity provider like Keycloak, Cognito, Auth0, or Okta.
+The `quantum-oauth-server` is an optional module that turns any Quantum application into an OAuth 2.0 authorization server with discovery and user-info endpoints. When added, your application exposes standard OAuth endpoints (`/oauth/authorize`, `/oauth/token`, `/oauth/jwks`, `/.well-known/openid-configuration`, `/oauth/userinfo`) so external clients can authenticate using industry-standard OAuth flows without a separate identity provider.
 
-This is the complement to the OIDC/Cognito provider modules: those modules let Quantum *consume* tokens from an external IdP, while this module lets Quantum *issue* tokens itself.
+This is the complement to an OIDC auth provider: such a provider lets Quantum *consume* tokens from an external IdP, while this module lets Quantum *issue* tokens itself.
+
+The module authenticates users and clients and issues tokens. It does not grant access: the application named by the client still has to be authorized for the user, and each receiving application authorizes requests from its own records (see xref:{doc-root}/user-guide/auth.adoc#authn-authz-separation[Authentication and Authorization Are Separate]).
 
 ==== When to Use
 
 Use `quantum-oauth-server` when:
 
-* You want ChatGPT, Gemini, Grok, or other AI platforms to connect to your MCP server via OAuth
+* You want AI assistant platforms or other external MCP clients to connect to your MCP server via OAuth
 * Third-party applications need OAuth-based access to your APIs
 * You want a self-contained deployment with no external IdP dependency
 * You already manage user identities in Quantum (credentials, user profiles, user groups) and want to leverage them directly
 
-Use an external IdP (Cognito, Keycloak, Auth0) instead when:
+Use an external IdP instead when:
 
 * You need advanced IdP features (social login, MFA, federation, SAML)
 * Your organization already standardizes on a specific IdP
@@ -34,7 +36,7 @@ Use an external IdP (Cognito, Keycloak, Auth0) instead when:
 </dependency>
 ----
 
-The OAuth endpoints activate automatically via CDI discovery. No additional configuration is needed beyond the standard JWT properties that your application already has.
+The OAuth endpoints activate automatically via CDI discovery. No additional configuration is needed beyond the standard JWT properties that your application already has. The module has no enable switch of its own: adding the dependency exposes the endpoints.
 
 ==== Prerequisites
 
@@ -45,9 +47,13 @@ The module delegates to existing Quantum infrastructure. Ensure your application
 # These properties are already configured if you use quantum-jwt-provider
 mp.jwt.verify.issuer=https://your-app.example.com
 mp.jwt.verify.publickey.location=publicKey.pem
-auth.jwt.secret=${JWT_SECRET}
 com.b2bi.jwt.duration=3600
+
+# Key id advertised by /oauth/jwks and stamped on signed tokens (JWKS default: quantum-auth)
+auth.jwt.key-id=quantum-auth
 ----
+
+`mp.jwt.verify.issuer` is also the base URL the discovery document builds its endpoint URLs from, so it must be the externally reachable address of the service.
 
 ==== Endpoints
 
@@ -63,7 +69,7 @@ com.b2bi.jwt.duration=3600
 | `/oauth/jwks`
 | GET
 | Public
-| JSON Web Key Set. Serves the RSA public key (from `quantum-default-keys` or your configured key location) in JWK format so clients and resource servers can verify token signatures.
+| JSON Web Key Set. Serves the RSA public key (from your configured key location; `quantum-default-keys` in development only) in JWK format, with the key id from `auth.jwt.key-id`, so clients and resource servers can verify token signatures.
 
 | `/oauth/authorize`
 | GET
@@ -73,7 +79,7 @@ com.b2bi.jwt.duration=3600
 | `/oauth/authorize`
 | POST
 | Public
-| Processes the login form submission. Authenticates the user via `AuthProviderFactory`, generates a short-lived authorization code (5-minute TTL), and redirects back to the client with `?code=XXX&state=YYY`.
+| Processes the login form submission. Authenticates the user via `AuthProviderFactory`, generates a short-lived authorization code (5-minute TTL), and redirects back to the client with `?code=XXX&state=YYY`. The code records the user's password revision at sign-in, so the session it starts ends with the user's next password change like any other.
 
 | `/oauth/token`
 | POST
@@ -90,7 +96,7 @@ com.b2bi.jwt.duration=3600
 
 ===== Authorization Code + PKCE
 
-The primary flow for browser-based OAuth clients (ChatGPT, Gemini, Grok, web applications).
+The primary flow for browser-based OAuth clients (AI assistant platforms, web applications).
 
 [source,text]
 ----
@@ -149,7 +155,7 @@ Response:
 }
 ----
 
-For `client_credentials`, the server looks up a `CredentialUserIdPassword` with a `userId` matching the `client_id`. Create this credential when registering the client.
+For `client_credentials`, the server looks up a `CredentialUserIdPassword` with a `userId` matching the `client_id`. Create this credential when registering the client. Without it the request is refused with `invalid_client`. A public client cannot use this grant (`unauthorized_client`).
 
 ===== Refresh Token
 
@@ -163,6 +169,12 @@ grant_type=refresh_token
 &client_id=my-client
 &client_secret=my-secret
 ----
+
+The response has the same shape as the code exchange and always contains a new refresh token. Three rules from the session model apply (see xref:{doc-root}/user-guide/auth.adoc#session-lifetime[Session lifetime and refresh]):
+
+* `expires_in` is the real remaining lifetime of the returned access token, not the configured duration. Near the session's maximum length (`quantum.auth.session.max-duration`) the token is cut short to the deadline and `expires_in` is smaller.
+* Once the session has reached its maximum length, or the user's password has changed since sign-in, the refresh is refused with `invalid_grant` and the user must authorize again.
+* The refresh re-checks the credential, its realm and its application grant.
 
 ==== Registering OAuth Clients
 
@@ -198,7 +210,15 @@ An `OAuthClient` document must exist in the `oauth_clients` MongoDB collection b
 
 | `realm`
 | String
-| The realm this client is associated with for tenant scoping.
+| The realm sessions of this client are issued for. The credential must be authorized for it.
+
+| `applicationId`
+| String
+| The application sessions of this client sign in to. When unset, `clientId` is used as the application id. This requests an application; it does not grant access to it.
+
+| `clientDescription`
+| String
+| Free-text description of the client.
 
 | `active`
 | boolean
@@ -221,13 +241,13 @@ CredentialUserIdPassword cred = CredentialUserIdPassword.builder()
 
 ==== Integration Examples
 
-===== ChatGPT MCP Integration
+===== MCP Client Integration
 
-Register your Quantum MCP server in ChatGPT with these settings:
+Register your Quantum MCP server in the external MCP client with these settings:
 
 [cols="1,3", options="header"]
 |===
-| ChatGPT Field | Value
+| Client field | Value
 
 | Server URL
 | `https://your-app.example.com/mcp`
@@ -251,18 +271,18 @@ Register your Quantum MCP server in ChatGPT with these settings:
 | `openid profile email`
 |===
 
-When a user connects via ChatGPT:
+When a user connects:
 
-1. ChatGPT opens a browser to `/oauth/authorize` with the registered client_id
+1. The client opens a browser to `/oauth/authorize` with the registered client_id
 2. The user sees the Quantum login form and enters their credentials
-3. On success, the server redirects back to ChatGPT with an authorization code
-4. ChatGPT exchanges the code for tokens at `/oauth/token`
+3. On success, the server redirects back to the client with an authorization code
+4. The client exchanges the code for tokens at `/oauth/token`
 5. Subsequent MCP tool calls include the access token as a Bearer header
-6. Quantum's `SecurityFilter` validates the token (same issuer, same keys) and establishes the user's security context
+6. Quantum verifies the token (same issuer, same keys) and `SecurityFilter` resolves the user's principal: realm, tenant and roles
 
-===== Gemini / Grok / Other AI Platforms
+===== Other Platforms
 
-The same pattern applies to any AI platform that supports OAuth 2.0:
+The same pattern applies to any platform that supports OAuth 2.0:
 
 1. Register an `OAuthClient` with the platform's callback URL as a redirect URI
 2. Provide the discovery URL (`/.well-known/openid-configuration`) or the individual endpoint URLs
@@ -293,11 +313,8 @@ The module is a thin REST layer over existing Quantum infrastructure:
 |===
 | Existing Component | OAuth Use
 
-| `TokenUtils.generateUserToken()`
-| Issues access tokens at `/oauth/token`
-
-| `TokenUtils.generateRefreshToken()`
-| Issues refresh tokens
+| `CustomTokenAuthProvider` (via `TokenUtils`)
+| Issues access and refresh tokens at `/oauth/token`, applying the same credential, realm and application checks as sign-in
 
 | `TokenUtils.readPublicKey()`
 | Serves the `/oauth/jwks` endpoint
@@ -315,10 +332,10 @@ The module is a thin REST layer over existing Quantum infrastructure:
 | Populates the discovery document `issuer` field
 
 | `SecurityFilter`
-| Validates the issued tokens on subsequent API calls (same issuer, same keys)
+| Builds the principal for the issued tokens on subsequent API calls (same issuer, same keys)
 |===
 
-Tokens issued by the OAuth server are standard Quantum JWTs -- indistinguishable from tokens issued via `/security/login` or `/auth/login`. Any Quantum endpoint that accepts a Bearer token will accept tokens from the OAuth server.
+Tokens issued by the OAuth server are standard Quantum JWTs, minted by the same provider code as `/security/login`: the access token carries the same claims. The refresh token additionally carries `oauth_client_id` and can be exchanged only at `/oauth/token` by the client it was issued to.
 
 ==== Data Model
 
@@ -378,8 +395,8 @@ the previous token. Session-family rotation, replay protection and negotiated
 OIDC remain separate implementation work; do not claim them from these fixes.
 
 For changes to provider contracts, run the pinned released-provider binary probe
-in `compatibility/auth-provider/README.md`. It compiles against released 1.4.2
-and runs unchanged bytecode on the candidate. Its scope is provider linkage and
+in `compatibility/auth-provider/README.md`. It compiles against the released
+provider version pinned there and runs unchanged bytecode on the candidate. Its scope is provider linkage and
 login-response constructors, not the whole API/ABI or generated SDK matrix.
 Run `mvn -pl quantum-oauth-server test` for the resource and Quarkus HTTP checks.
 The HTTP fixture mocks the client repository; production persistence, affected

@@ -66,7 +66,7 @@ public class ProductResource {
 
 ==== Default Action Mapping
 
-When `@FunctionalAction` is not present, actions are inferred from HTTP methods:
+When `@FunctionalAction` is not present, the action is inferred in two steps. First the request path is checked for a keyword: a path containing `/list` gives `LIST`, `/create` gives `CREATE`, `/delete` gives `DELETE` and `/update` gives `UPDATE`. If none matches, the HTTP method decides:
 
 [cols="1,1"]
 |===
@@ -79,12 +79,21 @@ When `@FunctionalAction` is not present, actions are inferred from HTTP methods:
 |DELETE |DELETE
 |===
 
+Rule matching on area, domain and action is case-insensitive.
+
 ==== How the Framework Uses These Annotations
 
 ===== SecurityFilter
-- Reads `@FunctionalMapping` from the matched resource class for area/domain
-- Reads `@FunctionalAction` from the method, or infers from HTTP method
-- Falls back to path-based parsing if annotations are missing
+`SecurityFilter.determineResourceContext` resolves area and domain in this order, and the first source that yields both wins:
+
+. `@FunctionalMapping` on the model class of a `BaseResource` (the model is the single source of truth)
+. the model's `bmFunctionalArea()` / `bmFunctionalDomain()` methods
+. `@FunctionalMapping` on the JAX-RS method (rare overrides)
+. `@FunctionalMapping` on the JAX-RS resource class (for resources that are not a `BaseResource`)
+
+The action comes from `@FunctionalAction` on the method, else a path keyword, else the HTTP method. The URL is never parsed for an area or a domain. A resource with no mapping at all is logged as an error and gets the anonymous resource context, so rules written for a real area and domain do not match it: add a mapping. `@PermitAll` endpoints need no mapping and also get the anonymous resource context.
+
+The resource context also carries the application the request runs as, so policies are evaluated in that application's scope.
 
 ===== Scoped Action Enablement
 - Reuses the same `area / functionalDomain / action` tuple as the dependency-tracking key for runtime action enablement
@@ -258,18 +267,19 @@ public class MigrationResource {
 
 ==== Integration with Permission Rules
 
-Annotations feed into permission rule matching:
+Annotations feed into permission rule matching. A rule's `securityURI.header` names an identity (a userId or a role), an area, a functional domain and an action; the area and domain are the ones `@FunctionalMapping` declares, and the action is the resolved action. Rules do not match on HTTP method or URL, and they have no `rolesAny` / `rolesAll` fields: write one rule per role.
 
 [source,yaml]
 ----
 - name: allow-catalog-reads
   priority: 300
-  match:
-    method: [GET]
-    # Matches area/domain from @FunctionalMapping
-    functionalArea: catalog
-    functionalDomain: product
-  rolesAny: [USER, ADMIN]
+  securityURI:
+    header:
+      identity: USER              # a role name or a userId
+      area: catalog               # from @FunctionalMapping
+      functionalDomain: product   # from @FunctionalMapping
+      action: VIEW                # GET with no @FunctionalAction
+    body: { realm: '*', accountNumber: '*', tenantId: '*', dataSegment: '*', ownerId: '*', resourceId: '*' }
   effect: ALLOW
 ----
 
@@ -277,15 +287,17 @@ Annotations feed into permission rule matching:
 ----
 - name: admin-only-approval
   priority: 100
-  match:
-    method: [PUT]
-    functionalArea: catalog
-    functionalDomain: product
-    # Matches @FunctionalAction("APPROVE")
-    action: APPROVE
-  rolesAll: [ADMIN]
+  securityURI:
+    header:
+      identity: ADMIN
+      area: catalog
+      functionalDomain: product
+      action: APPROVE             # matches @FunctionalAction("APPROVE")
+    body: { realm: '*', accountNumber: '*', tenantId: '*', dataSegment: '*', ownerId: '*', resourceId: '*' }
   effect: ALLOW
 ----
+
+`@RolesAllowed` on a resource is a separate, coarse gate, evaluated on the roles `RolesAugmentor` gives the security identity. On the default path those are the verified token's roles plus the credential's flat roles. In an application session that runs as another application or realm than the token's, the session's re-derived roles replace the token's. With the remote principal source they are exactly the roles the Auth service resolved for this application, never the token's `groups`. See xref:{doc-root}/user-guide/auth.adoc#authn-authz-separation[Authentication and Authorization Are Separate].
 
 ==== Vocabulary from code
 
@@ -347,6 +359,9 @@ sources being compiled, so run it on a full module compile.
 
 When the pack is applied, `ApplicationDeclarationGate` checks it again against what other
 applications hold (see xref:{doc-root}/user-guide/seed-packs.adoc#identity-pack-declaration-gate[Seed packs]).
+What an application declares besides its vocabulary (roles, owner and member roles, tenancy and
+borrowed areas) and what `ApplicationDeclarationValidator` checks are described in
+xref:{doc-root}/user-guide/identity-and-membership.adoc#application-declarations[Application declarations].
 
 ==== See Also
 

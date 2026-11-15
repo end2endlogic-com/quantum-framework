@@ -1,0 +1,5 @@
+# The documentation in this module reflects the code up to this commit.
+# Update it with scripts/docs-pending.sh --mark after reviewing the pending PRs.
+commit: 3b295084314a41629f05ce5af845a839695087ef
+committed: 2026-11-15
+reviewed: 2026-11-15

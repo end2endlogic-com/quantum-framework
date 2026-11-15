@@ -55,6 +55,20 @@ include::user-guide/usage-and-token-allocation.adoc[]
 
 include::tutorials/supply-chain.adoc[]
 
+== More Topics
+
+These pages are separate documents:
+
+- xref:{doc-root}/user-guide/ontology.adoc[Ontology modeling]
+- xref:{doc-root}/user-guide/seed-packs.adoc[Seed packs]
+- xref:{doc-root}/user-guide/secrets-and-vault.adoc[Secrets and vault]
+- xref:{doc-root}/user-guide/identity-and-membership.adoc[Identity and membership]
+- xref:{doc-root}/user-guide/application-registration.adoc[Application registration]
+- xref:{doc-root}/user-guide/control-plane-architecture.adoc[Control-plane architecture]
+- xref:{doc-root}/user-guide/permission-resource.adoc[Permission resource check APIs]
+- xref:{doc-root}/user-guide/ai-agent-integration.adoc[AI agent integration]
+- xref:{doc-root}/user-guide/reference-guide.adoc[Reference guide] (topic index, including design notes)
+
 == Appendix
 
 include::appendix/configuration.adoc[]

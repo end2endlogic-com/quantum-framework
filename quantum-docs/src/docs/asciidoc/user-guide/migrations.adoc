@@ -1,3 +1,7 @@
+ifndef::doc-root[]
+:doc-root: ..
+endif::[]
+
 [[migrations]]
 = Database Migrations and Index Management
 
@@ -44,12 +48,20 @@ The following MicroProfile config properties influence migrations:
 
 - quantum.database.version: target version the application requires (SemVer, e.g., 1.0.3). MigrationService.checkDataBaseVersion compares this to the stored version.
 - quantum.database.migration.enabled: feature flag checked by resources/services when running migrations. Default: true.
-- quantum.database.migration.changeset.package: package containing change sets (CDI still discovers beans via type, but this property documents the intended package).
+- quantum.database.scope: scope label for the migration run (for example DEV). Required, like quantum.database.version.
+- quantum.migration.application-id: application id the startup migration runs as. Required only when `quantum.security.policy-scope.require-application=true`; otherwise startup migration runs under the system contexts.
+- quantum.realm.seed-system-only: when true, this service owns only the system realm. Startup does not scan the test or default realm, and index and refName operations on any other realm are refused unless the realm is listed in `quantum.migration.apply.realms`. Default: false.
+- quantum.database.coordination-database: shared database for the short-lived migration lock. Default: `quantum-coordination-shared`.
 - quantum.migration.apply.realms: optional comma-separated list of additional realms to initialize during application startup. These startup migrations are evaluated before `SeedStartupRunner` runs, so realms listed here can be safely included in `quantum.seed-pack.apply.realms`.
 - quantum.realmConfig.systemRealm, quantum.realmConfig.defaultRealm, quantum.realmConfig.testRealm: well‑known realms used by MigrationResource when running migrations across environments. On startup, MigrationService checks whether the _system realm_ database exists and is initialized; if missing or uninitialized, it runs all pending change sets and applies indexes (creating all entity collections, including credentials). Set `quantum.realmConfig.systemRealm` to your application's system database name (e.g. `system-com`) in `application.properties` so the correct database is created and initialized when dropped or empty.
 - quantum.defaultSystemPassword: initial password for the system user credential when created by the AddSystemUserCredential change set (default: `test123456`). Set in `application.properties`; the system user (quantum.realmConfig.systemUserId) is created in the credentials collection so login with that user works.
-- quantum.database.version: target schema version (e.g. 1.0.4). Must be at least 1.0.4 for the system user credential to be created during migration.
+- quantum.database.version must be at least 1.0.4 for the system user credential to be created during migration, and at least 1.0.9 for the refName report change set to run.
 
+Change sets are found as CDI beans; there is no package property. Startup migration runs with security rules off (an ignore-rules scope), because no request, and so no caller, exists at startup.
+
+MongoDB must be a replica set: every change set, and the refName migration below, runs in a transaction.
+
+[[migrations-control-plane-ownership]]
 == Control-plane ownership at request time
 
 In `quantum.mode=remote`, request migration checks apply to the application's
@@ -61,6 +73,8 @@ application admission, tenant authorization, or the application's migration gate
 Do not migrate the shared identity catalog merely to satisfy a remote application's
 schema version. A remote application's system realm may have a lower version than
 its application database without requiring an application-owned migration.
+
+In code: `MigrationCheckRequestFilter` checks the request's realm and then the system realm, and skips the system-realm check when `SystemRealmOwnership.ownedLocally()` is false. The filter is off when `quantum.database.migration.enabled=false`.
 
 == How change sets are discovered and executed
 
@@ -123,12 +137,18 @@ The deployable `quantum-system-service` owns this API by selecting the
 SDK-only consumers should omit that artifact so they do not expose database
 administration endpoints.
 
-Security: Most endpoints require admin role; dbversion is PermitAll for introspection.
+Security: the resource requires the `admin` or `system` role; `dbversion` is PermitAll for introspection, and the two `refnames` endpoints require `system`. The whole resource is removed at build time when `quantum.system-rest.enabled=false`.
 
 - GET /system/migration/dbversion/{realm}
   - Returns the current DatabaseVersion document for the given realm, or 404 if not found.
   - Example:
     curl -s http://localhost:8080/system/migration/dbversion/system-com
+
+- GET /system/migration/refnames/{realm}
+  - Role `system`. Returns the canonical-refName plan for the realm as JSON. Reads only. See <<migrations-canonical-refnames>>.
+
+- POST /system/migration/refnames/{realm}/apply
+  - Role `system`. Applies a reviewed plan in one transaction. See <<migrations-canonical-refnames>>.
 
 - POST /system/migration/indexes/applyIndexes/{realm}
   - Admin only. Calls MigrationService.applyIndexes(realm) which invokes Morphia Datastore.applyIndexes() for all mapped entities. Use this after adding @Indexed annotations.
@@ -168,6 +188,36 @@ Security: Most endpoints require admin role; dbversion is PermitAll for introspe
     curl -N -H "Authorization: Bearer $TOKEN" http://localhost:8080/system/migration/start/my-realm
 
 SSE responses stream human‑readable messages produced by MigrationService and your change sets. The connection ends with "Task completed" or an error message.
+
+[[migrations-canonical-refnames]]
+== Canonical refName migration
+
+`UserGroup` and `Policy` records are held to a canonical refName rule (upper snake case, see xref:{doc-root}/user-guide/modeling.adoc[Modeling], Canonical refNames). The rule is checked when a record is created, so records stored before it keep their old spelling. The migration renames or merges those records. It is report first and never runs on its own.
+
+. *Report.* The change set `Report Non-Canonical RefNames` (id `00010`, database version 1.0.8 to 1.0.9) logs, for each realm it migrates, what would be renamed, merged or left for an operator. It changes nothing.
+. *Review.* `GET /system/migration/refnames/{realm}` returns the same plan as JSON. Each action is `RENAME`, `MERGE`, `CONFLICT` or `UNRESOLVABLE`.
+. *Apply, explicitly.* `POST /system/migration/refnames/{realm}/apply` with the reviewed plan as the request body applies its renames and merges in one transaction. There is no configuration switch that applies the plan at startup.
+
+[source,bash]
+----
+curl -s -H "Authorization: Bearer $TOKEN" \
+  http://localhost:8080/system/migration/refnames/system-com > plan.json
+
+# review plan.json, resolve conflicts, then:
+curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  --data @plan.json http://localhost:8080/system/migration/refnames/system-com/apply
+----
+
+Rules the migration follows:
+
+- *Per-domain matching.* Names are compared within one data domain and without regard to case. A record is never merged into another tenant's record.
+- *Fail closed.* Planning fails if the repository of a `@CanonicalRefName` type cannot be resolved; it does not report "nothing to do" for that type. Conflicts and unresolvable names are reported and never changed.
+- *Only the reviewed plan is applied.* Inside the transaction each action is planned again. If the realm no longer matches the reviewed plan, or a concurrent write conflicts with it, nothing is written and the call answers 409. Review the plan again.
+- *Only known realms.* Both endpoints answer 404 for a realm that is neither the system realm nor in the realm catalog. The body's `realm` must equal the path realm, or the call answers 400.
+- *Only owned realms.* Apply answers 403 when this service does not own the realm (`quantum.realm.seed-system-only=true` and the realm is neither the system realm nor listed in `quantum.migration.apply.realms`).
+- If the commit outcome is unknown the call answers 503; read the plan again before retrying. Any other write failure answers 500 and nothing is written.
+
+Apply each realm in a maintenance window, with writers to that realm's groups and policies paused. After a successful apply the rule caches are invalidated. The action kinds, the canonical form and the merge rules are described in xref:{doc-root}/user-guide/modeling.adoc[Modeling], Migrating stored refNames.
 
 == Per‑entity index management (BaseResource)
 

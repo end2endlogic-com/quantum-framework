@@ -15,6 +15,17 @@ An application announces itself to its environment at startup, and the environme
 This is an *optional* capability.
 The framework defines the contract and never the control plane: with registration disabled, which is the default, nothing here runs and the framework starts exactly as it does without it.
 
+[NOTE]
+====
+Three things share the word "application" and are separate:
+
+* *Application registration* (this page): a running service announces itself to its environment at startup. It is infrastructure and grants nothing.
+* *Application declaration*: the `Application` record in which an application declares its roles, tenancy and vocabulary (see xref:{doc-root}/user-guide/identity-and-membership.adoc#application-declarations[Application declarations]).
+* *Application access*: installs and bindings (`ApplicationInstall`, `UserAppRole`) that say which tenants and users may use an application (see xref:{doc-root}/user-guide/tenant-models.adoc#application-bindings[Application bindings]).
+
+The `/onboarding/registrationRequest` endpoints and the `ApplicationRegistration` model belong to tenant onboarding and are unrelated to this SPI.
+====
+
 == Enabling It
 
 Registration is enabled by configuration and satisfied by an implementation on the classpath.
@@ -27,6 +38,10 @@ quantum.application-registration.application-id=my-app
 quantum.application-registration.environment=production
 quantum.application-registration.realms=my-app-P1,my-app-P2
 ----
+
+`application-version` is optional (`quantum.application-registration.application-version`); when unset the version is sent as `unspecified`, so set it if a new build should register again (the version is part of the fingerprint below). `realms` lists the realms the application requires.
+
+`quantum.application-registration.application-id` is read even when registration is disabled: it is the fallback for the receiving application id of the remote principal source when `quantum.security.session.application-id` is unset (see xref:{doc-root}/user-guide/auth.adoc#remote-principal-source[Remote principal source]).
 
 `provider` selects the implementation.
 It matches either the registrar's `getName()` or its fully-qualified class name, so both of the following are valid:

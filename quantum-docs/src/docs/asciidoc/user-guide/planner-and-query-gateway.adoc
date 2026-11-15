@@ -7,16 +7,18 @@ endif::[]
 
 The planner decides whether a query runs as a simple single-collection filter (FILTER mode) or as a MongoDB aggregation (AGGREGATION mode). This is transparent to callers.
 
-In v1 the planner recognizes expand(path) and selects AGGREGATION mode when present. Otherwise, FILTER mode is used and the existing Morphia path is taken.
+The planner (`QueryPlanner`) recognizes two expand directives and selects AGGREGATION mode when either is present: `expand(path)`, which follows a reference field, and `expand(@relation)`, which follows a named ontology relation. Otherwise, FILTER mode is used and the existing Morphia path is taken.
 
 === Planner decisions
 
 - FILTER mode: No expand(...) in the query. The system generates a Morphia Filter and queries a single collection.
-- AGGREGATION mode: One or more expand(...) directives are present. The system will build an aggregation pipeline (with $lookup, etc.). The aggregation compiler builds the executable pipeline; execution is controlled by `feature.queryGateway.execution.enabled`.
+- AGGREGATION mode: One or more expand(...) directives are present. For each `expand(path)` the aggregation compiler (`MongoAggregationCompiler`) adds a `$lookup` to the pipeline. An `expand(@relation)` adds no pipeline stage: its targets are read after the root page has been fetched (see xref:{doc-root}/user-guide/query-expansion.adoc#expand-relation[Expanding a named relation]). Execution through the REST gateway is controlled by `feature.queryGateway.execution.enabled`, which is `false` by default.
+
+The planner reports the two kinds separately: `PlannerResult.getExpandPaths()` lists the field paths and `PlannerResult.getRelationExpands()` lists the relation names without the `@`.
 
 === Public facade: QueryGateway
 
-A new collection-agnostic facade exposes plan/inspect capabilities and will later execute aggregation pipelines when enabled.
+The collection-agnostic `QueryGateway` facade exposes the planner's decision. It only plans and inspects; execution is done by the REST resource (<<query-gateway-rest>>) and by the repositories.
 
 .Java
 [source,java]
@@ -32,6 +34,7 @@ public class PlannerSnippet1 {
     PlannerResult pr = gateway.plan("expand(customer) && status:active", Order.class);
     System.out.println(pr.getMode());        // AGGREGATION
     System.out.println(pr.getExpandPaths()); // [customer]
+    System.out.println(pr.getRelationExpands()); // [] (names from expand(@relation))
   }
 }
 ----
@@ -54,10 +57,12 @@ switch (planned.getMode()) {
     // Use planned.getFilter() with Morphia datastore
     break;
   case AGGREGATION:
-    // Use planned.getAggregation() to inspect the pipeline (placeholder in v1)
+    // planned.getAggregation() is the compiled pipeline (List<Bson>)
     break;
 }
 ----
+
+`convertToPlannedQuery` resolves each expand path against the model class. The path must end at an `EntityReference` field annotated with `@ReferenceTarget(target = ...)`; otherwise it throws `IllegalArgumentException` ("Cannot resolve governed expand path ..."). This two-argument form compiles the pipeline without row or field policies, so do not run its output against tenant data yourself: use the REST gateway or the repository's secured aggregation methods, which supply a policy for every `$lookup`. The first element of the returned pipeline is a `$plannedExpandPaths` marker document that the caller must remove before execution, as the gateway does.
 
 === Examples end-to-end
 
@@ -65,15 +70,24 @@ switch (planned.getMode()) {
 
 [source]
 ----
-q = "realm:acme && status:active && fields:[+_id,+total]"
+q = "status:active && total:>##100"
 ----
 
-- With expansion (AGGREGATION mode):
+- With expansion (AGGREGATION mode), with a root projection:
 
 [source]
 ----
-q = "expand(customer, fields:[+name,+tier]) && status:active && fields:[+_id,+customer.name]"
+q = "expand(customer) && status:active && fields:[+_id,+total,+customer]"
 ----
+
+- With a field-path expansion and a relation expansion together (AGGREGATION mode):
+
+[source]
+----
+q = "expand(@hasShipment) && expand(customer) && status:active"
+----
+
+The root projection `fields:[...]` is handled by the planner, not by the query grammar, and only in AGGREGATION mode. A FILTER-mode query that contains `fields:[...]` is rejected as a syntax error (HTTP 400 `InvalidQuery` from `find`). Projections and filters inside `expand(...)` are not supported.
 
 See also: xref:{doc-root}/user-guide/query-expansion.adoc[Relationship hydration with expand(path)]. For concrete pipelines, see xref:{doc-root}/user-guide/query-expansion.adoc#aggregation-examples[Aggregation examples: what expand(...) compiles to].
 
@@ -84,12 +98,19 @@ The gateway (`QueryGatewayResource`, `@Path("/api/query")`,
 `@FunctionalMapping(area="integration", domain="query")`) exposes a planner endpoint
 plus generic governed query operations:
 
-- `POST /api/query/plan` -- returns planner mode (`FILTER` vs `AGGREGATION`) and expand paths detected
+- `GET /api/query/rootTypes` -- lists the entity types that can be used as `rootType` (`className`, `simpleName`, `collectionName`)
+- `POST /api/query/plan` -- returns planner mode (`FILTER` vs `AGGREGATION`), the expand paths detected (`expandPaths`) and the relations named by `expand(@relation)` (`relationExpands`)
 - `POST /api/query/find` -- executes governed `FILTER` and `AGGREGATION` queries, returning the standard `Collection<T>` envelope
 - `POST /api/query/count` -- returns the governed count for a `FILTER`-mode query
+- `POST /api/query/save` -- inserts an entity (no id) or updates one (with id) through the type's registered repository
 - `POST /api/query/delete` -- deletes a single entity by id (governed; 404 across DataDomain boundaries)
-- `POST /api/query/deleteMany` -- deletes the matching `FILTER`-mode set
-- `POST /api/query/export` -- streams a governed CSV export
+- `POST /api/query/deleteMany` -- deletes the matching `FILTER`-mode set, up to `quantum.queryGateway.deleteMany.maxMatches` entities
+- `POST /api/query/export` -- returns a governed CSV export, inline or as a server-side temporary file
+- `POST /api/query/import/analyze`, `/import/rows`, `/import/commit`, `/import/cancel` -- the CSV import session lifecycle
+
+`rootType` is a simple class name (when unique among the mapped entities) or a fully qualified class name. An unknown or ambiguous name returns HTTP 400.
+
+Every request body accepts an optional `realm`. For an authenticated caller the gateway runs in the caller's effective realm (the principal's default realm, or the principal's realm override for the `integration` area when one is set); a `realm` that differs from it is refused with HTTP 403. The request value selects the realm only when no principal is present or rules are explicitly ignored (bootstrap and migration code).
 
 [[query-gateway-governance]]
 === Row- and Field-Level Governance
@@ -98,11 +119,17 @@ All query gateway operations execute through multi-layered row- and field-level 
 
 1. **Root Entity Governance**:
    - `securedFilterArray(...)` ANDs the query filter with the caller's active DataDomain scope and rule `filterConstraints` resolved from `RuleContext`.
+   - The rule filters and the caller's filter are combined under one explicit `$and` (`RuleFilterComposition.conjoin`), each as its own clause. A caller filter on a field that a rule also constrains, for example `dataDomain.tenantId:other-tenant`, therefore narrows the result and can never replace the rule. (Passed side by side as top-level filters, a later filter on the same field would overwrite the earlier one.)
+   - A matched ALLOW rule whose filter references a variable that is missing, null, or whose resolver failed is not dropped: it contributes a match-nothing filter, so the rule grants no rows, and a warning names the rule and the variables.
    - Field-level exclusions (`applyExcludedFieldProjection(...)`) exclude sensitive fields at the MongoDB datastore level, preventing them from leaving MongoDB.
 2. **Fail-Closed Guarantee**:
    - Unless `SecurityContext.isIgnoringRules()` is explicitly set, requests lacking an established `PrincipalContext` and `ResourceContext` are immediately refused with HTTP 500 (`{"error":"SecurityContextMissing"}`).
 3. **Information Leakage Prevention**:
    - `delete` ANDs the target `_id` with the secured row filter; records outside the caller's DataDomain return HTTP 404 (`deletedCount=0`, `success=false`) without disclosing whether the entity exists in another tenant.
+4. **Governed Writes**:
+   - `save` without an id places the new entity in the DataDomain the caller resolves to (principal plus DataDomain policy). A request body that names a different `dataDomain` is rejected with HTTP 403 rather than rewritten; omit `dataDomain` on create.
+   - `save` with an id first reads the stored row through the secured filter. A row the caller cannot see, or an unknown id, returns HTTP 404; an id is never used to insert a new row. The stored `dataDomain` is kept (a different one in the body is rejected), and fields excluded by field policy are restored from the stored row before the update, then masked in the response.
+   - A policy denial raised by the repository returns HTTP 403.
 
 === Governed Aggregation Execution & Per-Stage Security Pushdown
 
@@ -110,35 +137,40 @@ When a query contains `expand(...)` directives, the planner selects `AGGREGATION
 
 ```mermaid
 flowchart TD
-    subgraph Root ["Root Document Stage"]
+    subgraph Root ["Root Document Stages"]
         RMatch["$match: dataDomain + Root Rule Constraints"]
         RFilter["$match: User Root Filter"]
+        RPage["$sort / $skip / $limit"]
     end
 
     subgraph Hop1 ["Hop 1: $lookup inner pipeline (e.g. orderRef)"]
-        H1Match["$match: $expr eq [_id, $$ref_id]"]
-        H1Sec["$match: Order DataDomain + Order Rule Constraints"]
+        H1Match["$match: $expr _id eq $$id and tenant eq $$tenant"]
+        H1Sec["$match: Order Row Policy"]
         H1Proj["$project: Exclude Order Sensitive Fields"]
     end
 
-    subgraph Hop2 ["Hop 2: $lookup inner pipeline (e.g. supplierRef)"]
-        H2Match["$match: $expr eq [_id, $$ref_id]"]
-        H2Sec["$match: Supplier DataDomain + Supplier Rule Constraints (Accumulated)"]
+    subgraph Hop2 ["Hop 2: $lookup inner pipeline (e.g. orderRef.supplierRef)"]
+        H2Match["$match: $expr _id eq $$id and tenant eq $$tenant"]
+        H2Sec["$match: Supplier Row Policy"]
         H2Proj["$project: Exclude Supplier Sensitive Fields"]
     end
 
     Root --> Hop1
     Hop1 --> Hop2
-    Hop2 --> FinalProj["Final $project / field filtering"]
+    Hop2 --> FinalProj["Root $project: fields:[...], then policy-excluded fields"]
+    FinalProj --> Rel["expand(@relation): targets read after the page, under the target policy"]
 ```
 
 ==== Per-Stage Pushdown Mechanics
 
-1. **Root Pre-Filtering**: The root collection pipeline begins with a leading `$match` enforcing the root model's `DataDomain` policy and security rules.
-2. **Inner Pipeline `$lookup` Security**: For each expansion hop, target entity row-level constraints are pushed directly into the inner `pipeline: [ ... ]` of MongoDB's `$lookup` stage.
-3. **Monotonic Restriction Accumulation**: Security restrictions accumulate along multi-hop paths (e.g. Customer -> Order -> Supplier). Downstream hops inherit and compound upstream access constraints, ensuring that traversal can never be exploited to elevate privileges or bypass intermediate isolation boundaries.
+1. **Root Pre-Filtering**: The root collection pipeline begins with a leading `$match` enforcing the root model's `DataDomain` policy and security rules, followed by the caller's root filter and the `$sort`, `$skip` and `$limit` stages. Paging is applied to the root rows before any lookup.
+2. **Inner Pipeline `$lookup` Security**: For each expansion hop, the target entity's row policy is pushed into the inner `pipeline: [ ... ]` of MongoDB's `$lookup` stage. The policy is the conjunction of the gateway's rules (as for the root) and the rules of the target's own functional area, so the lookup is never wider than either.
+3. **Tenant Correlation**: Every lookup also requires the target's `dataDomain.tenantId` to equal the root document's, in the same `$expr` that matches the referenced id.
 4. **Target Field Exclusion Pushdown**: Target entity field exclusions (`excludedFieldPaths`) are pushed into the inner pipeline as a `$project` stage, redacting sensitive fields directly within the MongoDB engine.
-5. **Cross-Tenant Reference Pruning**: If a foreign reference points to an entity in a different tenant or an entity that fails target row security, the inner `$match` stage filters it out. The populated property resolves to an empty array or `null`, completely preventing cross-tenant data leakage.
+5. **Reference Pruning**: If a reference points to an entity in a different tenant or to one that fails the target row policy, the inner pipeline matches nothing and the expanded property is `null`. A later hop under a pruned property has no id to look up, so it is `null` too.
+6. **Fail Closed**: A hop whose target is not a governable model collection, or whose row or field policy cannot be resolved, is refused with HTTP 403 `ExpandPolicyUnresolved` before any query runs. Before execution the gateway also checks the compiled pipeline: every `$lookup` must target a collection with a resolved policy and must carry that policy's row filter, or the request is refused with the same error.
+
+For `expand(@relation)` the root pipeline runs as above; the relation's targets are then read under the target type's own row and field policy. Its refusals are typed (`RelationExpandRefused`); see xref:{doc-root}/user-guide/query-expansion.adoc#expand-relation[Expanding a named relation].
 
 ==== Configuration and Defaults
 
@@ -149,17 +181,36 @@ flowchart TD
 | `feature.queryGateway.execution.enabled`
 | boolean
 | `false`
-| Guards execution of `POST /api/query/find` for aggregation queries. When `false`, aggregation queries return HTTP 501 (`ExecutionDisabled`). Must be set to `true` to enable governed aggregation pipeline execution.
+| Guards execution of `POST /api/query/find` for aggregation queries (any query with `expand(...)`). When `false`, aggregation queries return HTTP 501 (`{"error":"NotImplemented"}`). Must be set to `true` to enable governed aggregation pipeline execution.
 
-| `feature.queryGateway.maxPageSize`
+| `quantum.queryGateway.deleteMany.maxMatches`
+| integer
+| `2000`
+| Maximum number of entities one `deleteMany` request may match. A query that matches more returns HTTP 400 (`TooManyMatches`) and deletes nothing.
+
+| `quantum.queryGateway.export.inlineThreshold`
+| integer
+| `10000`
+| `export` returns the CSV in the response (`mode` `inline`, `csvContent`) when the governed row count is at or below this value; above it the CSV is written to a temporary file on the server (`mode` `file`, `csvFilePath`).
+
+| `quantum.ontology.expand.max-targets`
 | integer
 | `1000`
-| Maximum allowed page size (`limit`) for `/api/query/find` requests. Requests exceeding this limit are capped.
+| Maximum distinct targets one page may reach through `expand(@relation)`; beyond it the query is refused with HTTP 422 (`expand_too_many_targets`). Read by the ontology module (`quantum-ontology-mongo`).
+
+| `quantum.ontology.expand.max-edges`
+| integer
+| `10000`
+| Maximum edges read per page and relation for `expand(@relation)`; the edge read stops there and the query is refused with HTTP 422 (`expand_too_many_targets`).
 |===
 
 [NOTE]
 ====
-`find` rejects unknown relationship paths with HTTP 400 (`InvalidQuery`).
+Paging: `page.limit` defaults to 50 and `page.skip` to 0 in FILTER mode. The gateway has no maximum page size setting. In AGGREGATION mode a `$limit` stage is added only when `page.limit` is given, so always send a limit with an `expand(...)` query.
+
+`sort` (`[{ "field": ..., "dir": "ASC" | "DESC" }]`) is applied as the root `$sort` stage of AGGREGATION-mode queries. The FILTER-mode path does not apply it in this release.
+
+`find` rejects an `expand(path)` that is not an `EntityReference` field with a `@ReferenceTarget` with HTTP 400 (`InvalidQuery`).
 
 `count` and `deleteMany` explicitly reject `expand(...)` queries with HTTP 400 (`InvalidQuery`) because relational hydration is invalid for scalar counting and bulk document deletion.
 ====
@@ -183,9 +234,12 @@ flowchart TD
   "expandPaths": [
     "orderRef",
     "orderRef.supplierRef"
-  ]
+  ],
+  "relationExpands": []
 }
 ----
+
+A query that also names a relation, such as `expand(@hasCredential) && expand(credentialUserIdPasswordRef) && email:x` on `UserProfile`, returns `"expandPaths": ["credentialUserIdPasswordRef"]` and `"relationExpands": ["hasCredential"]`. `plan` only parses the query: it does not check that the paths or relations exist and needs no ontology module.
 
 ==== Request/Response: /api/query/find (Multi-Hop Aggregation)
 
@@ -196,12 +250,11 @@ flowchart TD
   "rootType": "com.e2eq.framework.api.query.MultiHopCustomer",
   "query": "expand(orderRef) && expand(orderRef.supplierRef) && customerName:Cust-1",
   "page": { "limit": 10, "skip": 0 },
-  "sort": [ { "field": "createdDate", "dir": "DESC" } ],
-  "realm": "acme"
+  "sort": [ { "field": "customerName", "dir": "ASC" } ]
 }
 ----
 
-.Response body (Collection envelope with hydrated nested entities)
+.Response body (Collection envelope with hydrated nested entities; abridged)
 [source,json]
 ----
 {
@@ -209,13 +262,10 @@ flowchart TD
   "limit": 10,
   "rows": [
     {
-      "id": "607f1f77bcf86cd799439001",
       "customerName": "Cust-1",
       "orderRef": {
-        "id": "607f1f77bcf86cd799439002",
         "orderNumber": "ORD-1001",
         "supplierRef": {
-          "id": "607f1f77bcf86cd799439003",
           "supplierName": "Acme Industrial Supplies"
         }
       }
@@ -225,6 +275,8 @@ flowchart TD
   "filter": "expand(orderRef) && expand(orderRef.supplierRef) && customerName:Cust-1"
 }
 ----
+
+In AGGREGATION mode the rows are the MongoDB documents produced by the pipeline, so they carry the stored field names (for example `_id` and `dataDomain`), and each expanded reference field holds the target document in place of the stored reference. In FILTER mode the rows are the mapped entities.
 
 ==== cURL Examples
 
@@ -251,10 +303,29 @@ curl -sS -X POST \
   -d '{
     "rootType": "com.e2eq.framework.api.query.MultiHopCustomer",
     "query": "expand(orderRef) && expand(orderRef.supplierRef) && customerName:Cust-1",
-    "page": { "limit": 10, "skip": 0 },
-    "realm": "acme"
+    "page": { "limit": 10, "skip": 0 }
   }'
 ----
+
+==== Errors
+
+Gateway errors are JSON bodies with an `error` field and a `message`:
+
+[cols="2,1,3", options="header"]
+|===
+| `error` | Status | When
+
+| `InvalidQuery` | 400 | `find`: an expand path cannot be resolved, `expand(@)` names no relation, or a FILTER-mode query contains `fields:[...]`. `count`, `deleteMany`: the query contains `expand(...)`.
+| `TooManyMatches` | 400 | `deleteMany` matches more than `quantum.queryGateway.deleteMany.maxMatches` entities.
+| `InvalidId` | 400 | `delete`: the id is not an ObjectId hex string.
+| `InvalidEntity` | 400 | `save`: the entity cannot be converted to the root type.
+| `ExpandPolicyUnresolved` | 403 | An expand target's row or field policy cannot be resolved, or a `$lookup` does not carry it.
+| `RelationExpandRefused` | 400, 403, 422, 501, 503 | `expand(@relation)` was refused; the body's `code` says why.
+| `ReferentialIntegrity`, `DeleteBlocked` | 409 | `delete`, `deleteMany`: delete validation refused the delete.
+| `UnresolvedCollection` | 422 | A compiled `$lookup` has no resolved target collection.
+| `NotImplemented` | 501 | A query with `expand(...)` while `feature.queryGateway.execution.enabled` is `false`.
+| `SecurityContextMissing` | 500 | No `PrincipalContext` or `ResourceContext` is established; the request is refused and no query runs.
+|===
 
 See also: xref:{doc-root}/user-guide/query-expansion.adoc[Relationship hydration with expand(path)] and xref:{doc-root}/user-guide/query-language.adoc[Query Language Reference].
 

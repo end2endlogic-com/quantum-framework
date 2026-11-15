@@ -7,21 +7,56 @@ endif::[]
 
 Quantum integrates with Quarkus security while providing a pluggable approach to authentication. The repository includes a JWT provider module to get started quickly and an extension surface to replace or complement it.
 
+[[authn-authz-separation]]
+== Authentication and Authorization Are Separate
+
+Authentication answers one question: who is calling. A verified token proves an identity, named by its issuer (`iss`) and subject (`sub`). Authorization is decided afterwards by the application that receives the request. That application maps the identity to roles, a realm (the database the request runs in), a tenant and policies, using records the platform holds: the credential, realm assignments (`UserRealmRole`), application bindings (`UserAppRole`) and policy rules.
+
+A token is therefore not where roles or tenancy are granted. To give a user access, change the records (a realm assignment, an application binding, a policy); do not add claims to a token, widen its audience or mint a different one.
+
+How `SecurityFilter` builds the principal (`PrincipalContext`) for a verified token depends on configuration:
+
+[cols="2,2,3,4", options="header"]
+|===
+| Path | Selected by | Read from the token | Where roles, realm and tenant come from
+
+| Local credential (default)
+| Nothing set
+| Identity, plus the signed `realm`, `tenantId` and role (`groups`) claims
+| `PrincipalContextResolver` looks up the credential in the system realm and resolves roles through `IdentityRoleResolver`. Token roles count only in the realm the token was issued for; the signed tenant applies only while the request stays in that realm.
+
+| Delegated claims
+| `quantum.auth.trust-token-claims=true` (default `false`)
+| Identity, `realm`, `realmRegEx`, roles
+| The signed claims of the trusted issuer. No local credential is read. A token without a `realm` claim is refused.
+
+| Remote principal source
+| `quantum.auth.principal-source=remote` (unset by default)
+| `iss` and `sub` only
+| The central Auth service resolves identity plus this application to roles, realm and tenant. See <<remote-principal-source>>.
+|===
+
+Identity-only tokens are being introduced in steps. In `1.4.3-SNAPSHOT`:
+
+* Step 1 is implemented. `PrincipalContextResolver` (`quantum-security-runtime`) is the single implementation of principal resolution. Its `IDENTITY` mode reads nothing from the token beyond the identity, resolves identity plus application to realm, tenant and roles, and refuses with typed codes (`PrincipalResolutionError`). Its `SIGNED_TOKEN_CLAIMS` mode is the local credential path above and behaves as before.
+* Step 2 is implemented and opt-in. With the remote principal source a receiving application asks Auth instead of reading claims.
+* Tokens issued by `quantum-jwt-provider` still carry `realm`, `tenantId`, `orgRefName`, `accountNum` and `groups` claims, and the default path still reads them. Retiring those claims is a later step that is not in this code. New code must not depend on them.
+
 == JWT Provider
 
 - Module: quantum-jwt-provider
-- Purpose: Validate JWTs on incoming requests, populate the security principal, and surface tenant/org/user claims that feed DomainContext.
-- Configuration: Standard Quarkus/MicroProfile JWT properties plus custom claim mappings as needed for DataDomain.
+- Purpose: Sign in users (`login`, `refreshTokens`), issue RS256-signed access and refresh tokens, and validate JWTs on incoming requests so the security principal carries a verified identity.
+- Configuration: Standard Quarkus/MicroProfile JWT properties plus the token lifetime and key properties in the <<auth-configuration-reference,configuration reference>>.
 
 == Pluggable Authentication
 
-You can introduce alternative authentication mechanisms (e.g., API keys, SAML/OIDC front-channel tokens exchanged for back-end JWTs, HMAC signatures) by providing CDI beans that integrate with the security layer and emit the same normalized context consumed by DomainContext/RuleContext.
+You can introduce alternative authentication mechanisms (e.g., API keys, SAML/OIDC front-channel tokens exchanged for back-end JWTs, HMAC signatures) by providing CDI beans that integrate with the security layer.
 
 Typical steps:
 
-1. Implement a request filter or identity provider that validates the token/credential.
-2. Map identity and tenant claims into a principal model (tenantId, orgRefName, userId, roles).
-3. Ensure BaseResource (and other entry points) can derive DomainContext from that principal.
+1. Implement an `AuthProvider` that validates the token or credential.
+2. Return the verified identity (subject and userId). A provider proves who the caller is; it does not decide the caller's realm, tenant or permissions.
+3. Let the framework build the `PrincipalContext` from that identity (see <<authn-authz-separation>>). Resources and repositories read the principal, never the raw token.
 
 == Creating an Auth Plugin (using the Custom JWT provider as a reference)
 
@@ -49,13 +84,22 @@ Core methods:
   - A short identifier for the provider. Persisted alongside credentials and used in logs/metrics.
 * LoginResponse login(String userId, String password)
   - Credential-based login. Return a structured response:
-    - positiveResponse: includes SecurityIdentity, roles, accessToken, refreshToken, expirationTime, and realm/mongodbUrl if applicable.
-    - negativeResponse: includes error codes/reason/message for clients to act on (e.g., password change required).
+    - positiveResponse (`LoginPositiveResponse`): userId, SecurityIdentity, roles, roleAssignments, accessToken, refreshToken, expirationTime, realm, and for application-scoped sign-in the token's `audiences` and `activeApplication`.
+    - negativeResponse (`LoginNegativeResponse`): userId, errorCode, errorReasonCode, errorMessage, errorType, errorDetails and realm, for clients to act on (e.g., password change required).
 * LoginResponse refreshTokens(String refreshToken)
-  - Validate the refresh token, mint a new access token (and optionally a new refresh token), and return a positive response.
+  - Validate the refresh token, mint a new access token and a new refresh token, and return a positive response.
+* String getIssuer() (default `null`)
+  - The issuer this provider signs and accepts. Used to route a token to its provider when several are configured.
+
+Optional methods with defaults:
+
+* login(userId, password, applicationId) -- application-scoped sign-in. The default ignores the application and calls the two-argument login.
+* login(userId, password, applicationId, realmId) -- realm- and application-scoped sign-in. The default throws `UnsupportedOperationException` when a realm is named, so a provider that does not understand realm membership cannot silently ignore it.
+* loginWithVerifiedEmail(EmailChallenge proof, String realmId) -- sign-in for an address proven by an email challenge. It is an internal boundary called after the challenge is verified, never a public endpoint that accepts a "verified" flag. The default throws.
 
 Notes:
 
+- `LoginPositiveResponse` still has a `mongodbUrl` component for binary compatibility. It is never populated: `CustomTokenAuthProvider` passes `null`, and `AuthLoginService` does not copy it into the REST `AuthResponse`. A sign-in never returns the service's database connection string, and a custom provider must not put one there.
 - Login flow should check force-change-password or equivalent flags and return a negative response when user interaction is required before issuing tokens.
 - validateAccessToken should only accept valid, non-expired tokens and construct SecurityIdentity consistently with role mappings used across the platform.
 
@@ -64,8 +108,13 @@ Notes:
 Typical responsibilities include:
 
 * User lifecycle
-  - String createUser(String userId, String password, Set<String> roles, DomainContext domainContext, [optional] DataDomain)
+  - String createUser(String userId, String password, [optional] Boolean forceChangePassword, Set<String> roles, DomainContext domainContext, [optional] DataDomain)
+  - String createUser(String userId, String password, Boolean forceChangePassword, Set<String> roles, DomainContext domainContext, String applicationRegEx) -- default method; a provider that does not model application boundaries throws for a non-null pattern
+  - String createEmailUser(String email, Set<String> roles, DomainContext domainContext, String applicationId) -- default method; throws unless the provider supports EMAIL credentials
   - void changePassword(String userId, String oldPassword, String newPassword, Boolean forceChangePassword)
+  - void resetPassword(String userId, String newPassword, Boolean forceChangePassword)
+  - void changeEmail(String userId, String newEmail)
+  - void resendTemporaryPassword(String userId)
   - boolean removeUserWithUserId(String userId)
   - boolean removeUserWithSubject(String subject)
 * Role management
@@ -87,6 +136,11 @@ Return values and exceptions:
 - Return Optional for lookups that may not find a result.
 - For removals, return boolean to communicate whether a record was deleted.
 
+Which credentials may hold a password:
+
+- `AuthCredentialService` (`quantum-system-management`) checks the credential type before it resolves a provider for reset-password, change-password and resend-temporary-password. Only `PASSWORD` and `EMAIL` credentials are password-managed. A `SERVICE_TOKEN`, `API_KEY` or `OAUTH` credential is refused with "Credential type ... does not support password management", and naming a provider (`?provider=custom`) does not change that.
+- Change-email is refused for the same non-user credential types.
+
 == Leveraging BaseAuthProvider in your plugin
 
 When you extend BaseAuthProvider, you inherit ready-to-use capabilities that reduce boilerplate:
@@ -99,7 +153,7 @@ When you extend BaseAuthProvider, you inherit ready-to-use capabilities that red
 * Realm override helpers
   - enableRealmOverrideWithUserId / enableRealmOverrideWithSubject
   - disableRealmOverrideWithUserId / disableRealmOverrideWithSubject
-  - Useful for multi-realm/tenant scenarios, enabling scoped cross-realm behavior.
+  - These set or clear the credential's `realmRegEx`, the authority an explicit `X-Realm` request is checked against. Grant it only to identities that need to act outside their own realm (see <<realm-override-x-realm>>).
 
 * Persistence utilities
   - Built-in use of the credential repository to save, update, and delete credentials.
@@ -132,7 +186,6 @@ Checklist:
   - Use structured LoginResponse for both success and error paths.
   - Prefer idempotent user/role operations; validate inputs and surface actionable messages.
 
-// ... existing code ...
 == CredentialUserIdPassword model and DomainContext
 
 This section explains how user credentials are represented, how those records tie to tenancy and realms, and how the server chooses the database (“realm”) for REST calls.
@@ -148,46 +201,58 @@ domainContext:: The tenancy and organization placement of the principal. It cont
   - accountId: Account or billing identifier.
   - defaultRealm: The default database/realm used for this identity’s operations.
   - dataSegment: Optional partitioning segment for advanced sharding or data slicing.
-roles:: The set of authorities granted (e.g., USER, ADMIN). These become groups/roles on the SecurityIdentity.
+roles:: The flat roles of the credential (e.g., `user`, `admin`). Flat roles are global by design: whenever the principal is resolved from the credential (the default path and identity-only resolution) they apply in every realm the credential can enter. Roles that should hold in one realm or tenant only belong on the realm assignment (`UserRealmRole`) or an application binding (`UserAppRole`), not here. A token issued for a realm other than the credential's home realm does not list the flat roles in its `groups` claim, so a service that runs on delegated claims sees only the roles that token carries.
+credentialType:: `PASSWORD` (default), `EMAIL`, `SERVICE_TOKEN`, `API_KEY` or `OAUTH`. An `EMAIL` credential signs in by a single-use email challenge and may also set a password as a second sign-in method; a `PASSWORD` credential never gains email sign-in. Only `PASSWORD` and `EMAIL` credentials may hold a password.
+serviceKind:: For service credentials only: `APPLICATION` (the service runs as itself in the one realm and tenant of its own DomainContext) or `DELEGATING` (a multi-tenant service that may act on behalf of an identity inside its impersonation authorization). An unset kind is never treated as `DELEGATING`.
+parentCredentialSubject:: For a `SERVICE_TOKEN` credential, the subject of the credential that created it.
 issuer:: An identifier for who issued the credential or tokens (useful for auditing and multi-provider setups).
-passwordHash, hashingAlgorithm:: The stored password hash and declared algorithm. Not exposed over REST. Providers verify passwords against this.
-A save or merge of an existing credential with an omitted password hash preserves
-the stored hash and password revision. This supports metadata/role updates after
-reading a credential without its secret fields. Use the password change/reset
-operations to replace a password and active status to disable a credential; a
-null hash in a metadata update is not a password-removal operation.
+passwordHash, hashingAlgorithm:: The stored password hash and declared algorithm. Server-owned and not exposed over REST: field-pair and bulk updates refuse them, and a save or merge that omits the hash keeps both as stored. Providers verify passwords against this.
+passwordChangedAt, passwordRevision:: Server-owned and never read from or written by REST. `passwordRevision` counts password-hash changes; a session remembers the revision it signed in at and stops refreshing once it moves (see <<session-lifetime>>).
+A save or merge of an existing credential that omits the password hash keeps the
+stored hash, hashing algorithm, password revision and change time. This supports
+metadata and role updates after reading a credential without its secret fields. A
+changed, non-null hash still advances the revision. `passwordHash`, `hashingAlgorithm`,
+`passwordChangedAt` and `passwordRevision` are server-owned: field-pair and bulk
+updates refuse them, and a metadata save cannot change the algorithm on its own. Use
+the password change/reset operations to replace a password and active status to
+disable a credential; a null hash in a metadata update is not a password removal.
 
 forceChangePassword:: Flag that forces a password reset on next login; the login flow returns a structured negative response instead of tokens.
-lastUpdate:: Timestamp for auditing and token invalidation strategies.
+lastUpdate:: Timestamp for auditing.
 area2RealmOverrides:: Optional map to route specific functional areas to different realms than the default (e.g., “Reporting” → analytics-realm).
-realmRegEx:: Optional regex to limit or override which realms this identity may act in; also used by impersonation/override flows.
-impersonateFilterScript:: Optional script indicating the filter/scope applied during impersonation so actions are constrained.
+authorizedRealms, realmRegEx:: The realms this identity may enter besides its home realm. An explicit `authorizedRealms` list takes precedence; `realmRegEx` is used only when the list is empty. This is the authority an `X-Realm` request is checked against.
+applicationRegEx:: The credential-wide pattern of applications this identity may sign in to (`*` means any). A realm assignment's `authorizedApplications` adds to it for that realm and never narrows it.
+impersonateFilterScript, authorizedImpersonateIds:: Who this identity may impersonate, or for a delegating service whom it may act for: an explicit list of identities and/or a script that must return true.
+dataDomainPolicy:: Optional per-credential rules for which DataDomain new records are written to (see the permissions guide).
 authProviderName:: Informational provenance naming the provider that resolved this credential or token (e.g., “custom”, “oidc”). Provider selection comes from an explicit request override or the ordered `auth.provider` configuration, never from this field.
 
-How DomainContext selects the realm for REST calls
+How the realm for a REST call is selected
 
-- For each authenticated request, the server derives or retrieves a DomainContext associated with the principal.
-- The DomainContext.defaultRealm indicates which backing MongoDB database (“realm”) should be used by repositories for that request.
-- If realm override features are enabled (e.g., through provider helpers or per-credential overrides), the system may route certain functional areas to alternate realms using area2RealmOverrides or validated by realmRegEx.
-- The remainder of DomainContext (tenantId, orgRefName, accountId, dataSegment) is applied as scope constraints through permission rules and repository filters so reads and writes are automatically restricted to the correct tenant/org segment.
+- For each authenticated request the server builds a `PrincipalContext` for the verified identity. Its `defaultRealm` names the backing MongoDB database (“realm”) repositories use for that request.
+- On the default path the realm is the one the token was issued for, or the credential's home realm (`DomainContext.defaultRealm`) when the token names none. An application may fix its own realm with `quantum.security.session.realm` (see <<application-session>>).
+- With the remote principal source, a request that names no realm runs in the realm resolved from the application (see <<remote-principal-source>>).
+- `X-Realm` is an explicit override that needs authority. Clients do not send it on ordinary calls (see <<realm-override-x-realm>>).
+- `area2RealmOverrides` may route one functional area to another realm for that area alone.
+- The remainder of DomainContext (tenantId, orgRefName, accountId, dataSegment) becomes the principal's DataDomain and is applied through permission rules and repository filters, so reads and writes are restricted to the correct tenant/org segment.
 
 Typical flow
 
 1. Login
-   - A user authenticates with userId/password (or other mechanism).
-   - On success, a token is returned alongside role information; the principal is associated with a DomainContext that includes the defaultRealm.
+   - A user authenticates with userId/password (or an email challenge).
+   - On success the service returns an access token and a refresh token, with the realm, roles and applications the sign-in resolved.
 2. Subsequent REST calls
-   - The token is validated; the server reconstructs SecurityIdentity and DomainContext.
-   - Repositories choose the datastore for defaultRealm and enforce tenant/org filters using the DomainContext values.
+   - The token is validated; the server resolves the identity to a `PrincipalContext` (realm, DataDomain, roles) as described in <<authn-authz-separation>>.
+   - Repositories choose the datastore for the principal's realm and enforce tenant/org filters from its DataDomain.
    - If the request targets a functional area with a defined override, the operation may route to a different realm for that area alone.
 3. UI implications
-   - The client does not need to know which realm is selected; it simply calls the API. The server ensures the correct database is used based on DomainContext and any configured overrides.
+   - The client does not need to know which realm is selected; it simply calls the API with its token. The server selects the database from the resolved principal.
 
 Best practices
 
 - Keep userId immutable once established; use subject for internal joins and token subjects.
 - Always attach the correct DomainContext when creating users to avoid cross-tenant leakage.
 - Use realm overrides deliberately for well-isolated areas (e.g., analytics, archiving) and document them for operators.
+- Do not rewrite a credential's DomainContext or flat roles to give access to one more realm or tenant. Add a realm assignment or an application binding instead (see xref:{doc-root}/user-guide/identity-and-membership.adoc[Identity, Organizations and Realm Access]).
 
 == Quarkus OIDC out-of-the-box and integrating with common IdPs
 
@@ -209,9 +274,9 @@ What the Quarkus OIDC extension provides
 
 Integrating with common providers
 
-- Works with providers like Keycloak, Auth0, Okta, Azure AD, Cognito, and enterprise IdPs exposing OIDC.
+- Works with any identity provider that exposes standard OIDC discovery.
 - Configure the issuer URL and client credentials. Quarkus discovers endpoints via the provider’s .well-known/openid-configuration.
-- For roles/permissions, map provider groups/roles claims to your platform roles in the identity.
+- Use the provider to prove who the user is. Roles and tenancy for a Quantum application come from the application's own records (realm assignments, application bindings, policies), as described in <<authn-authz-separation>>.
 
 OIDC vs OAuth vs OpenID (terminology and evolution)
 
@@ -259,7 +324,7 @@ Common customer IdP models and OIDC integration patterns
 Best practices
 
 - Prefer OIDC for new integrations; use SAML through a broker if enterprise constraints require it.
-- Normalize roles/claims server-side so downstream authorization (RuleContext, repositories) sees consistent group names regardless of IdP.
+- Resolve roles server-side from the application's records so downstream authorization (RuleContext, repositories) sees the same role names whichever IdP authenticated the user.
 - Use client credentials (service tokens) for service-to-service calls made as the service; do not reuse end-user tokens where not appropriate.
 - For multi-tenant OIDC, secure tenant resolution logic and validate issuer/tenant binding to prevent mix-ups.
 
@@ -278,11 +343,11 @@ This division of responsibilities keeps providers focused on identity while poli
 
 Applications frequently need machine-to-machine access that does not go through an interactive login flow.
 The framework provides two mechanisms: **short-lived user tokens** generated via the login endpoint, and **long-lived service tokens** generated via the dedicated service-token endpoint.
-Both produce standard RS256-signed JWTs that carry identity, roles, and scope claims consumed by the `SecurityFilter` and the permission system.
+Both produce standard RS256-signed JWTs. The claims that matter to a receiver are the ones that prove identity: `iss`, `sub`, `aud` and `exp`.
 
 === Token Anatomy
 
-Every JWT produced by the framework contains the following claims:
+`TokenUtils` (`quantum-jwt-provider`) signs these claims:
 
 [cols="1,1,3", options="header"]
 |===
@@ -290,73 +355,127 @@ Every JWT produced by the framework contains the following claims:
 
 | `sub`
 | `a1b2c3d4-...` (UUID)
-| The subject -- a stable identifier for the principal. For user tokens, this is the user's `subject` from the credential store. For service tokens, a newly generated UUID.
+| The subject -- a stable identifier for the principal. For user tokens, this is the user's `subject` from the credential store. For an identity-agnostic service token, the generated subject of its `SERVICE_TOKEN` credential.
 
 | `iss`
 | `https://myapp.example.com/issuer`
 | Issuer -- must match `mp.jwt.verify.issuer` in the consuming application's config for the token to be accepted.
 
 | `aud`
-| `b2bi-api-client`
-| Audience -- the intended recipient. Auth tokens use `b2bi-api-client`; refresh tokens use `b2bi-api-client-refresh`.
+| `["acme-orders"]`
+| Audience. An application-scoped user token carries the set of applications the user is authorized for in the realm (`*` for a wildcard grant). Tokens minted without application scoping use the fixed audience `b2bi-api-client`. Refresh tokens use `b2bi-api-client-refresh`. An identity-agnostic service token carries no `aud`.
 
-| `groups`
-| `["admin", "user"]`
-| Roles embedded in the token. These are merged with roles from the credential store and user group membership at validation time.
+| `azp`
+| `acme-orders`
+| The application the token was issued for (the one actively entered at sign-in), when one applies.
 
 | `scope`
 | `authToken`
-| Distinguishes auth tokens (`authToken`) from refresh tokens (`refreshToken`).
+| Distinguishes access tokens (`authToken`) from refresh tokens (`refreshToken`).
 
-| `iat`
+| `iat`, `exp`
 | `1707849600`
-| Issued-at timestamp (seconds since epoch).
+| Issued-at and expiration timestamps (seconds since epoch).
 
-| `exp`
-| `1707853200`
-| Expiration timestamp (seconds since epoch).
+| `auth_time`
+| `1707849600`
+| When the user originally signed in. Copied unchanged through refresh; the session's maximum length is counted from it.
+
+| `token_type`
+| `service`
+| Present only on an identity-agnostic service token.
+
+| `jti`
+| credential id
+| On a token bound to one user and one service: the id of the revocable credential record.
+
+| `userId`, `realm`, `tenantId`, `orgRefName`, `accountNum`, `realmRegEx`, `groups`
+| `["admin", "user"]`
+| Legacy authorization claims: the user id, the realm and data domain the token was issued for, the credential's realm boundary and the roles resolved at sign-in. The default and delegated-claims paths still read them; the remote principal source ignores them. They are scheduled to be retired (see <<authn-authz-separation>>): do not grant access by adding or editing these claims.
+
+| `pwd_rev`, `oauth_client_id`
+|
+| Refresh tokens only: the password revision the session signed in at, and the OAuth client the session is bound to.
 |===
 
 The token is signed with the application's RSA private key using the RS256 algorithm.
-By default, the key is loaded from `privateKey.pem` on the classpath (provided by the `quantum-default-keys` module during development).
-In production, configure `quantum.jwt.private-key-location` to point at an externally managed key.
+In the `dev` and `test` profiles the key defaults to `privateKey.pem` on the classpath (provided by the `quantum-default-keys` module).
+In any other profile startup fails unless `quantum.jwt.private-key-location` and `quantum.jwt.public-key-location` are both set explicitly: there is no default-key fallback in production.
 Consumers validate the signature using the corresponding public key (`publicKey.pem` or the configured `quantum.jwt.public-key-location`).
 
 === Generating User Tokens via Login
 
-The standard way to obtain a token is through the login endpoint:
+The standard way to obtain a token is the login endpoint, `POST /security/login` (`SecurityResource` in `quantum-system-rest`). The credentials go in a JSON body (`AuthRequest`), never in the URL:
 
 [source,bash]
 ----
 curl -sS -X POST \
-  'http://localhost:8080/auth/login?userId=admin@example.com&password=secret'
+  -H 'Content-Type: application/json' \
+  http://localhost:8080/security/login \
+  -d '{"userId": "admin@example.com", "password": "secret", "applicationId": "acme-orders"}'
 ----
 
-Response:
+`applicationId` names the application being signed in to. It may be omitted when the user is authorized for exactly one application or has a default; when several are possible and none is selected, the response lists the choices (`ApplicationSelectionRequired`). An application the user is not authorized for answers 403 (`ApplicationNotAuthorized`), and a credential with no application authorization at all cannot sign in (`ApplicationAuthorizationMissing`). An optional `realm` (or an `X-Realm` header; the two must agree) asks to sign in to a specific realm the credential is authorized for. Without one the sign-in uses the credential's home realm.
+
+Response (`AuthResponse`):
 
 [source,json]
 ----
 {
-  "accessToken": "eyJhbGciOiJSUzI1NiIsInR5cCI6...",
-  "refreshToken": "eyJhbGciOiJSUzI1NiIsInR5cCI6..."
+  "access_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6...",
+  "refresh_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6...",
+  "expires_at": 1707853200,
+  "realm": "acme-example",
+  "roles": ["user"],
+  "authProvider": "custom",
+  "applications": ["acme-orders"],
+  "activeApplicationId": "acme-orders"
 }
 ----
 
+The response also lists `accessibleRealms` and `accessibleTenants`. The camel-case aliases `accessToken`, `refreshToken`, `expiresAt` and `activeApplication` are still emitted for older clients and are deprecated. The response has no database URL: the `mongodburl` field is never populated.
+
+[[session-lifetime]]
+==== Session lifetime and refresh
+
 The access token expires after the configured duration (`com.b2bi.jwt.duration` in seconds).
 The refresh token has its own, longer lifetime (`quantum.auth.refresh-token.duration`, 7 days by
-default), and each refresh returns a new one. Refreshing keeps a session going for at most
-`quantum.auth.session.max-duration` (30 days by default) after sign-in; then the user signs in again.
-Clients should refresh shortly before the access token expires.
-Use the refresh token to obtain a new access token without re-authenticating:
+default, and never shorter than the access token's). Each refresh returns a new access token and a new refresh token.
+
+Refreshing keeps a session alive for at most `quantum.auth.session.max-duration` (30 days by default), counted from the original sign-in (`auth_time`):
+
+* Neither token of the last refresh may outlive that deadline. Both are cut short to it, so the final access token can be shorter-lived than the configured duration.
+* The refreshed refresh token is minted at an absolute expiry, so a slow refresh cannot push it past the deadline.
+* Once the deadline is reached the refresh is refused (`SESSION_MAX_DURATION_REACHED`) and the user signs in again.
+* A refresh token issued before `auth_time` was carried counts its session from its own issue time.
+
+A password change ends earlier sessions. The credential counts password-hash changes (`passwordRevision`, server-owned). A refresh token carries the revision its sign-in read (`pwd_rev`), and a refresh is refused (`SESSION_ENDED_BY_PASSWORD_CHANGE`) once the credential's revision has moved on. Access tokens already issued remain valid until they expire. Refresh tokens issued before the revision claim existed are compared with `passwordChangedAt` instead, and adopt the current revision on their next refresh.
+
+Every refresh also re-checks the credential and its grants: the credential must be active, still authorized for the token's realm, and still authorized for the application.
+
+Refresh with `POST /security/refresh`, sending the refresh token in the body:
 
 [source,bash]
 ----
 curl -sS -X POST \
-  -H 'Authorization: Bearer <refresh-token>' \
-  'http://localhost:8080/auth/refresh'
+  -H 'Authorization: Bearer <token>' \
+  -H 'Content-Type: application/json' \
+  http://localhost:8080/security/refresh \
+  -d '{"refresh_token": "<refresh-token>"}'
 ----
 
+The endpoint is annotated `@Authenticated`, so the request must also carry a bearer token the service accepts. A missing `refresh_token` answers 400; a refused refresh answers 401. A successful refresh answers with the same `AuthResponse` shape. An OAuth session is refreshed at `/oauth/token` instead (see xref:{doc-root}/user-guide/oauth-server.adoc[OAuth Server Module]).
+
 This flow is appropriate for interactive clients (UIs, CLI tools) that can handle periodic token refresh.
+
+==== Email sign-in and password setup
+
+An `EMAIL` credential signs in by proving possession of the mailbox with a single-use challenge (`EmailChallenge`). A challenge has a purpose, and it redeems only for that purpose:
+
+* `CLI_SIGN_IN` and `PORTAL_SIGN_IN` sign the user in.
+* `PASSWORD_SETUP` is an emailed set-password link. It never signs anyone in, and a sign-in link never sets a password.
+
+An `EMAIL` credential may set a password as an optional second sign-in method; email sign-in stays available. The framework provides the challenge model, the verifier (`EmailChallengeVerifier`) and `AuthProvider.loginWithVerifiedEmail`; the endpoints that send and redeem the emails belong to the service that hosts sign-in.
 
 [[service-tokens]]
 === Service Tokens for System-to-System Integration
@@ -365,12 +484,14 @@ For integrations that cannot perform interactive login -- MCP servers, cron jobs
 
 ==== Generating a Service Token
 
+Service tokens are minted at `POST /security/service-token`. The endpoint is served by the service that owns sign-in (`quantum-auth-service` in the reference architecture). The framework modules in this repository supply the request record (`ServiceTokenRequest`), the minting primitives (`CustomTokenAuthProvider.generateServiceToken` and `generateBoundUserToken`) and the CLI client; they do not expose the endpoint themselves.
+
 [source,bash]
 ----
 curl -sS -X POST \
-  -H 'Authorization: Bearer <admin-access-token>' \
+  -H 'Authorization: Bearer <access-token>' \
   -H 'Content-Type: application/json' \
-  http://localhost:8080/auth/service-token \
+  http://localhost:8080/security/service-token \
   -d '{
     "roles": ["user"],
     "expirationSeconds": 31536000,
@@ -411,19 +532,24 @@ java -jar quantum-cli/target/quarkus-app/quarkus-run.jar \
 *   `-u, --user`: (Required) The User ID to authenticate as.
 *   `-p, --password`: (Required) The password for authentication. You will be prompted for it if not provided.
 *   `-r, --roles`: Comma-separated list of roles to embed in the token.
-*   `-e, --expires`: Expiration in seconds. Use `-1` for a non-expiring token.
+*   `-e, --expires`: Expiration in seconds (default `3600`). Use `-1` for a non-expiring token.
 *   `-d, --description`: Optional description for the service token.
+*   `--realm`, `--audience`: Sent as the request's `realm` and `audiences`. Both are kept for wire compatibility and ignored for an identity-agnostic token.
 *   `--url`: The base URL of the Quantum API (defaults to `http://localhost:8080`).
 
-Response:
+The CLI signs in at `/security/login`, calls `/security/service-token` with the access token, and prints the token.
+
+Response of the endpoint, as the CLI's client contract (`cli-auth.openapi.yaml`) reads it:
 
 [source,json]
 ----
 {
-  "accessToken": "eyJhbGciOiJSUzI1NiIsInR5cCI6...",
-  "issuer": "https://myapp.example.com/issuer",
+  "token": "eyJhbGciOiJSUzI1NiIsInR5cCI6...",
   "subject": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-  "credentialType": "SERVICE_TOKEN"
+  "roles": ["user"],
+  "nonExpiring": false,
+  "expires_at": "<expiry, absent or null for a non-expiring token>",
+  "description": "MCP server integration token"
 }
 ----
 
@@ -436,7 +562,7 @@ Response:
 | `roles`
 | string array
 | Yes
-| Roles to embed in the token and store on the credential (e.g., `["user"]`, `["admin"]`, `["agent-read"]`).
+| Roles to embed in the token and store on the credential (e.g., `["user"]`, `["agent-read"]`). Give the token only the roles it needs.
 
 | `expirationSeconds`
 | long
@@ -446,7 +572,7 @@ Response:
 | `description`
 | string
 | No
-| Human-readable label for the credential (e.g., `"Nightly sync job"`, `"Claude MCP integration"`).
+| Human-readable label for the credential (e.g., `"Nightly sync job"`, `"MCP integration"`).
 
 | `userId`
 | string
@@ -456,7 +582,17 @@ Response:
 | `applicationRef`
 | string
 | For a token bound to the caller, yes. For an identity-agnostic token, no.
-| The one service the token is for. Launchpad uses it to resolve that service's identity and billing account. Omit it, and omit `userId`, to mint an identity-agnostic token.
+| The one service the token is for; it becomes the token's `aud` and `azp`. Omit it, and omit `userId`, to mint an identity-agnostic token.
+
+| `realm`, `audiences`
+| string, string array
+| No
+| Retained for wire compatibility. Ignored for an identity-agnostic token: a service token identifies its caller and is not bound to a realm or a resource. A token bound to the caller uses the caller's own realm.
+
+| `authorizedTenantIds`
+| string array
+| No
+| Tenants the service may select within its realm.
 |===
 
 ==== Who may mint
@@ -470,7 +606,7 @@ A request that names a `userId` other than the caller's is refused. If `X-Acting
 
 ==== What Happens on the Backend
 
-When you call `POST /security/service-token`, the auth service:
+When you call `POST /security/service-token`, the Auth service:
 
 1. **Validates the caller** -- the endpoint allows `mint-own-service-token` or `mint-agnostic-service-token`. An identity-agnostic token requires the second permission. A token for the caller and one service requires the first, and names that service in `applicationRef`.
 2. **Looks up the caller's credential** -- from the JWT `sub` claim, the framework finds the caller's `CredentialUserIdPassword` in the system realm.
@@ -507,24 +643,26 @@ Generate a token for your MCP integration:
 ----
 # Login as admin first
 ACCESS_TOKEN=$(curl -sS -X POST \
-  'http://localhost:8080/auth/login?userId=admin@mycompany.com&password=admin-secret' \
-  | jq -r '.accessToken')
+  -H 'Content-Type: application/json' \
+  http://localhost:8080/security/login \
+  -d '{"userId": "admin@mycompany.com", "password": "admin-secret"}' \
+  | jq -r '.access_token')
 
 # Generate a service token with read-only roles
 SERVICE_TOKEN=$(curl -sS -X POST \
   -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H 'Content-Type: application/json' \
-  http://localhost:8080/auth/service-token \
+  http://localhost:8080/security/service-token \
   -d '{
     "roles": ["user"],
     "expirationSeconds": 31536000,
-    "description": "Claude MCP integration - read-only"
-  }' | jq -r '.accessToken')
+    "description": "MCP integration - read-only"
+  }' | jq -r '.token')
 
 echo "Service token: $SERVICE_TOKEN"
 ----
 
-Then configure Claude Desktop to use it via a bridge that includes the token:
+Then configure your MCP client to use it via a bridge that includes the token:
 
 [source,json]
 ----
@@ -553,28 +691,33 @@ Every API call passes through the same security pipeline regardless of whether i
 
 ==== Token-to-Policy Flow
 
+The flow below is the default (local credential) path. The other two paths in <<authn-authz-separation>> build the same `PrincipalContext` from a different source and then continue identically.
+
 ....
 JWT arrives in Authorization header
     |
     v
-SecurityFilter parses JWT
+SecurityFilter verifies the JWT (signature, issuer, audience, expiry)
     |
     v
-Extract "sub" claim -> look up CredentialUserIdPassword in system realm
+PrincipalContextResolver: "sub" -> CredentialUserIdPassword in the system realm
     |
     v
 Build PrincipalContext:
     - userId (from credential)
-    - roles (merged from TOKEN + CREDENTIAL + USERGROUP)
-    - dataDomain (tenantId, orgRefName, accountNum, ownerId)
-    - defaultRealm (from credential's DomainContext)
+    - applicationId (the session application)
+    - roles (TOKEN + CREDENTIAL + REALM + USERGROUP, see Role Merging)
+    - defaultRealm (the realm the request runs in)
+    - dataDomain (tenantId, orgRefName, accountNum, dataSegment, ownerId)
     - area2RealmOverrides (optional per-area realm routing)
     |
     v
+Realm switch (only if requested), application admission, tenant selection
+    |
+    v
 Determine ResourceContext:
-    - area (from @FunctionalMapping, e.g., "integration")
-    - functionalDomain (e.g., "query")
-    - action (from @FunctionalAction or HTTP method, e.g., "find")
+    - area and functionalDomain (from @FunctionalMapping on the model or resource)
+    - action (from @FunctionalAction, a path keyword, or the HTTP method)
     |
     v
 RuleContext.checkRules(principalContext, resourceContext):
@@ -591,25 +734,28 @@ If ALLOW (SCOPED) -> proceed with data-level filters applied at repo layer
 
 ==== Role Merging
 
-When a token is validated, the effective roles come from three sources:
+On the default path `IdentityRoleResolver` computes the effective roles for (credential, realm, application) from four sources (`RoleSource`):
 
-1. **TOKEN**: The `groups` claim in the JWT itself.
-2. **CREDENTIAL**: The `roles` array stored on the `CredentialUserIdPassword` document in MongoDB.
-3. **USERGROUP**: Roles inherited from `UserGroup` membership, resolved via the user's `UserProfile` in the target realm.
+1. **TOKEN**: The roles in the verified token. They are honored only in the realm the token was issued for. After a realm switch, or for a token minted for another application, they are not adopted.
+2. **CREDENTIAL**: The flat `roles` on the `CredentialUserIdPassword`. Flat roles are global by design: they apply in every realm the credential can enter.
+3. **REALM**: The roles of the user's active `UserRealmRole` for the realm the request runs in. This is where per-realm roles belong. When `quantum.directory.mode=remote` the local copy of realm assignments is not an authority and is not read.
+4. **USERGROUP**: Roles of the `UserGroup` records the user's `UserProfile` belongs to, in the system realm and in the target realm, for groups that apply to the session application.
 
-The union of all three sources becomes the effective role set for the request.
+The union becomes the effective role set for the request. With no role at all the principal gets `ANONYMOUS`.
+
+In identity-only resolution the token contributes no roles: the result is the credential, realm and group roles, plus the roles of the application bindings that grant the selected tenant (see xref:{doc-root}/user-guide/tenant-models.adoc#application-bindings[Application bindings]).
 
 ==== Data Scoping via DataDomain
 
-The credential's `DomainContext` determines which tenant, organization, and account the token operates within.
-This translates to a `DataDomain` that is applied as query filters at the repository layer:
+The realm the request runs in and the selected tenant determine which tenant, organization and account the principal operates within: the credential's own `DomainContext` in its home realm, the realm's registered `DomainContext` after a realm switch, or the selected tenant's membership in a shared realm.
+This becomes a `DataDomain` that rules apply as query filters at the repository layer:
 
-* **tenantId**: Isolates data by tenant. A service token created by an `acme-corp` admin can only access `acme-corp` data.
+* **tenantId**: Isolates data by tenant.
 * **orgRefName**: Scopes to an organization within the tenant.
 * **accountNum**: Scopes to an account.
-* **ownerId**: Set to the credential's userId; used for owner-based access rules.
+* **ownerId**: Set to the principal's userId; used for owner-based access rules.
 
-These constraints are enforced automatically by Morphia repositories and cannot be bypassed by the token holder.
+These constraints are enforced by governed repositories and cannot be chosen by the token holder: a request body or CSV import cannot set a record's `dataDomain` (see the permissions guide).
 
 [[application-session]]
 ==== Application Session (`quantum.security.session.*`)
@@ -654,11 +800,18 @@ Only `iss` and `sub` are read from the token. `PrincipalContextPropertiesResolve
 * Exactly one: the request runs in it. This is how a shared-realm application (one realm owned by the application) reaches identities homed elsewhere, with no realm configured in the application.
 * Several: 403 `REALM_NOT_AUTHORIZED`; the realm must be selected explicitly (the reasons are logged by Auth, not returned).
 
-The tenant is then chosen in that realm by the default-tenant rule. A delegating service acting for an identity is checked against the realm chosen this way for that identity, after the identity is confirmed to be in the service's scope; any refusal about the acted-for identity reads `DELEGATION_NOT_ALLOWED`. Impersonation still runs in the target's home realm. Applications configure nothing for this: remote mode still refuses `quantum.security.session.realm`.
+The tenant is then chosen in that realm by the default-tenant rule. A delegating service acting for an identity is checked against the realm chosen this way for that identity, after the identity is confirmed to be in the service's scope; a refusal about who the acted-for identity is, or whether the service may reach it or that realm, reads `DELEGATION_NOT_ALLOWED`. Impersonation still runs in the target's home realm. Applications configure nothing for this: remote mode still refuses `quantum.security.session.realm`.
 
 *Which application may run there.* Wherever a user's application is checked against a realm (identity resolution, an `X-Realm` switch, and an application session receiving another application's token), one admission rule decides. An application is admitted in a realm when the realm is owned by it (`Realm.applicationRef`), or when it is granted to the identity there, either on its realm assignment (`authorizedApplications`) or by the credential's `applicationRegEx`. That is the grant login applies. Having a session in the realm is not itself a grant: switching into the realm, or receiving another application's token there, admits only an application the identity is granted. A resource server that trusts token claims (`quantum.auth.trust-token-claims=true`) has no local credential catalog: there only the realm's owner and the assignment admit, and repeating the token's own realm is not re-checked. A calling service's `X-Realm` switch is governed by the service's realm authorization, not by this rule.
 
-* Auth's typed refusals pass through with Auth's status and `{"code", "message"}` body: `PRINCIPAL_UNKNOWN` and `PRINCIPAL_DISABLED` (401), `APPLICATION_NOT_GRANTED`, `REALM_NOT_AUTHORIZED`, `TENANT_NOT_AUTHORIZED`, `IMPERSONATION_REFUSED`, `DELEGATION_NOT_ALLOWED`, `DELEGATION_TARGET_UNKNOWN` (403), `TENANT_SELECTION_REQUIRED` and `INVALID_REQUEST` (400). An untyped 401 from Auth is answered 401 `PRINCIPAL_UNKNOWN`. The refusal is answered before the resource is matched, so `@RolesAllowed` endpoints answer with the same status and code.
+*Application bindings decide first.* Before the rules above, identity-only resolution reads the identity's application bindings (`UserAppRole`): the identity's own active binding marked `defaultRealm` chooses the realm, a binding for the application in the realm admits it and supplies the tenant and the binding's roles, and only when no binding applies does the realm assignment's `authorizedApplications` grant decide. A suspended or malformed binding refuses; it never falls back. See xref:{doc-root}/user-guide/tenant-models.adoc#application-bindings[Application bindings].
+
+*Impersonation and delegation.* A request either impersonates an identity (`X-Impersonate-Subject` or `X-Impersonate-UserId`, one of them) or acts on behalf of one (`X-Acting-On-Behalf-Of-*`), never both.
+
+* Impersonation is for user credentials. The caller needs an `impersonateFilterScript`; a requested realm is checked against the caller's realm authorization and by the script before any target is looked up; the request then runs as the target in the target's home realm, which must be the requested realm when one was named. When the caller lists `authorizedImpersonateIds`, the target must be one of them. The target's roles are resolved without the impersonator's token roles. A requested realm outside the caller's realm authorization is refused `REALM_NOT_AUTHORIZED` before any target is looked up. From the target lookup on, a missing, disabled, out-of-realm or unlisted target reads `IMPERSONATION_REFUSED`, so a refusal does not reveal whether the target exists. The application and tenant checks that follow keep their own codes (for example `APPLICATION_NOT_GRANTED`, `TENANT_SELECTION_REQUIRED`). A service credential never impersonates.
+* Delegation is for service credentials whose `serviceKind` is `DELEGATING`. The service needs a delegation scope (`authorizedImpersonateIds` and/or `impersonateFilterScript`), and its own realm authorization bounds the realms it may act in. The service is checked before the acted-for identity is looked up; after that, an unknown, disabled or out-of-scope identity and a realm outside the service's reach all read `DELEGATION_NOT_ALLOWED`, so delegation cannot be used to probe which identities exist. The acted-for identity is then resolved as if it had signed in to the same application, so its own application and tenant checks keep their codes (for example `APPLICATION_NOT_GRANTED`, `TENANT_SELECTION_REQUIRED`); the acting service is recorded on the resolution. An `APPLICATION` service runs as itself and may not act for anyone.
+
+* Auth's typed refusals pass through with Auth's status and `{"code", "message"}` body. The codes `PrincipalContextResolver` produces (`PrincipalResolutionError`) are `PRINCIPAL_UNKNOWN` and `PRINCIPAL_DISABLED` (401), `APPLICATION_NOT_GRANTED`, `REALM_NOT_AUTHORIZED`, `TENANT_NOT_AUTHORIZED`, `IMPERSONATION_REFUSED` and `DELEGATION_NOT_ALLOWED` (403), and `TENANT_SELECTION_REQUIRED` (400). Any other code Auth answers passes through unchanged. A request that names no application is refused with `APPLICATION_NOT_GRANTED`: there is no resolution without an application. An untyped 401 from Auth is answered 401 `PRINCIPAL_UNKNOWN`. The refusal is answered before the resource is matched, so `@RolesAllowed` endpoints answer with the same status and code.
 * Auth unreachable, or an answer that is not a valid `helixor.principal_context.v1` for this application, with no unexpired resolution held: 503 `PRINCIPAL_RESOLUTION_UNAVAILABLE`. There is no fallback to token claims.
 * The receiving application id is `quantum.security.session.application-id`, else `quantum.application-registration.application-id`.
 * Startup fails when the value is not `remote`, when no `RemotePrincipalSource` bean is deployed (`quantum-auth-client-provider` provides it), when no application id is configured, or together with `quantum.security.session.realm` or `quantum.security.session.selection-policy`.
@@ -675,10 +828,21 @@ quantum.auth.principal-source=remote
 
 Leave the property unset to keep the paths described above unchanged.
 
+[[realm-override-x-realm]]
 ==== Realm Override with `X-Realm`
 
-If the service token's credential has `authorizedRealms` or a matching `realmRegEx`, the caller can pass `X-Realm: <target-realm>` to operate in a different realm.
-The `SecurityFilter` validates that the credential is authorized for the target realm, then rebuilds the `PrincipalContext` with the target realm's `DomainContext`.
+`X-Realm` is an explicit override, comparable to `sudo`: it asks to run one request in a realm other than the one the principal would resolve to. It is not a default and clients must not send it on ordinary calls. Without it the realm comes from the token or credential, from `quantum.security.session.realm`, or (identity-only resolution) from the application. UI code that attaches `X-Realm` to every request turns a safety check into routine noise and breaks as soon as the user's authority and the header disagree.
+
+The override needs authority, and the header alone grants nothing:
+
+* the target realm must be registered in the realm catalog;
+* the credential must be authorized for it: listed in `authorizedRealms`, or, when that list is empty, matched by `realmRegEx`. With delegated claims the signed `realmRegEx` boundary decides, and a switch into the system realm is never honored;
+* when the request carries an application id, the user must be admitted to that application in the target realm;
+* token roles and the signed tenant do not carry over: roles are re-derived for the target realm, and in a shared realm the caller must select a tenant (`X-Tenant-Id`) it is authorized for.
+
+A refused override answers 403. On success the `PrincipalContext` is rebuilt with the target realm's `DomainContext` (the caller's userId stays the `ownerId`). During impersonation the realm switch is not applied.
+
+Legitimate uses are operator tooling and service tokens: an identity-agnostic service token has no realm of its own, so it names the realm (and tenant) it works in.
 
 [source,bash]
 ----
@@ -697,6 +861,7 @@ To follow the principle of least privilege:
 * **Assign minimal roles** -- give the service token only the roles it needs. If it only reads data, do not include `admin`.
 * **Use per-tenant agent configuration** -- configure `quantum.agent.tenant.<realm>.enabledTools` to restrict which gateway tools the agent can call.
 * **Set `maxFindLimit`** -- cap query results with `quantum.agent.tenant.<realm>.maxFindLimit`.
+* **Do not send `X-Realm` unless the token must act outside its own realm** -- see <<realm-override-x-realm>>.
 * **Use `expirationSeconds`** -- even for long-lived tokens, set an expiration. A 1-year token (`31536000` seconds) is preferable to an effectively infinite one.
 * **Monitor and audit** -- the `parentCredentialSubject` on `SERVICE_TOKEN` credentials links every service token to the admin who created it. Token validation logs include the userId and realm for each request.
 
@@ -732,11 +897,11 @@ curl -sS -H "Authorization: Bearer ${USER_ACCESS_TOKEN}" \
   https://ontology.example.com/v1/ontology/tbox
 ----
 
-The receiving service builds the same `PrincipalContext` the user would get: the token's `realm` and `tenantId` claims select the realm and tenant, and the user's roles apply. Your service's own roles play no part.
+The receiving service builds the same `PrincipalContext` the user would get from a direct call, by whichever path it is configured for (see <<authn-authz-separation>>): the user's realm, tenant and roles apply. Your service's own roles play no part.
 
 [NOTE]
 ====
-* A receiver that enforces application admission (`quantum.auth.expected-audience`, `ApplicationTokenAdmissionFilter`) accepts a user token only if it was issued for that application (`aud` contains it and `azp` is absent or equal to it). A token the user got for application A is refused (403) by application B. Across applications, call B with your service token.
+* A receiver that enforces application admission (`quantum.auth.expected-audience` and `ApplicationTokenAdmissionFilter`, both provided by `quantum-auth-client-provider`, which is not a module of this repository) accepts a user token only if it was issued for that application (`aud` contains it and `azp` is absent or equal to it). A token the user got for application A is refused (403) by application B. Across applications, call B with your service token.
 * The forwarded token is the user's full-lifetime bearer. Forward it only within the application's own trust boundary, and never log it.
 ====
 
@@ -790,6 +955,7 @@ Never use them in production.
 
 Place `privateKey.pem` and `publicKey.pem` in `src/main/resources/` of your application module.
 The framework loads them from the classpath at startup and caches them in memory.
+Outside the `dev` and `test` profiles you must still name them explicitly (`quantum.jwt.private-key-location=classpath:privateKey.pem` and the matching public-key property), or startup fails.
 
 **Option 3: External keys via configuration (recommended for production)**
 
@@ -807,6 +973,7 @@ mp.jwt.verify.publickey.location=/etc/quantum/keys/publicKey.pem
 This approach allows key rotation without rebuilding or redeploying the application.
 See xref:{doc-root}/user-guide/multiple-auth-providers.adoc#per-tenant-key-pairs[Key Pair Management] for the full configuration reference.
 
+[[auth-configuration-reference]]
 === Configuration Reference
 
 [cols="1,1,3", options="header"]
@@ -814,8 +981,8 @@ See xref:{doc-root}/user-guide/multiple-auth-providers.adoc#per-tenant-key-pairs
 | Property | Default | Description
 
 | `auth.provider`
-| (required)
-| Comma-separated list of provider names (e.g., `custom`, `custom,oidc`). See xref:{doc-root}/user-guide/multiple-auth-providers.adoc[Multiple Auth Providers].
+| `custom`
+| Comma-separated, ordered list of provider names (e.g., `custom`, `custom,oidc`). See xref:{doc-root}/user-guide/multiple-auth-providers.adoc[Multiple Auth Providers].
 
 | `mp.jwt.verify.publickey.location`
 | (required)
@@ -827,10 +994,10 @@ See xref:{doc-root}/user-guide/multiple-auth-providers.adoc#per-tenant-key-pairs
 
 | `mp.jwt.verify.audiences`
 | (required)
-| Comma-separated list of accepted audience values (e.g., `b2bi-api-client,b2bi-api-client-refresh`).
+| Comma-separated list of audience values this service accepts (a SmallRye JWT property). Application-scoped tokens carry application ids as `aud`; tokens minted without application scoping carry `b2bi-api-client`, and refresh tokens `b2bi-api-client-refresh`. List only what this service should accept; do not widen it to make another application's token portable.
 
 | `com.b2bi.jwt.duration`
-| `10000`
+| (required)
 | Access token duration in seconds for the custom JWT provider.
 
 | `quantum.auth.refresh-token.duration`
@@ -841,24 +1008,24 @@ See xref:{doc-root}/user-guide/multiple-auth-providers.adoc#per-tenant-key-pairs
 | `2592000`
 | Longest a session may be kept alive by refreshing, in seconds from sign-in. Must be at least the refresh token duration.
 
-| `auth.jwt.secret`
-| (required)
-| Secret for HMAC-based operations. Use an environment variable: `${JWT_SECRET}`.
+| `auth.jwt.secret`, `auth.jwt.expiration`, `auth.jwt.refresh-expiration`
+| _(not read)_
+| Appear in older sample configurations. No module in this repository reads them: tokens are RS256-signed with the key pair below, the access-token lifetime is `com.b2bi.jwt.duration`, and the refresh-token lifetime is `quantum.auth.refresh-token.duration`.
 
-| `auth.jwt.expiration`
-| `15`
-| Fallback access token expiration in minutes.
+| `auth.jwt.key-id`
+| _(unset for signing; `quantum-auth` for the JWKS endpoint)_
+| Key id (`kid`). When set, `TokenUtils` stamps it on signed tokens; when unset, the private-key location is used as the `kid`. The OAuth server's JWKS endpoint advertises this value and defaults to `quantum-auth`, so set it explicitly when other services verify tokens through JWKS.
 
-| `auth.jwt.refresh-expiration`
-| `30`
-| Refresh token expiration in minutes.
+| `quantum.jwt.signing-enabled`
+| `true`
+| `false` turns token signing off for a service that only verifies tokens.
 
 | `quantum.jwt.private-key-location`
-| _(unset — defaults to classpath `privateKey.pem`)_
+| _(dev/test: classpath `privateKey.pem`; other profiles: required)_
 | Path to the RSA private key for token signing. Supports `file:`, `classpath:`, or bare classpath resource names. See xref:{doc-root}/user-guide/multiple-auth-providers.adoc#per-tenant-key-pairs[Key Pair Management].
 
 | `quantum.jwt.public-key-location`
-| _(unset — defaults to classpath `publicKey.pem`)_
+| _(dev/test: classpath `publicKey.pem`; other profiles: required)_
 | Path to the RSA public key for token verification. Same prefix conventions as the private key property. NOTE: also update `mp.jwt.verify.publickey.location` to match.
 
 | `quantum.security.session.application-id`
@@ -868,6 +1035,14 @@ See xref:{doc-root}/user-guide/multiple-auth-providers.adoc#per-tenant-key-pairs
 | `quantum.security.session.realm`
 | _(unset — token realm)_
 | Realm a user's session runs in when the request sends no `X-Realm`.
+
+| `quantum.security.session.selection-policy`, `quantum.security.session.selection-policy-version`
+| (unset)
+| Id and exact version of a `SessionSelectionPolicy` bean that proposes the session realm. Both unset keeps the default behaviour; a missing, duplicate or mismatched selection fails startup. See <<session-realm-proposals>>.
+
+| `quantum.auth.trust-token-claims`
+| `false`
+| `true` builds the principal from the trusted issuer's signed claims without reading a local credential. The configured provider must implement `ClaimsAuthProvider`. See <<authn-authz-separation>>.
 
 | `quantum.auth.principal-source`
 | (unset)
@@ -915,6 +1090,7 @@ role parity and new session-policy extension contracts remain planned. See the
 security-runtime README for the lifecycle diagram and test boundaries.
 
 
+[[session-realm-proposals]]
 === Application-specific realm proposals
 
 Implement `com.e2eq.framework.security.session.SessionSelectionPolicy` in an

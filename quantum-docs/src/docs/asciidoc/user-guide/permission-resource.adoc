@@ -4,6 +4,8 @@
 
 This guide explains how to use the Permission Resource check APIs and how to evaluate the server-produced access decisions on the client using the provided JavaScript library.
 
+All endpoints are under `/system/permissions` (`PermissionResource`, in `quantum-system-rest`). Where this guide writes `/check` or `/check-with-index` it means `/system/permissions/check` and `/system/permissions/check-with-index`.
+
 It covers:
 
 - The `/check` API (server-evaluated permission)
@@ -55,8 +57,16 @@ restriction above applies before any of those values are read.
 
 == APIs
 
-=== POST /permission/check
-Performs a server-side permission check for a single request using the caller identity and an optional data domain (organization/account/tenant/segment/owner).
+Every endpoint requires an authenticated caller (`@Authenticated`): send the bearer token. The checks answer a question about policy ("would this identity be allowed?"); they do not grant anything, and they do not let a caller act as the identity it asks about.
+
+Three inputs are resolved the same way by `/check`, `/check-with-index` and `/fd/evaluate`:
+
+* `applicationId`: policies are evaluated in the scope of one application. It is taken from the request, else from the authenticated caller's principal. When neither names one the call is refused with `400 applicationId is required`.
+* `realm`: from the request, else the realm the caller's request runs in, else the framework default realm.
+* Roles: when `identity` is a userId, its roles are resolved by `IdentityRoleResolver` for that realm (credential, realm assignment and group roles, plus token roles when the identity is the caller itself). `roles` in the request adds roles to evaluate "what if"; it changes no stored grant.
+
+=== POST /system/permissions/check
+Performs a server-side permission check for a single request using the named identity and an optional data domain (organization/account/tenant/segment/owner). Data-domain fields that are omitted fall back to the caller's own principal.
 
 .Request
 [source,json]
@@ -64,6 +74,7 @@ Performs a server-side permission check for a single request using the caller id
 {
   "identity": "user-123",
   "realm": "b2bi",
+  "applicationId": "acme-orders",
   "area": "security",
   "functionalDomain": "userProfile",
   "action": "view",
@@ -94,7 +105,7 @@ Notes:
 - This endpoint is authoritative and understands scripts/postconditions and any dynamic runtime evaluation.
 - Use `/check` when you must account for scripts, context-enriched rules, or when you don’t have the precomputed snapshot.
 
-=== POST /permission/check-with-index
+=== POST /system/permissions/check-with-index
 Returns a precomputed permission snapshot for the supplied identity. This snapshot can be cached on the client and used for fast allow/deny decisions without server roundtrips.
 
 Depending on server version/config, the response can include:
@@ -284,13 +295,13 @@ Interpretation:
 
 Field semantics
 
-- enabled: false indicates the compiled index is disabled or unavailable. Clients should treat the snapshot as non-authoritative and prefer calling /permission/check for critical decisions; the matrix may still be present for some scopes but is not guaranteed complete.
+- enabled: false indicates the compiled index is disabled or unavailable. Clients should treat the snapshot as non-authoritative and prefer calling /system/permissions/check for critical decisions; the matrix may still be present for some scopes but is not guaranteed complete.
 - version: 0 accompanies enabled=false. When enabled is true, version corresponds to the compiled index version and can be used for caching together with policyVersion.
 - policyVersion: the ruleset/policy timestamp or version for cache invalidation.
 - rules: legacy flat list preserved for backward compatibility. Clients should prefer the scoped matrix when available.
 - sources: identities included when the snapshot was materialized (e.g., user id and/or roles).
-- requiresServer (top-level): true means at least one rule could not be safely materialized (e.g., uses scripts/postconditions or dynamic filters). Clients should be prepared to call /permission/check for affected scopes/decisions.
-- scopes[<key>].requiresServer: per-scope flag. If true, client should not rely on that scope’s matrix for final decisions and should call /permission/check when evaluating in that scope.
+- requiresServer (top-level): true means at least one rule could not be safely materialized (e.g., uses scripts/postconditions or dynamic filters). Clients should be prepared to call /system/permissions/check for affected scopes/decisions.
+- scopes[<key>].requiresServer: per-scope flag. If true, client should not rely on that scope’s matrix for final decisions and should call /system/permissions/check when evaluating in that scope.
 - requestedScope / requestedFallback: convenience keys provided when the request included data-domain values. Clients should attempt lookup starting at requestedScope, then walk requestedFallback in order.
 
 == Data-Domain Scope and Fallback
@@ -305,6 +316,8 @@ org=<v>|acct=<v>|tenant=<v>|seg=<v>|owner=<v>
 - Fallback traversal order: owner → segment → tenant → account → org → global.
 
 == JavaScript Client Library
+
+NOTE: The browser examples in this guide show only the request body. Every call must also carry the caller's bearer token (`Authorization: Bearer <token>`), and `applicationId` unless the caller's principal already names an application.
 
 The JavaScript client provides helpers to evaluate the snapshot on the client.
 
@@ -366,6 +379,7 @@ Request fields (additive):
 
 * `identity` (string, required)
 * `realm` (string, optional)
+* `applicationId` (string; required unless the authenticated caller's principal already names an application)
 * `area`, `functionalDomain`, `action`, `resourceId` (optional; may be wildcard `*` unless doing a specific check)
 * `modelClass` (string, optional): fully qualified class name or resolvable entity name
 * `resource` (object, optional): shallow JSON snapshot of the domain resource
@@ -535,7 +549,7 @@ Q: How do I know which rule produced the result?
 <script>
   async function canViewProfile() {
     // 1) Get a snapshot for the user
-    const res = await fetch('/permission/check-with-index', {
+    const res = await fetch('/system/permissions/check-with-index', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ identity: 'user-123', realm: 'b2bi', orgRefName: 'acme', accountNumber: 'A1', tenantId: 't-001', dataSegment: 0, ownerId: 'user-123' })
     });
@@ -567,7 +581,7 @@ export default function ProfileButton() {
 
   useEffect(() => {
     async function run() {
-      const res = await fetch('/permission/check-with-index', {
+      const res = await fetch('/system/permissions/check-with-index', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ identity: 'user-123', realm: 'b2bi' })
       });
@@ -596,7 +610,7 @@ export default function ProfileButton() {
 export default {
   data() { return { allowed: false }; },
   async mounted() {
-    const res = await fetch('/permission/check-with-index', {
+    const res = await fetch('/system/permissions/check-with-index', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ identity: 'user-123', realm: 'b2bi' })
     });
@@ -614,8 +628,9 @@ export default {
 [source,bash]
 ----
 curl -sS -X POST \
+  -H "Authorization: Bearer $JWT" \
   -H 'Content-Type: application/json' \
-  http://localhost:8080/permission/check \
+  http://localhost:8080/system/permissions/check \
   -d '{
     "identity":"user-123",
     "realm":"b2bi",
@@ -634,8 +649,9 @@ curl -sS -X POST \
 [source,bash]
 ----
 curl -sS -X POST \
+  -H "Authorization: Bearer $JWT" \
   -H 'Content-Type: application/json' \
-  http://localhost:8080/permission/check-with-index \
+  http://localhost:8080/system/permissions/check-with-index \
   -d '{
     "identity":"user-123",
     "realm":"b2bi",

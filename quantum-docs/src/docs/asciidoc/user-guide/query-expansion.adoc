@@ -5,16 +5,16 @@ endif::[]
 [[query-expansion]]
 == Relationship hydration with expand(path)
 
-This section documents the new relationship traversal and hydration capability added to the BIAPI query language.
-It preserves backward compatibility and introduces no SQL-like syntax.
+This section documents relationship traversal and hydration in the BIAPI query language: `expand(path)`, which follows a reference field, and `expand(@relation)`, which follows a named ontology relation.
+Hydration means that the related document is fetched and placed in the result row. Queries without `expand(...)` behave as before, and no SQL-like syntax is introduced.
 
 === How it works
 
 - You add one or more expand(path) directives to your query string to request hydration of related entities at specific paths.
 - The planner inspects the query. If any expand(...) directives are present, it selects AGGREGATION mode; otherwise, FILTER mode.
 - In FILTER mode, the system converts the query to a Morphia Filter and queries a single MongoDB collection.
-- In AGGREGATION mode, the system constructs an aggregation pipeline (with $lookup, $unwind, etc.) to materialize related documents. Execution may be guarded by a feature flag in the QueryGatewayResource.
-- Projection can be applied at the root and per expansion using fields:[+/-] syntax. Unknown projection paths are hard errors.
+- In AGGREGATION mode, the system constructs an aggregation pipeline with one `$lookup` per expand path to materialize related documents. Through the REST gateway, execution is guarded by the feature flag `feature.queryGateway.execution.enabled`, which is `false` by default; while it is off, `POST /api/query/find` answers an expand query with HTTP 501.
+- A root projection can be applied with the fields:[+/-] directive. Unknown projection paths are hard errors.
 
 See also:
 
@@ -23,73 +23,89 @@ See also:
 
 === What is expand(path)?
 
-Use expand(path) to hydrate properties that are modeled as EntityReference or ontology-annotated relations.
+Use expand(path) to hydrate a property that is modeled as an `EntityReference` (the framework's stored reference to another entity). The field must also declare its target with `@ReferenceTarget`, which tells the planner which collection and model the reference points to:
+
+[source,java]
+----
+@ReferenceTarget(target = MultiHopOrder.class, collection = "multihop_orders")
+protected EntityReference orderRef;
+----
+
 The path is dot-based and may include array wildcards [*] between segments.
 
 - Single reference: expand(customer)
+- A reference reached through an earlier expand: expand(orderRef) && expand(orderRef.supplierRef)
 - Array of references: expand(items[*].product)
-- Nested arrays: expand(patient.visits[*].diagnoses[*])
 
-Expansion is a query-time operation: the related document(s) are materialized and embedded at the specified path in the result.
+Expansion is a query-time operation: the related document replaces the stored reference at the specified path in the result. Nothing is written back.
+
+A path that is not an `EntityReference` field, or whose field has no `@ReferenceTarget(target = ...)`, is rejected (HTTP 400 `InvalidQuery` from `POST /api/query/find`). To follow an ontology relation instead of a reference field, use <<expand-relation>>.
 
 === Filtering related entities (inline)
 
 Continue to use your existing filter primitives in the same query string to filter the root collection.
-Filtering on related entities will be supported via either:
 
-- Inline path blocks: path { key:value, key2:^[v1,v2] }
-- Or filters inside expand(...): expand(customer, status:active)
+Filtering on related entities inside the query is not supported. The grammar accepts only a path inside `expand(...)`: forms such as `expand(customer, status:active)` or an inline block `items[*].product{ active:true }` are syntax errors. Which related documents are returned is decided by the caller's row policy on the target type, not by the query.
 
-Note: In v1, parsing of expand(path) is enabled; related-entity filters inside expand and inline path blocks will be introduced with the planner/compiler work.
+To restrict the root rows by a relationship, use the ontology operators `hasEdge(...)` and `hasIncomingEdge(...)`; see xref:{doc-root}/user-guide/query-language.adoc#ontology-query-language[Expressing Ontology Constraints in Queries].
 
 === Projection with fields:[+/-]
 
-A unified projection syntax can be used both at the root and per expansion.
+A projection directive can be applied to the root documents of an expand query.
 
-- Inclusion mode: fields:[+_id,+total,+customer.name]
+- Inclusion mode: fields:[+_id,+total,+customer]
 - Exclusion mode: fields:[-internalNotes,-secret]
-- Inside expand: expand(customer, fields:[+name,+tier,-ssn])
 
 Rules:
-- If any + appears → include only those paths, then apply - as carve-outs.
+
+- If any + appears → include only those paths, then apply - as carve-outs. An entry with neither sign counts as an include.
 - If only - appears → include all by default and remove listed paths.
-- _id keeps current default behavior unless explicitly set.
+- _id is kept unless explicitly excluded.
+- Paths are checked against the root model; an unknown path fails the request.
+- The directive is handled by the planner in AGGREGATION mode only. It is not part of the filter grammar, so a query with `fields:[...]` and no `expand(...)` is rejected as a syntax error.
+- A projection inside expand, such as `expand(customer, fields:[+name])`, is not supported. Fields of a related document are removed only by the caller's field policy on the target type.
+- The projection never widens what field policy allows: the gateway removes the root type's policy-excluded fields in a final stage, after the projection.
 
 === Examples
 
-- Hydrate a single reference and keep a few fields
+- Hydrate a single reference and keep a few root fields
 
 [source]
 ----
-q = "realm:acme && expand(customer, fields:[+name,+tier]) && fields:[+_id,+total,+customer.name]"
+q = "expand(customer) && status:active && fields:[+_id,+total,+customer]"
 ----
 
-- Hydrate array of product references inside line items, filter to active products, project a couple of fields
-
-[source]
-----
-q = "expand(items[*].product, active:true, fields:[+sku,+title]) && fields:[+_id,+items.product.sku]"
-----
-
-- Filter by a related product without projecting it (inline block form)
+- Hydrate a reference and filter the root with a wildcard (from the gateway's integration tests, root type `UserProfile`)
 
 [source]
 ----
-q = "items[*].product{ active:true, sku:^[A123,B456] } && fields:[+_id,+total]"
+q = "expand(credentialUserIdPasswordRef) && email:*agg-user*"
+----
+
+- Hydrate two hops
+
+[source]
+----
+q = "expand(orderRef) && expand(orderRef.supplierRef) && customerName:Cust-1"
 ----
 
 === Semantics and limits
 
-- Backward compatible: if no expand(...) or related-path filters are present, queries run as they do today (single-collection).
-- Depth for nested paths is bounded; on mixed array/object hops, traversal stops at the first non-reference boundary.
+- Backward compatible: if no expand(...) is present, queries run as they do today (single-collection).
+- A multi-hop path needs one expand per hop, parent first: `expand(orderRef) && expand(orderRef.supplierRef)`. Each hop looks up the id stored in the reference at that path, so the parent must already be hydrated.
+- Paging and sorting apply to the root rows, before any lookup.
+- Every hop must be governable: the target must be a model collection whose row and field policy can be resolved for the caller, otherwise the query is refused (HTTP 403 `ExpandPolicyUnresolved`) and nothing runs.
+- A reference whose target the caller may not see, or that points into another tenant, comes back as `null`; the response does not reveal whether the target exists.
 - Unknown projection paths are hard errors (the request fails with a clear message).
+- `expand(...)` cannot be used with `count` or `deleteMany`; both reject it with HTTP 400 (`InvalidQuery`).
+- Array paths with `[*]` are accepted by the grammar and reported by the planner. Single references and multi-hop chains are covered by the framework's integration tests; array expansion is not, so verify it against your own model before relying on it. Nested array paths such as `visits[*].diagnoses[*]` parse, but the compiler handles one array level.
 
 See also: xref:{doc-root}/user-guide/planner-and-query-gateway.adoc[Planner and QueryGateway]
 
 [[aggregation-examples]]
 === Aggregation examples: what expand(...) compiles to
 
-This section shows typical MongoDB aggregation stages the planner emits when expand(path) is present. Exact collection names and field names depend on your model mapping. If the collection cannot be resolved at plan-time, the planner will emit a placeholder from: "__unknown__"; the REST gateway returns HTTP 422 on execution in that case.
+This section shows the MongoDB aggregation stages the compiler (`MongoAggregationCompiler`) emits when expand(path) is present. Collection names and field names depend on your model mapping. The examples show the pipeline as the REST gateway runs it, with the caller's policies included; the concrete policy documents depend on your rules, so they are shown here as a tenant match.
 
 Tip: You can inspect the chosen mode and expand paths with POST /api/query/plan. See xref:{doc-root}/user-guide/planner-and-query-gateway.adoc#query-gateway-rest[QueryGateway REST endpoints].
 
@@ -99,24 +115,33 @@ Query
 
 [source]
 ----
-q = "status:active && expand(customer, fields:[+name,+tier]) && fields:[+_id,+total,+customer]"
+q = "status:active && expand(customer) && fields:[+_id,+total,+customer]"
 ----
 
-Typical pipeline skeleton
+Pipeline
 
 [source,json]
 ----
 [
+  { "$match": { "dataDomain.tenantId": "acme" } },
   { "$match": { "status": "active" } },
+  { "$limit": 10 },
   { "$lookup": {
       "from": "customers",
-      "localField": "customerId",
-      "foreignField": "_id",
+      "let": { "id": "$customer.entityId", "tenant": "$dataDomain.tenantId" },
+      "pipeline": [
+        { "$match": { "$expr": { "$and": [
+            { "$eq": ["$_id", "$$id"] },
+            { "$eq": ["$dataDomain.tenantId", "$$tenant"] }
+        ] } } },
+        { "$match": { "dataDomain.tenantId": "acme" } },
+        { "$project": { "ssn": 0 } }
+      ],
       "as": "__exp_customer"
   }},
-  { "$unwind": { "path": "$__exp_customer", "preserveNullAndEmptyArrays": true }},
-  { "$set": { "customer": "$__exp_customer" }},
-  { "$project": { "_id": 1, "total": 1, "customer": { "name": 1, "tier": 1 } } }
+  { "$set": { "customer": { "$first": "$__exp_customer" } } },
+  { "$project": { "__exp_customer": 0 } },
+  { "$project": { "_id": 1, "total": 1, "customer": 1 } }
 ]
 ----
 
@@ -132,8 +157,14 @@ Result shape (conceptual)
 ----
 
 Notes
-- The intermediate field __exp_customer is an internal staging alias; the planner may omit it in future.
-- Per-expansion projection fields:[+name,+tier] narrows the embedded document via $project.
+
+- The first `$match` is the root row policy (DataDomain scope and rule filters), added by the gateway. The second is the caller's own filter.
+- `$sort`, `$skip` and `$limit` come from the request's `sort` and `page` and run before the lookup. A `$limit` is added only when `page.limit` is sent.
+- The lookup is correlated: `let` binds the id stored in the reference (`<path>.entityId`) and the root document's tenant; the inner `$expr` matches both.
+- The inner `$match` is the target's row policy and the inner `$project` removes the target's policy-excluded fields (`ssn` here is an example of such a field). Both are present only when the policy has something to add.
+- The intermediate field `__exp_<path>` (dots replaced by underscores) is an internal staging alias; it is removed again.
+- `$first` yields no value when the lookup matched nothing, so the reference field is absent (read as `null`) in that row.
+- When the root type has policy-excluded fields, the gateway appends a final `$project` that removes them, after the `fields:[...]` projection.
 
 ==== Array of references: expand(items[*].product)
 
@@ -141,99 +172,19 @@ Query
 
 [source]
 ----
-q = "expand(items[*].product, fields:[+sku,+title]) && fields:[+_id,+items.product]"
+q = "expand(items[*].product)"
 ----
 
-Typical pipeline patterns (two common strategies)
-
-1) Unwind-and-regroup (easy to read)
-
-[source,json]
-----
-[
-  { "$unwind": { "path": "$items", "preserveNullAndEmptyArrays": true }},
-  { "$lookup": {
-      "from": "products",
-      "localField": "items.productId",
-      "foreignField": "_id",
-      "as": "__exp_product"
-  }},
-  { "$unwind": { "path": "$__exp_product", "preserveNullAndEmptyArrays": true }},
-  { "$set": { "items.product": "$__exp_product" }},
-  { "$group": {
-      "_id": "$_id",
-      "doc": { "$first": "$$ROOT" },
-      "items": { "$push": "$items" }
-  }},
-  { "$replaceRoot": { "newRoot": { "$mergeObjects": ["$doc", { "items": "$items" }] } }},
-  { "$project": { "_id": 1, "items.product": { "sku": 1, "title": 1 } } }
-]
-----
-
-2) Map-with-lookup (keeps array order without grouping; requires $lookup with pipeline + $map)
-
-[source,json]
-----
-[
-  { "$set": {
-      "items": {
-        "$map": {
-          "input": "$items",
-          "as": "it",
-          "in": {
-            "$let": {
-              "vars": {
-                "p": { "$first": {
-                  "$lookup": {
-                    "from": "products",
-                    "let": { "pid": "$$it.productId" },
-                    "pipeline": [ { "$match": { "$expr": { "$eq": ["$_id", "$$pid"] } } } ],
-                    "as": "p"
-                  }
-                }}
-              },
-              "in": { "$mergeObjects": [ "$$it", { "product": "$p" } ] }
-            }
-          }
-        }
-      }
-  }},
-  { "$project": { "_id": 1, "items.product": { "sku": 1, "title": 1 } } }
-]
-----
-
-Notes
-- The actual compiler may choose either strategy based on simplicity; behavior is equivalent for most cases.
-- Null or missing productId yields product: null due to preserveNullAndEmptyArrays.
-
-==== Nested arrays: expand(patient.visits[*].diagnoses[*])
-
-Query
-
-[source]
-----
-q = "expand(patient.visits[*].diagnoses[*]) && fields:[+_id,+patient.visits.diagnoses]"
-----
-
-Typical staged pipeline (high level)
-
-[source]
-----
-1. $lookup patient -> __exp_patient; $set patient
-2. $unwind visits (preserveNullAndEmptyArrays)
-3. $unwind visits.diagnoses
-4. $lookup diagnosis -> set visits.diagnoses[*]
-5. $group back by root _id while reconstructing visits and diagnoses arrays in original order
-6. optional $project to constrain fields
-----
+For a path with `[*]` the compiler binds the list of referenced ids (`let: { "ids": ... }`), matches them with `$in` in the inner pipeline under the same target policy, and then rebuilds the array with a `$set` / `$map` over the first path segment that merges each element with its looked-up document under the last segment. The array order is kept and no `$unwind` or `$group` is used.
 
 Caveats
-- Depth and mixed object/array hops are bounded; traversal stops at a non-reference boundary.
-- For very large arrays, prefer targeted filtering before expansion to reduce fan-out.
+
+- As noted under Semantics and limits, array expansion is not covered by the framework's integration tests in this release.
+- For very large arrays, prefer targeted filtering of the root before expansion to reduce fan-out.
 
 ==== Multi-Hop Reference Traversal Chains: expand(hop1) && expand(hop1.hop2)
 
-Multiple relationship hops can be chained together using standard logical conjunction (`&&`). For example, traversing from a Customer to their Orders, and from each Order to its Supplier:
+Multiple relationship hops can be chained together using standard logical conjunction (`&&`). For example, traversing from a Customer to its Order, and from the Order to its Supplier:
 
 Query
 
@@ -244,58 +195,75 @@ q = "customerName:Cust-1 && expand(orderRef) && expand(orderRef.supplierRef)"
 
 Pipeline Architecture with Inner-Pipeline Pushdown
 
-Instead of simple uncorrelated lookups, the compiler generates correlated `$lookup` stages with dedicated inner pipelines:
+The compiler generates one correlated `$lookup` stage per hop, each with its own inner pipeline. The second hop reads the reference inside the document the first hop put in place:
 
 [source,json]
 ----
 [
-  { "$match": { "dataDomain.tenantId": "acme", "customerName": "Cust-1" } },
+  { "$match": { "dataDomain.tenantId": "acme" } },
+  { "$match": { "customerName": "Cust-1" } },
   { "$lookup": {
-      "from": "orders",
-      "let": { "ref_id": "$orderRef._id" },
+      "from": "multihop_orders",
+      "let": { "id": "$orderRef.entityId", "tenant": "$dataDomain.tenantId" },
       "pipeline": [
-        { "$match": { "$expr": { "$eq": ["$_id", "$$ref_id"] } } },
+        { "$match": { "$expr": { "$and": [
+            { "$eq": ["$_id", "$$id"] },
+            { "$eq": ["$dataDomain.tenantId", "$$tenant"] }
+        ] } } },
         { "$match": { "dataDomain.tenantId": "acme" } },
         { "$project": { "secretDiscount": 0 } }
       ],
-      "as": "orderRef"
+      "as": "__exp_orderRef"
   }},
-  { "$unwind": { "path": "$orderRef", "preserveNullAndEmptyArrays": true } },
+  { "$set": { "orderRef": { "$first": "$__exp_orderRef" } } },
+  { "$project": { "__exp_orderRef": 0 } },
   { "$lookup": {
-      "from": "suppliers",
-      "let": { "ref_id": "$orderRef.supplierRef._id" },
+      "from": "multihop_suppliers",
+      "let": { "id": "$orderRef.supplierRef.entityId", "tenant": "$dataDomain.tenantId" },
       "pipeline": [
-        { "$match": { "$expr": { "$eq": ["$_id", "$$ref_id"] } } },
+        { "$match": { "$expr": { "$and": [
+            { "$eq": ["$_id", "$$id"] },
+            { "$eq": ["$dataDomain.tenantId", "$$tenant"] }
+        ] } } },
         { "$match": { "dataDomain.tenantId": "acme" } },
-        { "$project": { "costMargin": 0 } }
+        { "$project": { "wholesaleCost": 0, "taxId": 0 } }
       ],
-      "as": "orderRef.supplierRef"
+      "as": "__exp_orderRef_supplierRef"
   }},
-  { "$unwind": { "path": "$orderRef.supplierRef", "preserveNullAndEmptyArrays": true } }
+  { "$set": { "orderRef.supplierRef": { "$first": "$__exp_orderRef_supplierRef" } } },
+  { "$project": { "__exp_orderRef_supplierRef": 0 } }
 ]
 ----
 
 Key Security Defaults for Multi-Hop Traversals:
 
-- **Per-Stage Row Security**: Each inner pipeline injects a `$match` stage enforcing target collection `DataDomain` constraints and rule filters.
-- **Monotonic Restriction Accumulation**: Security restrictions strictly accumulate. Upstream constraints are preserved and compounded down the traversal tree, preventing privilege escalation.
-- **Cross-Tenant Pruning**: If an entity reference points across tenant boundaries or to a document forbidden by target security rules, the inner pipeline produces 0 matches, evaluating to `null` or `[]` without leaking document existence.
+- **Per-Stage Row Security**: Each inner pipeline carries a `$match` with the target collection's row policy: the rules of the request's functional area and the rules of the target's own functional area together.
+- **Tenant Correlation**: Each lookup also requires the target's `dataDomain.tenantId` to equal the root document's.
+- **Pruning**: If a reference points across tenant boundaries or to a document the target policy hides, the inner pipeline produces 0 matches and the field is `null`, without leaking that the document exists. A later hop under a pruned field is `null` as well.
 - **Field Exclusions (`$project`)**: Target entity field exclusions defined in `RuleContext` are pushed down into each inner pipeline so sensitive fields never leave MongoDB.
+- **Fail Closed**: The gateway refuses the query (HTTP 403 `ExpandPolicyUnresolved`) when a hop's policy cannot be resolved, or when a compiled `$lookup` does not carry its target's row filter.
 
 ==== When is AGGREGATION used vs FILTER?
 
 - FILTER: no expand(...). Planner returns a Morphia Filter and the gateway executes find with dev.morphia.query.Query.
-- AGGREGATION: one or more expand(...) or expand(@relation). Planner returns an aggregation pipeline with per-stage $lookup inner pipelines, $unwind, and $project stages. Execution requires `feature.queryGateway.execution.enabled=true`; otherwise, POST /api/query/find returns HTTP 501. If any $lookup.from is "__unknown__", execution returns HTTP 422.
+- AGGREGATION: one or more expand(...) or expand(@relation). Planner returns an aggregation pipeline with one `$lookup` (with an inner pipeline), `$set` and `$project` per expand path. Execution requires `feature.queryGateway.execution.enabled=true`; otherwise, POST /api/query/find returns HTTP 501.
 
+[[expand-relation]]
 === Expanding a named relation: expand(@relation)
 
 `expand(path)` follows reference fields. `expand(@relation)` follows a relation of the ontology by
 name instead, whatever its derivation: an asserted edge, an inverse, a sub-property or a property
 chain. The leading `@` marks the relation; it is not a field path. Both forms can be combined:
 
+[source]
 ----
 expand(@hasShipment) && expand(customer) && status:active
 ----
+
+A relation expand alone also selects AGGREGATION mode, so through the REST gateway it needs
+`feature.queryGateway.execution.enabled=true` like any other expand. The ontology module
+(`quantum-ontology-mongo`) must be installed; without it the expand is refused with
+`expand_not_available`.
 
 Each row of the page gets the relation's targets under `_rel.<relation>`: a list, or a single
 object (or `null`) when the relation is `functional`:
@@ -334,7 +302,9 @@ rows. Every REST surface answers:
 | `expand_not_available` | 501 | The ontology module is not installed.
 |===
 
-The body is `{"error": "RelationExpandRefused", "code": ..., "relation": ..., "message": ...}`.
+The body is `{"error": "RelationExpandRefused", "code": ..., "message": ..., "relation": ...}`;
+`relation` is omitted when the refusal is not about one relation. Each row must keep its `_id`:
+do not exclude it in a `fields:[...]` projection of a relation expand.
 Repository callers (`getSecuredAggregationDocuments`) get a `RelationExpansionException` with the
 same codes; `RelationExpansionExceptionMapper` gives any resource that lets it through the same
 status and body. `POST /api/query/plan` lists the relations under `relationExpands`, apart from

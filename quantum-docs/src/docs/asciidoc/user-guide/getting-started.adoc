@@ -9,9 +9,9 @@ This section walks through creating a simple multi-tenant Product catalog to dem
 
 === Prerequisites
 
-- Java 17+
-- Maven 3.8+
-- MongoDB (local or cloud)
+- A JDK. The framework compiles to Java 17 bytecode (`maven.compiler.release=17`); the snapshot CI workflow builds and tests on GraalVM JDK 21.0.4.
+- Maven (the project is verified with Maven 3.9)
+- MongoDB running as a replica set. A single node is enough, but a standalone `mongod` is not: migrations and multi-document writes use transactions. See <<getting-started-mongo>>.
 - Basic Quarkus knowledge (see xref:{doc-root}/appendix/quarkus-foundation.adoc[Quarkus Foundation])
 
 === Project Setup
@@ -31,12 +31,18 @@ Add Quantum dependencies to `pom.xml`:
 
 [source,xml]
 ----
+<properties>
+    <quantum.version>1.4.3-SNAPSHOT</quantum.version>
+</properties>
+
 <dependency>
-    <groupId>com.e2eq.framework</groupId>
+    <groupId>com.end2endlogic</groupId>
     <artifactId>quantum-framework</artifactId>
     <version>${quantum.version}</version>
 </dependency>
 ----
+
+`1.4.3-SNAPSHOT` is the current development line; `1.4.2` is the released long-term-support version. Snapshots are published to `https://central.sonatype.com/repository/maven-snapshots/`, so a build that uses one needs that repository with snapshots enabled (run Maven with `-U` to refresh a cached snapshot).
 
 `quantum-framework` is the compatibility bundle and includes the framework's
 server-side REST adapters. For a service with an explicit endpoint boundary,
@@ -45,31 +51,108 @@ select the narrower modules instead. For example, add
 host the existing `/api/query` API. SDK-only consumers should omit REST and
 repository modules so they do not expose or persist server-owned APIs.
 
+[[getting-started-modules]]
+==== Modules
+
+All modules share the group id `com.end2endlogic` and the version of the parent `quantum-parent`.
+
+[cols="2,4"]
+|===
+|Module |What it holds
+
+|`quantum-framework`
+|Compatibility bundle. Depends on the models, repositories, security runtime, REST core, query, contract, system, seed, bootstrap, migration, application-registration, action-enablement, JWT provider, ontology (Mongo) and MCP server modules listed below.
+
+|`quantum-util`, `quantum-models`
+|Utilities; the base models (`BaseModel`, `DataDomain`), annotations and security model classes.
+
+|`quantum-morphia-repos`
+|Morphia repositories (`MorphiaRepo`), the rule engine (`RuleContext`) and the migration service.
+
+|`quantum-query-runtime`, `quantum-query-rest`
+|In-memory query predicates shared by persistence adapters; the `/api/query` Query Gateway REST adapter.
+
+|`quantum-rest-core`
+|`BaseResource`, CSV import and export, usage governance, media references.
+
+|`quantum-security-runtime`
+|`SecurityFilter`, principal resolution and session selection.
+
+|`quantum-jwt-provider`, `quantum-default-keys`, `quantum-oauth-server`
+|The `custom` JWT authentication provider; a development-only RSA key pair; the optional OAuth 2.0 / OIDC authorization server.
+
+|`quantum-contract-core`, `quantum-contract-rest`
+|Contract hashing and compatibility types and the usage-governance contracts; the opt-in `/contract-hash` REST adapter used by generated SDKs.
+
+|`quantum-system`, `quantum-system-management`, `quantum-system-rest`, `quantum-control-plane-client`
+|Control-plane split: the system directory and deployment mode; tenant provisioning, access invites and metering; the control-plane admin REST surface; the generated client a tenant-plane service uses to call the control plane.
+
+|`quantum-application-registration`
+|Optional SPI for an application to register with its environment at startup.
+
+|`quantum-vocabulary-processor`
+|Compile-time annotation processor that derives an application's functional vocabulary from `@FunctionalMapping` and `@FunctionalAction` and checks its identity pack against it.
+
+|`quantum-seed-core`, `quantum-seed-rest`, `quantum-seed-s3`
+|Seed packs: loader and startup runner; admin REST; optional S3 seed source.
+
+|`quantum-bootstrap-core`, `quantum-bootstrap-rest`
+|Bootstrap packs: runtime and startup runner; admin REST.
+
+|`quantum-migration-rest`
+|The `/system/migration` REST adapter.
+
+|`quantum-ontology-core`, `quantum-ontology-mongo`, `quantum-ontology-policy-bridge`, `quantum-ontology-rest`
+|Ontology: TBox, validator and reasoner; edge store and materialization; rule and list-query integration; ontology REST endpoints.
+
+|`quantum-action-enablement-models`, `quantum-action-enablement-quarkus`
+|Scoped action enablement contracts and runtime.
+
+|`quantum-observability-quarkus`
+|Micrometer meter tags (service, environment, version, revision) for service hosts.
+
+|`quantum-secrets`
+|Managed, encrypted tenant-level secrets.
+
+|`quantum-mcp-server`
+|MCP server and agent tools over the Query Gateway.
+
+|`quantum-cli`
+|Command-line tools (`ServiceTokenCLI`).
+|===
+
 === Configuration
 
-Create `.env` file (copy from template):
+[[getting-started-mongo]]
+Start a single-node MongoDB replica set and initialize it once:
 
-[source,properties]
+[source,bash]
 ----
-MONGODB_USERNAME=your-username
-MONGODB_PASSWORD=your-password
-MONGODB_DATABASE=product-catalog
-MONGODB_HOST=localhost:27017
-JWT_SECRET=your-secret-key
+mongod --dbpath /path/to/data --replSet rs0 --bind_ip localhost
+mongosh --eval 'rs.initiate()'
 ----
 
 Basic `application.properties`:
 
 [source,properties]
 ----
-# MongoDB
-quarkus.mongodb.connection-string=${MONGODB_CONNECTION_STRING:mongodb://localhost:27017}
+# MongoDB (replica set)
+quarkus.mongodb.connection-string=${MONGODB_CONNECTION_STRING:mongodb://localhost:27017/?replicaSet=rs0}
 quarkus.mongodb.database=${MONGODB_DATABASE:product-catalog}
+quarkus.morphia.database=${MONGODB_DATABASE:product-catalog}
+quarkus.morphia.packages=com.example.model
 
-# JWT Authentication
+# JWT authentication (quantum-jwt-provider)
 auth.provider=custom
-auth.jwt.secret=${JWT_SECRET:change-me-in-production}
-auth.jwt.expiration=60
+mp.jwt.verify.issuer=https://example.com/issuer
+mp.jwt.verify.publickey.location=publicKey.pem
+# Access-token lifetime in seconds
+com.b2bi.jwt.duration=3600
+
+# Database migrations: the version this application requires, and a scope label.
+# 1.0.9 is the highest version the framework's own change sets migrate to.
+quantum.database.version=1.0.9
+quantum.database.scope=DEV
 
 # CORS for development
 quarkus.http.cors=true
@@ -126,7 +209,7 @@ Key points:
 
 === Repository
 
-Create a repository interface:
+Create a repository. `MorphiaRepo` is a class; extend it and make the subclass a CDI bean:
 
 [source,java]
 ----
@@ -134,8 +217,10 @@ package com.example.repository;
 
 import com.e2eq.framework.model.persistent.morphia.MorphiaRepo;
 import com.example.model.Product;
+import jakarta.enterprise.context.ApplicationScoped;
 
-public interface ProductRepo extends MorphiaRepo<Product> {
+@ApplicationScoped
+public class ProductRepo extends MorphiaRepo<Product> {
     // Custom queries can be added here
 }
 ----
@@ -151,10 +236,17 @@ package com.example.resource;
 import com.e2eq.framework.rest.resources.BaseResource;
 import com.example.model.Product;
 import com.example.repository.ProductRepo;
+import jakarta.annotation.security.RolesAllowed;
 import jakarta.ws.rs.Path;
 
 @Path("/products")
+@RolesAllowed({"user", "admin", "system"})
 public class ProductResource extends BaseResource<Product, ProductRepo> {
+
+    protected ProductResource(ProductRepo repo) {
+        super(repo);
+    }
+
     // Inherits all CRUD endpoints: GET, POST, PUT, DELETE
     // GET /products/list - paginated list with filtering
     // GET /products/id/{id} - get by ID
@@ -163,6 +255,8 @@ public class ProductResource extends BaseResource<Product, ProductRepo> {
     // DELETE /products/id/{id} - delete product
 }
 ----
+
+`BaseResource` has no default constructor: pass the repository to `super(repo)`.
 
 === Running the Application
 
@@ -179,11 +273,22 @@ The application provides:
 
 === Testing Your API
 
-Create a product:
+Requests are authenticated. Sign in to get a bearer token (the baseline system user and its development password come from `quantum.realmConfig.systemUserId` and `quantum.defaultSystemPassword`), then send it on each call:
+
+[source,bash]
+----
+curl -s -X POST http://localhost:8080/security/login \
+  -H "Content-Type: application/json" \
+  -d '{"userId": "system@system.com", "password": "<password>"}'
+# the response carries access_token; export it as TOKEN
+----
+
+Create a product. Do not send `dataDomain`: the server sets it from the caller (see xref:{doc-root}/user-guide/rest-crud.adoc#rest-crud-write-rules[Write rules the server enforces]).
 
 [source,bash]
 ----
 curl -X POST http://localhost:8080/products \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "sku": "WIDGET-001",
@@ -198,14 +303,14 @@ List products:
 
 [source,bash]
 ----
-curl "http://localhost:8080/products/list?limit=10&sort=+name"
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:8080/products/list?limit=10&sort=+name"
 ----
 
 Filter products:
 
 [source,bash]
 ----
-curl "http://localhost:8080/products/list?filter=active:true&&price:>##20"
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:8080/products/list?filter=active:true&&price:>##20"
 ----
 
 === What You Get Automatically
@@ -241,22 +346,27 @@ You can adopt ontology incrementally. If you don’t enable it, everything works
 Quick checklist
 
 1) Add dependencies (app-level)
-- quantum-ontology-core, quantum-ontology-mongo, quantum-ontology-policy-bridge
+- quantum-ontology-core, quantum-ontology-mongo, quantum-ontology-policy-bridge (the `quantum-framework` bundle already brings quantum-ontology-mongo)
 - Do not add quantum-ontology-rest unless this application intentionally hosts the ontology control-plane API. Normal consumers call quantum-ontology-service through its generated SDK.
 
-2) Turn it on via config
+2) Configuration
+
+There is no master switch property: the ontology is active when its modules are on the classpath. Write-time edge materialization is on by default and can be turned off:
 
 [source,properties]
 ----
-e2eq.ontology.enabled=true
+# default is true
+ontology.auto-materialize=true
+# packages scanned for @OntologyClass / @OntologyProperty
+quantum.ontology.scan.packages=com.example.model
 ----
 
 3) Provide an ontology registry (TBox)
 - Start with an in-memory registry (recommended initially). See xref:{doc-root}/user-guide/ontology.adoc[Ontologies in Quantum].
 
 4) Wire data and indexes
-- Inject EdgeDao as a CDI bean (@Inject); indexes are ensured automatically at startup.
-- Indices: (tenantId, p, dst) and (tenantId, src, p)
+- Inject `OntologyEdgeRepo` as a CDI bean (@Inject). Edges live in the `edges` collection of the realm database.
+- Indexes are declared on the `OntologyEdge` entity and are scoped by DataDomain, for example (DataDomain, p, dst) and (DataDomain, src, p).
 
 5) Materialize edges on entity changes
 - Use OntologyMaterializer when sources or intermediates change (e.g., Order/Customer/Org/Address/Shipment in the e‑commerce example).
@@ -266,5 +376,5 @@ e2eq.ontology.enabled=true
 
 Notes
 
-- Keep it optional: only wire beans and create collections when e2eq.ontology.enabled=true.
-- Multi-tenant: always pass tenantId from RuleContext.
+- Keep it optional: an application that does not add the ontology modules is unaffected.
+- Multi-tenant: every edge read and write takes the caller's DataDomain.

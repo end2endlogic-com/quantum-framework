@@ -3,7 +3,11 @@
 
 === Running the repository suites
 
-Use a disposable single-node Mongo replica set. The framework test resource may drop databases whose names begin with `test-`; do not reuse a shared Mongo instance. In one terminal:
+Use a disposable single-node Mongo replica set. A standalone `mongod` is not enough: the repositories use transactions. Test Dev Services are disabled, so start Mongo yourself and set `MONGODB_CONNECTION_STRING`. Never point the suite at a shared development or production database: the test resources create, migrate and delete test databases.
+
+At teardown a suite drops only the databases it owns: its configured realms plus databases whose names match a prefix the module declares in `quantum.test.cleanup.owned-database-prefixes` in its test `application.properties`. A bare `test-` prefix is refused, so one suite cannot drop another suite's databases.
+
+In one terminal:
 
 [source,bash]
 ----
@@ -43,6 +47,20 @@ mvn -B clean package '-Dtest=Test*,*Test,*Tests,*TestCase,*IT' \
 The `failIfNoSpecifiedTests` setting permits modules with no matching tests; it does not suppress assertion failures. Check the per-module reports to establish coverage.
 
 Direct Mongo integration tests accept `-Dquantum.test.mongo-uri=...`, then `MONGODB_CONNECTION_STRING`, then their documented localhost default. Use the same URI for setup and teardown. The focused release regression tests also accept `-Dquantum.review.mongo-uri=...`.
+
+The snapshot CI workflow (`.github/workflows/publish-snapshot.yml`) runs the default Surefire tests with the `oss-release` profile and without the docs module. To run the same check locally without uploading artifacts:
+
+[source,bash]
+----
+mvn -B -ntp -Poss-release -pl '!quantum-docs' verify -Dgpg.skip=true \
+  -Dquarkus.mongodb.devservices.enabled=false \
+  -Dquarkus.http.test-port=0 -Dquarkus.http.test-ssl-port=0 \
+  -Dquarkus.mongodb.connection-string="$MONGODB_CONNECTION_STRING" \
+  -Dquantum.test.mongo-uri="$MONGODB_CONNECTION_STRING" \
+  -Dquantum.review.mongo-uri="$MONGODB_CONNECTION_STRING"
+----
+
+That run does not select the `*IT` classes or the native and provider compatibility suites.
 
 A full release check additionally renders HTML/PDF, checks local documentation links, and verifies live issuer/provider and published SDK compatibility in the selected environment. Local tests do not establish those deployment gates.
 
@@ -243,7 +261,7 @@ How to test repository logic:
   @AfterEach
   void cleanup() { com.e2eq.framework.model.securityrules.SecurityContext.clear(); }
   ----
-- Realm routing: pass X-Realm in REST tests to select the target realm. SecurityFilter also validates realm access against user credentials when present.
+- Realm routing: pass X-Realm in REST tests to select the target realm. SecurityFilter also validates realm access against user credentials when present. X-Realm is an explicit override; a request that does not send it runs in the realm the caller's identity resolves to.
 - Data prep: If your test needs specific users/roles, create them under a SecuritySession beforehand (see SecurityTest.ensureTestUserExists()).
 - Logging: enable DEBUG for com.e2eq to inspect rule evaluation and identity resolution during tests.
 

@@ -5,31 +5,75 @@ endif::[]
 [[identity-and-membership]]
 == Identity, Organizations and Realm Access
 
-This reference describes the `1.4.2-SNAPSHOT` source reviewed on 2026-10-02. Deployment state must be checked separately. A directory organization, participation in a realm, and a user's authorization are distinct concepts.
+This reference describes the `1.4.3-SNAPSHOT` source. Deployment state must be checked separately. A directory organization, participation in a realm, and a user's authorization are distinct concepts.
+
+Identity is established by authentication: a verified token names a subject. Everything on this page is authorization: the records an application reads to map that identity to a realm, a tenant, roles and policies. None of it is carried in, or granted through, a token (see xref:{doc-root}/user-guide/auth.adoc#authn-authz-separation[Authentication and Authorization Are Separate]).
 
 [cols="2,4",options="header"]
 |===
 |Record |Responsibility
 |`Organization` |Organization directory metadata and explicit parent/child relationships. It is not a user membership or a realm authorization grant.
-|`CredentialUserIdPassword` |Identity subject and userId within the owning system authority; default DomainContext and the outer authorizedRealms/realmRegEx boundary.
+|`CredentialUserIdPassword` |Identity subject and userId within the owning system authority; home DomainContext; flat roles; the outer `authorizedRealms`/`realmRegEx` boundary and the `applicationRegEx` pattern.
 |`UserProfile` |Profile and references to primary/additional credentials. A profile link is not proof of external identity ownership.
 |`RealmTenantMembership` |Organization/account/tenant participation in a realm, including OWNER versus PARTICIPANT lifecycle responsibility.
-|`UserRealmRole` |A user's realm-specific roles, sponsoring organization, status, authorizedApplications/defaultApplication and authorizedTenantIds/authorizedTenantRegEx.
+|`UserRealmRole` |A user's realm assignment: realm-wide roles, sponsoring organization, `status` (`active`, `invited`, `suspended`), `authorizedApplications`/`defaultApplication` and `authorizedTenantIds`/`authorizedTenantRegEx`.
+|`UserGroup` |A named set of roles for the user profiles it lists, optionally scoped to one application (`applicationId`) and owned by one tenant (`ownerTenantId`).
+|`Application` |An application's declaration: the roles it defines, its owner and member roles, where its tenants live, and the vocabulary it borrows. See <<application-declarations>>.
+|`ApplicationInstall` |One row per (application, realm, tenant): the application is installed for that tenant.
+|`UserAppRole` |An application binding: the roles a user or group holds in one application in one realm, for named tenants.
 |===
 
 === Authorization boundaries
 
-A realm selects placement and lifecycle; DataDomain and policy control visibility within it. A user-role assignment cannot authorize a realm excluded by the credential's realm contract. Credential roles retain their default-realm meaning. Realm roles are realm-wide: different privileges for tenants sharing one realm require tenant-scoped policy, not merely adding a role.
+A realm selects placement and lifecycle; DataDomain and policy control visibility within it. A user-role assignment cannot authorize a realm excluded by the credential's realm contract.
 
-The applications a login may select are the union of the credential's `applicationRegEx` and the realm assignment's `authorizedApplications`. A realm list adds applications for that realm; it never narrows the credential pattern, so a credential with `applicationRegEx` `*` is admitted to every application in every realm it may enter, whatever its realm lists contain. To restrict a user to specific applications, narrow the credential pattern itself.
+Roles have three scopes, from widest to narrowest:
 
-Application and tenant grants have different empty-value semantics. Missing tenant grants do not authorize explicit multi-tenant selection. Missing application lists can invoke legacy compatibility resolution elsewhere in the authentication pipeline; refresh rejects unresolved application authority. Clearing applications is therefore not a reliable deny operation. Evaluate the complete credential, realm, application and tenant policy and verify the resulting session.
+* *Flat credential roles* (`CredentialUserIdPassword.roles`) are global by design. Whenever the principal is resolved from the credential they apply in every realm the credential can enter. This is not a defect to work around; do not put a role here that should hold in one realm or tenant only.
+* *Realm roles* (`UserRealmRole.roles`) apply in one realm, and in every tenant of that realm the assignment authorizes. Different privileges for tenants sharing one realm therefore need an application binding or tenant-scoped policy, not merely another realm role.
+* *Application binding roles* (`UserAppRole.roles`) apply in one application in one realm, for the tenants the binding names.
+
+The applications a login may select are the union of the credential's `applicationRegEx` and the realm assignment's `authorizedApplications` (`ApplicationAuthorizationResolver`). A realm list adds applications for that realm; it never narrows or replaces the credential pattern, so a credential with `applicationRegEx` `*` is admitted to every application in every realm it may enter, whatever its realm lists contain. To restrict a user to specific applications, narrow the credential pattern itself.
+
+Application and tenant grants have different empty-value semantics. Missing tenant grants do not authorize explicit multi-tenant selection. A credential with neither an `applicationRegEx` nor a realm application grant has no application authorization at all: sign-in fails with `ApplicationAuthorizationMissing` and refresh is refused. An explicit application outside the union answers `ApplicationNotAuthorized`. Evaluate the complete credential, realm, application and tenant policy and verify the resulting session.
+
+In a `MULTI_TENANT` realm an assignment that reaches several tenants needs a default tenant. `UserRealmRoleRepo` refuses to save a grant that widens an existing credential's assignment to a second tenant without an authorized default (`TENANT_DEFAULT_REQUIRED`). The default comes from the credential's home DomainContext tenant or its `dataDomainPolicy` `*:*` entry (`TenantDefaults`). Identity-only resolution refuses with `TENANT_SELECTION_REQUIRED` when several tenants are reachable and none is the default or requested.
 
 Provision identities and memberships through the owning system-management plane. Keep each environment's authority, sessions and grants isolated. Do not rewrite a credential's default DomainContext to represent every external membership.
+
+[[application-declarations]]
+=== Application declarations
+
+An `Application` record (system realm, usually delivered in the application's identity pack) declares what the application needs from the authorization model. All of these fields are optional; an application that declares no roles is resolved on the older realm-assignment path.
+
+[cols="1,3",options="header"]
+|===
+|Field |Meaning
+|`roles` |The roles a binding for this application may carry. Each `ApplicationRole` has a `name` (as policies name it, with no application prefix), `displayName`, `description` and `grantableBy`: any of `tenant-admin`, `realm-admin`, `platform`. The platform may always grant.
+|`ownerRoles` |Declared roles a tenant's owner receives when the application is installed for the tenant.
+|`memberRoles` |Declared roles an invite grants when it names none.
+|`tenancy` |Where the application's tenants live: `placement` is `POOLED` (tenants share the application's pooled realms), `DEDICATED` (each tenant gets its own realm) or `REALMS` (the realms listed in `tenancy.realms`).
+|`uses` |Functional domains borrowed from another application's vocabulary: `application`, `area` and `domains`. The borrower may write policy rules over them for its own roles only; it never adds or redefines actions.
+|===
+
+The application's policy vocabulary is area -> domain -> action. A `FunctionalArea` record belongs to exactly one application (`applicationId`); other applications may only borrow its domains through `uses`. The vocabulary is derived from code by the `quantum-vocabulary-processor` annotation processor, which also fails the build when the identity pack drifts from it (see xref:{doc-root}/user-guide/security-annotations.adoc[Security Annotations], "Vocabulary from code").
+
+`ApplicationDeclarationValidator` (`quantum-models`) checks a declaration. It is a pure function over what a pack carries and what other applications already hold:
+
+* Always errors, in either mode: a missing application id; a role name that is invalid, duplicated or reserved (`system`, `admin` and `user` belong to the platform); a declared role that no policy of the application uses; an invalid `grantableBy`; an owner or member role that is not declared; an invalid tenancy placement or realm list; malformed vocabulary or policy rows; and an area, domain or policy tagged for a different application.
+* Errors or warnings by mode (vocabulary checks): a policy rule over an area, domain or action nobody declares (`POLICY_TRIPLE_UNDECLARED`), a rule for a role the application does not declare, a wildcard that reaches outside the application, an area another application owns, a domain whose area is not declared, a `uses` entry that names the application's own area or something that does not exist, and a rule that grants a borrowed domain to another application's role.
+
+When a seed pack with an `application` dataset is applied, `ApplicationDeclarationGate` runs the validator before anything is written, so a refusal leaves the realm untouched. `quantum.identity-contribution.vocabulary-enforcement` selects the mode: `WARN` (the default) logs vocabulary diagnostics and loads, `REFUSE` refuses. Declaration errors refuse in both modes (`IDENTITY_PACK_DECLARATION_REFUSED`). See xref:{doc-root}/user-guide/seed-packs.adoc[Seed packs].
+
+=== Application bindings and installs
+
+`ApplicationInstall` and `UserAppRole` say who may use an application where. Identity-only principal resolution reads them before the realm assignment's `authorizedApplications` grant, and a binding never grants one of the platform's reserved roles. The records, who may write them, the public application catalog and the resolution rules are described in xref:{doc-root}/user-guide/tenant-models.adoc#application-bindings[Application Bindings, Installs and the Public Catalog].
 
 === Membership writes and external integrations
 
 `RealmMembershipService.upsertUserRealmRole` loads the existing assignment and preserves its stored DataDomain, but replaces supplied role, application and tenant grant lists. It is not an additive merge or a per-provider grant store. Its remote-mode write path uses the generated control-plane PUT operation and preserves the authoritative record returned by the service. Remote `membershipsForOrg` remains unsupported and fails explicitly.
+
+Where memberships are read and written is decided by `quantum.directory.mode` (see xref:{doc-root}/user-guide/control-plane-architecture.adoc[Control-Plane Architecture], "Directory routing"). When the directory is remote, a service's local `UserRealmRole` rows are not an authority: `IdentityRoleResolver` does not read realm roles from them, and application bindings and installs can be neither read nor written there (`DIRECTORY_REMOTE`).
 
 An external membership integration must introduce source ownership and effective-grant reconciliation before using this operation for automatic synchronization. It must preserve unrelated manual grants, handle concurrent edits, audit the policy and evidence behind each change, and define explicit removal semantics. Such source-aware synchronization is proposed work, not a capability supplied by the current membership service.
 
@@ -37,16 +81,19 @@ Authenticate external subjects before linking identities; names and email addres
 
 === Revocation and verification
 
-Test grant removal through login, realm/application selection and refresh, not just a membership listing. For ordinary memberships, changing a stored grant does not itself revoke an already-issued stateless JWT; document and test the supported token-expiry or revocation bound. An incomplete external snapshot or provider outage is not authoritative evidence that all members left.
+Test grant removal through login, realm/application selection and refresh, not just a membership listing. For ordinary memberships, changing a stored grant does not itself revoke an already-issued stateless JWT; document and test the supported token-expiry or revocation bound. What the framework re-checks without a new token: every refresh re-reads the credential's status, realm authorization and application grant; a password change ends earlier sessions at their next refresh; and identity-only resolution (Auth's resolve endpoint, and so every service using the remote principal source) re-reads the credential, realm assignment and application grant on every request. A service that verifies its own signed tokens re-derives roles from the credential and assignment on each request, but for a token of its own application it also keeps the token's roles in the realm the token was issued for. It re-checks the application grant only when a realm is selected (an `X-Realm` header or a configured `quantum.security.session.realm`) or the token was minted for another application; otherwise a removed grant ends at token expiry or refresh. An incomplete external snapshot or provider outage is not authoritative evidence that all members left.
 
 Acceptance should cover inactive credentials, unauthorized realm/tenant/application selection, preservation of manual grants and complete stored payloads, concurrent updates, source removal, and environment isolation. Use replica-set Mongo for transactional behavior.
 
 === Source anchors
 
-* `quantum-models`: `Organization`, `CredentialUserIdPassword`, `UserProfile`, `RealmTenantMembership`, `UserRealmRole`.
-* `quantum-system`: `RealmMembershipService`.
-* `quantum-system-rest`: `UserRealmRoleResource`.
-* `quantum-system-management`: `AuthLoginService`, `TenantProvisioningService`.
+* `quantum-models`: `Organization`, `CredentialUserIdPassword`, `UserProfile`, `RealmTenantMembership`, `UserRealmRole`, `UserGroup`, `Application`, `ApplicationRole`, `ApplicationTenancy`, `VocabularyReference`, `FunctionalArea`, `ApplicationInstall`, `UserAppRole`, `ApplicationDeclarationValidator`, `ApplicationAuthorizationResolver`, `TenantDefaults`.
+* `quantum-system`: `RealmMembershipService`, `QuantumModeConfig`.
+* `quantum-morphia-repos`: `UserRealmRoleRepo`, `UserAppRoleRepo`, `ApplicationInstallRepo`, `IdentityRoleResolver`.
+* `quantum-security-runtime`: `PrincipalContextResolver`.
+* `quantum-system-rest`: `UserRealmRoleResource`, `UserAppRoleResource`, `ApplicationInstallResource`, `PublicApplicationCatalogResource`, `AccessInviteResource`, `AccessMemberResource`.
+* `quantum-system-management`: `AuthLoginService`, `TenantProvisioningService`, `AccessInviteService`, `ApplicationAccessService`.
+* `quantum-seed-core`: `ApplicationDeclarationGate`.
 * `quantum-jwt-provider`: `CustomTokenAuthProvider.refreshTokens`.
 
 See xref:{doc-root}/design/realm-membership-adr.adoc[Realm membership ADR] for the architecture decision and xref:{doc-root}/prerelease-defect-remediation.adoc[Pre-release migration notes] for the recent repairs.

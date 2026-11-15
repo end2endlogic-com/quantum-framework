@@ -97,7 +97,7 @@ mvn -pl quantum-docs -DskipTests -Dgpg.skip=true package
 Publish **LTS** docs to the **site root** — **required:** `git checkout v1.4.2` (the release tag, whose parent POM is **1.4.2**). The **“Version …”** banner comes from **`${project.version}`**; building on the `1.4.3-SNAPSHOT` branch produces **1.4.3-SNAPSHOT** in the HTML even if you use the LTS profile.
 
 ```bash
-mvn -pl quantum-docs -am -Pdocs-ghpages-lts -DskipTests -Dgpg.skip=true package deploy
+mvn -pl quantum-docs -Pdocs-ghpages-lts -DskipTests -Dgpg.skip=true deploy
 ```
 
 (`-Pdocs-ghpages-1.3.x` is an older alias of `-Pdocs-ghpages-lts`.)
@@ -105,8 +105,10 @@ mvn -pl quantum-docs -am -Pdocs-ghpages-lts -DskipTests -Dgpg.skip=true package 
 Publish **1.4.3-SNAPSHOT** preview docs (non-default URL: `…/1.4.3-SNAPSHOT/`):
 
 ```bash
-mvn -pl quantum-docs -am -Pdocs-ghpages-1.4 -DskipTests -Dgpg.skip=true package deploy
+mvn -pl quantum-docs -Pdocs-ghpages-1.4 -DskipTests -Dgpg.skip=true deploy
 ```
+
+Run `deploy` on its own: `package deploy` runs packaging twice and fails in `maven-jar-plugin`. Leave out `-am`, which would also deploy `quantum-parent`.
 
 What happens on `deploy` (with a profile):
 
@@ -136,3 +138,23 @@ Also ensure one of the following is set up if you do not use `settings.xml` for 
   - This repository’s `pubScmUrl` is configured to the repo root. If you see a module-suffixed URL, ensure `quantum-docs/pom.xml` sets `gh.repo.scm.url` to `${project.parent.scm.developerConnection}` (already done).
 - GitHub Pages shows a 404 after deploy:
   - Check Settings > Pages is set to `gh-pages`/root and wait a few minutes for propagation.
+
+## Keeping the docs current
+
+`DOCS_REVIEWED` records the commit the documentation was last reviewed against. Everything merged up to that commit is reflected in the docs.
+
+List what has merged since then:
+
+```bash
+quantum-docs/scripts/docs-pending.sh
+```
+
+Each entry shows the pull request, the modules it changed, and whether the same change also touched `quantum-docs`. Add `--files` to list the changed files. Documentation-only changes are skipped. The script reads git history only, so it needs no network access.
+
+Work through the list, update the pages, then record the new review point in the same pull request as the doc changes:
+
+```bash
+quantum-docs/scripts/docs-pending.sh --mark
+```
+
+`--mark` records `HEAD`; pass a revision to record a different commit. Run it on the documented branch before you commit the doc changes, so the recorded commit is one that exists on that branch.

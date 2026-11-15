@@ -18,13 +18,13 @@ This appendix explains key configuration properties used in Quantum applications
 [source,properties]
 ----
 # Profile-specific properties
-%dev.auth.jwt.duration=7200
+%dev.com.b2bi.jwt.duration=7200
 %test.quarkus.mongodb.database=test-db
 %prod.quarkus.log.level=WARN
 
 # Environment variable substitution
-quarkus.mongodb.connection-string=${MONGODB_CONNECTION_STRING:mongodb://localhost:27017}
-auth.jwt.secret=${JWT_SECRET:change-me-in-production}
+quarkus.mongodb.connection-string=${MONGODB_CONNECTION_STRING:mongodb://localhost:27017/?replicaSet=rs0}
+postmark.api-key=${POSTMARK_API_KEY}
 ----
 
 ===== Precedence
@@ -35,8 +35,8 @@ System properties > Environment variables > application.properties
 ===== MongoDB Connection
 [source,properties]
 ----
-# Basic connection
-quarkus.mongodb.connection-string=mongodb://localhost:27017
+# Basic connection (a replica set; see the note below)
+quarkus.mongodb.connection-string=mongodb://localhost:27017/?replicaSet=rs0
 quarkus.mongodb.database=my-app
 
 # With authentication
@@ -45,6 +45,8 @@ quarkus.mongodb.connection-string=mongodb://user:pass@host:27017/database?authSo
 # Disable dev services (use real MongoDB)
 quarkus.mongodb.devservices.enabled=false
 ----
+
+NOTE: MongoDB must run as a replica set, even with a single node. Migrations, reference-checked deletes and TBox activation use multi-document transactions, which a standalone `mongod` does not support. See xref:{doc-root}/user-guide/testing.adoc[Testing] for a single-node replica set you can start locally.
 
 ===== Morphia Configuration
 [source,properties]
@@ -73,45 +75,183 @@ mp.jwt.verify.publickey.location=publicKey.pem
 mp.jwt.verify.issuer=my-app
 mp.jwt.verify.audiences=my-app-users
 
-# Custom JWT settings
-auth.jwt.secret=${JWT_SECRET:your-secret-here}
-auth.jwt.expiration=60
-auth.jwt.refresh-expiration=1440
+# Access-token lifetime in seconds (required by quantum-jwt-provider; no default)
+com.b2bi.jwt.duration=3600
+
+# Signing keys (required outside the dev and test profiles; see below)
+quantum.jwt.private-key-location=${JWT_PRIVATE_KEY_LOCATION}
+quantum.jwt.public-key-location=${JWT_PUBLIC_KEY_LOCATION}
 ----
 
-===== OIDC Provider
-[source,properties]
-----
-# Enable OIDC (alongside or instead of built-in JWT)
-quarkus.oidc.enabled=true
-auth.provider=custom,oidc          # or just: auth.provider=oidc
+The `quantum-jwt-provider` module (`CustomTokenAuthProvider`, `TokenUtilsConfigurer`) reads these keys:
 
-# OIDC configuration
-quarkus.oidc.auth-server-url=https://your-provider.com/auth/realms/your-realm
-quarkus.oidc.client-id=your-client-id
-quarkus.oidc.credentials.secret=your-client-secret
-quarkus.oidc.token.issuer=https://your-provider.com/auth/realms/your-realm
+[cols="2,1,3"]
+|===
+|Property |Default |Description
 
-# Quantum OIDC provider settings
-auth.oidc.provider-name=oidc                    # Provider name (default: oidc)
-auth.oidc.role-claim-path=groups                 # Claim path for roles (default: groups)
-auth.oidc.username-claim=preferred_username      # Claim for username (default: preferred_username)
-----
+|`auth.provider`
+|`custom`
+|Comma-separated, ordered list of authentication provider names. The first name is the default provider. A name only works when a matching `AuthProvider` bean is on the classpath; `custom` is the provider in `quantum-jwt-provider`.
 
-===== Dedicated Cognito Provider
-[source,properties]
-----
-# Enable Cognito provider (full AWS SDK integration)
-auth.provider=cognito
+|`mp.jwt.verify.issuer`
+|— (required)
+|Issuer written into tokens this service mints and expected on tokens it verifies.
 
-# AWS Cognito settings
-aws.cognito.user-pool-id=${USER_POOL_ID}
-aws.cognito.client-id=${APPLICATION_CLIENT_ID}
-aws.cognito.region=us-east-1
-aws.cognito.jwks.url=https://cognito-idp.${aws.cognito.region}.amazonaws.com/${aws.cognito.user-pool-id}/.well-known/jwks.json
-----
+|`com.b2bi.jwt.duration`
+|— (required)
+|Access-token lifetime in seconds.
 
-See xref:{doc-root}/user-guide/multiple-auth-providers.adoc[Multiple Authentication Providers] for details on configuring external identity providers.
+|`quantum.auth.refresh-token.duration`
+|`604800` (7 days)
+|Refresh-token lifetime in seconds. It is never shorter than the access token's lifetime. Each refresh issues a new refresh token.
+
+|`quantum.auth.session.max-duration`
+|`2592000` (30 days)
+|Longest a session can be kept alive by refreshing, in seconds, counted from sign-in. The last refresh token is cut short to this deadline; after it the user signs in again. A value smaller than the refresh-token lifetime is rejected.
+
+|`quantum.jwt.private-key-location`, `quantum.jwt.public-key-location`
+|`privateKey.pem` / `publicKey.pem` on the classpath (dev and test only)
+|Where the signing key pair is read from. Outside the non-production profiles both must be set explicitly; startup fails rather than fall back to the default keys.
+
+|`quantum.jwt.signing-enabled`
+|`true`
+|Set `false` on a resource server that only verifies tokens (through SmallRye JWT and a JWKS URL) and never mints them. No issuer key is loaded.
+
+|`auth.jwt.key-id`
+|unset for signing; `quantum-auth` at the JWKS endpoint
+|The key id (`kid`). When set, signed tokens carry it (`TokenUtilsConfigurer`); when unset, `TokenUtils` uses the private-key location as the `kid`. The OAuth server's JWKS endpoint (`JwksResource`) publishes this value and defaults to `quantum-auth`, so the two disagree unless it is set. Set it explicitly on any issuer whose tokens are verified through its JWKS.
+|===
+
+The password encoder for locally stored credentials (`PBKDF2Encoder`) needs three values with no defaults: `com.ard333.quarkusjwt.password.secret`, `com.ard333.quarkusjwt.password.iteration` and `com.ard333.quarkusjwt.password.keylength`.
+
+===== Other providers
+
+`auth.provider` can name more than one provider (for example `custom,oidc`). This repository ships only the `custom` provider; an OIDC or cloud identity provider is a separate module with its own configuration keys. Standard Quarkus OIDC settings (`quarkus.oidc.*`) are documented in the Quarkus OIDC guide. See xref:{doc-root}/user-guide/multiple-auth-providers.adoc[Multiple Authentication Providers] for provider selection and issuer resolution.
+
+===== Request security and sessions
+
+These keys are read by `SecurityFilter` and its collaborators in `quantum-security-runtime`. All are optional.
+
+[cols="2,1,3"]
+|===
+|Property |Default |Description
+
+|`quantum.security.filter.enforcePreAuth`
+|`true`
+|Checks the rules for the request's functional area, functional domain and action in the request filter, and denies the request before the resource method runs when the result is not `ALLOW`.
+
+|`quantum.auth.trust-token-claims`
+|`false`
+|Delegated identity. When `true`, the configured claims provider validates the bearer token and supplies its claims before any local identity repository is read, so the service does not need its own credential database. `false` keeps local-credential behaviour.
+
+|`quantum.auth.principal-source`
+|unset
+|Unset keeps the local principal construction. `remote` resolves every verified bearer through a `RemotePrincipalSource` bean: the token only identifies the caller (an _identity-only token_) and the directory owner returns roles and tenancy. Startup fails if `remote` is set without exactly one source bean, without an application id, or together with `quantum.security.session.realm` or `quantum.security.session.selection-policy`.
+
+|`quantum.security.session.application-id`
+|unset
+|Application session (opt-in). A user's session runs as this application, whichever application the token was minted for. Roles are resolved for (user, session realm, this application). Also the receiving application id sent to the remote principal source; `quantum.application-registration.application-id` is the fallback there. Service tokens and anonymous requests are unchanged.
+
+|`quantum.security.session.realm`
+|unset
+|Application session (opt-in). The realm a user's session runs in when the request names none. An explicit `X-Realm` still applies, with its own checks.
+
+|`quantum.security.session.selection-policy`, `quantum.security.session.selection-policy-version`
+|unset
+|Selects an installed `SessionSelectionPolicy` bean by id and exact version to propose the session realm. Set both or neither. Startup fails when the policy is not installed, is installed more than once, or its version differs. The policy only proposes a realm; authorization still runs in the filter.
+
+|`quantum.security.system-realm.authority-roles`
+|`system`
+|Roles that allow a delegated token minted for the system realm to adopt the cross-tenant system data domain.
+
+|`quantum.security.anonymous-registration-application`
+|`quantum-auth`
+|Application id that anonymous registration requests are scoped to.
+
+|`quantum.security.identity-store-realm`
+|unset
+|Realm that user profiles and user groups are read from. Unset reads them from the request's realm.
+
+|`quantum.security.policy-store-realm`
+|unset
+|Central realm for policy, functional-area and functional-domain documents. Unset reads policy from the request realm.
+
+|`quantum.security.policy-scope.require-application`
+|`false`
+|Fail closed when application-scoped policy evaluation has no application id. When `true`, also set `quantum.migration.application-id` so startup migrations have one.
+
+|`quantum.security.group-scope.require-application`
+|`false`
+|Refuses to save a user group that has no `applicationId`.
+
+|`quantum.security.policy-admission.enabled`
+|`false`
+|Admission checks on save: a policy's scope and vocabulary are validated, and a functional domain must name a registered application (or `*`).
+|===
+
+Rule evaluation (`RuleContext`) has its own switches:
+
+[cols="2,1,3"]
+|===
+|Property |Default |Description
+
+|`quantum.security.scripting.enabled`
+|`true`
+|Allows script conditions in rules.
+
+|`quantum.security.scripting.timeout.millis`
+|`250`
+|Time limit for one script evaluation.
+
+|`quantum.security.scripting.maxStatements`
+|`10000`
+|Statement limit for one impersonation script evaluation in the request filter.
+
+|`quantum.security.scripting.allowAllAccess`
+|`false`
+|Lifts the script sandbox. Leave `false`.
+
+|`quantum.security.rules.requestCache.enabled`
+|`true`
+|Memoizes permission checks within one request.
+
+|`quantum.security.rules.realmCache.enabled`
+|`false`
+|Caches each realm's effective rules. When off, a check loads only the policies that match the caller's user id and roles.
+
+|`quantum.security.rules.index.enabled`
+|`false`
+|Uses a compiled rule index for lookups instead of the list-based cache.
+
+|`quantum.security.rules.index.maxRealms`
+|`10`
+|Number of realms kept in the rule index and rule cache.
+
+|`security.rules.noResourceFilterPolicy`
+|`DEFER`
+|How a rule that carries a filter is treated when a single-resource check has no concrete resource. `DEFER` is the legacy-compatible behaviour; `CONSERVATIVE_NA` is strict.
+|===
+
+===== Access invites
+
+Read by `AccessInviteService` in `quantum-system-management`.
+
+[cols="2,1,3"]
+|===
+|Property |Default |Description
+
+|`quantum.access-invites.create-roles`
+|unset
+|Realm-scoped roles a caller needs to create an invite, besides realm administrators and the system principal. Unset: any caller that can access the realm may invite.
+
+|`quantum.access-invites.membership-admin-roles`
+|unset
+|The deployment's membership-administrator roles. Because they confer administrative authority, an application binding never grants them.
+
+|`quantum.access-invites.return-token`
+|unset
+|Whether create and resend return the raw invite token to the inviter. Unset: only when no delivering notification service is installed. `true` or `false` forces the behaviour.
+|===
 
 ===== Application Registration (optional module)
 
@@ -146,7 +286,7 @@ See xref:{doc-root}/user-guide/application-registration.adoc[Application Registr
 
 ===== OAuth Server (optional module)
 
-The `quantum-oauth-server` module uses the same JWT configuration properties listed above (`mp.jwt.verify.issuer`, `mp.jwt.verify.publickey.location`, `com.b2bi.jwt.duration`). No additional properties are required. The OAuth endpoints (`/oauth/authorize`, `/oauth/token`, `/oauth/jwks`, `/.well-known/openid-configuration`, `/oauth/userinfo`) activate automatically when the module is on the classpath.
+The `quantum-oauth-server` module uses the same JWT configuration properties listed above (`mp.jwt.verify.issuer`, `mp.jwt.verify.publickey.location`, `com.b2bi.jwt.duration`) and publishes the key id from `auth.jwt.key-id` at its JWKS endpoint (default `quantum-auth`). Set `auth.jwt.key-id` explicitly so the published `kid` matches the one on signed tokens; no other properties are required. The OAuth endpoints (`/oauth/authorize`, `/oauth/token`, `/oauth/jwks`, `/.well-known/openid-configuration`, `/oauth/userinfo`) activate automatically when the module is on the classpath.
 
 OAuth clients are registered in the `oauth_clients` MongoDB collection. Authorization codes are stored in `oauth_authorization_codes` with a 5-minute TTL index for automatic cleanup.
 
@@ -160,6 +300,9 @@ postmark.api-key=${POSTMARK_API_KEY}
 
 # Default sender address (required for email delivery)
 postmark.default-from-email-address=noreply@yourdomain.com
+
+# Optional default recipient address
+postmark.default-to-email-address=ops@yourdomain.com
 ----
 
 If either property is missing, the `PostmarkEmailSender` logs an info message and skips delivery, allowing development environments to run without Postmark credentials.
@@ -180,15 +323,57 @@ If the secret is not configured, `LinkSigner.isEnabled()` returns `false` and li
 ===== Database Migration
 [source,properties]
 ----
-# Migration settings
+# Migration settings (version and scope are required; they have no default)
 quantum.database.version=1.0.0
 quantum.database.scope=DEV
 quantum.database.migration.enabled=true
-quantum.database.migration.changeset.package=com.example.migrations
 
 # Optional CSV list of additional realms to initialize on startup before seed packs run
 quantum.migration.apply.realms=system-com,mycompany-com,test-com
 ----
+
+Change sets are CDI beans that implement `ChangeSetBean`; they are discovered from the bean container, not from a configured package.
+
+[cols="2,1,3"]
+|===
+|Property |Default |Description
+
+|`quantum.database.version`
+|— (required)
+|The schema version this application requires (SemVer). A realm whose stored version is lower fails the migration check until its pending change sets have run.
+
+|`quantum.database.scope`
+|— (required)
+|Scope label for the migration run (for example `DEV`).
+
+|`quantum.database.migration.enabled`
+|`true`
+|Read by the per-request migration check, the migration endpoints and the startup runners. `false` turns the request check off, and startup seeding then no longer waits for a migrated database.
+
+|`quantum.migration.apply.realms`
+|unset
+|Additional realms to initialize on startup before seed packs run. Unset: the system realm is always evaluated, and the default realm when it exists.
+
+|`quantum.migration.application-id`
+|unset
+|Application id the startup migration runs as. Needed when `quantum.security.policy-scope.require-application=true`; otherwise the migration runs under the system contexts without one.
+
+|`quantum.realm.seed-system-only`
+|`false`
+|Restricts startup realm resolution (migrations and seeds) to the system realm: the test realm and the default realm are not scanned unless listed explicitly.
+
+|`quantum.baseline-identity.seed-system-only`
+|`false`
+|Seeds only the cross-tenant system identity at startup and skips the default-tenant and test-tenant administrators and their groups.
+
+|`quantum.database.coordination-database`
+|`quantum-coordination-shared`
+|Shared database used only for short-lived migration, seed and index-creation locks.
+
+|`quantum.database.index-lock-duration-seconds`
+|`300`
+|How long the per-realm index-creation lock is held before it expires. It must exceed a cold index build for the largest realm; the expiry exists so that a killed process cannot hold the lock forever.
+|===
 
 ===== Seed packs (filesystem + classpath)
 [source,properties]
@@ -206,6 +391,57 @@ quantum.seed-pack.root=src/main/resources/seed-packs
 # Example: quantum.seed.apply.filter=system-initialize,my-tenant
 quantum.seed.apply.filter=
 ----
+
+Further seed settings, all optional:
+
+[cols="2,1,3"]
+|===
+|Property |Default |Description
+
+|`quantum.seed-pack.apply.realms`
+|unset
+|CSV list of realms to seed on startup. Unset, and with no flagged catalog realms, the system, default and test realms are used. An empty value or `none` disables the list.
+
+|`quantum.seed-pack.apply.honor-realm-flags`
+|`true`
+|Adds realms whose catalog record has `applySeedsOnStartup=true` to the startup list. A service that holds the environment's realm catalog sets this `false` so it seeds only `quantum.seed-pack.apply.realms`.
+
+|`quantum.seed-pack.lifecycle`
+|`production`
+|CSV of pack lifecycles this runtime admits. A pack whose manifest scope is labelled `demo` is applied only when the list includes `demo`. Unlabelled packs count as `production`.
+
+|`quantum.seed-pack.scopes.enabled`
+|`false`
+|Enforces the manifest scope `type` (global, per tenant, tenant list) and its realm include/exclude lists. The lifecycle check above applies whether or not this is set.
+
+|`quantum.seed.conflict-policy`
+|`SEED_WINS`
+|What happens when a dataset that was applied before has a different checksum now. `SEED_WINS` applies it again, `EXISTING_WINS` skips it with a warning, `ERROR` fails.
+
+|`quantum.seed.batch.size`
+|`1000`
+|Records written per batch.
+
+|`quantum.seed.discovery.cache-ttl-seconds`
+|`60`
+|How long discovered pack descriptors are cached.
+
+|`quantum.seed.discovery.parallel`
+|`true`
+|Scans seed sources in parallel.
+
+|`quantum.seed.file-uri.enabled`
+|`false`
+|Allows the filesystem seed source to open seed content through `file:` URIs. Off by default; such a request fails.
+
+|`quantum.identity-contribution.vocabulary-enforcement`
+|`WARN`
+|How an identity pack's vocabulary diagnostics are enforced when the pack is applied. `WARN` logs them and loads the pack; `REFUSE` refuses it. Declaration errors refuse the pack in both modes. See xref:{doc-root}/user-guide/seed-packs.adoc[Seed packs].
+
+|`quantum.refname.legacy-allowed.<EntityName>`
+|unset
+|CSV of non-canonical refNames that framework writes may still create for a `@CanonicalRefName` entity (for example `quantum.refname.legacy-allowed.UserGroup`). Client-supplied writes are always refused these names.
+|===
 
 [NOTE]
 ====
@@ -243,38 +479,162 @@ Bootstrap packs are not the same thing as seed packs.
 See xref:{doc-root}/user-guide/bootstrap-packs.adoc[Bootstrap Packs] for details.
 ====
 
-===== Security rules diagnostics
-[source,properties]
-----
-# Elevate RuleContext auto‑reload diagnostics from DEBUG to INFO when troubleshooting
-quantum.securityrules.ruleContext.debugAutoReload=false
-----
-
-Tips:
-
-- In unit tests that run inside Quarkus, prefer using a CDI‑managed `RuleContext`.
-  A helper is provided in tests: `RuleContextTestUtils.reload(<realm>)` to force
-  a refresh of policies from the repository for a given realm.
-- If you construct `RuleContext` manually (outside CDI), repository injection is not available,
-  and auto‑reload is skipped to avoid wiping programmatically added rules.
-
 ===== Realm and Tenant Configuration
+
+The values below are the defaults in `EnvConfigUtils`. Override them for your deployment.
+
 [source,properties]
 ----
-# System realm configuration
-quantum.realmConfig.systemTenantId=system
-quantum.realmConfig.systemAccountId=system-account
-quantum.realmConfig.systemOrgRefName=SYSTEM
-quantum.realmConfig.systemUserId=system-user
+# System realm
+quantum.realmConfig.systemRealm=system-com
+quantum.realmConfig.systemTenantId=system.com
+quantum.realmConfig.systemOrgRefName=system.com
+quantum.realmConfig.systemAccountNumber=0000000000
+quantum.realmConfig.systemUserId=system@system.com
 
-# Default tenant settings
-quantum.realmConfig.defaultTenantId=default
-quantum.realmConfig.defaultAccountId=default-account
-quantum.realmConfig.defaultOrgRefName=DEFAULT
+# Default realm
+quantum.realmConfig.defaultRealm=mycompanyxyz-com
+quantum.realmConfig.defaultTenantId=mycompanyxyz.com
+quantum.realmConfig.defaultOrgRefName=mycompanyxyz.com
+quantum.realmConfig.defaultAccountNumber=9999999999
+quantum.realmConfig.defaultUserId=test@mycompanyxyz.com
 
-# Anonymous user (use carefully)
-quantum.anonymousUserId=anonymous
+# Anonymous user
+quantum.anonymousUserId=anonymous@system.com
 ----
+
+The baseline identity created at startup takes its passwords from `quantum.defaultSystemPassword` and `quantum.defaultTestPassword`. Both have built-in development defaults; set your own values in every deployed environment.
+
+===== Persistence and tenant storage
+
+[cols="2,1,3"]
+|===
+|Property |Default |Description
+
+|`quantum.morphia.map-global-resources-to-tenant-realms`
+|`false`
+|Compatibility switch. The default keeps global identity and security resources out of tenant realm datastores; they are mapped in the system realm.
+
+|`quantum.morphia.tenant-excluded-entity-package-prefixes`, `quantum.morphia.tenant-excluded-entity-classes`
+|built-in list / unset
+|Entity packages and classes that are not mapped into tenant realm datastores.
+
+|`quantum.tenant-storage.tenant-scoped-collections`, `quantum.tenant-storage.realm-shared-collections`, `quantum.tenant-storage.system-global-collections`
+|unset
+|Collection ownership lists read by the default `TenantCollectionRegistry`, which a tenant decommission check uses to classify the collections of a realm database.
+
+|`quantum.sort.collation.locale`
+|unset
+|Opt-in MongoDB collation for server-side list and aggregation sorts (for example `en`). Unset keeps binary ordering.
+
+|`quantum.sort.collation.strength`
+|`2`
+|Collation strength used when a locale is set. `2` sorts text without regard to case.
+
+|`quantum.staticDynamicList.check-ids`
+|`false`
+|When saving a dynamic object list, verifies that every listed item exists.
+|===
+
+===== Tenant provisioning
+
+Read by `TenantProvisioningService` in `quantum-system-management`.
+
+[cols="2,1,3"]
+|===
+|Property |Default |Description
+
+|`quantum.tenant.provisioning.default-application`
+|unset
+|Application that owns a realm when the provision command names none. With neither set, provisioning fails rather than create a realm without an owner.
+
+|`quantum.tenant.provisioning.deployment-topology`
+|`DEDICATED_REALM`
+|Default topology for a provisioned tenant. `POOLED_REALM` admits the tenant into a shared realm.
+
+|`quantum.tenant.provisioning.pooled-realm`
+|unset
+|Existing realm used for pooled admission when the command names none.
+
+|`quantum.tenant.provisioning.default-pooled-realm-pod`
+|`1`
+|Pod number used to derive a pooled realm id (`{applicationId}-P{pod}`) when neither the command nor configuration names a realm.
+
+|`quantum.tenant.provisioning.create-tenant-identity-projections`
+|`false`
+|Compatibility switch for deployments that projected user profile and group records into tenant realms.
+|===
+
+===== Secrets, media, metering and observability
+
+[cols="2,1,3"]
+|===
+|Property |Default |Description
+
+|`quantum.secrets.kek.v1` ... `quantum.secrets.kek.v5`
+|unset
+|Key-encryption keys for managed secrets, by version.
+
+|`quantum.secrets.kek.active-version`
+|`1`
+|The key version used for new encryptions.
+
+|`quantum.secrets.allow-plaintext-fallback`
+|`false`
+|When no key is configured, `false` fails closed. Set `true` only in a local profile. See xref:{doc-root}/user-guide/secrets-and-vault.adoc[Secrets and Vault].
+
+|`quantum.media.grant-lifetime`
+|`PT15M`
+|Lifetime of an upload or download grant for a media reference.
+
+|`quantum.media.max-content-length`
+|`104857600`
+|Largest media object accepted, in bytes.
+
+|`quantum.metering.enabled`
+|`false`
+|Token metering is opt-in. When `false`, no usage is recorded and no quota applies.
+
+|`quantum.metering.enforce-quota`
+|`false`
+|With metering enabled, blocks APIs and tools covered by an allocation once its tokens run out.
+
+|`quantum.rest.usage.*`
+|mode `OFF`
+|REST usage governance. See xref:{doc-root}/user-guide/usage-and-token-allocation.adoc[REST Usage Governance] for the full key list.
+
+|`quantum.observability.environment`
+|`${QUANTUM_ENVIRONMENT:unknown}`
+|Environment tag added to every meter by `quantum-observability-quarkus`.
+
+|`quantum.observability.revision`
+|`${K_REVISION:${GIT_COMMIT:local}}`
+|Revision tag added to every meter. The service and version tags come from `quarkus.application.name` and `quarkus.application.version`.
+
+|`quantum.contract.openapi-location`
+|unset
+|Classpath resource or file that is this service's checked-in OpenAPI contract. `GET /contract-hash` (module `quantum-contract-rest`) returns its hash; unset returns 404. `quantum.contract.discovery.default-version` and `quantum.contract.discovery.snapshots.<name>.version` / `.location` declare further named contract snapshots.
+|===
+
+===== Agent tools per realm
+
+The default `TenantAgentConfigResolver` in `quantum-mcp-server` reads optional per-realm settings. The realm id is part of the key. In this release they shape tool discovery only; none of them restricts execution. `AgentExecuteHandler` (`POST /api/agent/execute`) and the MCP tools do not read them, so execution always runs as the authenticated caller with that caller's permissions. Use permission rules to restrict what a caller may do.
+
+[cols="2,3"]
+|===
+|Property |Description
+
+|`quantum.agent.tenant.<realm>.runAsUserId`
+|Proposal, not applied. Read into `TenantAgentConfig`; execution does not run as this user.
+
+|`quantum.agent.tenant.<realm>.enabledTools`
+|Comma-separated tool names that `GET /api/agent/tools?realm=<realm>` lists. Filters discovery only: a tool left out can still be executed by a caller whose permissions allow it.
+
+|`quantum.agent.tenant.<realm>.maxFindLimit`
+|Proposal, not applied. Read into `TenantAgentConfig`; find results are not capped by it.
+|===
+
+See xref:{doc-root}/user-guide/ai-agent-integration.adoc[AI Agent Integration].
 
 ==== See Also
 
@@ -286,9 +646,12 @@ quantum.anonymousUserId=anonymous
 
 Enablement
 
+The ontology is enabled by adding the ontology modules (`quantum-ontology-core`, `quantum-ontology-mongo`, `quantum-ontology-policy-bridge`) to the application; there is no master switch property. With the modules present, repository saves materialize edges automatically:
+
 [source,properties]
 ----
-e2eq.ontology.enabled=false   # default; set true to enable ontology wiring in your app
+# Materialize ontology edges when an entity is saved or deleted (default: true)
+ontology.auto-materialize=true
 ----
 
 TBox Persistence
@@ -317,6 +680,53 @@ quantum.ontology.stable-diff.retry-after-ms=30000
 quantum.ontology.scan.packages=com.example.model,com.example.entities
 ----
 
+Runtime limits and switches
+
+[cols="2,1,3"]
+|===
+|Property |Default |Description
+
+|`quantum.ontology.chain-propagation.max-rederivations`
+|`1000`
+|Upper bound on the entities one write re-derives while propagating a property chain backwards. When the bound is reached, propagation stops, an error is logged, and the remaining derived edges stay stale until `DriftRepairJob` or a reindex runs.
+
+|`quantum.ontology.expand.max-targets`
+|`1000`
+|Most distinct targets `expand(@relation)` hydrates for one page of results. A larger expansion is refused.
+
+|`quantum.ontology.expand.max-edges`
+|`10000`
+|Most edges `expand(@relation)` reads for one page and relation before it is refused.
+
+|`quantum.ontology.rule-edge-scope`
+|`DATA_DOMAIN`
+|How far a permission rule's `hasEdge` / `hasIncomingEdge` lookups reach. `DATA_DOMAIN`: the caller's whole DataDomain. `ACCOUNT`: any tenant of the caller's organisation, account and data segment, for applications whose tenants share one realm. Only rule lookups are widened, and only for reads.
+
+|`quantum.ontology.cache.staleness-check-interval-ms`
+|`5000`
+|How often a cached realm registry is checked for a newer activated TBox on another instance. `0` checks on every read; a negative value never checks.
+
+|`quantum.ontology.rule-vocabulary-validation.enabled`
+|`true`
+|Refuses a policy whose scripts or filters use ontology predicates the registry does not declare.
+
+|`quantum.ontology.functional-domain-validation.enabled`
+|`true`
+|Checks a policy's functional domain and action against the registered functional domains.
+
+|`quantum.ontology.provenance.split`
+|`false`
+|Stores edge provenance in a side collection instead of on the edge document.
+
+|`quantum.ontology.publish-to-service`
+|`false`
+|Publishes the TBox built from sources to a central ontology service. Uses `quantum.ontology.service.base-url`, `.token`, `.realm` (default: the default realm), `.auto-activate` (default `true`) and `.pack-id` (default `annotation-derived`).
+
+|`feature.ontologyList.aggregation.enabled`
+|`false`
+|Lets list endpoints of ontology-aware resources run `expand` through the governed aggregation path.
+|===
+
 Registry modes
 
 - In-memory (recommended to start): build a TBox in code/resources and instantiate OntologyRegistry.inMemory(tbox).
@@ -325,7 +735,7 @@ Registry modes
 
 Edges collection and indexes
 
-- The MongoDB `edges` collection (default name configured via `ontology.mongo.collection.edges`) supports open edge qualification via compound indexes:
+- The MongoDB `edges` collection (the collection name of the `OntologyEdge` entity) supports open edge qualification via compound indexes:
   - `idx_domain_p_dst_props`: `{ "dataDomain": 1, "p": 1, "dst": 1, "props": 1 }` -- optimizes `hasEdge` / `srcIdsByDst` lookups.
   - `idx_domain_src_p_props`: `{ "dataDomain": 1, "src": 1, "p": 1, "props": 1 }` -- optimizes `hasIncomingEdge` / `dstIdsBySrc` lookups.
 - Inferred edges carry `inferred: true` with provenance and timestamp metadata for maintenance and TTL eviction.
@@ -342,19 +752,15 @@ Materialization hooks
 
 |`feature.queryGateway.execution.enabled`
 |`false`
-|Guards execution of `POST /api/query/find` for `AGGREGATION`-mode queries. When `false`, aggregation queries return HTTP 501 (`ExecutionDisabled`). Must be set to `true` to allow the gateway to execute governed MongoDB aggregation pipelines (with inner-pipeline `$lookup` pushdown and multi-hop traversals).
+|Guards execution of `POST /api/query/find` for `AGGREGATION`-mode queries. When `false`, aggregation queries return HTTP 501 (error `NotImplemented`). Must be set to `true` to allow the gateway to execute governed MongoDB aggregation pipelines (with inner-pipeline `$lookup` pushdown and multi-hop traversals).
 
-|`feature.queryGateway.maxPageSize`
-|`1000`
-|Maximum page size allowed for `/api/query/find` requests.
+|`quantum.queryGateway.deleteMany.maxMatches`
+|`2000`
+|Maximum number of entities one `deleteMany` request validates and deletes.
 
-|`ontology.mongo.database`
-|`quantum`
-|Default database name for the ontology edges collection when not overridden by realm context.
-
-|`ontology.mongo.collection.edges`
-|`edges`
-|Collection name storing ontology edge documents.
+|`quantum.queryGateway.export.inlineThreshold`
+|`10000`
+|Row count at or below which an export is returned inline; larger results are written to a file.
 |===
 
 See also
@@ -407,6 +813,10 @@ caller's own bearer is used inside a request. Falls back to
 |Deprecated for the directory: use `quantum.directory.base-url`. Still read
 as its fallback for one release, with a startup warning when the directory
 mode is set.
+
+|`quantum.system-service.token`
+|—
+|Older key for the service bearer. Still read as the fallback of `quantum.directory.token`.
 
 |`quantum.system.directory.mode`
 |follows `quantum.mode`

@@ -8,8 +8,11 @@ Quantum is a Quarkus-based framework that accelerates building multi-tenant SaaS
 - Data security and contextual evaluation via DataDomain, DomainContext, and RuleContext
 - Consistent REST resources for find/get/list/save/update/delete operations
 - Pluggable authentication with a provided JWT module and extension points
+- Applications as first-class records: an application declares its roles, tenancy and policy vocabulary, and identities are bound to an application in a realm
+- An optional ontology for modeling relationships as derived, queryable edges
+- Declarative seed packs, bootstrap packs and versioned migrations for tenant data
 
-This guide targets mid-level Java developers and follows a structure similar to Spring’s reference docs. Use Maven to generate HTML/PDF: see docs module README for commands.
+This guide targets mid-level Java developers and is organized as a reference: concepts first, then how-to sections. Use Maven to generate HTML/PDF: see the docs module README (`quantum-docs/README.md`) for commands.
 
 [[overview-saas]]
 === SaaS and Multi‑Tenancy First

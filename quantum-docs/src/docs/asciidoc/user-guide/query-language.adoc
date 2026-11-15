@@ -5,7 +5,7 @@ endif::[]
 [[query-language]]
 == Query Language Reference
 
-Quantum uses an ANTLR-based query language (BIAPIQuery.g4) for filtering, searching, and constraining data across all REST endpoints. This single, consistent syntax works everywhere: list APIs, permission rules, and access resolvers.
+Quantum uses an ANTLR-based query language, BIAPI (grammar file `BIAPIQuery.g4` in the `quantum-models` module), for filtering, searching, and constraining data across all REST endpoints. This single, consistent syntax works everywhere: list APIs, the Query Gateway, permission rules, and access resolvers.
 
 === Basic Syntax
 
@@ -78,11 +78,20 @@ name:"Super Widget"
 name:*widget*        # contains "widget"
 name:widget*         # starts with "widget"
 name:*widget         # ends with "widget"
-name:w?dget          # single character wildcard
 
-# Case sensitivity (depends on database collation)
-name:"WIDGET"        # may or may not match "widget"
+# Case sensitivity: string matches ignore case unless ~cs is appended
+name:"WIDGET"        # matches "widget", "Widget" and "WIDGET"
+name:"WIDGET"~cs     # matches "WIDGET" only
+name:*widget*~cs     # case-sensitive contains
+name:*widget*~ci     # case-insensitive contains (the default, stated explicitly)
 ----
+
+Notes:
+
+- `*` is the only wildcard and stands for any run of characters at the start, the end, or both ends of a value. There is no single-character wildcard.
+- Equality (`:`) and inequality (`:!`) on unquoted and quoted string values, and wildcard matches, are case-insensitive by default. Append the case mode `~cs` for a case-sensitive match; `~ci` states the default explicitly. Both listeners (database and in-memory) apply the same rule.
+- The case mode applies to string values only. Numbers, dates, booleans, ObjectIds and variables are compared as typed values.
+- An unquoted string may contain letters, digits, spaces between words, and the characters `_ . / @ ' -`. Quote any value that contains other characters (for example `:`, `,`, parentheses or brackets) or that must keep leading or trailing spaces. Inside quotes, write a double quote as `""`.
 
 ==== Text Search
 
@@ -184,8 +193,12 @@ categoryId:^[@@507f1f77bcf86cd799439011, @@507f1f77bcf86cd799439012]
 # ObjectId list (NOT IN)
 categoryId:!^[@@507f1f77bcf86cd799439011, @@507f1f77bcf86cd799439012]
 
-# Mixed types (coerced automatically)
-priority:^[#1,#2,#3]
+# Numbers in a list are written without the # prefix; unquoted list values are
+# coerced to numbers, booleans, dates or ObjectIds when they look like one
+priority:^[1,2,3]
+
+# Quote a list value to keep it a string
+code:^["1","2","3"]
 
 # Using variables (CSV expansion supported by access resolvers)
 customerId:!^[${accessibleCustomerIds}]
@@ -350,11 +363,9 @@ auditInfo.lastUpdatedBy:"john.doe"
 # Changes in date range
 auditInfo.lastUpdatedDate:>=2024-12-01 &&
 auditInfo.lastUpdatedDate:<2024-12-31
-
-# Created vs modified
-auditInfo.createdDate:auditInfo.lastUpdatedDate  # never modified
-auditInfo.createdDate:!auditInfo.lastUpdatedDate # has been modified
 ----
+
+NOTE: The right-hand side of a condition is always a value. The language cannot compare one field with another; `fieldA:fieldB` compares `fieldA` with the string `fieldB`.
 
 ==== Variables in Filters
 
@@ -362,19 +373,35 @@ Variables are resolved from the current security context and can be used in perm
 
 ===== Standard Variables
 
+These are set by `MorphiaUtils.createStandardVariableMapFrom` from the caller's `PrincipalContext` and the request's `ResourceContext`. The DataDomain values come from the DataDomain resolved for the query (DataDomain policy), or else from the principal's own DataDomain.
+
 [cols="1,3"]
 |===
 |Variable |Description
 
-|`${principalId}` |Current user's ID
-|`${pTenantId}` |Principal's tenant ID
-|`${pAccountId}` |Principal's account ID
-|`${pOrgRefName}` |Principal's organization
-|`${realm}` |Current realm/database
+|`${principalId}`, `${principal.userId}` |Current user's ID
+|`${pTenantId}`, `${dd.tenantId}` |Tenant ID of the effective DataDomain
+|`${pAccountId}`, `${dd.accountNum}` |Account number of the effective DataDomain
+|`${orgRefName}`, `${dd.orgRefName}` |Organization of the effective DataDomain
+|`${ownerId}`, `${dd.ownerId}` |Owner ID of the effective DataDomain
+|`${pDataSegment}`, `${dd.dataSegment}` |Data segment of the effective DataDomain
+|`${defaultRealm}`, `${principal.defaultRealm}` |The principal's default realm
 |`${area}` |Current functional area
 |`${functionalDomain}` |Current functional domain
-|`${action}` |Current action (CREATE, UPDATE, etc.)
+|`${action}` |Current action
+|`${resourceId}` |Resource id of the current request
+|`${dcTenantId}`, `${dcOrgRefName}`, `${dcAccountId}`, `${dcDataSegment}` |The same coordinates taken from the principal's DomainContext, when it has one
+|`${facet.<key>}`, `${coord.<key>}` |Facet values supplied by the DataDomain policy for this query
+|`${principal.<key>}` |Custom principal properties (also available as `${<key>}`)
 |===
+
+===== Unresolved Variables Fail Closed
+
+A variable that cannot be resolved never widens a result:
+
+- In a query converted with variable substitution, a `${var}` that has no value raises an error ("Unresolved resolver variable ...") instead of being compared as literal text. This applies to single values and to `IN` lists.
+- In a permission rule, a matched ALLOW rule whose filter references a variable that is missing, null, or whose `AccessListResolver` threw is not dropped. It contributes a filter that matches nothing, so the rule grants no rows, and a warning names the rule and the variables.
+- For in-memory rule evaluation and for the write check, an ALLOW rule with an unresolved variable does not apply and a DENY rule does.
 
 ===== Custom Variables from Access Resolvers
 
@@ -412,7 +439,12 @@ status:"ACTIVE" && ownerId:${principalId} && createdDate:>=2024-01-01
 
 # Avoid: Leading wildcards on large collections
 name:*widget  # can be slow on millions of records
+
+# Exact, case-sensitive equality compiles to a plain equality match
+status:ACTIVE~cs
 ----
+
+String equality is case-insensitive by default and is executed as an anchored case-insensitive regular expression. Where the stored case is known, append `~cs` so the condition becomes a plain equality that an ordinary index can serve.
 
 ===== Projection for Large Objects
 
@@ -470,10 +502,10 @@ Common syntax errors and solutions:
 
 [source]
 ----
-# Wrong: Missing quotes for multi-word strings
-name:Super Widget
+# Wrong: A value with punctuation outside the unquoted character set
+name:Widget (Large)
 # Right:
-name:"Super Widget"
+name:"Widget (Large)"
 
 # Wrong: Incorrect number prefix
 price:19.99
@@ -517,8 +549,10 @@ text("foo bar")
 
 The BIAPI query syntax is parsed once (via ANTLR) and can be executed by different "listeners" depending on the use case. Quantum ships with two primary implementations that share the same grammar and semantics:
 
-- Morphia listener: converts a query into Mongo/Morphia Filters for database-side execution
-- In-memory listener: converts a query into a Java Predicate over JSON data for Quarkus/GraalVM-friendly in-memory execution
+- Morphia listener: converts a query into Mongo/Morphia Filters for database-side execution (`quantum-morphia-repos`)
+- In-memory listener: converts a query into a Java Predicate over JSON data for Quarkus/GraalVM-friendly in-memory execution (`quantum-query-runtime`)
+
+The in-memory predicates live in their own module, `quantum-query-runtime` (package `com.e2eq.framework.query.runtime`: `QueryPredicates`, `QueryToPredicateJsonListener`, `ValidatingQueryToPredicateJsonListener`). The module has no repository or HTTP endpoint and does not depend on `quantum-morphia-repos` or `quantum-framework`, so a service can evaluate BIAPI predicates, including the write-permission check on rule filters, without the framework aggregate. `quantum-morphia-repos` depends on it.
 
 ===== Morphia: QueryToFilterListener
 
@@ -587,7 +621,7 @@ Convenience helpers exist in QueryPredicates:
 
 [source,java]
 ----
-import com.e2eq.framework.query.QueryPredicates;
+import com.e2eq.framework.query.runtime.QueryPredicates;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.util.function.Predicate;
 import java.util.Map;
@@ -684,7 +718,7 @@ import com.e2eq.framework.grammar.*;
 import org.antlr.v4.runtime.*;
 import org.antlr.v4.runtime.tree.ParseTreeWalker;
 
-String query = "name:John AND invalidField:test";
+String query = "name:John && invalidField:test";
 
 BIAPIQueryLexer lexer = new BIAPIQueryLexer(CharStreams.fromString(query));
 CommonTokenStream tokens = new CommonTokenStream(lexer);
@@ -763,7 +797,7 @@ For programmatic validation without listeners:
 
 [source,java]
 ----
-import com.e2eq.framework.query.QueryFieldValidator;
+import com.e2eq.framework.annotations.QueryFieldValidator;
 
 // Validate against a model class
 QueryFieldValidator validator = QueryFieldValidator.forModelClass(UserProfile.class);
@@ -805,7 +839,7 @@ The BIAPI query language primarily targets fields on documents. When using the o
 
 Option A: Variable from an AccessListResolver
 
-- A resolver computes the set of IDs using EdgeDao (e.g., orders related by placedInOrg to the caller’s org).
+- A resolver computes the set of IDs from the ontology edge store (e.g., orders related by placedInOrg to the caller’s org).
 - Use an IN clause over id in your filter string:
 +
 [source]
@@ -814,9 +848,13 @@ Option A: Variable from an AccessListResolver
 id:^${idsByPlacedInOrg}
 ----
 
+Option B: the ontology operators described next.
+
 ==== Ontology operators: hasEdge, hasOutgoingEdge, and hasIncomingEdge
 
-When the ontology module is enabled and edges are materialized in MongoDB, you can constrain results by semantic graph relationships using `hasEdge`, `hasOutgoingEdge`, and `hasIncomingEdge`.
+When the ontology module (`quantum-ontology-mongo`) is installed, you can constrain results by semantic graph relationships using `hasEdge`, `hasOutgoingEdge`, and `hasIncomingEdge`. `hasOutgoingEdge` is an alias of `hasEdge`.
+
+The operators see every edge of the relation, whatever its materialization mode. A relation's edges are either stored in the edge collection when data is written (EAGER) or computed by a provider when they are read (LAZY and ONDEMAND). The query listeners resolve the operators through the `OntologyEdgeLookup` interface, implemented in `quantum-ontology-mongo` over `ComputedEdgeReader`, so a predicate matches whether or not its edges were ever written to MongoDB.
 
 ===== Syntax
 
@@ -843,7 +881,7 @@ hasIncomingEdge(predicate, src, { edgeFilter })
 
 When querying an edge with property constraints:
 
-1. **Automatic Field Scoping**: Any attribute referenced inside the `{ ... }` block that is not a reserved root edge attribute (`src`, `dst`, `p`, `dstType`, `dataDomain`, `_id`) is automatically rewritten to target dynamic edge properties stored under `props.<field>`. For example, `{ role:"PRIMARY" && active:true }` is compiled to `props.role == "PRIMARY" AND props.active == true`.
+1. **Automatic Field Scoping**: Any attribute referenced inside the `{ ... }` block that is not a reserved root edge attribute is automatically rewritten to target dynamic edge properties stored under `props.<field>`. The reserved names are `src`, `srcType`, `p`, `dst`, `dstType`, `inferred`, `derived`, `props`, `prov`, `support`, `ts`, `dataDomain`, `id`, `_id`, `created`, `updated`, `version`, and any name starting with `props.`, `dataDomain.` or `prov.`. For example, `{ role:"PRIMARY" && active:true }` is compiled to `props.role == "PRIMARY" AND props.active == true`.
 2. **MongoDB Compound Index Utilization**: Edge property filters are pushed down directly into MongoDB queries on the `edges` collection. They take advantage of compound indexes:
    - `idx_domain_p_dst_props`: `{"dataDomain": 1, "p": 1, "dst": 1, "props": 1}` (for `hasEdge` / `hasOutgoingEdge`)
    - `idx_domain_src_p_props`: `{"dataDomain": 1, "src": 1, "p": 1, "props": 1}` (for `hasIncomingEdge`)
@@ -864,9 +902,17 @@ When querying an edge with property constraints:
 | Evaluates to `false` (no match). If an edge does not contain the queried property in its `props` map, the filter fails closed.
 | Predictable fail-closed semantics for dynamic schemas.
 
+| **No Matching Edges**
+| The operator becomes a filter that matches no document (`_id: "__none__"`). The same happens when the ontology declares a domain (for `hasEdge`) or range (for `hasIncomingEdge`) for the predicate that does not fit the queried entity type.
+| An edge predicate that cannot match returns nothing rather than everything.
+
 | **Tenant Scoping & Missing Security Context**
-| Tenant ID is resolved from the active `SecurityContext` / `RuleContext` (`${pTenantId}`). If the query is executed without an active tenant or security context, the edge lookup returns empty results (`_id: "__none__"`).
+| Edges are read in the caller's full DataDomain (organization, account, tenant, data segment), taken from the authenticated principal. Without a principal the DataDomain is built from the query variables (`pTenantId`/`tenantId`, `orgRefName`, `pAccountId`, `pDataSegment`); if any is missing the query fails with an error. A tenant variable that differs from the principal's tenant is refused.
 | Inviolate multi-tenant data isolation; queries never leak edge relationships across realms or unauthenticated callers.
+
+| **Ontology Module Not Installed**
+| The database listener (`QueryToFilterListener`) fails the query with an error ("no OntologyEdgeLookup ... is installed"). The in-memory listener (`QueryToPredicateJsonListener`) matches nothing.
+| Fail closed: a relationship constraint that cannot be enforced never passes rows.
 
 | **Dynamic Model Schema Validation**
 | When query schema validation is enabled (`ValidatingQueryToFilterListener`), edge property keys bypass static entity model field validation.
@@ -902,7 +948,7 @@ hasEdge("routedToFacility", "FAC-901", { serviceLevel:"EXPEDITED" })
 hasEdge("suppliedBy", @@507f1f77bcf86cd799439011, { certified:true && confidence:>=##0.90 })
 
 # Find assets with active status and priority in high tiers
-hasEdge("assignedToTeam", "TEAM-ALPHA", { active:true && tier:^[#1, #2] })
+hasEdge("assignedToTeam", "TEAM-ALPHA", { active:true && tier:^[1, 2] })
 ----
 
 .Combining edge traversal filters with root entity filters
@@ -914,35 +960,36 @@ hasEdge("placedInOrg", "ORG-1", { priority:"HIGH" }) && status:"PENDING" && tota
 
 ===== Query Macros for Temporal & AI Confidence Governance
 
-To simplify complex temporal and probabilistic filtering, the query preprocessor recognizes two high-level macros:
+Before parsing, the query preprocessor (`MorphiaUtils.normalizeOperators`) rewrites two macros as plain text:
 
-1. **`@asOf(timestamp)`**:
-   - Compiles to bitemporal range matching: `((validFrom:<=ts || validFrom:null) && (validTo:>=ts || validTo:null))` (or prefixed with `edges.` inside expansion/traversal contexts).
-   - Backed by compound index `idx_domain_temporal`.
-   - Strips surrounding quotes so ISO-8601 timestamps parse cleanly as ANTLR `DATE` / `DATETIME` tokens.
-   - *Business Scenario & Solution*: Point-in-time compliance audits (e.g. healthcare HIPAA audits or financial regulatory inquiries) can reproduce past authorization states without maintaining separate historical snapshot tables or running deletion cron jobs.
+1. **`@asOf(timestamp)`** becomes `((validFrom:<=ts || validFrom:null) && (validTo:>=ts || validTo:null))`. Surrounding quotes are stripped so an ISO-8601 timestamp parses as a `DATE` / `DATETIME` token. Written as `edges.@asOf(ts)`, the field names get the `edges.` prefix.
+2. **`@minConfidence(threshold)`** becomes `confidence:>=threshold` (or `edges.confidence:>=threshold`). The threshold text is inserted unchanged, so write it with the decimal prefix (`@minConfidence(##0.85)`) to have it compared as a number; without a prefix BIAPI reads the value as a string.
 
-2. **`@minConfidence(threshold)`**:
-   - Compiles to confidence threshold filtering: `confidence:>=threshold` (or `edges.confidence:>=threshold`).
-   - Backed by compound index `idx_domain_confidence`.
-   - *Business Scenario & Solution*: AI and LLM graph derivation governance (e.g. anti-money laundering beneficial ownership links). Mission-critical operations require human-certified links (`confidence: 1.0`), while exploratory analysis accepts AI-inferred relationships (`@minConfidence(0.80)`).
+`validFrom`, `validTo`, `confidence` and `securityLabel` are fields of the stored edge document (`OntologyEdge`), indexed by `idx_domain_temporal`, `idx_domain_confidence` and `idx_domain_security`. Used in a query whose root type is the edge collection, the macros address those fields:
 
-.Query Macro Examples
+.Query Macro Example (root type `OntologyEdge`)
 [source]
 ----
-# Temporal Point-in-Time Audit: Did associate have active role on September 1st, 2026?
-hasEdge("assignedToBranch", "BRANCH-NY", { @asOf(2026-09-01T00:00:00Z) && role:"MANAGER" })
-
-# Probabilistic AI Governance: Only traverse high-confidence vendor relationships
-hasEdge("subsidiaryOf", "PARENT-CORP", { @minConfidence(0.85) && assertionMethod:"LLM_INFERENCE" })
-
-# Combining temporal validity, AI confidence, and security classification
-hasEdge("operatesInFacility", "FAC-901", {
-  @asOf(2026-09-20T00:00:00Z) &&
-  @minConfidence(0.90) &&
-  securityLabel:"CONFIDENTIAL"
-})
+# Edges valid on a date, above a confidence threshold, with a security label
+@asOf(2026-09-20T00:00:00Z) && @minConfidence(##0.8) && securityLabel:"CONFIDENTIAL"
 ----
+
+Inside a `hasEdge(..., { edgeFilter })` block the expanded names follow the automatic field scoping rule above: `validFrom`, `validTo` and `confidence` are not reserved names, so there they address `props.validFrom`, `props.validTo` and `props.confidence`.
+
+==== Expand directives
+
+Two directives ask for related data to be returned with each row. Both switch the query to AGGREGATION mode:
+
+[source]
+----
+# Hydrate a reference field (an EntityReference with @ReferenceTarget)
+expand(customer) && status:active
+
+# Hydrate the targets of a named, stable ontology relation under _rel.<relation>
+expand(@hasShipment) && status:active
+----
+
+`expand(path)` takes a dotted field path with optional `[*]` array markers; `expand(@relation)` takes a relation name after the `@`. Neither takes further arguments. They filter nothing: use `hasEdge(...)` to restrict the root rows by a relationship. See xref:{doc-root}/user-guide/query-expansion.adoc[Query Expansion] for semantics, security and refusal codes.
 
 ==== Root projection recap: fields:[+…,-…]
 
@@ -952,6 +999,7 @@ To include or exclude fields from the root documents:
 - Include mode: if any `+` is present, only the listed fields are included (with explicit `-` carving out exceptions).
 - Exclude mode: if only `-` entries exist, all fields are included except those.
 - Default `_id`: preserved unless explicitly specified (`+_id`/`-_id`).
+- `fields:[...]` is not part of the filter grammar. The query planner handles it, and only for queries that also contain `expand(...)`; in a plain filter query it is a syntax error. List endpoints take their projection as a separate request parameter instead.
 
 Examples
 
@@ -964,4 +1012,4 @@ fields:[+_id,+total,-internalNotes]
 expand(customer) && fields:[+_id,+customer,+total]
 ----
 
-For per-expansion projections and advanced traversal filters, see xref:{doc-root}/user-guide/query-expansion.adoc[Query Expansion].
+For expansion semantics and the pipelines it compiles to, see xref:{doc-root}/user-guide/query-expansion.adoc[Query Expansion].
