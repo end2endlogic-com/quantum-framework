@@ -973,7 +973,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                 .withDataDomain(dataDomain)
                 .withUserId(serviceUserId)
                 .withRoles(roles)
-                .withScope("SERVICE")
+                .withScope(PrincipalContext.SCOPE_SERVICE)
                 .build();
         return new ContextBuildResult(context, null);
     }

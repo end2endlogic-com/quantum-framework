@@ -377,6 +377,39 @@ public class AccessInviteService {
     }
 
     /**
+     * Permission diagnostics expose the subject's complete roles, not a tenant-filtered projection.
+     * Qualify the caller before reading target membership metadata, and require authority over
+     * every target tenant in a pooled realm. Unknown or regex-only target scope fails closed.
+     * No target credential, profile or group is read to make this decision.
+     */
+    public boolean mayInspectPermissions(String realm, String userId, String requestedTenant) {
+        PrincipalContext caller = SecurityContext.getPrincipalContext().orElse(null);
+        if (caller == null || authenticatedUserId(caller) == null || normalize(realm) == null) {
+            return false;
+        }
+        InviteManagement management = inviteManagement(caller, realm);
+        if (management.systemPrincipal()) {
+            return true;
+        }
+        if (!management.admin()) {
+            return false;
+        }
+        if (!management.pooled()) {
+            return true;
+        }
+        if (requestedTenant != null && !management.mayManageTenant(requestedTenant)) {
+            return false;
+        }
+        return assignment(userId, realm).map(target -> {
+            if (trimToNull(target.getAuthorizedTenantRegEx()) != null
+                || target.getAuthorizedTenantIds() == null || target.getAuthorizedTenantIds().isEmpty()) {
+                return false;
+            }
+            return target.getAuthorizedTenantIds().stream().allMatch(management::mayManageTenant);
+        }).orElse(false);
+    }
+
+    /**
      * Whether {@code userId} is an active member of {@code realm}: its {@link UserRealmRole} there
      * is active (or carries no status, as legacy and seeded rows). Invited and suspended are not.
      */

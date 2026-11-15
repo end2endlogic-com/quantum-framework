@@ -70,6 +70,33 @@ public class PermissionResource {
    @Inject
    AuthProviderFactory authProviderFactory;
 
+   @Inject
+   com.e2eq.framework.service.access.AccessInviteService accessInviteService;
+
+   private String inspectionRealm(String requested) {
+      return requested != null && !requested.isBlank() ? requested :
+              SecurityContext.getPrincipalContext().map(PrincipalContext::getDefaultRealm)
+                      .orElse(ruleContext.getDefaultRealm());
+   }
+
+   /** Authorize before any target role, credential, profile or group resolution. */
+   private void requireInspection(String identity, String realm, String tenant, String[] extraRoles) {
+      PrincipalContext caller = SecurityContext.getPrincipalContext().orElse(null);
+      boolean self = caller != null && identity.equals(caller.getUserId())
+              && realm != null && realm.equals(caller.getDefaultRealm());
+      Set<String> held = caller == null || caller.getRoles() == null ? Set.of()
+              : new HashSet<>(Arrays.asList(caller.getRoles()));
+      boolean heldExtras = extraRoles == null || held.containsAll(Arrays.asList(extraRoles));
+      if (self && heldExtras) {
+         return;
+      }
+      if (accessInviteService.mayInspectPermissions(realm, identity, tenant)) {
+         return;
+      }
+      throw new ApplicationAccessException(ApplicationAccessException.Code.PERMISSION_INSPECTION_FORBIDDEN,
+              "You may not inspect permissions for the requested scope.");
+   }
+
    static class EntityInfo {
       public String entity;
       public String bmFunctionalArea;
@@ -203,9 +230,8 @@ public class PermissionResource {
          throw new BadRequestException("userId is required");
       }
 
-      String realm = (req.realm != null && !req.realm.isBlank())
-              ? req.realm
-              : ruleContext.getDefaultRealm();
+      String realm = inspectionRealm(req.realm);
+      requireInspection(req.userId, realm, null, null);
 
       RoleProvenanceResponse resp = new RoleProvenanceResponse();
       resp.userId = req.userId;
@@ -300,18 +326,20 @@ public class PermissionResource {
             }
          }
       } else {
-         // goto the authProvider and call the getUserGroupsForSubject to get the list of groups the idp has
-         // mapped the user to.  This is not a security issue, but it is a way to show the user the groups
-         // the idp has mapped the user to.
+         // The caller has already been authorized to inspect this user's IDP groups.
          if (authProviderFactory.getUserManager() != null && cred != null) {
-            List<String> idpGroups = new ArrayList<>(authProviderFactory.getUserManager().getUserRolesForSubject(cred.getSubject()));
-            if (idpGroups != null && !idpGroups.isEmpty()) {
+            try {
+               List<String> idpGroups = new ArrayList<>(authProviderFactory.getUserManager().getUserRolesForSubject(cred.getSubject()));
                for (String idpGroup : idpGroups) {
                   GroupInfo gi = new GroupInfo();
                   gi.refName = idpGroup;
                   gi.roles = List.of();
                   resp.tokenMappedUserGroups.add(gi);
                }
+            } catch (Exception ex) {
+               // The provider resolves the subject in the caller's own realm; an administrator of another
+               // realm still gets the provenance, with the gap named, like the other display lookups here.
+               resp.notes.computeIfAbsent("warnings", k -> new ArrayList<>()).add("Failed reading provider groups: " + ex.getMessage());
             }
          }
       }
@@ -614,8 +642,8 @@ public class PermissionResource {
          return Response.status(Response.Status.BAD_REQUEST).entity("identity is required").build();
       }
       // Prefer explicit realm, then SecurityContext principal realm, then default
-      String realm = (req.realm != null && !req.realm.isBlank()) ? req.realm :
-              SecurityContext.getPrincipalContext().map(PrincipalContext::getDefaultRealm).orElse(ruleContext.getDefaultRealm());
+      String realm = inspectionRealm(req.realm);
+      requireInspection(req.identity, realm, req.tenantId, req.roles);
       String applicationId = (req.applicationId != null && !req.applicationId.isBlank()) ? req.applicationId :
               SecurityContext.getPrincipalContext().map(PrincipalContext::getApplicationId).orElse(null);
       if (applicationId == null || applicationId.isBlank()) {
@@ -737,8 +765,8 @@ public class PermissionResource {
       if (req == null || req.identity == null || req.identity.isBlank()) {
          return Response.status(Response.Status.BAD_REQUEST).entity("identity is required").build();
       }
-      String realm = (req.realm != null && !req.realm.isBlank()) ? req.realm :
-              SecurityContext.getPrincipalContext().map(PrincipalContext::getDefaultRealm).orElse(ruleContext.getDefaultRealm());
+      String realm = inspectionRealm(req.realm);
+      requireInspection(req.identity, realm, req.tenantId, req.roles);
       String applicationId = (req.applicationId != null && !req.applicationId.isBlank()) ? req.applicationId :
               SecurityContext.getPrincipalContext().map(PrincipalContext::getApplicationId).orElse(null);
       if (applicationId == null || applicationId.isBlank()) {
@@ -829,8 +857,8 @@ public class PermissionResource {
          return Response.status(Response.Status.BAD_REQUEST).entity("identity is required").build();
       }
       // Realm resolution (same as /check)
-      String realm = (req.realm != null && !req.realm.isBlank()) ? req.realm :
-              SecurityContext.getPrincipalContext().map(PrincipalContext::getDefaultRealm).orElse(ruleContext.getDefaultRealm());
+      String realm = inspectionRealm(req.realm);
+      requireInspection(req.identity, realm, req.tenantId, req.roles);
       String applicationId = (req.applicationId != null && !req.applicationId.isBlank()) ? req.applicationId :
               SecurityContext.getPrincipalContext().map(PrincipalContext::getApplicationId).orElse(null);
       if (applicationId == null || applicationId.isBlank()) {

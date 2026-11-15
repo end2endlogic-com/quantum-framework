@@ -507,6 +507,8 @@ public class RuleContext {
     }
 
     private static boolean hasDynamic(Rule r) {
+        // A precondition decides whether the rule applies at all, so it is never materialized either.
+        if (r.getPreconditionScript() != null && !r.getPreconditionScript().isBlank()) return true;
         try {
             // Prefer getPostconditionScript if present; fall back to getScript if exists
             java.lang.reflect.Method m;
@@ -804,7 +806,55 @@ public class RuleContext {
        addAnonymousApplicationRegistrationRule("view");
        addAnonymousApplicationRegistrationRule("create");
        addAnonymousAuthenticationRule();
+       addApplicationServiceInstallRule("install");
+       addApplicationServiceInstallRule("uninstall");
 
+    }
+
+    /**
+     * The precondition of {@link #addApplicationServiceInstallRule}: the principal is a service identity.
+     * {@code pctx} is the principal binding in both scripting modes.
+     */
+    public static final String SERVICE_IDENTITY_PRECONDITION =
+            "pctx.scope === '" + com.e2eq.framework.model.securityrules.PrincipalContext.SCOPE_SERVICE + "'";
+
+    /**
+     * Admits an application's own service identity ({@code system} role, principal scope
+     * {@link com.e2eq.framework.model.securityrules.PrincipalContext#SCOPE_SERVICE}) to the
+     * install and uninstall endpoints of {@code SECURITY/APPLICATION_INSTALL}. The rule only lets
+     * the request reach {@code ApplicationAccessService}, which then allows exactly an install of
+     * the caller's own application ({@code azp}) into a realm that application declares, and
+     * refuses everything else with a typed code. A user principal holding the {@code system} role
+     * is not a service identity, so the precondition leaves the rule not applicable for it.
+     */
+    private void addApplicationServiceInstallRule(String action) {
+        SecurityURIHeader header = new SecurityURIHeader.Builder()
+                .withIdentity("system")
+                .withArea("SECURITY")
+                .withFunctionalDomain("APPLICATION_INSTALL")
+                .withAction(action)
+                .build();
+
+        SecurityURIBody body = new SecurityURIBody.Builder()
+                .withRealm("*")
+                .withOrgRefName("*")
+                .withAccountNumber("*")
+                .withTenantId("*")
+                .withOwnerId("*")
+                .withDataSegment("*")
+                .build();
+
+        Rule rule = new Rule.Builder()
+                .withName("Application service identity can " + action + " its own application")
+                .withDescription("An application's service identity may call " + action + "; ApplicationAccessService "
+                        + "allows only its own application (azp) in a realm that application declares.")
+                .withSecurityURI(new SecurityURI(header, body))
+                .withPreconditionScript(SERVICE_IDENTITY_PRECONDITION)
+                .withEffect(RuleEffect.ALLOW)
+                .withPriority(0)
+                .withFinalRule(true)
+                .build();
+        this.addRule(header, rule);
     }
 
     private void addAnonymousAuthenticationRule() {

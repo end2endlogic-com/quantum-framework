@@ -412,7 +412,7 @@ public class PrincipalContextResolver {
     }
 
     private static String scopeOf(PrincipalContextRequest request, CredentialUserIdPassword creds) {
-        return request.identityOnly() && serviceCredential(creds) ? "SERVICE" : "AUTHENTICATED";
+        return request.identityOnly() && serviceCredential(creds) ? PrincipalContext.SCOPE_SERVICE : "AUTHENTICATED";
     }
 
     /** Effective roles in {@code effectiveRealm} through {@link IdentityRoleResolver}. */
