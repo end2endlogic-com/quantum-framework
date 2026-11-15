@@ -108,4 +108,9 @@ public final class AccessibleTenantResolver {
             return false;
         }
     }
+
+    /** True when {@code assignment} marks {@code tenantId} as an external (outsider) tenant. */
+    public static boolean isExternal(UserRealmRole assignment, String tenantId) {
+        return assignment != null && assignment.externalInTenant(tenantId);
+    }
 }

@@ -137,6 +137,12 @@ public class AccessInvite extends BaseModel {
     protected Status status = Status.PENDING;
 
     @Override
+    public void validate() {
+        super.validate();
+        UserRealmRole.requireNoExternalRole(grantedRoles, "AccessInvite");
+    }
+
+    @Override
     public String bmFunctionalArea() {
         return "SECURITY";
     }

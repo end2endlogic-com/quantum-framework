@@ -100,6 +100,35 @@ class AccessibleTenantResolverTest {
         assertTrue(AccessibleTenantResolver.isAuthorized(assignment, "any-tenant"));
     }
 
+    @Test
+    void absentOrEmptyExternalTenantsMeansMemberEverywhere() {
+        UserRealmRole absent = UserRealmRole.builder()
+                .authorizedTenantIds(List.of("org-a", "org-b"))
+                .build();
+        UserRealmRole empty = UserRealmRole.builder()
+                .authorizedTenantIds(List.of("org-a", "org-b"))
+                .externalTenantIds(List.of())
+                .build();
+
+        assertFalse(AccessibleTenantResolver.isExternal(null, "org-a"));
+        assertFalse(AccessibleTenantResolver.isExternal(absent, "org-a"));
+        assertFalse(AccessibleTenantResolver.isExternal(empty, "org-a"));
+    }
+
+    @Test
+    void externalTenantsMatchPerTenantOnly() {
+        UserRealmRole assignment = UserRealmRole.builder()
+                .authorizedTenantIds(List.of("org-a", "org-b"))
+                .externalTenantIds(List.of(" org-b "))
+                .build();
+
+        assertFalse(AccessibleTenantResolver.isExternal(assignment, "org-a"));
+        assertTrue(AccessibleTenantResolver.isExternal(assignment, "org-b"));
+        assertTrue(AccessibleTenantResolver.isExternal(assignment, " org-b "));
+        assertFalse(AccessibleTenantResolver.isExternal(assignment, " "));
+        assertFalse(AccessibleTenantResolver.isExternal(assignment, null));
+    }
+
     private static Realm dedicated(String refName, String tenantId, String orgRefName) {
         return Realm.builder()
                 .refName(refName)

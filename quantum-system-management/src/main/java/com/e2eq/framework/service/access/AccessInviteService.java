@@ -1272,7 +1272,19 @@ public class AccessInviteService {
      * {@code system}, and it may grant any role.
      */
     private void enforceGrantableRoles(PrincipalContext caller, String realm, String inviterUserId, List<String> grantedRoles) {
-        if (grantedRoles == null || grantedRoles.isEmpty() || isSystemPrincipal(caller)) {
+        if (grantedRoles == null || grantedRoles.isEmpty()) {
+            return;
+        }
+        for (String role : grantedRoles) {
+            if (UserRealmRole.isReservedExternalRole(role)) {
+                Log.warnf(
+                    "access-invite.create.refused reason=role-not-grantable realm=%s inviter=%s role=%s",
+                    sanitizeForLog(realm), sanitizeForLog(inviterUserId), sanitizeForLog(role)
+                );
+                throw failure(Code.INVITE_ROLE_NOT_GRANTABLE, "The role '" + sanitizeForLog(role) + "' cannot be granted in this realm.");
+            }
+        }
+        if (isSystemPrincipal(caller)) {
             return;
         }
         Set<String> held = credentialOf(authenticatedUserId(caller))
@@ -1287,7 +1299,7 @@ public class AccessInviteService {
             if (normalized == null) {
                 continue;
             }
-            if (SYSTEM_ROLE.equals(normalized) || !held.contains(normalized)) {
+            if (SYSTEM_ROLE.equals(normalized) || UserRealmRole.ROLE_EXTERNAL.equals(normalized) || !held.contains(normalized)) {
                 Log.warnf(
                     "access-invite.%s.refused reason=role-not-grantable realm=%s inviter=%s role=%s",
                     operation, sanitizeForLog(realm), sanitizeForLog(inviterUserId), sanitizeForLog(role)

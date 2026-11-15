@@ -177,6 +177,7 @@ public class RealmMembershipService {
         if (assignment.getRealmRefName() == null || assignment.getRealmRefName().isBlank()) {
             throw new IllegalArgumentException("assignment.realmRefName must not be blank");
         }
+        UserRealmRole.requireNoExternalRole(assignment.getRoles(), "UserRealmRole");
         if (quantumModeConfig.membershipsRemote()) {
             // PUT /control/users/{userId}/realms/{realmRefName} round-trips persisted fields.
             // The control plane retains authority over existing storage scope.

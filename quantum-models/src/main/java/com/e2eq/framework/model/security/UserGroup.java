@@ -40,6 +40,12 @@ public class UserGroup extends BaseModel {
    protected String ownerTenantId;
 
    @Override
+   public void validate () {
+      super.validate();
+      UserRealmRole.requireNoExternalRole(roles, "UserGroup");
+   }
+
+   @Override
    public String bmFunctionalArea () {
       return "SECURITY";
    }

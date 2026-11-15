@@ -132,6 +132,38 @@ public class UserRealmRoleRepo extends MorphiaRepo<UserRealmRole> {
     }
 
     @Override
+    protected void reconcileServerOwnedState(Datastore datastore, UserRealmRole entity, RefNameContract.WriteMode mode) {
+        if (entity != null) {
+            UserRealmRole.requireNoExternalRole(entity.getRoles(), "UserRealmRole");
+            if (entity.getExternalTenantIds() != null) {
+                for (String tenantId : entity.getExternalTenantIds()) {
+                    if (tenantId == null || tenantId.isBlank()) {
+                        throw new IllegalArgumentException("externalTenantIds must not contain null or blank entries");
+                    }
+                }
+            }
+        }
+    }
+
+    @Override
+    protected void validateFieldUpdate(String requestedPath, Object value) {
+        if (requestedPath != null && (requestedPath.equals("roles") || requestedPath.startsWith("roles."))) {
+            UserRealmRole.requireNoExternalRoleValue(value, "UserRealmRole");
+        }
+        if (requestedPath != null && (requestedPath.equals("externalTenantIds") || requestedPath.startsWith("externalTenantIds."))) {
+            if (value instanceof Iterable<?> iterable) {
+                for (Object item : iterable) {
+                    if (item == null || String.valueOf(item).isBlank()) {
+                        throw new IllegalArgumentException("externalTenantIds must not contain null or blank entries");
+                    }
+                }
+            } else if (value instanceof String str && str.isBlank()) {
+                throw new IllegalArgumentException("externalTenantIds must not contain null or blank entries");
+            }
+        }
+    }
+
+    @Override
     public UserRealmRole save(Datastore datastore, UserRealmRole value) {
         requireDefaultTenant(datastore, value);
         return super.save(datastore, value);

@@ -60,8 +60,12 @@ class ApplicationDeclarationValidatorTest {
    void reservedDuplicateAndPrefixedRolesAreRefused() {
       Declaration d = planner();
       d.application().getRoles().add(role("admin"));
+      d.application().getRoles().add(role("external"));
+      d.application().getRoles().add(role("External"));
       d.application().getRoles().add(role("planner-user"));
       d.application().getRoles().add(role("acme-planner:admin"));
+      List<Diagnostic> out = ApplicationDeclarationValidator.validate(d, PLATFORM, VocabularyEnforcement.REFUSE);
+      assertEquals(3, out.stream().filter(x -> x.code() == Code.ROLE_RESERVED).count(), out.toString());
       assertCodes(d, Code.ROLE_RESERVED, Code.ROLE_DUPLICATE, Code.ROLE_NAME_INVALID);
    }
 
@@ -289,8 +293,13 @@ class ApplicationDeclarationValidatorTest {
 
       Declaration reserved = planner();
       reserved.policies().get(0).getRules().add(rule("admin", "PLANNER", "PLAN", "LIST"));
+      reserved.policies().get(0).getRules().add(rule("external", "PLANNER", "PLAN", "VIEW"));
       List<Diagnostic> out = ApplicationDeclarationValidator.validate(reserved, PLATFORM, VocabularyEnforcement.REFUSE);
       assertTrue(out.isEmpty(), out.toString());
+
+      Declaration borrowedToExternal = planner();
+      borrowedToExternal.policies().get(0).getRules().add(rule("external", "SYSTEM", "MENUITEM", "LIST"));
+      assertExactly(borrowedToExternal, Code.POLICY_BORROWED_FOREIGN_ROLE);
    }
 
    @Test

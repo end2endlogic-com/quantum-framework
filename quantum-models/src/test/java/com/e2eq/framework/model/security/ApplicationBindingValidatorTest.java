@@ -107,7 +107,7 @@ class ApplicationBindingValidatorTest {
       for (String reserved : ApplicationDeclarationValidator.RESERVED_ROLES) {
          app.getRoles().add(role(reserved, ApplicationRole.GRANTABLE_BY_TENANT_ADMIN));
       }
-      for (String reserved : List.of("system", "admin", "user", "Admin", " user ")) {
+      for (String reserved : List.of("system", "admin", "user", "external", "Admin", " user ", "External", " external ")) {
          refused(Code.ROLE_NOT_GRANTABLE, binding(List.of("t1"), null, reserved), app, ALL_INSTALLED);
          for (Authority authority : Authority.values()) {
             assertGrantRefused(app, List.of(reserved), authority);
@@ -115,6 +115,7 @@ class ApplicationBindingValidatorTest {
       }
       // And for an application that does not declare them.
       refused(Code.ROLE_NOT_GRANTABLE, binding(List.of("t1"), null, "admin"), planner(), ALL_INSTALLED);
+      refused(Code.ROLE_NOT_GRANTABLE, binding(List.of("t1"), null, "external"), planner(), ALL_INSTALLED);
    }
 
    @Test

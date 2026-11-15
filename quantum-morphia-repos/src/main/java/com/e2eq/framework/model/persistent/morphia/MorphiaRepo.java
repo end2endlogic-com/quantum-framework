@@ -1567,6 +1567,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
        for (Pair<String, Object> pair : pairs) {
           assertFieldUpdateAllowed(pair.getKey());
+          validateFieldUpdate(pair.getKey(), pair.getValue());
           if (reservedFields.contains(pair.getKey())) {
              throw new IllegalArgumentException("Field:" + pair.getKey() + " is a reserved field and can't be updated");
           }
@@ -1664,6 +1665,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         List<UpdateOperator> updateOperators = new ArrayList<>();
         for (Pair<String, Object> pair : pairs) {
            assertFieldUpdateAllowed(pair.getKey());
+           validateFieldUpdate(pair.getKey(), pair.getValue());
             // check that the pair key corresponds to a field in the persistent class that is an enum
             Field field = null;
             try {
@@ -1865,6 +1867,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         List<String> reservedFields = List.of("refName", "id", "version", "references", "auditInfo", "persistentEvents");
          for (Pair<String, Object> pair : pairs) {
              assertFieldUpdateAllowed(pair.getKey());
+             validateFieldUpdate(pair.getKey(), pair.getValue());
             if (reservedFields.contains(pair.getKey())) {
                 throw new IllegalArgumentException("Field:" + pair.getKey() + " is a reserved field and can't be updated");
             }
@@ -2014,6 +2017,13 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
       * datastore may be a {@link MorphiaSession}. Default: nothing to reconcile.
       */
      protected void reconcileServerOwnedState(Datastore datastore, T entity, RefNameContract.WriteMode mode) {
+     }
+
+     /**
+      * Runs on field-pair and bulk updates so a repository can enforce value-level invariants on
+      * updated fields. Default: nothing to validate.
+      */
+     protected void validateFieldUpdate(String requestedPath, Object value) {
      }
 
      private void assertFieldUpdateAllowed(String requestedPath) {
