@@ -2144,6 +2144,7 @@ public class AccessInviteService {
             .displayName(invite.getDisplayName())
             .email(invite.getEmail())
             .targetUserId(invite.getTargetUserId())
+            .kind(invite.getKind())
             .scopeRefNames(scopeRefNames)
             .legalEntityRefNames(scopeRefNames)
             .grantedRoles(invite.getGrantedRoles() == null ? List.of() : invite.getGrantedRoles())

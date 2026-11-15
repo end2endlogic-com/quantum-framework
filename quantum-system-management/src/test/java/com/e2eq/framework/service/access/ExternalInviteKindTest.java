@@ -111,4 +111,17 @@ class ExternalInviteKindTest {
             throw e;
         }
     }
+
+    @Test
+    void anInviteAnswersWithItsKind() throws Exception {
+        var toResponse = AccessInviteService.class.getDeclaredMethod("toResponse",
+                com.e2eq.framework.model.security.AccessInvite.class, String.class);
+        toResponse.setAccessible(true);
+        var external = com.e2eq.framework.model.security.AccessInvite.builder().refName("i-1").kind("external").build();
+        var member = com.e2eq.framework.model.security.AccessInvite.builder().refName("i-2").build();
+        assertEquals("external", ((com.e2eq.framework.rest.responses.AccessInviteResponse)
+                toResponse.invoke(service, external, null)).getKind());
+        assertNull(((com.e2eq.framework.rest.responses.AccessInviteResponse)
+                toResponse.invoke(service, member, null)).getKind());
+    }
 }
