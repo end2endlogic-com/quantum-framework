@@ -38,13 +38,17 @@ mvn -pl quantum-docs -DskipTests -Dgpg.skip=true package
 Publish **LTS** to site root (from tag `v1.4.2`):
 
 ```bash
-mvn -pl quantum-docs -am -Pdocs-ghpages-lts -DskipTests -Dgpg.skip=true package deploy
+mvn -pl quantum-docs -Pdocs-ghpages-lts -DskipTests -Dgpg.skip=true deploy
 ```
 
 Publish **1.4.3-SNAPSHOT** preview:
 
 ```bash
-mvn -pl quantum-docs -am -Pdocs-ghpages-1.4 -DskipTests -Dgpg.skip=true package deploy
+mvn -pl quantum-docs -Pdocs-ghpages-1.4 -DskipTests -Dgpg.skip=true deploy
 ```
 
-SCM authentication: Maven `settings.xml`, e.g. `<server><id>github</id>…` matching `quantum-docs/pom.xml`.
+Run `deploy` on its own: `package deploy` runs packaging twice and fails in `maven-jar-plugin`. Leave out `-am`, which would also deploy `quantum-parent` to the Maven repository; the docs module only needs its parent POM, resolved from `../pom.xml`.
+
+Preview what a publish would change (nothing is pushed) by adding `-Dscmpublish.dryRun=true`.
+
+SCM authentication: Maven `settings.xml`, e.g. `<server><id>github</id>…` matching `quantum-docs/pom.xml`. A git credential helper for `github.com` (for example `gh auth setup-git`) also works.
