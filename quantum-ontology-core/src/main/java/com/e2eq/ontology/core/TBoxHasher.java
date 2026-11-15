@@ -73,6 +73,9 @@ public final class TBoxHasher {
             // still change the hash, or registry dedup never persists it.
             if (p.isStable()) {
                 pData.put("stability", RelationStability.STABLE.wireValue());
+                if (p.metadata().get("replacedBy") instanceof String successor) {
+                    pData.put("replacedBy", successor);
+                }
             }
             properties.put(p.name(), pData);
         }

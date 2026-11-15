@@ -111,6 +111,8 @@ public final class StableRelationDiff {
             PropertyDef prior = successor instanceof String ? active.properties().get(successor) : null;
             PropertyDef target = prior != null && candidate != null ? candidate.properties().get(successor) : null;
             if (target != null && prior.isStable() && target.isStable() && !name.equals(successor)
+                    && !narrowed(active.classes(), old.domain(), prior.domain())
+                    && !narrowed(active.classes(), old.range(), prior.range())
                     && !narrowed(candidate.classes(), old.domain(), target.domain())
                     && !narrowed(candidate.classes(), old.range(), target.range())) continue;
             result.add(new Violation(name, Code.STABLE_RELATION_REPLACEMENT_REQUIRED,
