@@ -15,6 +15,44 @@ It covers:
 [NOTE]
 This document reflects the current and evolving server behavior. The JavaScript client library is available at runtime from Quarkus as `/security/acl-client.js` and is forward-compatible with the scoped access-matrix format described here.
 
+== Who may inspect permissions
+
+All four inspection endpoints under `/system/permissions` require authentication:
+`POST /role-provenance`, `/check`, `/check-with-index`, and `/fd/evaluate`.
+A caller may inspect their own request-context `userId` in their request-context
+realm. An omitted `realm` uses that context realm, including for role provenance.
+The successful response fields are unchanged.
+
+Another identity (including a role name), or a different realm, requires the
+framework system principal or a realm administrator of the requested realm.
+These are the same authorities used by access-invite management; a token role
+named `system` alone or a membership-administrator role is insufficient.
+In a pooled/multi-tenant realm the administrator must be authorized for every
+tenant on the target's realm assignment and any explicitly requested tenant.
+Because these diagnostics expose complete roles rather than a tenant-filtered
+projection, missing, empty, or regex-based target tenant scope is refused for
+pooled-realm administrators. The system principal may inspect across realms.
+
+For `/check` and `/fd/evaluate`, client-supplied extra `roles` must already be
+held in the authenticated request context, unless the caller has the above
+administrative authority. `/check-with-index` applies the same validation,
+although that endpoint does not add supplied roles to its snapshot.
+
+Unauthorized inspections return HTTP `403` with the standard `RestError` payload
+and `errorCode: PERMISSION_INSPECTION_FORBIDDEN`. The code and message are the
+same for existing and nonexistent targets. Authorization happens before target
+credential, profile, group, or role resolution; pooled scope checks use realm
+assignment metadata only after qualifying the caller as an administrator.
+Consumers that formerly simulated arbitrary identities, realms, or extra roles
+must use an appropriately authorized administrator or restrict requests to self.
+
+=== Role provenance
+
+`POST /system/permissions/role-provenance` accepts `userId` and optional `realm`.
+It returns credential/profile presence, credential roles, profile groups, token
+roles and mapped groups, net roles, and role-source assignments. The caller
+restriction above applies before any of those values are read.
+
 == APIs
 
 === POST /permission/check

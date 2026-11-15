@@ -1,8 +1,8 @@
 package com.e2eq.framework.model.security;
 
 /**
- * A typed refusal of an application binding ({@link UserAppRole}) or install
- * ({@link ApplicationInstall}) write. The message carries the detail; {@link Code#httpStatus()}
+ * A typed refusal of an application binding ({@link UserAppRole}), install
+ * ({@link ApplicationInstall}) write, or permission inspection. The message carries the detail; {@link Code#httpStatus()}
  * is what a REST caller receives.
  */
 public class ApplicationAccessException extends IllegalArgumentException {
@@ -43,7 +43,9 @@ public class ApplicationAccessException extends IllegalArgumentException {
        */
       APPLICATION_SCOPE_REQUIRED(400),
       /** The request's principal and resource name different applications. */
-      APPLICATION_SCOPE_MISMATCH(400);
+      APPLICATION_SCOPE_MISMATCH(400),
+      /** The caller cannot inspect the requested identity, realm or additional roles. */
+      PERMISSION_INSPECTION_FORBIDDEN(403);
 
       private final int httpStatus;
 

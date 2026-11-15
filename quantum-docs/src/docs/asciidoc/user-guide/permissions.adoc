@@ -7,6 +7,17 @@ endif::[]
 
 This section explains how Quantum evaluates permissions for REST requests using rule bases that match on a SecurityURI composed of a header and a body. The header includes identity, area, functionalDomain, and action. The body includes realm, accountNumber, tenantId, dataSegment, ownerId, and resourceId. It also covers how identities and roles (as found on userProfile or credentialUserIdPassword) are matched, how priority works, and how multiple matching rule bases are evaluated.
 
+== Permission inspection authorization
+
+`POST /system/permissions/role-provenance`, `/system/permissions/check`,
+`/system/permissions/check-with-index`, and `/system/permissions/fd/evaluate`
+allow self inspection in the caller's request realm. Inspecting another identity
+or realm, or simulating unheld extra roles, requires the framework system
+principal or administration of the target realm (restricted to authorized target
+tenants in pooled realms). Unauthorized requests receive the same typed `403`
+regardless of target existence, before target credential/profile/group reads.
+See xref:permission-resource.adoc[Permission Resource] for scope requirements.
+
 == Introduction: Layered Enforcement Overview
 
 Quantum evaluates "can this identity do X?" through three complementary layers. Understanding them in order helps you pick the right tool for the job and combine them safely:

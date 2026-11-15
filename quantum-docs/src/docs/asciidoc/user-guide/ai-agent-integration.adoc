@@ -173,6 +173,12 @@ Agents and developers need to answer: *"Can role X perform this action on this E
 
 **Endpoint:** `POST /system/permissions/check` (see xref:{doc-root}/user-guide/permissions.adoc[Permissions]).
 
+The authenticated agent may inspect its own identity in its request realm.
+Inspecting another identity or realm, or supplying unheld roles, requires the
+system principal or a realm administrator authorized for the target tenants.
+Unauthorized requests return `403 PERMISSION_INSPECTION_FORBIDDEN`; see
+xref:{doc-root}/user-guide/permission-resource.adoc[Permission Resource].
+
 **Purpose:** Determine whether a given identity (userId or role) is allowed to perform a given action in a given area/functionalDomain. The response includes the **winning rule** that determined the outcome, so when the decision is DENY you can answer "why not? — rule R caused it."
 
 **Request body (CheckRequest):**
