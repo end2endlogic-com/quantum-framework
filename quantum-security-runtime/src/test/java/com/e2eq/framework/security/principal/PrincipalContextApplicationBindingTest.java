@@ -288,6 +288,20 @@ class PrincipalContextApplicationBindingTest {
         refused(PrincipalResolutionError.APPLICATION_NOT_GRANTED, () -> resolve(PLANNER, "pooled", null));
     }
 
+    // --- remote directory ------------------------------------------------------------------
+
+    @Test
+    void underARemoteDirectoryResolutionRefusesInsteadOfFallingBack() {
+        world.assignments.get(ALICE + "|pooled").setAuthorizedApplications(List.of(PLANNER));
+        assertEquals("tenant-a", resolve(PLANNER, "pooled", "tenant-a").getDataDomain().getTenantId());
+
+        world.remoteDirectory = true;
+        PrincipalResolutionException named =
+                refused(PrincipalResolutionError.APPLICATION_NOT_GRANTED, () -> resolve(PLANNER, "pooled", "tenant-a"));
+        assertTrue(named.getMessage().contains("remote directory"), named.getMessage());
+        refused(PrincipalResolutionError.APPLICATION_NOT_GRANTED, () -> resolve(PLANNER, null, null));
+    }
+
     // --- harness ---------------------------------------------------------------------------
 
     private static final String BOB = "bob@acme";

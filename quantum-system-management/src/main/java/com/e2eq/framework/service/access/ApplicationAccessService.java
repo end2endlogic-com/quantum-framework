@@ -1,5 +1,6 @@
 package com.e2eq.framework.service.access;
 
+import com.e2eq.framework.model.persistent.morphia.ApplicationAccessDirectory;
 import com.e2eq.framework.model.persistent.morphia.ApplicationInstallRepo;
 import com.e2eq.framework.model.persistent.morphia.ApplicationRepo;
 import com.e2eq.framework.model.persistent.morphia.UserAppRoleRepo;
@@ -35,7 +36,9 @@ import java.util.function.Supplier;
  * platform (the system principal) may name another. Who may write is decided by the existing
  * administrator definitions ({@link AccessInviteService#administrativeAuthority}) and each role's
  * {@code grantableBy}; the records' own rules are applied by their repositories on every save.
- * Installs and uninstalls need the platform or a realm administrator of the tenant.
+ * Installs and uninstalls need the platform or a realm administrator of the tenant. Under a
+ * remote directory every call refuses with {@code DIRECTORY_REMOTE}: the rows live, and are
+ * written, at the directory owner.
  */
 @ApplicationScoped
 public class ApplicationAccessService {
@@ -56,6 +59,9 @@ public class ApplicationAccessService {
    UserGroupRepo userGroupRepo;
 
    @Inject
+   ApplicationAccessDirectory accessDirectory;
+
+   @Inject
    SecurityUtils securityUtils;
 
    @Inject
@@ -69,6 +75,7 @@ public class ApplicationAccessService {
     */
    public UserAppRole putBinding(String callerRealm, UserAppRole request) {
       Objects.requireNonNull(request, "binding");
+      accessDirectory.requireLocalDirectory();
       Authority probe = authorityFor(callerRealm, List.of());
       String realm = realmFor(callerRealm, request.getRealmRefName(), probe);
       request.setRealmRefName(realm);
@@ -105,6 +112,7 @@ public class ApplicationAccessService {
    }
 
    public void deleteBinding(String callerRealm, ObjectId id) {
+      accessDirectory.requireLocalDirectory();
       UserAppRole binding = system(() -> userAppRoleRepo.findByIdWithIgnoreRules(id))
          .orElseThrow(() -> new ApplicationAccessException(Code.NOT_FOUND, "no binding " + id));
       Authority probe = authorityFor(callerRealm, List.of());
@@ -123,6 +131,7 @@ public class ApplicationAccessService {
 
    /** The bindings for an application in the caller's realm that name {@code tenantId}, which the caller administers. */
    public List<UserAppRole> listBindings(String callerRealm, String applicationId, String tenantId) {
+      accessDirectory.requireLocalDirectory();
       String tenant = tenantOf(tenantId);
       if (authorityFor(callerRealm, List.of(tenant)) == Authority.NONE) {
          throw new ApplicationAccessException(Code.ROLE_NOT_GRANTABLE,
@@ -145,6 +154,7 @@ public class ApplicationAccessService {
     */
    public ApplicationInstall install(String callerRealm, ApplicationInstall request) {
       Objects.requireNonNull(request, "install");
+      accessDirectory.requireLocalDirectory();
       Authority probe = authorityFor(callerRealm, List.of());
       String realm = realmFor(callerRealm, request.getRealmRefName(), probe);
       request.setRealmRefName(realm);
@@ -194,6 +204,7 @@ public class ApplicationAccessService {
     * for that tenant are removed. User bindings stay but stop granting the tenant.
     */
    public ApplicationInstall uninstall(String callerRealm, ObjectId id) {
+      accessDirectory.requireLocalDirectory();
       Authority probe = authorityFor(callerRealm, List.of());
       // An install of another realm reads exactly like a missing one, so ids cannot be probed.
       ApplicationInstall stored = system(() -> applicationInstallRepo.findByIdWithIgnoreRules(id))
@@ -218,6 +229,7 @@ public class ApplicationAccessService {
 
    /** The installs of the caller's realm for tenants the caller administers. */
    public List<ApplicationInstall> listInstalls(String callerRealm) {
+      accessDirectory.requireLocalDirectory();
       List<ApplicationInstall> all = system(() -> applicationInstallRepo.findByRealmWithIgnoreRules(callerRealm));
       List<ApplicationInstall> visible = new ArrayList<>();
       for (ApplicationInstall install : all) {

@@ -1,6 +1,8 @@
 package com.e2eq.framework.model.persistent.morphia;
 
 import com.e2eq.framework.model.security.Application;
+import com.e2eq.framework.model.security.ApplicationAccessException;
+import com.e2eq.framework.model.security.ApplicationAccessException.Code;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.UserAppRole;
 import com.e2eq.framework.model.security.UserGroup;
@@ -19,9 +21,13 @@ import java.util.Optional;
  * ({@link UserAppRole}) and those of its groups, the registered {@link Application}, and the
  * application's installs. Everything is in the system realm.
  *
- * <p>Under {@code quantum.directory.mode=remote} this service is not the directory owner, exactly
- * as for {@link com.e2eq.framework.model.security.UserRealmRole} assignments in {@link IdentityRoleResolver}: no local binding is an
- * authority and none is returned.
+ * <p>Under a remote directory ({@code quantum.directory.mode=remote}, or {@code quantum.mode=remote}
+ * when the directory mode is unset, as {@code QuantumModeConfig#membershipsRemote}) this service
+ * is not the directory owner: no local binding or install is an authority. Bindings are then not
+ * readable here ({@link #bindingsReadable()}), {@link #bindingsFor} refuses, and writes refuse
+ * ({@link #requireLocalDirectory()}) with {@code DIRECTORY_REMOTE}. Nothing here reads the remote
+ * directory's bindings, so whoever resolves principals for an application must own the directory;
+ * principal resolution refuses rather than fall back to the realm assignment when it does not.
  */
 @ApplicationScoped
 public class ApplicationAccessDirectory {
@@ -47,19 +53,40 @@ public class ApplicationAccessDirectory {
    @ConfigProperty(name = "quantum.directory.mode")
    Optional<String> directoryMode = Optional.empty();
 
-   boolean localDirectoryAuthoritative() {
-      return directoryMode == null || directoryMode
-         .map(value -> !"remote".equalsIgnoreCase(value.trim()))
-         .orElse(true);
+   @ConfigProperty(name = "quantum.mode")
+   Optional<String> quantumMode = Optional.empty();
+
+   /**
+    * Whether this service owns the binding store: false under {@code quantum.directory.mode=remote}
+    * or, when that is unset, {@code quantum.mode=remote}.
+    */
+   public boolean bindingsReadable() {
+      Optional<String> explicit = directoryMode == null ? Optional.empty()
+         : directoryMode.map(String::trim).filter(value -> !value.isEmpty());
+      if (explicit.isPresent()) {
+         return !"remote".equalsIgnoreCase(explicit.get());
+      }
+      return quantumMode == null || quantumMode.map(String::trim).filter("remote"::equalsIgnoreCase).isEmpty();
+   }
+
+   /** Refuses with {@code DIRECTORY_REMOTE} unless this service owns the binding store. */
+   public void requireLocalDirectory() {
+      if (!bindingsReadable()) {
+         throw new ApplicationAccessException(Code.DIRECTORY_REMOTE,
+            "application bindings and installs are held by the remote directory; write them there");
+      }
    }
 
    /**
     * The bindings of {@code credential} and of the system-realm groups it belongs to, for
     * {@code applicationId}, in {@code realmRefName} or, when null, in every realm. Whatever their
-    * status or shape: resolution validates each one and fails closed.
+    * status or shape: resolution validates each one and fails closed. Refuses with
+    * {@code DIRECTORY_REMOTE} when the bindings are held by the remote directory: an empty answer
+    * would read as "no binding" and let the realm assignment decide.
     */
    public List<UserAppRole> bindingsFor(CredentialUserIdPassword credential, String applicationId, String realmRefName) {
-      if (credential == null || !localDirectoryAuthoritative()) {
+      requireLocalDirectory();
+      if (credential == null) {
          return List.of();
       }
       return userAppRoleRepo.findForSubjectsWithIgnoreRules(

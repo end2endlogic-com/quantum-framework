@@ -70,7 +70,14 @@ import java.util.function.Supplier;
  * binding applies only to members with an active membership in the group's owner tenant, and only
  * the identity's own bindings choose a realm. Only when no binding applies does the realm
  * assignment's application grant decide. A binding that breaks the binding rules, or a suspended
- * one, refuses; it never falls back.
+ * one, refuses; it never falls back. Bindings are read from the local directory only: where the
+ * remote directory holds them ({@link ApplicationAccessDirectory#bindingsReadable()} false) every
+ * identity-mode resolution for an application refuses with {@code APPLICATION_NOT_GRANTED}
+ * instead of letting the realm assignment decide.
+ *
+ * <p>{@link PrincipalContextRequest.Mode#SIGNED_TOKEN_CLAIMS} (the embedded filter's legacy
+ * path) does not read bindings: the realm assignment's application grant and the token's claims
+ * decide, as before bindings existed.
  *
  * <p>{@link PrincipalContextRequest.Mode#IDENTITY} reads nothing from the token beyond the
  * identity, refuses with typed {@link PrincipalResolutionException}s, applies the default-tenant
@@ -688,6 +695,7 @@ public class PrincipalContextResolver {
         if (accessDirectory == null || blank(applicationId)) {
             return null;
         }
+        requireBindingsReadable(applicationId);
         List<UserAppRole> active = accessDirectory.bindingsFor(credential, applicationId.trim(), null).stream()
                 .filter(Objects::nonNull)
                 .filter(binding -> !binding.groupBinding())
@@ -739,6 +747,7 @@ public class PrincipalContextResolver {
         if (accessDirectory == null || blank(applicationId) || blank(realmRefName)) {
             return null;
         }
+        requireBindingsReadable(applicationId);
         String app = applicationId.trim();
         List<UserAppRole> rows = accessDirectory.bindingsFor(credential, app, realmRefName).stream()
                 .filter(Objects::nonNull)
@@ -801,6 +810,18 @@ public class PrincipalContextResolver {
                     app, credential.getUserId(), realmRefName));
         }
         return grant;
+    }
+
+    /**
+     * Bindings decide before the realm assignment, so when they cannot be read here (the remote
+     * directory holds them) the assignment must not decide in their place: refuse.
+     */
+    private void requireBindingsReadable(String applicationId) {
+        if (!accessDirectory.bindingsReadable()) {
+            throw refusal(PrincipalResolutionError.APPLICATION_NOT_GRANTED, String.format(
+                    "application bindings for '%s' are held by the remote directory and cannot be read here; "
+                            + "resolve principals where the directory is owned", applicationId));
+        }
     }
 
     /**

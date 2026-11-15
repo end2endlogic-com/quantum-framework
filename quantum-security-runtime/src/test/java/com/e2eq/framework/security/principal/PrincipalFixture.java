@@ -61,6 +61,8 @@ public final class PrincipalFixture {
     public final Map<String, List<String>> groupsOfUser = new HashMap<>();
     /** Owner tenant per group; {@link #bindGroup} sets the bound tenant when none is set. */
     public final Map<String, String> groupOwners = new HashMap<>();
+    /** The binding store is held by a remote directory. */
+    public boolean remoteDirectory;
     /** Every applicationId the role resolver was asked about. */
     public final List<String> roleApplications = new ArrayList<>();
 
@@ -202,6 +204,11 @@ public final class PrincipalFixture {
         @Override
         public Optional<Application> application(String refName) {
             return Optional.ofNullable(world.applications.get(refName));
+        }
+
+        @Override
+        public boolean bindingsReadable() {
+            return !world.remoteDirectory;
         }
 
         @Override

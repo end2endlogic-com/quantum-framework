@@ -220,7 +220,62 @@ class ApplicationAccessAuthorityTest extends BaseRepoTest {
             groupBinding(ownerless, List.of(TENANT_A), null, "planner-user"))).getGroupRefName());
     }
 
+    // ---- remote directory -----------------------------------------------------------------
+
+    @Test
+    void underARemoteDirectoryBindingAndInstallCallsRefuse() {
+        java.util.Optional<String> before = accessDirectoryMode();
+        setAccessDirectoryMode(java.util.Optional.of("remote"));
+        try {
+            refused(Code.DIRECTORY_REMOTE, () -> asSystem(() -> accessService.install(POOLED, install(null, null, TENANT_A))));
+            refused(Code.DIRECTORY_REMOTE, () -> asSystem(() -> accessService.uninstall(POOLED, new ObjectId())));
+            refused(Code.DIRECTORY_REMOTE, () -> asSystem(() -> accessService.putBinding(POOLED,
+                binding("someone", List.of(TENANT_A), null, "planner-user"))));
+            refused(Code.DIRECTORY_REMOTE, () -> asSystem(() -> {
+                accessService.deleteBinding(POOLED, new ObjectId());
+                return null;
+            }));
+            refused(Code.DIRECTORY_REMOTE, () -> asSystem(() -> accessService.listInstalls(POOLED)));
+            refused(Code.DIRECTORY_REMOTE, () -> asSystem(() -> accessService.listBindings(POOLED, app, TENANT_A)));
+        } finally {
+            setAccessDirectoryMode(before);
+        }
+        assertEquals(0, installRepo.findByRealmWithIgnoreRules(POOLED).stream()
+            .filter(install -> app.equals(install.getApplicationId())).count());
+    }
+
     // ---- fixtures -------------------------------------------------------------------------
+
+    @Inject
+    com.e2eq.framework.model.persistent.morphia.ApplicationAccessDirectory accessDirectory;
+
+    @SuppressWarnings("unchecked")
+    private java.util.Optional<String> accessDirectoryMode() {
+        try {
+            return (java.util.Optional<String>) directoryModeField().get(unproxied());
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private void setAccessDirectoryMode(java.util.Optional<String> mode) {
+        try {
+            directoryModeField().set(unproxied(), mode);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private Object unproxied() {
+        return accessDirectory instanceof io.quarkus.arc.ClientProxy proxy ? proxy.arc_contextualInstance() : accessDirectory;
+    }
+
+    private static java.lang.reflect.Field directoryModeField() throws NoSuchFieldException {
+        java.lang.reflect.Field field = com.e2eq.framework.model.persistent.morphia.ApplicationAccessDirectory.class
+            .getDeclaredField("directoryMode");
+        field.setAccessible(true);
+        return field;
+    }
 
     /** A system-realm group owned by {@code ownerTenant} (none when null). */
     String group(String label, String ownerTenant) {

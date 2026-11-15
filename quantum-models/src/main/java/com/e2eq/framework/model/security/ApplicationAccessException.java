@@ -31,7 +31,12 @@ public class ApplicationAccessException extends IllegalArgumentException {
       /** An install misses its id, tenant, application, realm or status. */
       INSTALL_INVALID(400),
       /** No such binding or install. */
-      NOT_FOUND(404);
+      NOT_FOUND(404),
+      /**
+       * Bindings and installs are held by the remote directory ({@code quantum.directory.mode=remote});
+       * this service neither writes nor reads them.
+       */
+      DIRECTORY_REMOTE(409);
 
       private final int httpStatus;
 
