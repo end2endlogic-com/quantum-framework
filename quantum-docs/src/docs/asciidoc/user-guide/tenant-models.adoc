@@ -654,6 +654,181 @@ Resolution APIs live in `RealmMembershipService` (quantum-system):
 `rolesForUser`. Embedded deployments resolve locally; remote (tier-2)
 deployments get the same surface backed by the control-plane client (Phase C).
 
+[[application-bindings]]
+=== Application Bindings, Installs and the Public Catalog
+
+An `Application` declares its roles (`roles[].grantableBy`), owner and member
+roles, tenancy and vocabulary. Three framework records, all in the system
+realm, say who may use it where:
+
+[cols="1,3"]
+|===
+|Record |What it holds
+
+|`ApplicationInstall`
+|One row per (application, realm, tenant): `status` is `active`, `suspended`
+or `uninstalled`. A realm links to many applications through its installs. Ids
+may be supplied by the caller, and `ApplicationInstallRepo.upsertById` writes
+under that id idempotently, so a migration can keep the ids of the records it
+replaces. A unique partial index (`uidx_application_install_active`) allows one
+active install per (application, realm, tenant); uninstalled rows may repeat.
+
+|`UserAppRole` (the application binding)
+|One row per (user _or_ `UserGroup`, application, realm), enforced by the unique
+partial indexes `uidx_user_app_role_user` and `uidx_user_app_role_group`:
+`roles` (only roles the application declares, never a reserved role, see
+below), `tenantIds` with `defaultTenantId` (required when there
+are several), optional `defaultRealm`, `status` (`active`/`suspended`) and the
+server-owned `suspendedBy`, `source` and `grantedBy`/`grantedAt`. An active
+binding needs the application installed for every tenant; a suspended one
+grants nothing and is saved without. `UserAppRoleRepo` applies these rules on
+every save, and `upsertById` writes under a caller-supplied id.
+
+|`UserRealmRole`
+|Unchanged: realm membership (tenants, status, sponsor) and realm-wide roles.
+|===
+
+`UserGroup` gains an optional `ownerTenantId`: the tenant that owns the group.
+
+Both repositories write only through `save` and their `upsertById`: every
+persisted field is server-owned, so field-pair and bulk updates refuse, and
+`merge` and `updateActiveStatus` refuse. The validation cannot be skipped.
+
+Refusals are typed (`ApplicationAccessException.Code`): `ROLE_NOT_DECLARED`,
+`TENANTS_REQUIRED`, `TENANT_DEFAULT_REQUIRED`, `APPLICATION_NOT_INSTALLED`,
+`APPLICATION_UNKNOWN`, `BINDING_SUBJECT_INVALID`, `BINDING_INVALID`,
+`ROLE_NOT_GRANTABLE`, `INSTALL_NOT_AUTHORIZED`, `REALM_MISMATCH`,
+`INSTALL_INVALID`, `NOT_FOUND`, `DIRECTORY_REMOTE`.
+
+==== Who may write
+
+`/api/security/userAppRole` (`GET list`, `PUT`, `DELETE id/{id}`) and
+`/api/security/applicationInstall` (`GET list`, `POST`, `POST id/{id}/uninstall`)
+work in the caller's resolved realm; only the platform may name another realm.
+The caller's authority comes from the administrator definitions access invites
+already use: the system principal is the platform; a realm administrator
+(`admin` in the realm) covers a dedicated realm, or in a pooled realm the
+tenants its assignment authorizes; a membership administrator
+(`quantum.access-invites.membership-admin-roles`) covers only the tenant of its
+request, and in a pooled realm only when that is its one tenant. The caller
+must cover every tenant of the binding (and of the binding it replaces), and
+each role's `grantableBy` decides: the platform grants any declared role, a
+realm administrator roles grantable by `realm-admin` or `tenant-admin`, a
+tenant administrator roles grantable by `tenant-admin`.
+
+Binding roles join the principal's global roles, so a role name that a
+`@RolesAllowed` check or the platform recognizes is reserved and never
+grantable, whatever `grantableBy` says and whoever writes: `system`, `admin`,
+`user`, `platformAdmin`, `tenantAdmin`, `ANONYMOUS` and the configured
+`quantum.access-invites.membership-admin-roles`, compared without case. Saves
+and resolution refuse a row that carries one (`ROLE_NOT_GRANTABLE`, and
+`APPLICATION_NOT_GRANTED` at resolution).
+
+The server, not the request, decides:
+
+* `source`: `staff` for the platform, `tenant-admin` otherwise.
+* A binding id keeps its subject and application: a `PUT` that names a stored
+  id with another `userId`, `groupRefName` or `applicationId` is refused with
+  `BINDING_SUBJECT_INVALID`, so a binding (and its `defaultRealm`) cannot be
+  handed to another identity. A binding id of another realm answers `NOT_FOUND`
+  on `PUT` and `DELETE`, exactly like a missing id.
+* `status`: a `PUT` without one keeps the stored status (`active` for a new
+  binding). `suspendedBy` is `user:<writer>` for a suspension, except that a
+  binding an uninstall suspended keeps `uninstall:<installId>` while it stays
+  suspended, so the reinstall still reactivates it.
+* `defaultRealm=true`: only the binding's subject or the platform may set it (a
+  stored `true` may be kept by any writer); a group binding never sets it.
+* A user binding needs the subject to hold an active `UserRealmRole` in the
+  realm at write time, in every realm type; strangers, invited and suspended
+  members are refused with `BINDING_SUBJECT_INVALID`.
+* A group binding grants exactly the group's `ownerTenantId`, and the caller
+  needs authority over that tenant. A group with no owner tenant is bound by
+  the platform only.
+
+`GET list` shows a non-platform administrator only the tenants it administers on
+each row; a default tenant outside them is cleared.
+
+Installs and uninstalls need the platform or a realm administrator of the
+tenant. An install that names a stored install id must be in the caller's realm
+(any realm for the platform), needs authority over the stored tenant as well,
+and never changes its realm, tenant or application. Uninstall answers the same
+`NOT_FOUND` for an install of another realm as for a missing id.
+
+Uninstalling suspends the application's active group bindings for that tenant
+with `suspendedBy = uninstall:<installId>`, whoever wrote them; nothing is
+deleted. Only the call that moves the install to `uninstalled` suspends, and
+only when no other install of the application is active for the tenant:
+replaying the uninstall of a stale id after a reinstall changes nothing. Installing the application for the tenant again reactivates exactly
+those; bindings suspended for another reason stay suspended. User bindings stay
+but stop granting the tenant while it is uninstalled.
+
+==== Resolution
+
+Identity-only principal resolution (`PrincipalContextResolver`, behind
+`POST /v1/auth/principal-context/resolve`) reads the bindings of the identity
+and of its system-realm groups first:
+
+* With no realm requested, the identity's own active binding marked
+  `defaultRealm` chooses it; several marked refuse with `REALM_NOT_AUTHORIZED`.
+  A binding without the mark, even the only one, and any group binding leave
+  the realm to the application, as without bindings.
+* A group's binding applies to a member only if the member has an active
+  membership in the group's owner tenant (for a platform-bound group without
+  one, in one of the binding's tenants). For anyone else it is ignored and does
+  not override the realm assignment's grant.
+* A binding for the application in the realm admits it. Its tenants count only
+  where the application is installed and, in a shared realm, where the
+  membership also authorizes them. Either tenancy needs an active realm
+  assignment at resolution: a suspended or removed membership ends access
+  although the binding remains.
+  The tenant is the requested one, else the binding's default, else the only
+  one (`TENANT_SELECTION_REQUIRED` otherwise). A dedicated realm's tenant must
+  be one the binding grants.
+* Roles are the realm-wide roles (credential, membership, legacy groups), which
+  flow into every application, plus the roles of the bindings that grant the
+  selected tenant.
+* A malformed applying binding (including a group binding that does not grant
+  exactly its group's owner tenant), a duplicate, a suspended user binding, or
+  applying bindings that are all suspended refuse with
+  `APPLICATION_NOT_GRANTED`; none falls back. A malformed group binding refuses
+  only the members it applies to. Bindings whose tenants are all uninstalled
+  refuse the same way.
+* Only when no binding applies does the membership's `authorizedApplications`
+  grant decide, as before. Each such admission logs `LEGACY_APPLICATION_GRANT`
+  at DEBUG with the user, application and realm: what is left to migrate.
+
+Tokens are unchanged: no claims are added.
+
+Bindings live where the directory is owned. Where it is held is
+`QuantumModeConfig.membershipsRemote()`, the one parser of the mode keys
+(`ApplicationAccessDirectory` reads it through `DirectoryRouting`). Under
+`quantum.directory.mode=remote` (or `quantum.mode=remote` when the directory
+mode is unset) binding and install
+calls refuse with `DIRECTORY_REMOTE`, and identity-only resolution for an
+application refuses with `APPLICATION_NOT_GRANTED` instead of letting the realm
+assignment decide in place of bindings it cannot read. The resolving service,
+`quantum-auth-service`, owns the directory. The embedded filter's signed-token
+mode (`PrincipalContextRequest.Mode.SIGNED_TOKEN_CLAIMS`) does not read
+bindings: the realm assignment and the token's claims decide, as before.
+
+==== Catalog fields and the public read
+
+`Application` also carries `appVersion`, `owner`, `lifecycleState`
+(`DRAFT`, `PREVIEW`, `ACTIVE`, `DEPRECATED`, `RETIRED`), `packRefs`,
+`launchAddresses` (environment and URL) and `signInRoute` (client id, entry URL,
+callback allowlist, authorization path). All are optional, so rows and packs
+written before them load unchanged.
+
+`GET /public/applications` is unauthenticated (`@PermitAll`). It lists the
+applications in `ACTIVE` or `DEPRECATED` state (not `PREVIEW`) as
+`ApplicationCatalogEntry` rows: `refName`, `displayName`, `appVersion`,
+`lifecycleState` and `signIn` (client id, entry URL, authorization path). The
+answer is cached in memory for 60 seconds. Launch addresses are not public: the
+framework has no key naming the serving instance's environment, so the sign-in
+route's entry URL is the address a launch pad uses. Roles, tenancy, owner, pack
+refs, launch addresses, the callback allowlist, data domain and audit fields are
+never returned.
+
 [[user-definable-facet-segmentation]]
 === User-Definable Facet Segmentation & Coordinate SPI in Multi-Tenant Environments
 

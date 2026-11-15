@@ -321,6 +321,56 @@ public class AccessInviteService {
         }
     }
 
+    /**
+     * The caller's administrative authority over {@code tenants} of {@code realm}, by the same rules
+     * invite management uses: the system principal is the platform; a realm administrator manages
+     * every tenant of a dedicated realm and, in a pooled realm, the tenants its own assignment
+     * authorizes; a membership administrator manages only the tenant of its request, and in a pooled
+     * realm only when that is its one tenant. Every tenant must be manageable, otherwise
+     * {@code NONE}. Application bindings and installs use this to apply each role's
+     * {@code grantableBy}.
+     */
+    public com.e2eq.framework.model.security.ApplicationBindingValidator.Authority administrativeAuthority(
+            String realm, java.util.Collection<String> tenants) {
+        com.e2eq.framework.model.security.ApplicationBindingValidator.Authority none =
+            com.e2eq.framework.model.security.ApplicationBindingValidator.Authority.NONE;
+        PrincipalContext caller = SecurityContext.getPrincipalContext().orElse(null);
+        if (caller == null || authenticatedUserId(caller) == null || normalize(realm) == null) {
+            return none;
+        }
+        InviteManagement management = inviteManagement(caller, realm);
+        if (management.systemPrincipal()) {
+            return com.e2eq.framework.model.security.ApplicationBindingValidator.Authority.PLATFORM;
+        }
+        List<String> named = tenants == null ? List.of()
+            : tenants.stream().map(AccessInviteService::trimToNull).filter(java.util.Objects::nonNull).toList();
+        if (named.isEmpty() || !named.stream().allMatch(management::mayManageTenant)) {
+            return none;
+        }
+        if (management.admin()) {
+            return com.e2eq.framework.model.security.ApplicationBindingValidator.Authority.REALM_ADMIN;
+        }
+        if (management.membershipAdmin()) {
+            return com.e2eq.framework.model.security.ApplicationBindingValidator.Authority.TENANT_ADMIN;
+        }
+        return none;
+    }
+
+    /**
+     * Whether {@code userId} is an active member of {@code realm}: its {@link UserRealmRole} there
+     * is active (or carries no status, as legacy and seeded rows). Invited and suspended are not.
+     */
+    public boolean hasActiveRealmMembership(String userId, String realm) {
+        String user = normalize(userId);
+        String named = normalize(realm);
+        if (user == null || named == null) {
+            return false;
+        }
+        return assignment(user, named)
+            .filter(candidate -> candidate.getStatus() == null || UserRealmRole.STATUS_ACTIVE.equals(candidate.getStatus()))
+            .isPresent();
+    }
+
     private InviteManagement inviteManagement(PrincipalContext caller, String realm) {
         boolean system = isSystemPrincipal(caller);
         boolean admin = isRealmAdministrator(caller, realm);
@@ -878,6 +928,11 @@ public class AccessInviteService {
             throw failure(Code.INVITE_NOT_AUTHORIZED, "An authenticated caller is required.");
         }
         return caller;
+    }
+
+    /** Whether the current caller is the framework's own system principal (the platform). */
+    public boolean callerIsSystemPrincipal() {
+        return SecurityContext.getPrincipalContext().map(this::isSystemPrincipal).orElse(false);
     }
 
     /** The framework's own system principal (seeders, jobs, internal services). */

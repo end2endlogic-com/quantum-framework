@@ -7,9 +7,13 @@ import com.e2eq.framework.model.auth.ApplicationAuthorizationResolver;
 import com.e2eq.framework.model.auth.ApplicationRealmContextResolver;
 import com.e2eq.framework.model.auth.TenantDefaults;
 import com.e2eq.framework.model.persistent.base.DataDomain;
+import com.e2eq.framework.model.persistent.morphia.ApplicationAccessDirectory;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.model.persistent.morphia.IdentityRoleResolver;
 import com.e2eq.framework.model.security.AccountType;
+import com.e2eq.framework.model.security.Application;
+import com.e2eq.framework.model.security.ApplicationAccessException;
+import com.e2eq.framework.model.security.ApplicationBindingValidator;
 import com.e2eq.framework.model.security.CredentialType;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.DomainContext;
@@ -17,6 +21,7 @@ import com.e2eq.framework.model.security.Realm;
 import com.e2eq.framework.model.security.RealmTenancyMode;
 import com.e2eq.framework.model.security.RealmTenantMembership;
 import com.e2eq.framework.model.security.ServiceKind;
+import com.e2eq.framework.model.security.UserAppRole;
 import com.e2eq.framework.model.security.UserRealmRole;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.system.membership.RealmMembershipService;
@@ -30,7 +35,9 @@ import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.Response;
 
 import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Supplier;
@@ -55,6 +62,22 @@ import java.util.function.Supplier;
  *   <li>application admission;</li>
  *   <li>tenant selection ({@link #applyTenantSelection}).</li>
  * </ol>
+ *
+ * <p>In {@link PrincipalContextRequest.Mode#IDENTITY} the identity's application bindings
+ * ({@link UserAppRole}, its own and its groups') decide first: a binding for the application in
+ * the realm admits it, its tenants (narrowed to the membership's and to installed ones) and default
+ * decide the tenant, and its roles for the selected tenant join the realm-wide roles. A group's
+ * binding applies only to members with an active membership in the group's owner tenant, and only
+ * the identity's own bindings choose a realm. Only when no binding applies does the realm
+ * assignment's application grant decide. A binding that breaks the binding rules, or a suspended
+ * one, refuses; it never falls back. Bindings are read from the local directory only: where the
+ * remote directory holds them ({@link ApplicationAccessDirectory#bindingsReadable()} false) every
+ * identity-mode resolution for an application refuses with {@code APPLICATION_NOT_GRANTED}
+ * instead of letting the realm assignment decide.
+ *
+ * <p>{@link PrincipalContextRequest.Mode#SIGNED_TOKEN_CLAIMS} (the embedded filter's legacy
+ * path) does not read bindings: the realm assignment's application grant and the token's claims
+ * decide, as before bindings existed.
  *
  * <p>{@link PrincipalContextRequest.Mode#IDENTITY} reads nothing from the token beyond the
  * identity, refuses with typed {@link PrincipalResolutionException}s, applies the default-tenant
@@ -83,7 +106,16 @@ public class PrincipalContextResolver {
     @Inject
     EnvConfigUtils envConfigUtils;
 
+    @Inject
+    ApplicationAccessDirectory accessDirectory;
+
     ImpersonationScriptEvaluator scriptEvaluator = new ImpersonationScriptEvaluator();
+
+    /**
+     * Log marker for an identity-mode admission the realm assignment's application grant decided
+     * because no application binding applied: what is left to migrate to bindings.
+     */
+    public static final String LEGACY_APPLICATION_GRANT = "LEGACY_APPLICATION_GRANT";
 
     public PrincipalContextResolver() {
     }
@@ -102,6 +134,19 @@ public class PrincipalContextResolver {
         this.securityUtils = securityUtils;
         this.envConfigUtils = envConfigUtils;
         this.scriptEvaluator = scriptEvaluator == null ? new ImpersonationScriptEvaluator() : scriptEvaluator;
+    }
+
+    public PrincipalContextResolver(SystemDirectory systemDirectory,
+                                    RealmMembershipService realmMembershipService,
+                                    CredentialRepo credentialRepo,
+                                    IdentityRoleResolver identityRoleResolver,
+                                    SecurityUtils securityUtils,
+                                    EnvConfigUtils envConfigUtils,
+                                    ImpersonationScriptEvaluator scriptEvaluator,
+                                    ApplicationAccessDirectory accessDirectory) {
+        this(systemDirectory, realmMembershipService, credentialRepo, identityRoleResolver, securityUtils,
+                envConfigUtils, scriptEvaluator);
+        this.accessDirectory = accessDirectory;
     }
 
     // ------------------------------------------------------------------ resolve
@@ -125,7 +170,7 @@ public class PrincipalContextResolver {
 
         String realm = request.realm();
         if (identity && blank(realm) && !request.impersonationRequested()) {
-            realm = applicationRealm(caller, request.applicationId());
+            realm = identityRealm(caller, request.applicationId());
         }
         CredentialUserIdPassword effective = caller;
         PrincipalRef impersonatedBy = null;
@@ -156,8 +201,16 @@ public class PrincipalContextResolver {
         }
 
         context = applyRealmOverride(context, realm, false, identity);
+        ApplicationGrant grant = null;
         if (identity) {
-            requireApplicationGranted(context, effective);
+            grant = bindingGrant(effective, context.getApplicationId(), context.getDefaultRealm());
+            if (grant == null) {
+                requireApplicationGranted(context, effective);
+                // Migration signal: this admission had no binding; the realm assignment decided.
+                Log.debugf("%s user=%s application=%s realm=%s: no application binding applies; the realm "
+                                + "assignment's application grant decided", LEGACY_APPLICATION_GRANT,
+                        effective.getUserId(), context.getApplicationId(), context.getDefaultRealm());
+            }
         } else if (request.signedClaims().foreignApplicationToken()) {
             requireSessionApplicationAdmitted(context);
         }
@@ -165,8 +218,14 @@ public class PrincipalContextResolver {
         if (identity) {
             // A platform operation that needs no tenant keeps the base data domain, exactly as the
             // signed path's tenantSelectionExempt; a requested tenant is still authorized.
-            if (!(request.tenantSelectionOptional() && blank(request.tenantId()))) {
-                context = applyIdentityTenantSelection(context, request.tenantId(), effective);
+            boolean selectTenant = !(request.tenantSelectionOptional() && blank(request.tenantId()));
+            if (grant == null) {
+                if (selectTenant) {
+                    context = applyIdentityTenantSelection(context, request.tenantId(), effective);
+                }
+            } else if (selectTenant) {
+                context = applyBindingTenantSelection(context, request.tenantId(), grant);
+                context = withBindingRoles(context, grant);
             }
         } else {
             // The signed tenant claim names a tenant of the realm the token was issued for. It
@@ -589,7 +648,7 @@ public class PrincipalContextResolver {
         String targetRealm = request.realm();
         if (targetRealm == null) {
             try {
-                String applicationRealm = applicationRealm(target, request.applicationId());
+                String applicationRealm = identityRealm(target, request.applicationId());
                 targetRealm = applicationRealm != null ? applicationRealm : target.getDomainContext().getDefaultRealm();
             } catch (PrincipalResolutionException refused) {
                 throw refusal(PrincipalResolutionError.DELEGATION_NOT_ALLOWED, refused.getMessage());
@@ -626,6 +685,332 @@ public class PrincipalContextResolver {
             throw refusal(PrincipalResolutionError.DELEGATION_NOT_ALLOWED,
                     "Service credential '" + service.getUserId() + "' may not delegate in realm " + realm);
         }
+    }
+
+    // ------------------------------------------------------------------ application bindings
+
+    /**
+     * The realm an identity-only request runs in when it names none. Among the realms its
+     * credential may use, the identity's own active binding marked {@code defaultRealm} decides;
+     * several marked refuse with {@code REALM_NOT_AUTHORIZED}. A binding without the mark never
+     * chooses a realm, nor does a group binding: {@link #applicationRealm} decides.
+     */
+    String identityRealm(CredentialUserIdPassword credential, String applicationId) {
+        String bound = bindingRealm(credential, applicationId);
+        return bound != null ? bound : applicationRealm(credential, applicationId);
+    }
+
+    String bindingRealm(CredentialUserIdPassword credential, String applicationId) {
+        if (accessDirectory == null || blank(applicationId)) {
+            return null;
+        }
+        requireBindingsReadable(applicationId);
+        List<UserAppRole> active = accessDirectory.bindingsFor(credential, applicationId.trim(), null).stream()
+                .filter(Objects::nonNull)
+                .filter(binding -> !binding.groupBinding())
+                .filter(UserAppRole::active)
+                .filter(binding -> !blank(binding.getRealmRefName()))
+                .toList();
+        if (active.isEmpty()) {
+            return null;
+        }
+        List<String> allowed = securityUtils.computeAllowedRealmRefNames(credential,
+                active.stream().map(binding -> binding.getRealmRefName().trim()).distinct().toList());
+        if (allowed.isEmpty()) {
+            return null;
+        }
+        List<String> defaults = active.stream()
+                .filter(binding -> Boolean.TRUE.equals(binding.getDefaultRealm()))
+                .map(binding -> binding.getRealmRefName().trim())
+                .filter(allowed::contains)
+                .distinct()
+                .toList();
+        if (defaults.size() == 1) {
+            return defaults.get(0);
+        }
+        if (defaults.size() > 1) {
+            throw refusal(PrincipalResolutionError.REALM_NOT_AUTHORIZED, String.format(
+                    "%s has several default realms %s for application '%s'; the realm must be selected explicitly",
+                    credential.getUserId(), defaults, applicationId));
+        }
+        // Without an explicit default the application's realm decides, even for a single binding:
+        // only the subject or the platform marks a binding's realm as the default.
+        return null;
+    }
+
+    /**
+     * What the identity's bindings grant for the application in the realm, or {@code null} when
+     * no binding applies (the realm assignment's grant then decides). The identity's own binding
+     * always applies. A group binding applies only to members with an active membership in the
+     * group's owner tenant (in a binding of a group without one, in one of the binding's tenants);
+     * for anyone else it is ignored. Every applying binding is checked again against the binding
+     * rules and the registered application, and a group binding must grant exactly its group's
+     * owner tenant: one that fails, a duplicate, a suspended user binding, or applying bindings
+     * that are all suspended refuse with {@code APPLICATION_NOT_GRANTED}; none of these falls back. Tenants whose install is gone do not count, and bindings
+     * left with none refuse.
+     */
+    ApplicationGrant bindingGrant(CredentialUserIdPassword credential, String applicationId, String realmRefName) {
+        if (accessDirectory == null || blank(applicationId) || blank(realmRefName)) {
+            return null;
+        }
+        requireBindingsReadable(applicationId);
+        String app = applicationId.trim();
+        List<UserAppRole> rows = accessDirectory.bindingsFor(credential, app, realmRefName).stream()
+                .filter(Objects::nonNull)
+                .toList();
+        if (rows.isEmpty()) {
+            return null;
+        }
+        Application application = accessDirectory.application(app).orElse(null);
+        List<UserAppRole> own = rows.stream().filter(binding -> !binding.groupBinding()).toList();
+        if (own.size() > 1) {
+            throw refusal(PrincipalResolutionError.APPLICATION_NOT_GRANTED, String.format(
+                    "%s has %d bindings for application '%s' in realm '%s'; one is allowed",
+                    credential.getUserId(), own.size(), app, realmRefName));
+        }
+        List<UserAppRole> applying = new java.util.ArrayList<>();
+        for (UserAppRole binding : own) {
+            requireWellFormed(binding, credential, application, app, realmRefName);
+            applying.add(binding);
+        }
+        for (UserAppRole binding : rows) {
+            if (!binding.groupBinding()) {
+                continue;
+            }
+            String owner = accessDirectory.groupOwnerTenant(binding.groupRefName());
+            List<String> reach = owner != null ? List.of(owner) : ApplicationBindingValidator.tenants(binding);
+            if (reach.stream().noneMatch(tenant -> activeMember(credential.getUserId(), realmRefName, tenant))) {
+                continue;
+            }
+            requireWellFormed(binding, credential, application, app, realmRefName);
+            if (owner != null && !ApplicationBindingValidator.tenants(binding).equals(List.of(owner))) {
+                throw refusal(PrincipalResolutionError.APPLICATION_NOT_GRANTED, String.format(
+                        "binding %s of group '%s' for application '%s' in realm '%s' is malformed: it must grant "
+                                + "exactly the group's owner tenant '%s'",
+                        binding.getId(), binding.groupRefName(), app, realmRefName, owner));
+            }
+            applying.add(binding);
+        }
+        if (applying.isEmpty()) {
+            return null;
+        }
+        if (!own.isEmpty() && !own.get(0).active()) {
+            throw refusal(PrincipalResolutionError.APPLICATION_NOT_GRANTED, String.format(
+                    "%s's binding for application '%s' in realm '%s' is %s",
+                    credential.getUserId(), app, realmRefName, own.get(0).getStatus()));
+        }
+        List<UserAppRole> active = applying.stream().filter(UserAppRole::active).toList();
+        if (active.isEmpty()) {
+            // Every binding that applies is suspended: that is a decision, not an absence.
+            throw refusal(PrincipalResolutionError.APPLICATION_NOT_GRANTED, String.format(
+                    "every binding of %s for application '%s' in realm '%s' is suspended",
+                    credential.getUserId(), app, realmRefName));
+        }
+        List<BoundTenants> bound = active.stream()
+                .map(binding -> new BoundTenants(binding, ApplicationBindingValidator.tenants(binding).stream()
+                        .filter(tenant -> accessDirectory.installed(app, realmRefName, tenant))
+                        .toList()))
+                .toList();
+        ApplicationGrant grant = new ApplicationGrant(app, realmRefName, bound,
+                own.isEmpty() ? null : own.get(0).getDefaultTenantId());
+        if (grant.tenants().isEmpty()) {
+            throw refusal(PrincipalResolutionError.APPLICATION_NOT_GRANTED, String.format(
+                    "application '%s' is not installed for any tenant %s binds in realm '%s'",
+                    app, credential.getUserId(), realmRefName));
+        }
+        return grant;
+    }
+
+    /**
+     * Bindings decide before the realm assignment, so when they cannot be read here (the remote
+     * directory holds them) the assignment must not decide in their place: refuse.
+     */
+    private void requireBindingsReadable(String applicationId) {
+        if (!accessDirectory.bindingsReadable()) {
+            throw refusal(PrincipalResolutionError.APPLICATION_NOT_GRANTED, String.format(
+                    "application bindings for '%s' are held by the remote directory and cannot be read here; "
+                            + "resolve principals where the directory is owned", applicationId));
+        }
+    }
+
+    /**
+     * Whether {@code userId} has an active membership in {@code tenantId} of the realm: an active
+     * realm assignment that authorizes the tenant or, in a dedicated realm, whose one tenant it is.
+     */
+    private boolean activeMember(String userId, String realmRefName, String tenantId) {
+        if (realmMembershipService == null || blank(tenantId)) {
+            return false;
+        }
+        Optional<UserRealmRole> assignment = realmMembershipService.assignmentForUser(userId, realmRefName)
+                .filter(PrincipalContextResolver::activeAssignment);
+        if (assignment.isEmpty()) {
+            return false;
+        }
+        if (AccessibleTenantResolver.isAuthorized(assignment.get(), tenantId)) {
+            return true;
+        }
+        return systemDirectory.findRealmByRefName(realmRefName)
+                .filter(realm -> realm.getTenancyMode() != RealmTenancyMode.MULTI_TENANT)
+                .map(Realm::getDomainContext)
+                .map(DomainContext::getTenantId)
+                .filter(tenantId.trim()::equals)
+                .isPresent();
+    }
+
+    private void requireWellFormed(UserAppRole binding, CredentialUserIdPassword credential,
+                                   Application application, String applicationId, String realmRefName) {
+        boolean subjectMatches = binding.groupBinding()
+                || (binding.getUserId() != null && binding.getUserId().trim().equals(credential.getUserId()));
+        boolean scopeMatches = binding.getApplicationId() != null
+                && applicationId.equals(binding.getApplicationId().trim())
+                && binding.getRealmRefName() != null
+                && realmRefName.equals(binding.getRealmRefName().trim());
+        if (!subjectMatches || !scopeMatches) {
+            throw refusal(PrincipalResolutionError.APPLICATION_NOT_GRANTED, String.format(
+                    "binding %s does not belong to %s for application '%s' in realm '%s'",
+                    binding.getId(), credential.getUserId(), applicationId, realmRefName));
+        }
+        try {
+            // Installs are checked per tenant afterwards, so an uninstalled tenant narrows the grant.
+            // Reserved roles (the platform's, and the configured membership-administrator roles)
+            // would join the global roles, so a row granting one is refused, not filtered.
+            ApplicationBindingValidator.validate(binding, application, tenant -> true,
+                    accessDirectory.alsoReservedRoles());
+        } catch (ApplicationAccessException malformed) {
+            throw refusal(PrincipalResolutionError.APPLICATION_NOT_GRANTED, String.format(
+                    "binding %s for application '%s' in realm '%s' is malformed: %s",
+                    binding.getId(), applicationId, realmRefName, malformed.getMessage()));
+        }
+    }
+
+    /** One binding and the tenants of it the application is installed for. */
+    record BoundTenants(UserAppRole binding, List<String> tenants) {
+    }
+
+    /** What an identity's bindings grant for one application in one realm. */
+    record ApplicationGrant(String applicationId, String realmRefName, List<BoundTenants> bindings,
+                            String defaultTenantId) {
+
+        /** Every installed tenant some binding grants. */
+        Set<String> tenants() {
+            Set<String> out = new LinkedHashSet<>();
+            bindings.forEach(bound -> out.addAll(bound.tenants()));
+            return out;
+        }
+
+        /** Roles of the bindings that grant {@code tenantId}. */
+        Set<String> rolesFor(String tenantId) {
+            Set<String> out = new LinkedHashSet<>();
+            if (tenantId == null) {
+                return out;
+            }
+            for (BoundTenants bound : bindings) {
+                if (bound.tenants().contains(tenantId) && bound.binding().getRoles() != null) {
+                    bound.binding().getRoles().stream().filter(Objects::nonNull).map(String::trim).forEach(out::add);
+                }
+            }
+            return out;
+        }
+    }
+
+    /**
+     * Tenant selection under a binding. The identity needs an active realm assignment in either
+     * tenancy. A dedicated realm is its one tenant, which the binding must grant. In a shared realm the identity needs an active membership; the tenants it may
+     * use are those the binding grants (installed) that the membership also authorizes. The tenant
+     * is the requested one, else the binding's default, else the only one; several and no default
+     * fail {@code TENANT_SELECTION_REQUIRED}.
+     */
+    PrincipalContext applyBindingTenantSelection(PrincipalContext context, String requestedTenantId,
+                                                 ApplicationGrant grant) {
+        String effectiveRealm = context.getDefaultRealm();
+        String headerTenantId = blank(requestedTenantId) ? null : requestedTenantId.trim();
+        Realm realm = systemDirectory.findRealmByRefName(effectiveRealm)
+                .orElseThrow(() -> refusal(PrincipalResolutionError.TENANT_NOT_AUTHORIZED,
+                        "Realm '" + effectiveRealm + "' is not registered"));
+        Set<String> bound = grant.tenants();
+        if (realm.getTenancyMode() != RealmTenancyMode.MULTI_TENANT) {
+            // A binding admits only a current member: a suspended or removed realm assignment
+            // ends access even though the binding remains.
+            boolean member = realmMembershipService != null && realmMembershipService
+                    .assignmentForUser(context.getUserId(), effectiveRealm)
+                    .filter(PrincipalContextResolver::activeAssignment)
+                    .isPresent();
+            if (!member) {
+                throw refusal(PrincipalResolutionError.TENANT_NOT_AUTHORIZED,
+                        "Principal has no active membership in realm '" + effectiveRealm + "'");
+            }
+            DomainContext realmContext = realm.getDomainContext();
+            String realmTenant = realmContext == null ? null : realmContext.getTenantId();
+            if (realmTenant == null || !bound.contains(realmTenant)) {
+                throw refusal(PrincipalResolutionError.TENANT_NOT_AUTHORIZED, String.format(
+                        "The binding for application '%s' does not grant tenant '%s' of realm '%s'",
+                        grant.applicationId(), realmTenant, effectiveRealm));
+            }
+            if (headerTenantId != null && !headerTenantId.equals(realmTenant)) {
+                throw refusal(PrincipalResolutionError.TENANT_NOT_AUTHORIZED,
+                        "Tenant '" + headerTenantId + "' is not the single tenant of realm '" + effectiveRealm + "'");
+            }
+            if (sameDataCoordinate(realmContext, context.getDomainContext())) {
+                return context;
+            }
+            return copy(context)
+                    .withDomainContext(realmContext)
+                    .withDataDomain(realmContext.toDataDomain(context.getUserId()))
+                    .build();
+        }
+
+        UserRealmRole assignment = (realmMembershipService == null ? Optional.<UserRealmRole>empty()
+                : realmMembershipService.assignmentForUser(context.getUserId(), effectiveRealm))
+                .filter(PrincipalContextResolver::activeAssignment)
+                .orElseThrow(() -> refusal(PrincipalResolutionError.TENANT_NOT_AUTHORIZED,
+                        "Principal has no active membership in realm '" + effectiveRealm + "'"));
+        List<String> usable = bound.stream()
+                .filter(tenant -> AccessibleTenantResolver.isAuthorized(assignment, tenant))
+                .toList();
+        String tenantId;
+        if (headerTenantId != null) {
+            if (!usable.contains(headerTenantId)) {
+                throw refusal(PrincipalResolutionError.TENANT_NOT_AUTHORIZED, String.format(
+                        "Tenant '%s' is not granted for application '%s' in realm '%s'",
+                        headerTenantId, grant.applicationId(), effectiveRealm));
+            }
+            tenantId = headerTenantId;
+        } else if (grant.defaultTenantId() != null && usable.contains(grant.defaultTenantId().trim())) {
+            tenantId = grant.defaultTenantId().trim();
+        } else if (usable.size() == 1) {
+            tenantId = usable.get(0);
+        } else if (usable.isEmpty()) {
+            throw refusal(PrincipalResolutionError.TENANT_NOT_AUTHORIZED, String.format(
+                    "No tenant the binding for application '%s' grants is authorized by the membership in realm '%s'",
+                    grant.applicationId(), effectiveRealm));
+        } else {
+            throw refusal(PrincipalResolutionError.TENANT_SELECTION_REQUIRED, String.format(
+                    "The binding for application '%s' reaches %d tenants in realm '%s' with no default; select one",
+                    grant.applicationId(), usable.size(), effectiveRealm));
+        }
+        String selected = tenantId;
+        RealmTenantMembership membership = realmMembershipService
+                .tenantInRealm(effectiveRealm, selected)
+                .orElseThrow(() -> refusal(PrincipalResolutionError.TENANT_NOT_AUTHORIZED,
+                        "Tenant '" + selected + "' is not active in realm '" + effectiveRealm + "'"));
+        return withTenant(context, effectiveRealm, selected, assignment, membership);
+    }
+
+    /** The context's roles plus those of the bindings granting the selected tenant. */
+    private static PrincipalContext withBindingRoles(PrincipalContext context, ApplicationGrant grant) {
+        String tenant = context.getDomainContext() == null ? null : context.getDomainContext().getTenantId();
+        Set<String> added = grant.rolesFor(tenant);
+        if (added.isEmpty()) {
+            return context;
+        }
+        Set<String> roles = new LinkedHashSet<>();
+        for (String role : context.getRoles() == null ? new String[0] : context.getRoles()) {
+            if (role != null && !"ANONYMOUS".equals(role)) {
+                roles.add(role);
+            }
+        }
+        roles.addAll(added);
+        return copy(context).withRoles(roles.toArray(String[]::new)).build();
     }
 
     // ------------------------------------------------------------------ application realm
