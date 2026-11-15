@@ -63,7 +63,17 @@ Three inputs are resolved the same way by `/check`, `/check-with-index` and `/fd
 
 * `applicationId`: policies are evaluated in the scope of one application. It is taken from the request, else from the authenticated caller's principal. When neither names one the call is refused with `400 applicationId is required`.
 * `realm`: from the request, else the realm the caller's request runs in, else the framework default realm.
-* Roles: when `identity` is a userId, its roles are resolved by `IdentityRoleResolver` for that realm (credential, realm assignment and group roles, plus token roles when the identity is the caller itself). `roles` in the request adds roles to evaluate "what if"; it changes no stored grant.
+* Roles: when `identity` is a userId, its roles are resolved by `IdentityRoleResolver` for that realm and that application (credential, realm assignment and the groups of that application or `*`, plus token roles when the identity is the caller itself). A group of another application does not count, so the check agrees with what the application itself resolves. `roles` in the request adds roles to evaluate "what if"; it changes no stored grant.
+
+=== GET /system/permissions/fd and /fd/areas: an application's vocabulary
+
+`GET /system/permissions/fd[?includeActions=true]` without `applicationId` answers as before: the union of the vocabulary this service discovers in its own code and every stored `FunctionalDomain`, as `area -> [domain]` (or `area -> domain -> [action]` with `includeActions`).
+
+With `?applicationId=<app>` it answers that application's registered vocabulary only: its `FunctionalArea` rows (an area may hold no domain yet) and its `FunctionalDomain` rows with their declared actions (CRUD when a row declares none). Rows tagged `*` or with another application, and the code discovered in this service, are not part of it. An application this service does not know answers `404 {"code":"APPLICATION_UNKNOWN"}`.
+
+`GET /system/permissions/fd/areas?applicationId=<app>` lists that application's `FunctionalArea` records, sorted by `refName`. `applicationId` is required (`400` without it, `404 APPLICATION_UNKNOWN` for an unknown application).
+
+Both reads apply the caller's rules to the stored rows, the same as `/fd` always has. The rows reach a separate Auth through the application's identity contribution (`/v1/identity-contributions`: submit, activate, apply).
 
 === POST /system/permissions/check
 Performs a server-side permission check for a single request using the named identity and an optional data domain (organization/account/tenant/segment/owner). Data-domain fields that are omitted fall back to the caller's own principal.
