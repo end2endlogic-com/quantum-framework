@@ -178,38 +178,80 @@ public class RemotePrincipalSettings {
     }
 
     /**
-     * The declared value with {@code ${name}} / {@code ${name:default}} expressions expanded
-     * against the effective configuration (a blank or missing name takes its default), so
-     * {@code ${PRINCIPAL_MODE:remote}} declares remote. Nested expressions are not expanded.
+     * The declared value with {@code ${name}} / {@code ${name:default}} expressions expanded,
+     * nested ones included, against the effective configuration (a blank or missing name takes
+     * its default), so {@code ${MODE:${DEFAULT_MODE:remote}}} declares remote. A declaration that
+     * cannot be analysed (unbalanced braces) counts as declaring remote: fail closed.
      */
     static String expand(Config config, String value) {
         if (value == null || !value.contains("${")) {
             return value;
         }
+        try {
+            return expandFrom(config, value, 0);
+        } catch (IllegalArgumentException unbalanced) {
+            return REMOTE;
+        }
+    }
+
+    private static String expandFrom(Config config, String value, int depth) {
+        if (depth > 16) {
+            throw new IllegalArgumentException("expression nested too deeply");
+        }
         StringBuilder out = new StringBuilder();
         int i = 0;
         while (i < value.length()) {
             int start = value.indexOf("${", i);
-            int end = start < 0 ? -1 : value.indexOf('}', start + 2);
-            if (start < 0 || end < 0) {
+            if (start < 0) {
                 out.append(value, i, value.length());
                 break;
             }
             out.append(value, i, start);
+            int end = matchingBrace(value, start + 2);
             String body = value.substring(start + 2, end);
-            int colon = body.indexOf(':');
-            String name = colon < 0 ? body : body.substring(0, colon);
-            String fallback = colon < 0 ? "" : body.substring(colon + 1);
-            String resolved = null;
+            int colon = topLevelColon(body);
+            String name = expandFrom(config, colon < 0 ? body : body.substring(0, colon), depth + 1).trim();
+            String resolved;
             try {
-                resolved = config.getConfigValue(name.trim()).getValue();
+                resolved = name.isEmpty() ? null : config.getConfigValue(name).getValue();
             } catch (RuntimeException unresolved) {
                 resolved = null;
             }
-            out.append(resolved == null || resolved.isBlank() ? fallback : resolved);
+            if (resolved == null || resolved.isBlank()) {
+                resolved = colon < 0 ? "" : expandFrom(config, body.substring(colon + 1), depth + 1);
+            }
+            out.append(resolved);
             i = end + 1;
         }
         return out.toString();
+    }
+
+    private static int matchingBrace(String value, int from) {
+        int depth = 1;
+        for (int i = from; i < value.length(); i++) {
+            if (value.startsWith("${", i)) {
+                depth++;
+                i++;
+            } else if (value.charAt(i) == '}' && --depth == 0) {
+                return i;
+            }
+        }
+        throw new IllegalArgumentException("unbalanced expression");
+    }
+
+    private static int topLevelColon(String body) {
+        int depth = 0;
+        for (int i = 0; i < body.length(); i++) {
+            if (body.startsWith("${", i)) {
+                depth++;
+                i++;
+            } else if (body.charAt(i) == '}') {
+                depth--;
+            } else if (body.charAt(i) == ':' && depth == 0) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     private static Set<String> activeProfiles(Config config) {

@@ -134,7 +134,7 @@ final class RepoSecurityContextResolver {
 
         PrincipalContext rebuiltContext = new PrincipalContext.Builder()
                 .withDefaultRealm(contextRealm)
-                .withApplicationId(applicationId)
+                .withApplicationId(applicationId != null ? applicationId : identityApplication())
                 .withDataDomain(dataDomain)
                 .withUserId(userId)
                 .withRoles(roles)
@@ -152,6 +152,18 @@ final class RepoSecurityContextResolver {
             Log.debugf("[MorphiaRepo] Principal Context %s from SecurityIdentity for user %s, roles=%s",
                     principalContext.isEmpty() ? "built" : "rebuilt", userId, Arrays.toString(roles));
         }
+    }
+
+    /**
+     * No configured receiving application: the application the identity's provider recorded
+     * (the embedded token's azp). Without an application, application-scoped policies, denies
+     * included, would not apply. Step 4 deletes this once every app configures its id.
+     */
+    private String identityApplication() {
+        if (securityIdentity == null) return null;
+        Object value = securityIdentity.getAttribute("azp");
+        String text = value == null ? null : String.valueOf(value).trim();
+        return text == null || text.isEmpty() ? null : text;
     }
 
     String getSecurityContextRealmId() {

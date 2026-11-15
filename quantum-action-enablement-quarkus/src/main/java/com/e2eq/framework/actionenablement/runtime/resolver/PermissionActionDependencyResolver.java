@@ -110,9 +110,25 @@ public class PermissionActionDependencyResolver implements ActionDependencyResol
         return DependencyResolutionResult.blocked(blocker);
     }
 
-    /** No resolved principal application: this application's configured id, never the token's azp. */
+    /**
+     * No resolved principal application: this application's configured id; only when none is
+     * configured, the identity's azp, so application-scoped policies (denies included) still
+     * apply. Step 4 deletes the azp fallback once every app configures its id.
+     */
     private String configuredApplicationId() {
-        return receivingApplication == null ? null : receivingApplication.applicationId();
+        String configured = receivingApplication == null ? null : receivingApplication.applicationId();
+        if (configured != null) {
+            return configured;
+        }
+        if (securityIdentity == null) {
+            return null;
+        }
+        Object value = securityIdentity.getAttribute("azp");
+        if (value == null && securityIdentity.getPrincipal() instanceof org.eclipse.microprofile.jwt.JsonWebToken jwt) {
+            value = jwt.getClaim("azp");
+        }
+        String applicationId = value == null ? null : String.valueOf(value).trim();
+        return applicationId == null || applicationId.isEmpty() ? null : applicationId;
     }
 
     private String buildPermissionMessage(SecurityCheckResponse response, EnablementEvaluationContext context) {

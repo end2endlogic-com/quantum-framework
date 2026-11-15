@@ -276,8 +276,10 @@ Auth; Auth unreachable is 503 `PRINCIPAL_RESOLUTION_UNAVAILABLE`.
 Code that pairs `SecurityIdentity.getRoles()` with a realm reads
 `PrincipalIdentityAttributes.rolesRealm(identity)` (the realm Auth resolved in
 remote mode), and code that needs the application reads the resolved
-`PrincipalContext` application, then `ReceivingApplication`; neither reads
-`realm` or `azp` from the token.
+`PrincipalContext` application, then `ReceivingApplication` (the configured
+`quantum.security.session.application-id`). Only an application that configures no
+id still falls back to the identity's `azp` there, until step 4; set the id when
+flipping.
 
 ### Guard: no new claim readers
 
