@@ -118,8 +118,8 @@ The `quantum-jwt-provider` module (`CustomTokenAuthProvider`, `TokenUtilsConfigu
 |Set `false` on a resource server that only verifies tokens (through SmallRye JWT and a JWKS URL) and never mints them. No issuer key is loaded.
 
 |`auth.jwt.key-id`
-|`quantum-auth`
-|The `kid` stamped on signed tokens and published by the JWKS endpoint, so verifiers can find the signing key.
+|unset for signing; `quantum-auth` at the JWKS endpoint
+|The key id (`kid`). When set, signed tokens carry it (`TokenUtilsConfigurer`); when unset, `TokenUtils` uses the private-key location as the `kid`. The OAuth server's JWKS endpoint (`JwksResource`) publishes this value and defaults to `quantum-auth`, so the two disagree unless it is set. Set it explicitly on any issuer whose tokens are verified through its JWKS.
 |===
 
 The password encoder for locally stored credentials (`PBKDF2Encoder`) needs three values with no defaults: `com.ard333.quarkusjwt.password.secret`, `com.ard333.quarkusjwt.password.iteration` and `com.ard333.quarkusjwt.password.keylength`.
@@ -286,7 +286,7 @@ See xref:{doc-root}/user-guide/application-registration.adoc[Application Registr
 
 ===== OAuth Server (optional module)
 
-The `quantum-oauth-server` module uses the same JWT configuration properties listed above (`mp.jwt.verify.issuer`, `mp.jwt.verify.publickey.location`, `com.b2bi.jwt.duration`) and publishes the key id from `auth.jwt.key-id` at its JWKS endpoint. No additional properties are required. The OAuth endpoints (`/oauth/authorize`, `/oauth/token`, `/oauth/jwks`, `/.well-known/openid-configuration`, `/oauth/userinfo`) activate automatically when the module is on the classpath.
+The `quantum-oauth-server` module uses the same JWT configuration properties listed above (`mp.jwt.verify.issuer`, `mp.jwt.verify.publickey.location`, `com.b2bi.jwt.duration`) and publishes the key id from `auth.jwt.key-id` at its JWKS endpoint (default `quantum-auth`). Set `auth.jwt.key-id` explicitly so the published `kid` matches the one on signed tokens; no other properties are required. The OAuth endpoints (`/oauth/authorize`, `/oauth/token`, `/oauth/jwks`, `/.well-known/openid-configuration`, `/oauth/userinfo`) activate automatically when the module is on the classpath.
 
 OAuth clients are registered in the `oauth_clients` MongoDB collection. Authorization codes are stored in `oauth_authorization_codes` with a 5-minute TTL index for automatic cleanup.
 
@@ -618,20 +618,20 @@ Read by `TenantProvisioningService` in `quantum-system-management`.
 
 ===== Agent tools per realm
 
-The default `TenantAgentConfigResolver` in `quantum-mcp-server` reads optional per-realm settings. The realm id is part of the key.
+The default `TenantAgentConfigResolver` in `quantum-mcp-server` reads optional per-realm settings. The realm id is part of the key. In this release they shape tool discovery only; none of them restricts execution. `AgentExecuteHandler` (`POST /api/agent/execute`) and the MCP tools do not read them, so execution always runs as the authenticated caller with that caller's permissions. Use permission rules to restrict what a caller may do.
 
 [cols="2,3"]
 |===
 |Property |Description
 
 |`quantum.agent.tenant.<realm>.runAsUserId`
-|User id that agent tool calls for this realm run as.
+|Proposal, not applied. Read into `TenantAgentConfig`; execution does not run as this user.
 
 |`quantum.agent.tenant.<realm>.enabledTools`
-|Comma-separated tool names enabled for this realm.
+|Comma-separated tool names that `GET /api/agent/tools?realm=<realm>` lists. Filters discovery only: a tool left out can still be executed by a caller whose permissions allow it.
 
 |`quantum.agent.tenant.<realm>.maxFindLimit`
-|Integer limit applied to find calls for this realm.
+|Proposal, not applied. Read into `TenantAgentConfig`; find results are not capped by it.
 |===
 
 See xref:{doc-root}/user-guide/ai-agent-integration.adoc[AI Agent Integration].
