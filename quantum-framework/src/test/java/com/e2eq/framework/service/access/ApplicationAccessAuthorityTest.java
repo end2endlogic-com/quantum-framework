@@ -184,6 +184,59 @@ class ApplicationAccessAuthorityTest extends BaseRepoTest {
         assertEquals(TENANT_B, installRepo.findByIdWithIgnoreRules(ofB.getId()).orElseThrow().getTenantId());
     }
 
+    // ---- grantableBy and administrator reach ---------------------------------------------
+
+    @Test
+    void aTenantAdministratorGrantsTenantAdminRolesInItsOwnTenantOnly() {
+        String adminA = member("ta-admin-a", List.of(TENANT_A), List.of(MEMBERSHIP_ADMIN));
+        String alice = member("ta-alice", List.of(TENANT_A, TENANT_B), List.of("viewer"));
+        String bob = member("ta-bob", List.of(TENANT_A), List.of("viewer"));
+        asSystem(() -> accessService.install(POOLED, install(null, null, TENANT_A)));
+        asSystem(() -> accessService.install(POOLED, install(null, null, TENANT_B)));
+        PrincipalContext asAdminA = signedIn(adminA, TENANT_A);
+
+        assertEquals(List.of("planner-user"), as(asAdminA, () -> accessService.putBinding(POOLED,
+            binding(alice, List.of(TENANT_A), null, "planner-user"))).getRoles());
+        refused(Code.ROLE_NOT_GRANTABLE, () -> as(asAdminA, () -> accessService.putBinding(POOLED,
+            binding(bob, List.of(TENANT_A), null, "planner-admin"))));
+        refused(Code.ROLE_NOT_GRANTABLE, () -> as(asAdminA, () -> accessService.putBinding(POOLED,
+            binding(bob, List.of(TENANT_A), null, "planner-owner"))));
+        refused(Code.ROLE_NOT_GRANTABLE, () -> as(asAdminA, () -> accessService.putBinding(POOLED,
+            binding(alice, List.of(TENANT_A, TENANT_B), TENANT_A, "planner-user"))));
+        // Signed in for tenant B, the same administrator administers nothing.
+        refused(Code.ROLE_NOT_GRANTABLE, () -> as(signedIn(adminA, TENANT_B), () -> accessService.putBinding(POOLED,
+            binding(bob, List.of(TENANT_A), null, "planner-user"))));
+        // Installs need a realm administrator.
+        refused(Code.INSTALL_NOT_AUTHORIZED, () -> as(asAdminA, () -> accessService.install(POOLED, install(null, null, TENANT_A))));
+    }
+
+    @Test
+    void aPooledRealmAdministratorReachesOnlyTheTenantsItsAssignmentAuthorizes() {
+        String realmAdminA = member("ra-admin-a", List.of(TENANT_A), List.of("admin"));
+        String alice = member("ra-alice", List.of(TENANT_A, TENANT_B), List.of("viewer"));
+        asSystem(() -> accessService.install(POOLED, install(null, null, TENANT_A)));
+        asSystem(() -> accessService.install(POOLED, install(null, null, TENANT_B)));
+        PrincipalContext asAdmin = signedIn(realmAdminA, TENANT_A);
+
+        UserAppRole saved = as(asAdmin, () -> accessService.putBinding(POOLED,
+            binding(alice, List.of(TENANT_A), null, "planner-user", "planner-admin")));
+        assertEquals(List.of("planner-user", "planner-admin"), saved.getRoles(), "realm-admin roles are grantable");
+        refused(Code.ROLE_NOT_GRANTABLE, () -> as(asAdmin, () -> accessService.putBinding(POOLED,
+            binding(alice, List.of(TENANT_A), null, "planner-owner"))));
+        refused(Code.ROLE_NOT_GRANTABLE, () -> as(asAdmin, () -> accessService.putBinding(POOLED,
+            binding(alice, List.of(TENANT_A, TENANT_B), TENANT_A, "planner-user"))));
+        refused(Code.INSTALL_NOT_AUTHORIZED, () -> as(asAdmin, () -> accessService.install(POOLED, install(null, null, TENANT_B))));
+
+        // Replacing a binding needs authority over the tenants it already grants too.
+        asSystem(() -> accessService.putBinding(POOLED, binding(alice, List.of(TENANT_A, TENANT_B), TENANT_A, "planner-user")));
+        refused(Code.ROLE_NOT_GRANTABLE, () -> as(asAdmin, () -> accessService.putBinding(POOLED,
+            binding(alice, List.of(TENANT_A), null, "planner-user"))));
+
+        // The platform grants a platform-only role.
+        assertEquals(List.of("planner-owner"), asSystem(() -> accessService.putBinding(POOLED,
+            binding(alice, List.of(TENANT_A, TENANT_B), TENANT_A, "planner-owner"))).getRoles());
+    }
+
     // ---- group bindings -------------------------------------------------------------------
 
     @Test
