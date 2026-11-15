@@ -25,6 +25,13 @@ import java.util.Map;
 @RegisterForReflection
 @JsonDeserialize(builder = PrincipalContext.Builder.class)
 public final class PrincipalContext {
+   /**
+    * The {@link #getScope() scope} of a principal built from a service identity: a signed
+    * {@code token_type=service} token, or a service credential resolved identity-only. The server
+    * sets it; no request field selects it.
+    */
+   public static final String SCOPE_SERVICE = "SERVICE";
+
    @NotNull( message = "defaultRealm must be non null, needs to be the realm that this principal will use by default")
    String defaultRealm;           // The realm that this Principal came from
    String applicationId;          // The application whose authorization vocabulary/policies apply
@@ -324,6 +331,11 @@ public final class PrincipalContext {
 
    public void setScope (String scope) {
       this.scope = scope;
+   }
+
+   /** Whether this principal is a service identity ({@link #SCOPE_SERVICE}). */
+   public boolean serviceIdentity() {
+      return SCOPE_SERVICE.equals(scope);
    }
 
    @HostAccess.Export

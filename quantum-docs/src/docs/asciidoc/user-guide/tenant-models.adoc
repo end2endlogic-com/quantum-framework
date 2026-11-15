@@ -754,6 +754,46 @@ tenant. An install that names a stored install id must be in the caller's realm
 and never changes its realm, tenant or application. Uninstall answers the same
 `NOT_FOUND` for an install of another realm as for a missing id.
 
+[[application-self-install]]
+*An application's own service identity.* One more caller may install and
+uninstall: the application's own service identity, for that application only.
+The caller is a service identity when its principal scope is
+`PrincipalContext.SCOPE_SERVICE` (a signed `token_type=service` token, or a
+service credential resolved identity-only), and its application is the token's
+`azp`. It may install exactly `applicationId == azp`, into a realm the
+application declares by name: `tenancy.placement` `REALMS` and the realm in
+`tenancy.realms` (never the system realm). The request names that realm in
+`realmRefName`; no `X-Realm` is sent or needed. Uninstall is allowed for an
+install of that application in such a realm. Everything else is refused with a
+typed code:
+
+[cols="2,1"]
+|===
+|Request from a service identity |Refusal
+
+|Another application, a wildcard (`*`), or a token without an application
+|`INSTALL_NOT_AUTHORIZED` (no application under required application scope: `APPLICATION_SCOPE_REQUIRED`)
+
+|A realm the application does not declare, the system realm, or none
+|`REALM_MISMATCH`
+
+|A request made for someone else (acting on behalf, impersonation)
+|`INSTALL_NOT_AUTHORIZED`
+
+|An install id of another application or realm
+|`INSTALL_NOT_AUTHORIZED` (install), `NOT_FOUND` (uninstall)
+|===
+
+Pre-authorization admits the request through one default rule per action
+(`RuleContext.addSystemRules`): role `system`, `SECURITY/APPLICATION_INSTALL`,
+actions `install` and `uninstall`, with the precondition
+`RuleContext.SERVICE_IDENTITY_PRECONDITION` (`pctx.scope === 'SERVICE'`). A
+user principal holding the `system` role is not a service identity, so the
+rule does not apply to it; `list` is not admitted. The rule only lets the
+request reach `ApplicationAccessService`, which decides as above. Pooled and
+dedicated placements declare no realm by name, so their service identities
+cannot install themselves.
+
 Uninstalling suspends the application's active group bindings for that tenant
 with `suspendedBy = uninstall:<installId>`, whoever wrote them; nothing is
 deleted. Only the call that moves the install to `uninstalled` suspends, and

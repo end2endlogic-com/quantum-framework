@@ -11,6 +11,7 @@ import com.e2eq.framework.model.security.ApplicationAccessException.Code;
 import com.e2eq.framework.model.security.ApplicationBindingValidator;
 import com.e2eq.framework.model.security.ApplicationBindingValidator.Authority;
 import com.e2eq.framework.model.security.ApplicationInstall;
+import com.e2eq.framework.model.security.ApplicationTenancy;
 import com.e2eq.framework.model.security.UserAppRole;
 import com.e2eq.framework.model.security.UserGroup;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
@@ -38,9 +39,11 @@ import java.util.function.Supplier;
  * platform (the system principal) may name another. Who may write is decided by the existing
  * administrator definitions ({@link AccessInviteService#administrativeAuthority}) and each role's
  * {@code grantableBy}; the records' own rules are applied by their repositories on every save.
- * Installs and uninstalls need the platform or a realm administrator of the tenant. Under a
- * remote directory every call refuses with {@code DIRECTORY_REMOTE}: the rows live, and are
- * written, at the directory owner.
+ * Installs and uninstalls need the platform or a realm administrator of the tenant, with one
+ * narrow exception: an application's own service identity may install and uninstall that same
+ * application in a realm the application declares ({@link #declaredRealms}). Under a remote
+ * directory every call refuses with {@code DIRECTORY_REMOTE}: the rows live, and are written, at
+ * the directory owner.
  */
 @ApplicationScoped
 public class ApplicationAccessService {
@@ -209,19 +212,36 @@ public class ApplicationAccessService {
       Objects.requireNonNull(request, "install");
       accessDirectory.requireLocalDirectory();
       Authority probe = authorityFor(callerRealm, List.of());
-      String realm = realmFor(callerRealm, request.getRealmRefName(), probe);
+      String ownApplication = probe == Authority.PLATFORM ? null : ownServiceApplication(request.getApplicationId());
+      String realm;
+      if (ownApplication != null) {
+         realm = declaredRealm(application(ownApplication), request.getRealmRefName());
+         requireTenant(request.getTenantId());
+      } else {
+         realm = realmFor(callerRealm, request.getRealmRefName(), probe);
+         application(request.getApplicationId());
+         requireInstallAuthority(realm, request.getTenantId());
+      }
       request.setRealmRefName(realm);
-      application(request.getApplicationId());
-      requireInstallAuthority(realm, request.getTenantId());
       if (request.getId() != null) {
          Optional<ApplicationInstall> stored = system(() -> applicationInstallRepo.findByIdWithIgnoreRules(request.getId()));
          if (stored.isPresent()) {
             ApplicationInstall current = stored.get();
-            if (probe != Authority.PLATFORM && !Objects.equals(current.getRealmRefName(), callerRealm)) {
-               throw new ApplicationAccessException(Code.REALM_MISMATCH,
-                  "install " + request.getId() + " is not in the caller's realm '" + callerRealm + "'");
+            if (ownApplication != null) {
+               // The service identity reaches only its own application's installs in that realm, and
+               // learns nothing about any other install the id may name.
+               if (!Objects.equals(current.getApplicationId(), ownApplication)
+                     || !Objects.equals(current.getRealmRefName(), realm)) {
+                  throw new ApplicationAccessException(Code.INSTALL_NOT_AUTHORIZED, "install " + request.getId()
+                     + " is not an install of application '" + ownApplication + "' in realm '" + realm + "'");
+               }
+            } else {
+               if (probe != Authority.PLATFORM && !Objects.equals(current.getRealmRefName(), callerRealm)) {
+                  throw new ApplicationAccessException(Code.REALM_MISMATCH,
+                     "install " + request.getId() + " is not in the caller's realm '" + callerRealm + "'");
+               }
+               requireInstallAuthority(current.getRealmRefName(), current.getTenantId());
             }
-            requireInstallAuthority(current.getRealmRefName(), current.getTenantId());
             if (!Objects.equals(current.getRealmRefName(), realm)
                || !Objects.equals(current.getTenantId(), request.getTenantId().trim())
                || !Objects.equals(current.getApplicationId(), request.getApplicationId().trim())) {
@@ -267,11 +287,17 @@ public class ApplicationAccessService {
    public ApplicationInstall uninstall(String callerRealm, ObjectId id) {
       accessDirectory.requireLocalDirectory();
       Authority probe = authorityFor(callerRealm, List.of());
-      // An install of another realm reads exactly like a missing one, so ids cannot be probed.
+      boolean service = probe != Authority.PLATFORM && callerIsServiceIdentity();
+      // An install of another realm reads exactly like a missing one, so ids cannot be probed. For an
+      // application's service identity, so does any install but its own application's in a realm
+      // that application declares.
       ApplicationInstall stored = system(() -> applicationInstallRepo.findByIdWithIgnoreRules(id))
-         .filter(found -> probe == Authority.PLATFORM || Objects.equals(found.getRealmRefName(), callerRealm))
+         .filter(found -> probe == Authority.PLATFORM
+            || (service ? ownDeclaredInstall(found) : Objects.equals(found.getRealmRefName(), callerRealm)))
          .orElseThrow(() -> new ApplicationAccessException(Code.NOT_FOUND, "no install " + id));
-      requireInstallAuthority(stored.getRealmRefName(), stored.getTenantId());
+      if (!service) {
+         requireInstallAuthority(stored.getRealmRefName(), stored.getTenantId());
+      }
       ApplicationInstall uninstalled = stored;
       boolean changed = !ApplicationInstall.STATUS_UNINSTALLED.equals(stored.getStatus());
       if (changed) {
@@ -375,6 +401,90 @@ public class ApplicationAccessService {
             "only the platform or a realm administrator of tenant '%s' may install or uninstall in realm '%s'",
             tenantId, realm));
       }
+   }
+
+   private static void requireTenant(String tenantId) {
+      if (tenantId == null || tenantId.isBlank()) {
+         throw new ApplicationAccessException(Code.INSTALL_INVALID, "tenantId is required");
+      }
+   }
+
+   /**
+    * The application an install request may be written for by the caller's own service identity,
+    * or {@code null} when the caller is not a service identity (it is then authorized as anyone
+    * else). A service identity ({@link PrincipalContext#serviceIdentity()}) acting for nobody else
+    * may name only the application of its own token ({@code azp}, the principal's application);
+    * any other application, a wildcard, or a token without an application is refused.
+    */
+   private String ownServiceApplication(String requestedApplicationId) {
+      if (!callerIsServiceIdentity()) {
+         return null;
+      }
+      PrincipalContext caller = SecurityContext.getPrincipalContext().orElseThrow();
+      String own = callerApplicationId(caller);
+      String requested = trimmed(requestedApplicationId);
+      if (own == null || own.contains("*") || !own.equals(requested) || delegated(caller)) {
+         throw new ApplicationAccessException(Code.INSTALL_NOT_AUTHORIZED, String.format(
+            "a service identity installs only its own application; this one is for application '%s' and the install names '%s'",
+            own, requested));
+      }
+      return own;
+   }
+
+   private static boolean callerIsServiceIdentity() {
+      return SecurityContext.getPrincipalContext().map(PrincipalContext::serviceIdentity).orElse(false);
+   }
+
+   /** A request made for another subject (impersonation or acting on behalf) is not the service's own. */
+   private static boolean delegated(PrincipalContext caller) {
+      return trimmed(caller.getActingOnBehalfOfUserId()) != null || trimmed(caller.getActingOnBehalfOfSubject()) != null
+         || trimmed(caller.getImpersonatedByUserId()) != null || trimmed(caller.getImpersonatedBySubject()) != null;
+   }
+
+   /** Whether {@code install} is one the caller's service identity may uninstall: its own application, in a declared realm. */
+   private boolean ownDeclaredInstall(ApplicationInstall install) {
+      PrincipalContext caller = SecurityContext.getPrincipalContext().orElseThrow();
+      String own = callerApplicationId(caller);
+      if (own == null || own.contains("*") || delegated(caller) || !own.equals(install.getApplicationId())) {
+         return false;
+      }
+      Optional<Application> application = applicationRepo.findByRefNameWithIgnoreRules(own);
+      return application.isPresent() && declaredRealms(application.get()).contains(install.getRealmRefName())
+         && !install.getRealmRefName().equals(envConfigUtils.getSystemRealm());
+   }
+
+   /**
+    * {@code requested} when it is a realm {@code application} declares; a service identity names
+    * the realm, since its own request runs in the system realm.
+    */
+   private String declaredRealm(Application application, String requested) {
+      String named = trimmed(requested);
+      List<String> declared = declaredRealms(application);
+      if (named == null || !declared.contains(named) || named.equals(envConfigUtils.getSystemRealm())) {
+         throw new ApplicationAccessException(Code.REALM_MISMATCH, String.format(
+            "a service identity installs application '%s' only in a realm it declares (tenancy placement %s: %s), not '%s'",
+            application.getRefName(), ApplicationTenancy.PLACEMENT_REALMS, declared, named));
+      }
+      return named;
+   }
+
+   /**
+    * The concrete realms {@code application} declares: {@code tenancy.realms} under placement
+    * {@link ApplicationTenancy#PLACEMENT_REALMS}. Pooled and dedicated placements declare no realm
+    * by name, so they have none here.
+    */
+   static List<String> declaredRealms(Application application) {
+      ApplicationTenancy tenancy = application == null ? null : application.getTenancy();
+      if (tenancy == null || tenancy.getPlacement() == null
+            || !ApplicationTenancy.PLACEMENT_REALMS.equalsIgnoreCase(tenancy.getPlacement().trim())
+            || tenancy.getRealms() == null) {
+         return List.of();
+      }
+      return tenancy.getRealms().stream()
+         .map(ApplicationAccessService::trimmed)
+         .filter(Objects::nonNull)
+         .filter(realm -> !realm.contains("*"))
+         .toList();
    }
 
    private Authority authorityFor(String realm, List<String> tenants) {
