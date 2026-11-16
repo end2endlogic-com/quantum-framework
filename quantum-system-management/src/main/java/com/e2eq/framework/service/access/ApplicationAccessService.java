@@ -319,11 +319,37 @@ public class ApplicationAccessService {
 
    /** The installs of the caller's realm for tenants the caller administers. */
    public List<ApplicationInstall> listInstalls(String callerRealm) {
+      return listInstalls(callerRealm, null, null, null);
+   }
+
+   /**
+    * The installs of one realm, whatever their status, in creation order, narrowed by the optional
+    * filters (a blank filter is absent). The realm is the caller's unless {@code realmRefName} names
+    * another, which only the platform may do, by the rule writes use ({@link #realmFor}); anyone else
+    * naming another realm is refused {@code REALM_MISMATCH}, never answered for their own realm. An
+    * {@code applicationId} that names no registered application is refused
+    * {@code APPLICATION_UNKNOWN}. The platform sees every install of the realm; anyone else only
+    * those of tenants they administer, as before.
+    */
+   public List<ApplicationInstall> listInstalls(String callerRealm, String realmRefName, String applicationId,
+                                                String tenantId) {
       accessDirectory.requireLocalDirectory();
-      List<ApplicationInstall> all = system(() -> applicationInstallRepo.findByRealmWithIgnoreRules(callerRealm));
+      Authority probe = authorityFor(callerRealm, List.of());
+      String realm = realmFor(callerRealm, realmRefName, probe);
+      String application = trimmed(applicationId);
+      if (application != null) {
+         application(application);
+      }
+      String tenant = trimmed(tenantId);
+      List<ApplicationInstall> all = system(() -> applicationInstallRepo.findInRealmWithIgnoreRules(realm, application, tenant));
+      if (probe == Authority.PLATFORM) {
+         return all;
+      }
+      java.util.Map<String, Boolean> administered = new java.util.HashMap<>();
       List<ApplicationInstall> visible = new ArrayList<>();
       for (ApplicationInstall install : all) {
-         if (authorityFor(callerRealm, List.of(install.getTenantId())) != Authority.NONE) {
+         if (administered.computeIfAbsent(install.getTenantId(),
+               key -> authorityFor(realm, List.of(key)) != Authority.NONE)) {
             visible.add(install);
          }
       }

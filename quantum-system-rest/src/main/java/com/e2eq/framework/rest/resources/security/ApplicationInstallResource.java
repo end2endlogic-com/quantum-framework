@@ -18,18 +18,20 @@ import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.openapi.annotations.Operation;
 import org.eclipse.microprofile.openapi.annotations.enums.SchemaType;
 import org.eclipse.microprofile.openapi.annotations.media.Content;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
+import org.eclipse.microprofile.openapi.annotations.parameters.Parameter;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
 import org.eclipse.microprofile.openapi.annotations.security.SecurityRequirement;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
-/** Installs of applications for tenants of the caller's realm ({@link ApplicationInstall}). */
+/** Installs of applications for tenants of a realm ({@link ApplicationInstall}): the caller's, or any for the platform. */
 @FunctionalMapping(area = "SECURITY", domain = "APPLICATION_INSTALL")
 @Path("/api/security/applicationInstall")
 @Produces(MediaType.APPLICATION_JSON)
@@ -48,11 +50,28 @@ public class ApplicationInstallResource {
     @GET
     @Path("list")
     @FunctionalAction("LIST")
-    @Operation(summary = "List installs", description = "Installs in the caller's realm for tenants the caller administers.")
-    @APIResponse(responseCode = "200", description = "Installs",
-        content = @Content(mediaType = "application/json", schema = @Schema(type = SchemaType.ARRAY, implementation = ApplicationInstall.class)))
-    public Response list() {
-        return Response.ok(accessService.listInstalls(realm())).build();
+    @Operation(summary = "List installs",
+        description = "Installs of one realm, whatever their status, in creation order, narrowed by the optional filters (a blank "
+            + "filter is absent). Without realmRefName the realm is the caller's. Only the platform may name another realm; "
+            + "anyone else naming one is refused REALM_MISMATCH. The platform sees every install of the realm; anyone else only "
+            + "those of tenants they administer. An applicationId that names no registered application is refused "
+            + "APPLICATION_UNKNOWN; no match is an empty list.")
+    @APIResponses({
+        @APIResponse(responseCode = "200", description = "Installs",
+            content = @Content(mediaType = "application/json", schema = @Schema(type = SchemaType.ARRAY, implementation = ApplicationInstall.class))),
+        @APIResponse(responseCode = "400", description = "APPLICATION_UNKNOWN",
+            content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class))),
+        @APIResponse(responseCode = "403", description = "REALM_MISMATCH",
+            content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
+    })
+    public Response list(
+        @Parameter(description = "The realm whose installs are listed; another than the caller's only for the platform")
+        @QueryParam("realmRefName") String realmRefName,
+        @Parameter(description = "Only installs of this application (an Application refName)")
+        @QueryParam("applicationId") String applicationId,
+        @Parameter(description = "Only installs for this tenant")
+        @QueryParam("tenantId") String tenantId) {
+        return Response.ok(accessService.listInstalls(realm(), realmRefName, applicationId, tenantId)).build();
     }
 
     @POST
