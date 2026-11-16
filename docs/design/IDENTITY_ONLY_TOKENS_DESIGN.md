@@ -335,7 +335,8 @@ Prerequisites: framework 1.4.3 with the service-tokens-v2 change and Auth contra
 4.10.0 are deployed to the environment. Do dev first, then prod.
 
 **What keeps working.** Tokens already issued keep working after the deploy: a
-role-bearing 4.x service token (no `jti`, or a random token id as `jti`) stays on the
+role-bearing 4.x service token (its `jti`, when the signer adds one, is a random token
+id, never its subject) stays on the
 service-claims path, and an identity-bound 4.x token is a user token, until step 4
 (`SecurityFilterServiceTokenV2Test`, quantum-enterprise `ServiceTokenV2ApiTest`).
 **What stops.** Every runtime role mint: 4.10.0 answers it 400
@@ -362,8 +363,9 @@ static token while 4.9.0 still mints:
 
 **Jobrunner** cannot bridge: its per-run mint is gone, and its v2 worker token is
 refused by a receiver that trusts token claims. `quantum-system-service`
-(`trust-token-claims=true` by default) must run the remote principal source (step 2)
-first. Then deploy Auth 4.10.0 and the jobrunner together, issue the delegating token
+(`trust-token-claims=true` by default) must run the remote principal source first, by
+the App flip checklist above (application id, no claims trust, proactive authentication
+rebuilt, identities granted, one resolve verified). Then deploy Auth 4.10.0 and the jobrunner together, issue the delegating token
 and grant it, and resume deployment runs; pause runs during that window.
 
 Order: **Solver big-box, decision-service, DI, Agent Framework.** For each service:
