@@ -619,9 +619,12 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
      * Admits an identity-only service token before resolution, fail closed: this application must
      * hold its credential (otherwise only Auth can resolve it: run the receiver in remote mode), the
      * credential must be the active service credential the token names and record a kind, and the
-     * request may not impersonate. Acting for an identity is delegation, which only a
-     * {@code DELEGATING} credential may request. Its roles come from the credential and its grants
-     * alone (see {@link #localCredentialRequest}).
+     * request may not impersonate or act on behalf of an identity. Delegation (a {@code DELEGATING}
+     * credential acting for an identity) is resolved only by Auth's identity-mode resolution
+     * ({@code POST /v1/auth/principal-context/resolve}, which remote receivers call): it checks the
+     * delegation scope and returns the acted-for identity. The local credential path cannot, so it
+     * refuses the headers rather than run as the service with an unchecked acted-for marker. Its
+     * roles come from the credential and its grants alone (see {@link #localCredentialRequest}).
      */
     void admitIdentityOnlyServiceToken(ContainerRequestContext requestContext) {
         String sub = claimString("sub");
@@ -655,6 +658,11 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         if (acting && credential.getServiceKind() != com.e2eq.framework.model.security.ServiceKind.DELEGATING) {
             throw new jakarta.ws.rs.ForbiddenException("DELEGATION_NOT_ALLOWED: an application service token never "
                     + "acts on behalf of another identity");
+        }
+        if (acting) {
+            throw new jakarta.ws.rs.ForbiddenException("DELEGATION_NOT_ALLOWED: a delegating service token acts on "
+                    + "behalf of an identity only at receivers that resolve through Auth (remote mode); the local "
+                    + "credential path does not resolve delegation");
         }
     }
 

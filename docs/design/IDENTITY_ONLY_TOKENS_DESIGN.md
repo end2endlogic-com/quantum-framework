@@ -228,8 +228,12 @@ Resolve request field: `actingOnBehalfOf { userId | subject }`. Response field:
   store (Auth) it resolves on the local credential path (home realm, tenant,
   grants), with no roles from the request identity. It is admitted only if its
   credential is present, active, records a `serviceKind` and matches `jti`;
-  otherwise 401. Impersonation headers are refused, and acting-on-behalf-of headers
-  are refused unless the kind is `DELEGATING`. A receiver without the credential, or
+  otherwise 401. Impersonation headers are refused. Acting-on-behalf-of headers are
+  refused on this path for both kinds (403 `DELEGATION_NOT_ALLOWED`): delegation is resolved
+  only by `POST /v1/auth/principal-context/resolve`, which checks the delegation scope and
+  returns the acted-for identity (remote receivers call it). The local path would only run as the
+  service with an unchecked acted-for marker. Auth itself configures no application id, so in
+  Auth a v2 token's roles are its realm grants across applications, as for a user's token there. A receiver without the credential, or
   one trusting token claims, refuses with 401 (it must run in remote mode).
   Role-bearing service tokens keep the old path until step 4.
 - **Issuer authority is re-resolved.** Issuance re-resolves the caller's roles in the
@@ -328,9 +332,39 @@ flipping.
 ### Step 3d: reissue runbook (owner runs the token calls)
 
 Prerequisites: framework 1.4.3 with the service-tokens-v2 change and Auth contract
-4.10.0 are deployed to the environment. Deploying Auth 4.10.0 refuses every 4.x
-role mint, so in dev the reasoning-backend API-key store (which mints at runtime)
-fails until its step below is done. Do dev first, then prod.
+4.10.0 are deployed to the environment. Do dev first, then prod.
+
+**What keeps working.** Tokens already issued keep working after the deploy: a
+role-bearing 4.x service token (no `jti`, or a random token id as `jti`) stays on the
+service-claims path, and an identity-bound 4.x token is a user token, until step 4
+(`SecurityFilterServiceTokenV2Test`, quantum-enterprise `ServiceTokenV2ApiTest`).
+**What stops.** Every runtime role mint: 4.10.0 answers it 400
+`SERVICE_TOKEN_FIELD_RETIRED`, and a v2 token can only be issued once 4.10.0 runs.
+
+**Before deploying Auth 4.10.0 (bridge, no downtime).** Move each runtime minter to a
+static token while 4.9.0 still mints:
+
+- `helixor-core` `ServiceTokenClient` users (login + mint with roles): Helixor Code API
+  and its state stores, employee-api, employee-workflow, influencer-api,
+  helixor-reasoning-backend's API-key store, the solver-server billing reporter in prod.
+  Each takes `HELIXOR_AUTH_SERVICE_TOKEN` from helixor-core 1.6.0 (callers on an older
+  helixor-core move to 1.6.0 first). Mint one role token per service under 4.9.0 with the
+  roles it mints today and an expiry that outlasts the reissue below (a static
+  token is never refreshed), set it as that secret, remove the login variables, roll the service.
+  The token stays valid after 4.10.0 and is replaced by a v2 token in the steps below.
+- The Reasoning UX "mint API key" proxy and the tenant-admin-ui issue dialog send
+  roles and an expiry: switch them to `{kind, description}` with 4.10.0.
+- Scripts that mint role tokens (`rotate-local-service-token.mjs`,
+  `mint-local-intake-token.mjs`, `prod-decision-identity.sh`,
+  `reconcile_digitalworker_development.py`, the live-billing stack, employee
+  `acceptance_scoped_auth.py`) and framework `ServiceTokenCLI` from before this change
+  fail on their next run; update them to `{kind}` before rotating.
+
+**Jobrunner** cannot bridge: its per-run mint is gone, and its v2 worker token is
+refused by a receiver that trusts token claims. `quantum-system-service`
+(`trust-token-claims=true` by default) must run the remote principal source (step 2)
+first. Then deploy Auth 4.10.0 and the jobrunner together, issue the delegating token
+and grant it, and resume deployment runs; pause runs during that window.
 
 Order: **Solver big-box, decision-service, DI, Agent Framework.** For each service:
 
@@ -369,7 +403,7 @@ one delegating token (`QUANTUM_DEPLOY_SERVICE_TOKEN`, issued with
 `X-Acting-On-Behalf-Of-UserId` (quantum-enterprise#237). Nothing is minted per run.
 The 4.8.0 SDK pin is gone.
 
-Rollback: redeploy Auth 4.8.0. Tokens issued under 4.10.0 remain valid
+Rollback: redeploy Auth 4.9.0. Tokens issued under 4.10.0 remain valid
 identities with no roles. They grant only what was granted to their `userId`.
 
 ### Guard: no new claim readers
