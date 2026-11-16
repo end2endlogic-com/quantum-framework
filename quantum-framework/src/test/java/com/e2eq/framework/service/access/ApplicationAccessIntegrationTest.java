@@ -345,16 +345,45 @@ class ApplicationAccessIntegrationTest extends BaseRepoTest {
     // --- install list over HTTP --------------------------------------------------------------
 
     @Test
-    @io.quarkus.test.security.TestSecurity(user = "system@system.com", roles = {"admin", "system"})
-    void thePlatformListsAnotherRealmsInstallsOverHttp() {
-        // The test identity is the framework's system user, so it resolves to the platform whatever roles it names;
-        // the non-platform refusal is covered at the service in ApplicationAccessAuthorityTest.
+    @io.quarkus.test.security.TestSecurity(user = "system@system.com", roles = {"system"})
+    void aPolicyGrantedCallerListsAnotherRealmsInstallsOverHttp() {
+        // Being the framework's system user does not let a caller name another realm: a policy does.
+        // Policy targeting and the identity shapes are covered at the service in ApplicationAccessAuthorityTest.
         ObjectId a = new ObjectId();
         ObjectId b = new ObjectId();
         try (SecuritySession ignored = asSystem()) {
             installRepo.upsertById(install(a, "tenant-a"));
             installRepo.upsertById(install(b, "tenant-b"));
         }
+        assertEquals("REALM_MISMATCH", given().queryParam("realmRefName", realm).queryParam("applicationId", app)
+            .when().get("/api/security/applicationInstall/list").then().statusCode(403).extract().jsonPath().getString("errorCode"));
+        com.e2eq.framework.model.security.Policy grant = ApplicationAccessAuthorityTest.installListPolicy(
+            envConfigUtils.getSystemUserId(), securityUtils.getSystemDataDomain());
+        try (com.e2eq.framework.model.securityrules.SecurityCallScope.Scope ignored =
+                 com.e2eq.framework.model.securityrules.SecurityCallScope.openIgnoringRules()) {
+            policyRepo.save(realm, grant);
+            ruleContext.reloadFromRepo(realm);
+        }
+        try {
+            listGranted();
+        } finally {
+            morphiaDataStoreWrapper.getDataStore(realm).find(com.e2eq.framework.model.security.Policy.class)
+                .filter(Filters.eq("refName", grant.getRefName())).delete(new DeleteOptions().multi(true));
+            ruleContext.reloadFromRepo(realm);
+        }
+    }
+
+    @Inject
+    com.e2eq.framework.model.persistent.morphia.PolicyRepo policyRepo;
+
+    @Inject
+    com.e2eq.framework.security.runtime.RuleContext ruleContext;
+
+    private void listGranted() {
+        ObjectId a = installRepo.findByRealmWithIgnoreRules(realm).stream()
+            .filter(install -> "tenant-a".equals(install.getTenantId())).findFirst().orElseThrow().getId();
+        ObjectId b = installRepo.findByRealmWithIgnoreRules(realm).stream()
+            .filter(install -> "tenant-b".equals(install.getTenantId())).findFirst().orElseThrow().getId();
         JsonPath all = given().queryParam("realmRefName", realm).queryParam("applicationId", app)
             .when().get("/api/security/applicationInstall/list").then().statusCode(200).extract().jsonPath();
         assertEquals(List.of(a.toString(), b.toString()), all.getList("id"));
