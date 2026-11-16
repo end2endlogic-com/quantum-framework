@@ -336,7 +336,10 @@ public class ApplicationAccessService {
     * Naming another realm without that allowance is refused {@code REALM_MISMATCH}, never answered
     * for the caller's own realm. In its own realm a caller without it sees only the installs of
     * tenants it administers, as before. An {@code applicationId} that names no registered
-    * application is refused {@code APPLICATION_UNKNOWN}.
+    * application is refused {@code APPLICATION_UNKNOWN}. Over HTTP the endpoint first admits
+    * {@code LIST} in the caller's own realm, as every endpoint does, so a grant meant for another realm
+    * must cover the caller's realm too: a policy for every realm ({@code *}) does, a grant for the
+    * named realm alone does not.
     */
    public List<ApplicationInstall> listInstalls(String callerRealm, String realmRefName, String applicationId,
                                                 String tenantId) {
