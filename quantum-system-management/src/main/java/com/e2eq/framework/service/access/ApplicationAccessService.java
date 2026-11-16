@@ -578,6 +578,15 @@ public class ApplicationAccessService {
          .withSubjectId(caller.getSubjectId())
          .withRoles(roles)
          .withScope(caller.getScope())
+         // Everything a rule may test about who is acting carries over unchanged.
+         .withImpersonatedBySubject(caller.getImpersonatedBySubject())
+         .withImpersonatedByUserId(caller.getImpersonatedByUserId())
+         .withActingOnBehalfOfSubject(caller.getActingOnBehalfOfSubject())
+         .withActingOnBehalfOfUserId(caller.getActingOnBehalfOfUserId())
+         .withArea2RealmOverrides(caller.getArea2RealmOverrides())
+         .withDataDomainPolicy(caller.getDataDomainPolicy())
+         .withRealmOverrideActive(caller.isRealmOverrideActive())
+         .withOriginalDataDomain(caller.getOriginalDataDomain())
          .withCustomProperties(caller.getCustomProperties())
          .build();
       ResourceContext list = new ResourceContext.Builder()
