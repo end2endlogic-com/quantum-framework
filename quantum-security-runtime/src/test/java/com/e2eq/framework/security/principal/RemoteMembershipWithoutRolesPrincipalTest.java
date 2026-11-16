@@ -1,8 +1,6 @@
 package com.e2eq.framework.security.principal;
 
 import com.e2eq.framework.controlplane.api.DefaultEndpoint;
-import com.e2eq.framework.controlplane.model.RealmCatalogEntry;
-import com.e2eq.framework.controlplane.model.RealmMembershipEntry;
 import com.e2eq.framework.controlplane.model.UserRealmRoleEntry;
 import com.e2eq.framework.model.security.UserRealmRole;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
@@ -66,15 +64,20 @@ class RemoteMembershipWithoutRolesPrincipalTest {
         assertTrue(List.of(finalized.getRoles()).contains("user"), "the token's roles are kept; the membership adds none");
     }
 
+    /**
+     * A dynamic proxy rather than an anonymous class: the endpoint interface's methods carry
+     * interceptor bindings, and Quarkus rejects an anonymous class in the test bean archive that
+     * declares them. Only {@code realmsForUser} is exercised.
+     */
     private static DefaultEndpoint endpoint(List<UserRealmRoleEntry> roles) {
-        return new DefaultEndpoint() {
-            @Override public RealmCatalogEntry findRealmByEmailDomain(String e) { return null; }
-            @Override public RealmCatalogEntry findRealmByRefName(String r) { return null; }
-            @Override public RealmCatalogEntry registerRealm(String refName, RealmCatalogEntry b) { return b; }
-            @Override public List<RealmMembershipEntry> membersOfRealm(String refName) { return List.of(); }
-            @Override public RealmMembershipEntry upsertRealmMembership(String r, String o, RealmMembershipEntry b) { return b; }
-            @Override public List<UserRealmRoleEntry> realmsForUser(String userId) { return roles; }
-            @Override public UserRealmRoleEntry upsertUserRealmRole(String u, String r, UserRealmRoleEntry b) { return b; }
-        };
+        return (DefaultEndpoint) java.lang.reflect.Proxy.newProxyInstance(
+            DefaultEndpoint.class.getClassLoader(), new Class<?>[]{DefaultEndpoint.class},
+            (proxy, method, args) -> switch (method.getName()) {
+                case "realmsForUser" -> roles;
+                case "toString" -> "RemoteMembershipWithoutRolesPrincipalTest.endpoint";
+                case "hashCode" -> System.identityHashCode(proxy);
+                case "equals" -> proxy == args[0];
+                default -> throw new UnsupportedOperationException(method.getName());
+            });
     }
 }
