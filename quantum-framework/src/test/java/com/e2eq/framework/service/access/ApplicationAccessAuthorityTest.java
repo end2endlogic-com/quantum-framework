@@ -560,6 +560,47 @@ class ApplicationAccessAuthorityTest extends BaseRepoTest {
     }
 
     @Test
+    void aUsersRolesDoNotCrossIntoTheNamedRealmAServicesSignedRolesDo() {
+        asSystem(() -> accessService.install(POOLED, install(null, POOLED, TENANT_A)));
+        String system = envConfigUtils.getSystemRealm();
+        String role = "install-reader-" + suffix;
+        grant(installListPolicy(role, Policy.PrincipalType.ROLE, securityUtils.getSystemDataDomain(), null), POOLED);
+        PrincipalContext user = new PrincipalContext.Builder()
+            .withDefaultRealm(system)
+            .withDataDomain(securityUtils.getSystemDataDomain())
+            .withUserId("install-reader-user-" + suffix)
+            .withApplicationId(app)
+            .withRoles(new String[]{role})
+            .withScope("AUTHENTICATED")
+            .build();
+        PrincipalContext service = new PrincipalContext.Builder()
+            .withDefaultRealm(system)
+            .withDataDomain(securityUtils.getSystemDataDomain())
+            .withUserId("install-reader-service-" + suffix)
+            .withApplicationId(app)
+            .withRoles(new String[]{role})
+            .withScope(PrincipalContext.SCOPE_SERVICE)
+            .build();
+
+        // A user's role may come from its assignment in the realm it is in; the named realm never gave it.
+        refused(Code.REALM_MISMATCH, () -> as(user, () -> accessService.listInstalls(system, POOLED, app, null)));
+        // A service identity's roles are signed into its token and hold in every realm.
+        assertEquals(1, as(service, () -> accessService.listInstalls(system, POOLED, app, null)).size());
+    }
+
+    @Test
+    void aGrantThatExcludesFieldsDoesNotReadTheRealmWhole() {
+        asSystem(() -> accessService.install(POOLED, install(null, POOLED, TENANT_A)));
+        String system = envConfigUtils.getSystemRealm();
+        PrincipalContext reader = service("install-reader-excluded");
+        grant(installListPolicy(reader.getUserId(), Policy.PrincipalType.USER, securityUtils.getSystemDataDomain(),
+            List.of("installedBy")), POOLED);
+
+        // The read returns whole rows, so a grant narrowed by field is not realm-wide: refused, never trimmed silently.
+        refused(Code.REALM_MISMATCH, () -> as(reader, () -> accessService.listInstalls(system, POOLED, app, null)));
+    }
+
+    @Test
     void aNonPlatformCallerNamingAnotherRealmIsRefusedNeverAnsweredForItsOwn() {
         String realmAdminA = member("list-cross-admin", List.of(TENANT_A), List.of("admin"));
         asSystem(() -> accessService.install(POOLED, install(null, POOLED, TENANT_A)));
@@ -834,7 +875,12 @@ class ApplicationAccessAuthorityTest extends BaseRepoTest {
      */
     void grantInstallList(String userId, String... realms) {
         for (String realm : realms) {
-            Policy policy = installListPolicy(userId, securityUtils.getSystemDataDomain());
+            grant(installListPolicy(userId, securityUtils.getSystemDataDomain()), realm);
+        }
+    }
+
+    void grant(Policy policy, String... realms) {
+        for (String realm : realms) {
             try (SecurityCallScope.Scope ignored = SecurityCallScope.openIgnoringRules()) {
                 policyRepo.save(realm, policy);
                 ruleContext.reloadFromRepo(realm);
@@ -849,11 +895,17 @@ class ApplicationAccessAuthorityTest extends BaseRepoTest {
      * too does not narrow it to a tenant.
      */
     static Policy installListPolicy(String userId, DataDomain dataDomain) {
+        return installListPolicy(userId, Policy.PrincipalType.USER, dataDomain, null);
+    }
+
+    static Policy installListPolicy(String principal, Policy.PrincipalType type, DataDomain dataDomain,
+                                    List<String> excludedFields) {
+        String userId = principal;
         Policy policy = new Policy();
         policy.setRefName(("INSTALL_LIST_GRANT_" + userId).toUpperCase(java.util.Locale.ROOT).replaceAll("[^A-Z0-9]", "_"));
         policy.setDisplayName("install list grant for " + userId);
         policy.setPrincipalId(userId);
-        policy.setPrincipalType(Policy.PrincipalType.USER);
+        policy.setPrincipalType(type);
         policy.setApplicationId("*");
         policy.setRealmRefName("*");
         policy.setDataDomain(dataDomain);
@@ -867,6 +919,7 @@ class ApplicationAccessAuthorityTest extends BaseRepoTest {
             .withEffect(RuleEffect.ALLOW)
             .withPriority(-10)
             .withFinalRule(true)
+            .withExcludedFields(excludedFields)
             .build());
         return policy;
     }

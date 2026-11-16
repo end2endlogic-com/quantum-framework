@@ -554,20 +554,29 @@ public class ApplicationAccessService {
     * {@code realmRefName} and rule body realm ({@code *} for every realm), so an identity pack grants
     * this to one identity for one realm or for all. A tenant administrator's rule carries a tenant
     * filter, so it is not realm-wide; a grant meant to win over it for a caller that also holds
-    * {@code admin} must rank before it (a priority below 0). Anything else, or no caller, is not.
+    * {@code admin} must rank before it (a priority below 0). A decision that excludes fields is not
+    * realm-wide either: this read returns whole rows. Anything else, or no caller, is not.
+    *
+    * <p>Roles cross into the named realm as they do on a realm switch: a service identity's roles are
+    * signed into its token and hold in every realm, so they are kept; a user's roles may come from its
+    * assignment in the realm it is in, so naming another realm evaluates the user's own identity only
+    * (a USER policy), never roles the named realm did not give it.
     */
    private boolean policyAllowsRealmWideList(String realm) {
       PrincipalContext caller = SecurityContext.getPrincipalContext().orElse(null);
       if (caller == null || caller.getUserId() == null || caller.getDataDomain() == null) {
          return false;
       }
+      boolean sameRealm = realm.equals(caller.getDefaultRealm());
+      boolean service = PrincipalContext.SCOPE_SERVICE.equals(caller.getScope());
+      String[] roles = caller.getRoles() == null || (!sameRealm && !service) ? new String[0] : caller.getRoles();
       PrincipalContext inRealm = new PrincipalContext.Builder()
          .withDefaultRealm(realm)
          .withApplicationId(caller.getApplicationId())
          .withDataDomain(caller.getDataDomain())
          .withUserId(caller.getUserId())
          .withSubjectId(caller.getSubjectId())
-         .withRoles(caller.getRoles() == null ? new String[0] : caller.getRoles())
+         .withRoles(roles)
          .withScope(caller.getScope())
          .withCustomProperties(caller.getCustomProperties())
          .build();
@@ -580,7 +589,8 @@ public class ApplicationAccessService {
          .build();
       var decision = ruleContext.checkRules(inRealm, list);
       return decision != null && decision.getFinalEffect() == com.e2eq.framework.model.securityrules.RuleEffect.ALLOW
-         && !decision.isFilterConstraintsPresent() && !decision.isScopedConstraintsPresent();
+         && !decision.isFilterConstraintsPresent() && !decision.isScopedConstraintsPresent()
+         && (decision.getExcludedFields() == null || decision.getExcludedFields().isEmpty());
    }
 
    /** The caller's realm; a different one only for the platform. */
