@@ -612,14 +612,17 @@ public class ApplicationAccessService {
 
    /**
     * The caller's roles that hold in any realm: those its credential carries itself, or, with no
-    * credential (a signed service token), the roles signed into the token.
+    * credential, the roles signed into a service token (service scope); none otherwise.
     */
    private String[] rolesThatHoldIn(PrincipalContext caller) {
       String[] held = caller.getRoles() == null ? new String[0] : caller.getRoles();
       var credential = system(() -> credentialRepo.findByUserIdIgnoreCaseIgnoreRules(caller.getUserId(),
          envConfigUtils.getSystemRealm()));
       if (credential.isEmpty()) {
-         return held;
+         // Only a signed service token has no credential and the service scope (SecurityFilter's
+         // service-claims context); any other caller without one, a delegated user token say, carries
+         // no role across.
+         return PrincipalContext.SCOPE_SERVICE.equals(caller.getScope()) ? held : new String[0];
       }
       java.util.Set<String> global = new java.util.HashSet<>();
       if (credential.get().getRoles() != null) {

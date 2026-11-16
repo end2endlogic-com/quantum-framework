@@ -586,6 +586,16 @@ class ApplicationAccessAuthorityTest extends BaseRepoTest {
 
         // A role from a realm assignment is not the credential's own: it does not cross into the named realm.
         refused(Code.REALM_MISMATCH, () -> as(user, () -> accessService.listInstalls(system, POOLED, app, null)));
+        // A delegated user token without a local credential: its roles are not known to hold elsewhere.
+        PrincipalContext delegated = new PrincipalContext.Builder()
+            .withDefaultRealm(system)
+            .withDataDomain(securityUtils.getSystemDataDomain())
+            .withUserId("install-reader-delegated-" + suffix)
+            .withApplicationId(app)
+            .withRoles(new String[]{role})
+            .withScope("AUTHENTICATED")
+            .build();
+        refused(Code.REALM_MISMATCH, () -> as(delegated, () -> accessService.listInstalls(system, POOLED, app, null)));
         // A signed service token (no credential): its roles hold in every realm.
         assertEquals(1, as(service, () -> accessService.listInstalls(system, POOLED, app, null)).size());
         // A credential's own flat roles hold in every realm too.
