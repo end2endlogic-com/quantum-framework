@@ -3,6 +3,7 @@ package com.e2eq.framework.rest.filters;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders;
+import com.e2eq.framework.model.securityrules.PrincipalIdentityAttributes;
 import com.e2eq.framework.util.EnvConfigUtils;
 import io.quarkus.security.identity.SecurityIdentity;
 import io.quarkus.security.runtime.QuarkusSecurityIdentity;
@@ -32,6 +33,14 @@ class RolesAugmentorAppSessionTest {
         RolesAugmentor augmentor = augmentor(null);
         SecurityIdentity augmented = augment(augmentor, Map.of("sub", "s1", "azp", "helixor-launchpad"));
         assertEquals(Set.of("system", "editor", "user"), augmented.getRoles());
+        assertNull(PrincipalIdentityAttributes.rolesRealm(augmented), "no signed realm, no roles realm");
+    }
+
+    @Test
+    void tokenRolesRecordTheSignedRealmTheyWereIssuedFor() {
+        RolesAugmentor augmentor = augmentor(null);
+        SecurityIdentity augmented = augment(augmentor, Map.of("sub", "s1", "realm", "helixor-code-D1"));
+        assertEquals("helixor-code-D1", PrincipalIdentityAttributes.rolesRealm(augmented));
     }
 
     @Test
@@ -45,6 +54,8 @@ class RolesAugmentorAppSessionTest {
         assertNull(resolverIdentity[0], "a foreign token's roles must not reach role resolution");
         assertEquals("decision-intelligence", resolverApplication[0]);
         assertEquals("di-session-realm", resolverRealm[0]);
+        assertEquals("di-session-realm", PrincipalIdentityAttributes.rolesRealm(augmented),
+                "session roles record the session realm they were resolved for");
     }
 
     @Test

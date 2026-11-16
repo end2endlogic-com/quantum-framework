@@ -92,12 +92,13 @@ class MigrationCheckRequestFilterTest {
     @Test
     void delegatedMigrationSelectionUsesVerifiedTokenWithoutLocalCredentials() throws Exception {
         var token = org.mockito.Mockito.mock(JsonWebToken.class);
-        var identity = io.quarkus.security.runtime.QuarkusSecurityIdentity.builder().setPrincipal(token).build();
+        var identity = io.quarkus.security.runtime.QuarkusSecurityIdentity.builder().setPrincipal(token)
+                .addAttribute(com.e2eq.framework.model.securityrules.PrincipalIdentityAttributes.ROLES_REALM, "signed-realm")
+                .build();
         var credentials = org.mockito.Mockito.mock(CredentialRepo.class);
         var migrations = new TestMigrationService();
         var filter = buildFilter(identity, testEnvConfig(), credentials, migrations, token);
         filter.trustTokenClaims = true;
-        org.mockito.Mockito.when(token.getClaim("realm")).thenReturn("signed-realm");
         var request = new StubRequestContext("/api/orders", "GET");
         assertEquals("signed-realm", filter.resolveMigrationRealm(request));
         filter.sessionRealm = Optional.of("session-realm");

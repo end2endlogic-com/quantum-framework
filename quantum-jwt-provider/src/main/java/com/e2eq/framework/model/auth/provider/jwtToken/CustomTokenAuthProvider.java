@@ -49,6 +49,25 @@ import java.util.Arrays;
 @ApplicationScoped
 public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthProvider, ClaimsAuthProvider, UserManagement{
 
+   /**
+    * Claims passed through as identity attributes (each under its own name), with the further
+    * attribute names each is also published under. The signed realm is also the realm the token's
+    * roles were issued for ({@link com.e2eq.framework.model.securityrules.PrincipalIdentityAttributes#ROLES_REALM}),
+    * which consumers read instead of the claim.
+    */
+   private static final Map<String, List<String>> PASS_THROUGH_CLAIMS = passThroughClaims();
+
+   private static Map<String, List<String>> passThroughClaims() {
+      Map<String, List<String>> claims = new LinkedHashMap<>();
+      claims.put("userId", List.of());
+      claims.put("realm", List.of(com.e2eq.framework.model.securityrules.PrincipalIdentityAttributes.ROLES_REALM));
+      claims.put("tenantId", List.of());
+      claims.put("orgRefName", List.of());
+      claims.put("accountNum", List.of());
+      claims.put("azp", List.of());
+      return Collections.unmodifiableMap(claims);
+   }
+
    @ConfigProperty(name = "mp.jwt.verify.issuer")
    String issuer;
 
@@ -1276,9 +1295,11 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
          if (email != null) b.putAttribute("email", email);
          String iss = jwt.getIssuer();
          if (iss != null) b.putAttribute("iss", iss);
-         for (String claim : List.of("userId", "realm", "tenantId", "orgRefName", "accountNum", "azp")) {
-            String value = claimString(jwt, claim);
-            if (value != null) b.putAttribute(claim, value);
+         for (Map.Entry<String, List<String>> claim : PASS_THROUGH_CLAIMS.entrySet()) {
+            String value = claimString(jwt, claim.getKey());
+            if (value == null) continue;
+            b.putAttribute(claim.getKey(), value);
+            for (String alias : claim.getValue()) b.putAttribute(alias, value);
          }
          return b.build();
       } catch (ParseException e) {

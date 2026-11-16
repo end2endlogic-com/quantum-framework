@@ -189,10 +189,11 @@ public class IdentityRoleResolver {
         String targetRealm = requireRealm(realm);
         String systemRealm = envConfigUtils.getSystemRealm();
         Optional<CredentialUserIdPassword> credential = credentialRepo.findByUserId(identity, systemRealm, true);
+        // The realm the identity's roles were resolved for, as its principal source recorded it.
+        // Unknown provenance is never guessed (e.g. from the credential's home realm): the
+        // identity's roles then do not count where a credential exists, which still contributes
+        // its own, realm-assignment and group roles below.
         String authorityRealm = identityRealm(securityIdentity);
-        if (authorityRealm == null && credential.isPresent()) {
-            authorityRealm = credentialHomeRealm(credential.get());
-        }
 
         // Token roles are honored only in the realm the token was issued for (see resolveEffectiveRoles).
         if (currentIdentityMatches(identity, securityIdentity)
@@ -255,10 +256,9 @@ public class IdentityRoleResolver {
         return credential.getDomainContext().getDefaultRealm();
     }
 
+    /** The realm the identity's roles were resolved for, as its principal source recorded it. */
     private String identityRealm(SecurityIdentity identity) {
-        if (identity == null) return null;
-        Object value = identity.getAttribute("realm");
-        return value instanceof String s && !s.isBlank() ? s : null;
+        return com.e2eq.framework.model.securityrules.PrincipalIdentityAttributes.rolesRealm(identity);
     }
 
     private boolean currentIdentityMatches(String identity, SecurityIdentity securityIdentity) {

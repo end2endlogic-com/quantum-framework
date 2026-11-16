@@ -56,7 +56,9 @@ class RemotePrincipalSourceHttpTest {
             return Map.of(
                     "quantum.auth.principal-source", "remote",
                     "quantum.security.session.application-id", "helixor-di",
-                    "quantum.security.session.realm", "");
+                    "quantum.security.session.realm", "",
+                    // Remote mode refuses to start while trusting token claims.
+                    "quantum.auth.trust-token-claims", "false");
         }
     }
 
@@ -92,6 +94,15 @@ class RemotePrincipalSourceHttpTest {
         // The migration check uses the realm Auth resolved, not the token's helixor-di-D1.
         verify(migrations, atLeastOnce()).checkInitialized("airfreight-demo");
         verify(migrations, never()).checkInitialized("helixor-di-D1");
+    }
+
+    @Test
+    void theRolesRealmIsTheRealmAuthResolvedNotTheTokens() throws Exception {
+        HttpResponse<String> response = call("remote-principal/roles-realm", Map.of());
+
+        assertEquals(200, response.statusCode(), response.body());
+        // The token says helixor-di-D1; the identity's roles are Auth's, for airfreight-demo.
+        assertEquals("airfreight-demo", response.body());
     }
 
     @Test
@@ -222,6 +233,17 @@ class RemotePrincipalSourceHttpTest {
         @io.quarkus.security.Authenticated
         public String open() {
             return describe();
+        }
+
+        @jakarta.inject.Inject
+        io.quarkus.security.identity.SecurityIdentity identity;
+
+        @GET
+        @Path("/roles-realm")
+        @Produces("text/plain")
+        @io.quarkus.security.Authenticated
+        public String rolesRealm() {
+            return String.valueOf(com.e2eq.framework.model.securityrules.PrincipalIdentityAttributes.rolesRealm(identity));
         }
 
         private static String describe() {
