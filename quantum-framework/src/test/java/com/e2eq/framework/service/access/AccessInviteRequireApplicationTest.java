@@ -11,6 +11,7 @@ import com.e2eq.framework.model.security.UserRealmRole;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.model.securityrules.SecurityCallScope;
+import com.e2eq.framework.model.securityrules.SecurityContext;
 import com.e2eq.framework.persistent.BaseRepoTest;
 import com.e2eq.framework.rest.requests.AccessInviteAcceptRequest;
 import com.e2eq.framework.rest.requests.AccessInviteRequest;
@@ -37,6 +38,7 @@ import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -44,13 +46,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * ({@code quantum.security.policy-scope.require-application=true}, as Quantum Auth runs). The
  * acceptance's own work on the issuer's records (credential, realm assignment, profile) runs as the
  * system principal in the issuer's application, so an anonymous new-account acceptance, which names
- * no application, is not refused with {@code APPLICATION_SCOPE_REQUIRED}.
+ * no application, is not refused with {@code APPLICATION_SCOPE_REQUIRED}. A non-default
+ * {@code quantum.access-invites.issuer-application-id} proves the configured issuer application,
+ * not the caller's, scopes that work.
  */
 @QuarkusTest
 @TestProfile(AccessInviteRequireApplicationTest.RequireApplicationProfile.class)
 class AccessInviteRequireApplicationTest extends BaseRepoTest {
 
     static final String CALLING_APPLICATION = "invite-console";
+    /** A non-default issuer application, so the test proves the configured value is the one used. */
+    static final String ISSUER_APPLICATION = "invite-issuer-test";
     private static final String PASSWORD = "Inv1te-Test-P@ssw0rd!";
 
     public static class RequireApplicationProfile implements QuarkusTestProfile {
@@ -58,7 +64,8 @@ class AccessInviteRequireApplicationTest extends BaseRepoTest {
         public Map<String, String> getConfigOverrides() {
             return Map.of(
                 "quantum.security.policy-scope.require-application", "true",
-                "quantum.migration.application-id", CALLING_APPLICATION);
+                "quantum.migration.application-id", CALLING_APPLICATION,
+                "quantum.access-invites.issuer-application-id", ISSUER_APPLICATION);
         }
     }
 
@@ -69,6 +76,7 @@ class AccessInviteRequireApplicationTest extends BaseRepoTest {
     @Inject EnvConfigUtils envConfigUtils;
     @Inject MorphiaDataStoreWrapper morphiaDataStoreWrapper;
     @Inject SecurityUtils securityUtils;
+    @Inject RecordingTestInviteProvisioner recorder;
 
     private String realm;
     private String suffix;
@@ -111,9 +119,17 @@ class AccessInviteRequireApplicationTest extends BaseRepoTest {
         request.setPassword(PASSWORD);
         request.setFirstName("Ada");
         // A public (@PermitAll) acceptance: the anonymous caller names no application.
-        AccessInviteAcceptResponse response = anonymous(() -> inviteService.acceptInvite(request));
+        PrincipalContext anonymous = SecurityCallScope.anonymous(realm, testUtils.getTestDataDomain(), envConfigUtils.getAnonymousUserId());
+        AccessInviteAcceptResponse response = SecurityCallScope.runWithContexts(anonymous, rContext, () -> {
+            AccessInviteAcceptResponse accepted = inviteService.acceptInvite(request);
+            // The caller's own context is restored once the system-scope work is done.
+            assertEquals(anonymous.getUserId(), SecurityContext.getPrincipalContext().orElseThrow().getUserId());
+            assertNull(SecurityContext.getPrincipalContext().orElseThrow().getApplicationId());
+            return accepted;
+        });
 
         assertEquals(invitee, response.getUserId());
+        assertIssuerScoped(invite);
         CredentialUserIdPassword credential = findCredential(invitee).orElseThrow();
         assertTrue(hasRealm(credential), "the new account must be granted the invite's realm");
         assertEquals(AccessInvite.Status.ACCEPTED, reload(invite).getStatus());
@@ -129,11 +145,22 @@ class AccessInviteRequireApplicationTest extends BaseRepoTest {
             () -> inviteService.acceptInvite(accept(invite.getInviteToken())));
 
         assertEquals(existing, response.getUserId());
+        // The signed-in caller's application does not carry into the issuer's own work.
+        assertIssuerScoped(invite);
         assertTrue(hasRealm(findCredential(existing).orElseThrow()));
         assertEquals(AccessInvite.Status.ACCEPTED, reload(invite).getStatus());
     }
 
     // ---- helpers ------------------------------------------------------------------------------
+
+    /** The acceptance ran as the system principal in the configured issuer application. */
+    private void assertIssuerScoped(AccessInviteResponse invite) {
+        RecordingTestInviteProvisioner.Seen seen = recorder.seenFor(invite.getRefName());
+        assertNotNull(seen, "the acceptance must reach the provisioners");
+        assertEquals(securityUtils.getSystemPrincipalContext().getUserId(), seen.userId());
+        assertEquals(ISSUER_APPLICATION, seen.principalApplicationId());
+        assertEquals(ISSUER_APPLICATION, seen.resourceApplicationId());
+    }
 
     private String user(String label) {
         String userId = label + "-" + suffix + "@invite-app-scope.example";
