@@ -36,7 +36,9 @@ import java.util.function.Supplier;
 /**
  * Writes and reads of application bindings ({@link UserAppRole}) and installs
  * ({@link ApplicationInstall}) for a caller. The realm is the caller's resolved realm; only the
- * platform (the system principal) may name another. Who may write is decided by the existing
+ * platform (the system principal) may name another for a write, and the install list names another
+ * only where policy allows the caller to list that realm ({@link #listInstalls(String, String, String, String)}).
+ * Who may write is decided by the existing
  * administrator definitions ({@link AccessInviteService#administrativeAuthority}) and each role's
  * {@code grantableBy}; the records' own rules are applied by their repositories on every save.
  * Installs and uninstalls need the platform or a realm administrator of the tenant, with one
@@ -74,6 +76,12 @@ public class ApplicationAccessService {
 
    @Inject
    EnvConfigUtils envConfigUtils;
+
+   @Inject
+   com.e2eq.framework.security.runtime.RuleContext ruleContext;
+
+   @Inject
+   com.e2eq.framework.model.persistent.morphia.CredentialRepo credentialRepo;
 
    // ------------------------------------------------------------------ bindings
 
@@ -325,24 +333,34 @@ public class ApplicationAccessService {
    /**
     * The installs of one realm, whatever their status, in creation order, narrowed by the optional
     * filters (a blank filter is absent). The realm is the caller's unless {@code realmRefName} names
-    * another, which only the platform may do, by the rule writes use ({@link #realmFor}); anyone else
-    * naming another realm is refused {@code REALM_MISMATCH}, never answered for their own realm. An
-    * {@code applicationId} that names no registered application is refused
-    * {@code APPLICATION_UNKNOWN}. The platform sees every install of the realm; anyone else only
-    * those of tenants they administer, as before.
+    * another. Whether the caller reads a realm whole is an ordinary policy decision
+    * ({@link #policyAllowsRealmWideList}): a policy (its {@code realmRefName} and rule body realm)
+    * that allows the caller {@code SECURITY/APPLICATION_INSTALL/LIST} in that realm with no filter.
+    * Naming another realm without that allowance is refused {@code REALM_MISMATCH}, never answered
+    * for the caller's own realm. In its own realm a caller without it sees only the installs of
+    * tenants it administers, as before. An {@code applicationId} that names no registered
+    * application is refused {@code APPLICATION_UNKNOWN}. Over HTTP the endpoint first admits
+    * {@code LIST} in the caller's own realm, as every endpoint does, so a grant meant for another realm
+    * must cover the caller's realm too: a policy for every realm ({@code *}) does, a grant for the
+    * named realm alone does not.
     */
    public List<ApplicationInstall> listInstalls(String callerRealm, String realmRefName, String applicationId,
                                                 String tenantId) {
       accessDirectory.requireLocalDirectory();
-      Authority probe = authorityFor(callerRealm, List.of());
-      String realm = realmFor(callerRealm, realmRefName, probe);
+      String realm = listRealm(callerRealm, realmRefName);
+      boolean realmWide = policyAllowsRealmWideList(realm);
+      if (!realm.equals(callerRealm) && !realmWide) {
+         throw new ApplicationAccessException(Code.REALM_MISMATCH,
+            "realm '" + realm + "' is not the caller's realm '" + callerRealm
+               + "' and no policy allows the caller to list its installs");
+      }
       String application = trimmed(applicationId);
       if (application != null) {
          application(application);
       }
       String tenant = trimmed(tenantId);
       List<ApplicationInstall> all = system(() -> applicationInstallRepo.findInRealmWithIgnoreRules(realm, application, tenant));
-      if (probe == Authority.PLATFORM) {
+      if (realmWide) {
          return all;
       }
       java.util.Map<String, Boolean> administered = new java.util.HashMap<>();
@@ -521,6 +539,100 @@ public class ApplicationAccessService {
    /** The platform is the framework's system principal, by the one definition invites use. */
    private boolean isPlatform() {
       return accessInviteService.callerIsSystemPrincipal();
+   }
+
+   /** The realm the read names, else the caller's; a request without either is refused. */
+   private static String listRealm(String callerRealm, String requested) {
+      String named = trimmed(requested);
+      if (named != null) {
+         return named;
+      }
+      if (callerRealm == null || callerRealm.isBlank()) {
+         throw new ApplicationAccessException(Code.REALM_MISMATCH, "the request has no resolved realm");
+      }
+      return callerRealm;
+   }
+
+   /**
+    * Whether policy allows the caller to list every install of {@code realm}: the rule engine,
+    * asked for {@code SECURITY/APPLICATION_INSTALL/LIST} with the caller operating in that realm,
+    * answers ALLOW with no filter or scoped constraint. Policies target an operating realm by their
+    * {@code realmRefName} and rule body realm ({@code *} for every realm), so an identity pack grants
+    * this to one identity for one realm or for all. A tenant administrator's rule carries a tenant
+    * filter, so it is not realm-wide; a grant meant to win over it for a caller that also holds
+    * {@code admin} must rank before it (a priority below 0). A decision that excludes fields is not
+    * realm-wide either: this read returns whole rows. Anything else, or no caller, is not.
+    *
+    * <p>Only roles that hold in every realm cross into the named realm. A caller with a credential
+    * keeps the credential's own (flat) roles, which are global by design; roles from its assignment in
+    * the realm it is in, or from an application binding there, do not cross. A caller without a
+    * credential is a signed service token, whose roles are signed into it and hold in every realm, as a
+    * realm switch keeps them. A USER policy for the caller's own identity always applies.
+    */
+   private boolean policyAllowsRealmWideList(String realm) {
+      PrincipalContext caller = SecurityContext.getPrincipalContext().orElse(null);
+      if (caller == null || caller.getUserId() == null || caller.getDataDomain() == null) {
+         return false;
+      }
+      String[] roles = realm.equals(caller.getDefaultRealm()) ? caller.getRoles() : rolesThatHoldIn(caller);
+      if (roles == null) {
+         roles = new String[0];
+      }
+      PrincipalContext inRealm = new PrincipalContext.Builder()
+         .withDefaultRealm(realm)
+         .withApplicationId(caller.getApplicationId())
+         .withDataDomain(caller.getDataDomain())
+         .withUserId(caller.getUserId())
+         .withSubjectId(caller.getSubjectId())
+         .withRoles(roles)
+         .withScope(caller.getScope())
+         // Everything a rule may test about who is acting carries over unchanged.
+         .withImpersonatedBySubject(caller.getImpersonatedBySubject())
+         .withImpersonatedByUserId(caller.getImpersonatedByUserId())
+         .withActingOnBehalfOfSubject(caller.getActingOnBehalfOfSubject())
+         .withActingOnBehalfOfUserId(caller.getActingOnBehalfOfUserId())
+         .withArea2RealmOverrides(caller.getArea2RealmOverrides())
+         .withDataDomainPolicy(caller.getDataDomainPolicy())
+         .withRealmOverrideActive(caller.isRealmOverrideActive())
+         .withOriginalDataDomain(caller.getOriginalDataDomain())
+         .withCustomProperties(caller.getCustomProperties())
+         .build();
+      ResourceContext list = new ResourceContext.Builder()
+         .withRealm(realm)
+         .withApplicationId(caller.getApplicationId())
+         .withArea("SECURITY")
+         .withFunctionalDomain("APPLICATION_INSTALL")
+         .withAction("LIST")
+         .build();
+      var decision = ruleContext.checkRules(inRealm, list);
+      return decision != null && decision.getFinalEffect() == com.e2eq.framework.model.securityrules.RuleEffect.ALLOW
+         && !decision.isFilterConstraintsPresent() && !decision.isScopedConstraintsPresent()
+         && (decision.getExcludedFields() == null || decision.getExcludedFields().isEmpty());
+   }
+
+   /**
+    * The caller's roles that hold in any realm: those its credential carries itself, or, with no
+    * credential, the roles signed into a service token (service scope); none otherwise.
+    */
+   private String[] rolesThatHoldIn(PrincipalContext caller) {
+      String[] held = caller.getRoles() == null ? new String[0] : caller.getRoles();
+      var credential = system(() -> credentialRepo.findByUserIdIgnoreCaseIgnoreRules(caller.getUserId(),
+         envConfigUtils.getSystemRealm()));
+      if (credential.isEmpty()) {
+         // Only a signed service token has no credential and the service scope (SecurityFilter's
+         // service-claims context); any other caller without one, a delegated user token say, carries
+         // no role across.
+         return PrincipalContext.SCOPE_SERVICE.equals(caller.getScope()) ? held : new String[0];
+      }
+      java.util.Set<String> global = new java.util.HashSet<>();
+      if (credential.get().getRoles() != null) {
+         for (String role : credential.get().getRoles()) {
+            if (role != null) global.add(role.trim().toLowerCase(java.util.Locale.ROOT));
+         }
+      }
+      return java.util.Arrays.stream(held)
+         .filter(role -> role != null && global.contains(role.trim().toLowerCase(java.util.Locale.ROOT)))
+         .toArray(String[]::new);
    }
 
    /** The caller's realm; a different one only for the platform. */

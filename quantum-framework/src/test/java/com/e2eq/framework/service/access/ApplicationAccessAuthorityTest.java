@@ -23,6 +23,12 @@ import com.e2eq.framework.model.security.UserGroup;
 import com.e2eq.framework.model.security.UserProfile;
 import com.e2eq.framework.model.security.UserRealmRole;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
+import com.e2eq.framework.model.securityrules.SecurityURIHeader;
+import com.e2eq.framework.model.securityrules.SecurityURIBody;
+import com.e2eq.framework.model.securityrules.SecurityURI;
+import com.e2eq.framework.model.securityrules.RuleEffect;
+import com.e2eq.framework.model.security.Rule;
+import com.e2eq.framework.model.security.Policy;
 import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import com.e2eq.framework.persistent.BaseRepoTest;
 import com.e2eq.framework.system.membership.RealmMembershipService;
@@ -111,6 +117,13 @@ class ApplicationAccessAuthorityTest extends BaseRepoTest {
     private String app;
     private final List<String> userIds = new ArrayList<>();
     private final List<String> groupRefNames = new ArrayList<>();
+    private final List<String[]> grantedPolicies = new ArrayList<>();
+
+    @Inject
+    com.e2eq.framework.model.persistent.morphia.PolicyRepo policyRepo;
+
+    @Inject
+    com.e2eq.framework.security.runtime.RuleContext ruleContext;
 
     @BeforeEach
     void setUp() {
@@ -143,6 +156,12 @@ class ApplicationAccessAuthorityTest extends BaseRepoTest {
         system.find(UserGroup.class).filter(Filters.in("refName", groupRefNames)).delete(new DeleteOptions().multi(true));
         groupRefNames.clear();
         userIds.clear();
+        for (String[] granted : grantedPolicies) {
+            morphiaDataStoreWrapper.getDataStore(granted[0]).find(Policy.class)
+                .filter(Filters.eq("refName", granted[1])).delete(new DeleteOptions().multi(true));
+            ruleContext.reloadFromRepo(granted[0]);
+        }
+        grantedPolicies.clear();
     }
 
     @Inject
@@ -490,22 +509,122 @@ class ApplicationAccessAuthorityTest extends BaseRepoTest {
     }
 
     @Test
-    void thePlatformListsAnotherRealmsInstallsWithFilters() {
+    void aPolicyGrantedServiceIdentityListsAnotherRealmsInstallsWithFilters() {
         ApplicationInstall pooledA = asSystem(() -> accessService.install(POOLED, install(null, POOLED, TENANT_A)));
         ApplicationInstall pooledB = asSystem(() -> accessService.install(POOLED, install(null, POOLED, TENANT_B)));
         ApplicationInstall other = asSystem(() -> accessService.install(OTHER_REALM, install(null, OTHER_REALM, TENANT_A)));
         asSystem(() -> accessService.uninstall(POOLED, pooledB.getId()));
         String system = envConfigUtils.getSystemRealm();
+        PrincipalContext reader = service("install-reader");
+        grantInstallList(reader.getUserId(), POOLED, OTHER_REALM);
 
-        // The platform, resolved in the system realm, names the pooled realm: every install there, any status, in creation order.
-        assertEquals(List.of(pooledA.getId(), pooledB.getId()), ids(asSystem(() -> accessService.listInstalls(system, POOLED, app, null))));
+        // Homed in the system realm and not the system user: the policy alone lets it name the pooled realm,
+        // and it sees every install there, any status, in creation order.
+        assertEquals(List.of(pooledA.getId(), pooledB.getId()), ids(as(reader, () -> accessService.listInstalls(system, POOLED, app, null))));
         assertEquals(List.of(ApplicationInstall.STATUS_ACTIVE, ApplicationInstall.STATUS_UNINSTALLED),
-            asSystem(() -> accessService.listInstalls(system, POOLED, app, null)).stream().map(ApplicationInstall::getStatus).toList());
-        assertEquals(List.of(pooledB.getId()), ids(asSystem(() -> accessService.listInstalls(system, POOLED, " " + app + " ", TENANT_B))));
-        assertEquals(List.of(other.getId()), ids(asSystem(() -> accessService.listInstalls(system, OTHER_REALM, app, TENANT_A))));
-        // No realm named: the caller's own realm, as before.
-        assertEquals(List.of(), ids(asSystem(() -> accessService.listInstalls(system, null, app, null))));
+            as(reader, () -> accessService.listInstalls(system, POOLED, app, null)).stream().map(ApplicationInstall::getStatus).toList());
+        assertEquals(List.of(pooledB.getId()), ids(as(reader, () -> accessService.listInstalls(system, POOLED, " " + app + " ", TENANT_B))));
+        assertEquals(List.of(other.getId()), ids(as(reader, () -> accessService.listInstalls(system, OTHER_REALM, app, TENANT_A))));
+        // In the pooled realm the system principal administers every tenant, as before.
         assertEquals(List.of(pooledA.getId(), pooledB.getId()), ids(asSystem(() -> accessService.listInstalls(POOLED, " ", app, null))));
+    }
+
+    @Test
+    void withoutThePolicyNoCallerNamesAnotherRealmNotEvenTheSystemPrincipalOrASystemRoleService() {
+        asSystem(() -> accessService.install(POOLED, install(null, POOLED, TENANT_A)));
+        String system = envConfigUtils.getSystemRealm();
+        PrincipalContext granted = service("install-reader-granted");
+        grantInstallList(granted.getUserId(), POOLED);
+        PrincipalContext systemRoleService = new PrincipalContext.Builder()
+            .withDefaultRealm(system)
+            .withDataDomain(securityUtils.getSystemDataDomain())
+            .withUserId("install-reader-ungranted-" + suffix)
+            .withApplicationId(app)
+            .withRoles(new String[]{"system", "user"})
+            .withScope(PrincipalContext.SCOPE_SERVICE)
+            .build();
+
+        refused(Code.REALM_MISMATCH, () -> as(systemRoleService, () -> accessService.listInstalls(system, POOLED, app, null)));
+        PrincipalContext systemUser = new PrincipalContext.Builder()
+            .withDefaultRealm(system)
+            .withDataDomain(securityUtils.getSystemDataDomain())
+            .withUserId(envConfigUtils.getSystemUserId())
+            .withApplicationId(app)
+            .withRoles(new String[]{"system"})
+            .withScope("systemGenerated")
+            .build();
+        refused(Code.REALM_MISMATCH, () -> as(systemUser, () -> accessService.listInstalls(system, POOLED, app, null)));
+        // The grant names its realms: another realm stays refused for the granted identity too.
+        refused(Code.REALM_MISMATCH, () -> as(granted, () -> accessService.listInstalls(system, OTHER_REALM, app, null)));
+        assertEquals(1, as(granted, () -> accessService.listInstalls(system, POOLED, app, null)).size());
+    }
+
+    @Test
+    void onlyRolesThatHoldInEveryRealmCrossIntoTheNamedRealm() {
+        asSystem(() -> accessService.install(POOLED, install(null, POOLED, TENANT_A)));
+        String system = envConfigUtils.getSystemRealm();
+        String role = "install-reader-" + suffix;
+        grant(installListPolicy(role, Policy.PrincipalType.ROLE, securityUtils.getSystemDataDomain(), null), POOLED);
+        // A credential whose flat roles are only "user": the reader role comes from its realm assignment.
+        String assigned = member("install-reader-assigned", List.of(TENANT_A), List.of(role));
+        PrincipalContext user = new PrincipalContext.Builder()
+            .withDefaultRealm(system)
+            .withDataDomain(securityUtils.getSystemDataDomain())
+            .withUserId(assigned)
+            .withApplicationId(app)
+            .withRoles(new String[]{role})
+            .withScope("AUTHENTICATED")
+            .build();
+        PrincipalContext service = new PrincipalContext.Builder()
+            .withDefaultRealm(system)
+            .withDataDomain(securityUtils.getSystemDataDomain())
+            .withUserId("install-reader-service-" + suffix)
+            .withApplicationId(app)
+            .withRoles(new String[]{role})
+            .withScope(PrincipalContext.SCOPE_SERVICE)
+            .build();
+
+        // A role from a realm assignment is not the credential's own: it does not cross into the named realm.
+        refused(Code.REALM_MISMATCH, () -> as(user, () -> accessService.listInstalls(system, POOLED, app, null)));
+        // A delegated user token without a local credential: its roles are not known to hold elsewhere.
+        PrincipalContext delegated = new PrincipalContext.Builder()
+            .withDefaultRealm(system)
+            .withDataDomain(securityUtils.getSystemDataDomain())
+            .withUserId("install-reader-delegated-" + suffix)
+            .withApplicationId(app)
+            .withRoles(new String[]{role})
+            .withScope("AUTHENTICATED")
+            .build();
+        refused(Code.REALM_MISMATCH, () -> as(delegated, () -> accessService.listInstalls(system, POOLED, app, null)));
+        // A signed service token (no credential): its roles hold in every realm.
+        assertEquals(1, as(service, () -> accessService.listInstalls(system, POOLED, app, null)).size());
+        // A credential's own flat roles hold in every realm too.
+        String flat = user("install-reader-flat");
+        asSystem(() -> {
+            authProviderFactory.getUserManager().createUser(flat, PASSWORD, false, Set.of("user", role), home(TENANT_A));
+            return null;
+        });
+        PrincipalContext flatUser = new PrincipalContext.Builder()
+            .withDefaultRealm(system)
+            .withDataDomain(securityUtils.getSystemDataDomain())
+            .withUserId(flat)
+            .withApplicationId(app)
+            .withRoles(new String[]{"user", role})
+            .withScope("AUTHENTICATED")
+            .build();
+        assertEquals(1, as(flatUser, () -> accessService.listInstalls(system, POOLED, app, null)).size());
+    }
+
+    @Test
+    void aGrantThatExcludesFieldsDoesNotReadTheRealmWhole() {
+        asSystem(() -> accessService.install(POOLED, install(null, POOLED, TENANT_A)));
+        String system = envConfigUtils.getSystemRealm();
+        PrincipalContext reader = service("install-reader-excluded");
+        grant(installListPolicy(reader.getUserId(), Policy.PrincipalType.USER, securityUtils.getSystemDataDomain(),
+            List.of("installedBy")), POOLED);
+
+        // The read returns whole rows, so a grant narrowed by field is not realm-wide: refused, never trimmed silently.
+        refused(Code.REALM_MISMATCH, () -> as(reader, () -> accessService.listInstalls(system, POOLED, app, null)));
     }
 
     @Test
@@ -542,6 +661,9 @@ class ApplicationAccessAuthorityTest extends BaseRepoTest {
     void filtersThatMatchNothingAnswerEmptyAndAnUnknownApplicationIsRefused() {
         ApplicationInstall ofApp = asSystem(() -> accessService.install(POOLED, install(null, POOLED, TENANT_A)));
         String system = envConfigUtils.getSystemRealm();
+        PrincipalContext reader = service("install-reader-filters");
+        String emptyRealm = "bind-authority-empty-" + suffix;
+        grantInstallList(reader.getUserId(), POOLED, OTHER_REALM, emptyRealm);
         String otherApp = "bind-authority-other-app-" + suffix;
         try {
             asSystem(() -> applicationRepo.save(applicationRepo.ensureRegistered(otherApp, securityUtils.getSystemDataDomain())));
@@ -549,21 +671,21 @@ class ApplicationAccessAuthorityTest extends BaseRepoTest {
             ofOther.setApplicationId(otherApp);
             ApplicationInstall otherInstalled = asSystem(() -> accessService.install(POOLED, ofOther));
             // Same realm and tenant, another application: the application filter tells them apart.
-            assertEquals(List.of(ofApp.getId()), ids(asSystem(() -> accessService.listInstalls(system, POOLED, app, TENANT_A))));
-            assertEquals(List.of(otherInstalled.getId()), ids(asSystem(() -> accessService.listInstalls(system, POOLED, otherApp, TENANT_A))));
-            assertEquals(List.of(ofApp.getId(), otherInstalled.getId()), ids(asSystem(() -> accessService.listInstalls(system, POOLED, null, TENANT_A)))
+            assertEquals(List.of(ofApp.getId()), ids(as(reader, () -> accessService.listInstalls(system, POOLED, app, TENANT_A))));
+            assertEquals(List.of(otherInstalled.getId()), ids(as(reader, () -> accessService.listInstalls(system, POOLED, otherApp, TENANT_A))));
+            assertEquals(List.of(ofApp.getId(), otherInstalled.getId()), ids(as(reader, () -> accessService.listInstalls(system, POOLED, null, TENANT_A)))
                 .stream().filter(id -> id.equals(ofApp.getId()) || id.equals(otherInstalled.getId())).toList());
             // A registered application with no install in the realm answers empty.
-            assertEquals(List.of(), asSystem(() -> accessService.listInstalls(system, OTHER_REALM, otherApp, null)));
+            assertEquals(List.of(), as(reader, () -> accessService.listInstalls(system, OTHER_REALM, otherApp, null)));
         } finally {
             var ds = morphiaDataStoreWrapper.getDataStore(envConfigUtils.getSystemRealm());
             ds.find(ApplicationInstall.class).filter(Filters.eq("applicationId", otherApp)).delete(new DeleteOptions().multi(true));
             ds.find(Application.class).filter(Filters.eq("refName", otherApp)).delete(new DeleteOptions().multi(true));
         }
 
-        assertEquals(List.of(), asSystem(() -> accessService.listInstalls(system, POOLED, app, "tenant-none.bind-authority")));
-        assertEquals(List.of(), asSystem(() -> accessService.listInstalls(system, "bind-authority-empty-" + suffix, app, null)));
-        refused(Code.APPLICATION_UNKNOWN, () -> asSystem(() -> accessService.listInstalls(system, POOLED, "unregistered-" + suffix, null)));
+        assertEquals(List.of(), as(reader, () -> accessService.listInstalls(system, POOLED, app, "tenant-none.bind-authority")));
+        assertEquals(List.of(), as(reader, () -> accessService.listInstalls(system, emptyRealm, app, null)));
+        refused(Code.APPLICATION_UNKNOWN, () -> as(reader, () -> accessService.listInstalls(system, POOLED, "unregistered-" + suffix, null)));
     }
 
     private static List<ObjectId> ids(List<ApplicationInstall> installs) {
@@ -758,6 +880,75 @@ class ApplicationAccessAuthorityTest extends BaseRepoTest {
             .withScope("Authentication")
             .withRoles(new String[]{"user"})
             .build();
+    }
+
+    /** A service identity homed in the system realm that is not the system user and holds no system role. */
+    PrincipalContext service(String label) {
+        return new PrincipalContext.Builder()
+            .withDefaultRealm(envConfigUtils.getSystemRealm())
+            .withDataDomain(securityUtils.getSystemDataDomain())
+            .withUserId(label + "-" + suffix)
+            .withApplicationId(app)
+            .withRoles(new String[]{"user"})
+            .withScope(PrincipalContext.SCOPE_SERVICE)
+            .build();
+    }
+
+    /**
+     * The grant an identity pack carries: a USER policy for {@code userId} allowing
+     * {@code SECURITY/APPLICATION_INSTALL/LIST} in every realm ({@code realmRefName} and rule body
+     * realm {@code *}). Policy is read from each operating realm here (no policy-store realm is
+     * configured in this suite), so it is stored in each realm the test names and removed after.
+     */
+    void grantInstallList(String userId, String... realms) {
+        for (String realm : realms) {
+            grant(installListPolicy(userId, securityUtils.getSystemDataDomain()), realm);
+        }
+    }
+
+    void grant(Policy policy, String... realms) {
+        for (String realm : realms) {
+            try (SecurityCallScope.Scope ignored = SecurityCallScope.openIgnoringRules()) {
+                policyRepo.save(realm, policy);
+                ruleContext.reloadFromRepo(realm);
+            }
+            grantedPolicies.add(new String[]{realm, policy.getRefName()});
+        }
+    }
+
+    /**
+     * A USER policy for {@code userId}: {@code SECURITY/APPLICATION_INSTALL/LIST} in every realm, every
+     * application, ranked before the built-in tenant-admin rule (priority 0) so that holding {@code admin}
+     * too does not narrow it to a tenant.
+     */
+    static Policy installListPolicy(String userId, DataDomain dataDomain) {
+        return installListPolicy(userId, Policy.PrincipalType.USER, dataDomain, null);
+    }
+
+    static Policy installListPolicy(String principal, Policy.PrincipalType type, DataDomain dataDomain,
+                                    List<String> excludedFields) {
+        String userId = principal;
+        Policy policy = new Policy();
+        policy.setRefName(("INSTALL_LIST_GRANT_" + userId).toUpperCase(java.util.Locale.ROOT).replaceAll("[^A-Z0-9]", "_"));
+        policy.setDisplayName("install list grant for " + userId);
+        policy.setPrincipalId(userId);
+        policy.setPrincipalType(type);
+        policy.setApplicationId("*");
+        policy.setRealmRefName("*");
+        policy.setDataDomain(dataDomain);
+        policy.getRules().add(new Rule.Builder()
+            .withName("install-list-every-realm")
+            .withSecurityURI(new SecurityURI(
+                new SecurityURIHeader.Builder().withIdentity(userId).withArea("SECURITY")
+                    .withFunctionalDomain("APPLICATION_INSTALL").withAction("LIST").build(),
+                new SecurityURIBody.Builder().withRealm("*").withOrgRefName("*").withAccountNumber("*")
+                    .withTenantId("*").withOwnerId("*").withDataSegment("*").withResourceId("*").build()))
+            .withEffect(RuleEffect.ALLOW)
+            .withPriority(-10)
+            .withFinalRule(true)
+            .withExcludedFields(excludedFields)
+            .build());
+        return policy;
     }
 
     <T> T as(PrincipalContext principal, Supplier<T> action) {
