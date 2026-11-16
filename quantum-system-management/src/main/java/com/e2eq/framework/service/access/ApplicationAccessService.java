@@ -80,6 +80,9 @@ public class ApplicationAccessService {
    @Inject
    com.e2eq.framework.security.runtime.RuleContext ruleContext;
 
+   @Inject
+   com.e2eq.framework.model.persistent.morphia.CredentialRepo credentialRepo;
+
    // ------------------------------------------------------------------ bindings
 
    /**
@@ -560,19 +563,21 @@ public class ApplicationAccessService {
     * {@code admin} must rank before it (a priority below 0). A decision that excludes fields is not
     * realm-wide either: this read returns whole rows. Anything else, or no caller, is not.
     *
-    * <p>Roles cross into the named realm as they do on a realm switch: a service identity's roles are
-    * signed into its token and hold in every realm, so they are kept; a user's roles may come from its
-    * assignment in the realm it is in, so naming another realm evaluates the user's own identity only
-    * (a USER policy), never roles the named realm did not give it.
+    * <p>Only roles that hold in every realm cross into the named realm. A caller with a credential
+    * keeps the credential's own (flat) roles, which are global by design; roles from its assignment in
+    * the realm it is in, or from an application binding there, do not cross. A caller without a
+    * credential is a signed service token, whose roles are signed into it and hold in every realm, as a
+    * realm switch keeps them. A USER policy for the caller's own identity always applies.
     */
    private boolean policyAllowsRealmWideList(String realm) {
       PrincipalContext caller = SecurityContext.getPrincipalContext().orElse(null);
       if (caller == null || caller.getUserId() == null || caller.getDataDomain() == null) {
          return false;
       }
-      boolean sameRealm = realm.equals(caller.getDefaultRealm());
-      boolean service = PrincipalContext.SCOPE_SERVICE.equals(caller.getScope());
-      String[] roles = caller.getRoles() == null || (!sameRealm && !service) ? new String[0] : caller.getRoles();
+      String[] roles = realm.equals(caller.getDefaultRealm()) ? caller.getRoles() : rolesThatHoldIn(caller);
+      if (roles == null) {
+         roles = new String[0];
+      }
       PrincipalContext inRealm = new PrincipalContext.Builder()
          .withDefaultRealm(realm)
          .withApplicationId(caller.getApplicationId())
@@ -603,6 +608,28 @@ public class ApplicationAccessService {
       return decision != null && decision.getFinalEffect() == com.e2eq.framework.model.securityrules.RuleEffect.ALLOW
          && !decision.isFilterConstraintsPresent() && !decision.isScopedConstraintsPresent()
          && (decision.getExcludedFields() == null || decision.getExcludedFields().isEmpty());
+   }
+
+   /**
+    * The caller's roles that hold in any realm: those its credential carries itself, or, with no
+    * credential (a signed service token), the roles signed into the token.
+    */
+   private String[] rolesThatHoldIn(PrincipalContext caller) {
+      String[] held = caller.getRoles() == null ? new String[0] : caller.getRoles();
+      var credential = system(() -> credentialRepo.findByUserIdIgnoreCaseIgnoreRules(caller.getUserId(),
+         envConfigUtils.getSystemRealm()));
+      if (credential.isEmpty()) {
+         return held;
+      }
+      java.util.Set<String> global = new java.util.HashSet<>();
+      if (credential.get().getRoles() != null) {
+         for (String role : credential.get().getRoles()) {
+            if (role != null) global.add(role.trim().toLowerCase(java.util.Locale.ROOT));
+         }
+      }
+      return java.util.Arrays.stream(held)
+         .filter(role -> role != null && global.contains(role.trim().toLowerCase(java.util.Locale.ROOT)))
+         .toArray(String[]::new);
    }
 
    /** The caller's realm; a different one only for the platform. */

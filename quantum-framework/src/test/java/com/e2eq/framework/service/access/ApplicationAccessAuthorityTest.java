@@ -560,15 +560,17 @@ class ApplicationAccessAuthorityTest extends BaseRepoTest {
     }
 
     @Test
-    void aUsersRolesDoNotCrossIntoTheNamedRealmAServicesSignedRolesDo() {
+    void onlyRolesThatHoldInEveryRealmCrossIntoTheNamedRealm() {
         asSystem(() -> accessService.install(POOLED, install(null, POOLED, TENANT_A)));
         String system = envConfigUtils.getSystemRealm();
         String role = "install-reader-" + suffix;
         grant(installListPolicy(role, Policy.PrincipalType.ROLE, securityUtils.getSystemDataDomain(), null), POOLED);
+        // A credential whose flat roles are only "user": the reader role comes from its realm assignment.
+        String assigned = member("install-reader-assigned", List.of(TENANT_A), List.of(role));
         PrincipalContext user = new PrincipalContext.Builder()
             .withDefaultRealm(system)
             .withDataDomain(securityUtils.getSystemDataDomain())
-            .withUserId("install-reader-user-" + suffix)
+            .withUserId(assigned)
             .withApplicationId(app)
             .withRoles(new String[]{role})
             .withScope("AUTHENTICATED")
@@ -582,10 +584,25 @@ class ApplicationAccessAuthorityTest extends BaseRepoTest {
             .withScope(PrincipalContext.SCOPE_SERVICE)
             .build();
 
-        // A user's role may come from its assignment in the realm it is in; the named realm never gave it.
+        // A role from a realm assignment is not the credential's own: it does not cross into the named realm.
         refused(Code.REALM_MISMATCH, () -> as(user, () -> accessService.listInstalls(system, POOLED, app, null)));
-        // A service identity's roles are signed into its token and hold in every realm.
+        // A signed service token (no credential): its roles hold in every realm.
         assertEquals(1, as(service, () -> accessService.listInstalls(system, POOLED, app, null)).size());
+        // A credential's own flat roles hold in every realm too.
+        String flat = user("install-reader-flat");
+        asSystem(() -> {
+            authProviderFactory.getUserManager().createUser(flat, PASSWORD, false, Set.of("user", role), home(TENANT_A));
+            return null;
+        });
+        PrincipalContext flatUser = new PrincipalContext.Builder()
+            .withDefaultRealm(system)
+            .withDataDomain(securityUtils.getSystemDataDomain())
+            .withUserId(flat)
+            .withApplicationId(app)
+            .withRoles(new String[]{"user", role})
+            .withScope("AUTHENTICATED")
+            .build();
+        assertEquals(1, as(flatUser, () -> accessService.listInstalls(system, POOLED, app, null)).size());
     }
 
     @Test
