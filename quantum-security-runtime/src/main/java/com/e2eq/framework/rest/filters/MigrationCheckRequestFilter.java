@@ -136,11 +136,13 @@ public class MigrationCheckRequestFilter implements ContainerRequestFilter {
             String selected = sessionSelection != null && sessionSelection.enabled() ? null
                     : sessionRealm.map(String::trim).filter(value -> !value.isEmpty()).orElse(null);
             if (selected != null) return selected;
-            Object signedRealm = token.getClaim("realm");
-            if (signedRealm == null || signedRealm.toString().isBlank()) {
+            // The realm the roles augmentor resolved the identity's roles for (the signed realm on
+            // this claims path), not a claim read of our own.
+            String signedRealm = com.e2eq.framework.model.securityrules.PrincipalIdentityAttributes.rolesRealm(identity);
+            if (signedRealm == null) {
                 throw new jakarta.ws.rs.ForbiddenException("Trusted-issuer token is missing the required realm claim");
             }
-            return signedRealm.toString().trim();
+            return signedRealm;
         }
 
         String authenticatedRealm = resolveAuthenticatedPrincipalRealm();

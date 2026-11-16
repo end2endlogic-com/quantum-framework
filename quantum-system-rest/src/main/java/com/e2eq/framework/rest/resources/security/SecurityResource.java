@@ -665,7 +665,6 @@ public class SecurityResource {
             Log.info("JWT:");
             Log.info("  Issuer:" + jwt.getIssuer());
             Log.info("  Subject:" + jwt.getSubject());
-            Log.info("  Audience:" + jwt.getAudience());
             Log.info("  Issued At:" + jwt.getIssuedAtTime());
             Log.info("  Expires At:" + jwt.getExpirationTime());
             long epochSeconds = System.currentTimeMillis() / 1000L;

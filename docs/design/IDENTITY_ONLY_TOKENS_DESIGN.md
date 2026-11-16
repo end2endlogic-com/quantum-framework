@@ -219,6 +219,68 @@ Resolve request field: `actingOnBehalfOf { userId | subject }`. Response field:
 Applications still on 1.4.2 keep working during steps 1-3 because tokens keep
 their claims until step 4.
 
+### App flip checklist (step 2)
+
+An application flips to the remote principal source with configuration only; no
+app-local validator, audience profile split or claim reader is needed. The
+framework (`RemotePrincipalSettings`) refuses at startup, with a typed
+`PrincipalSourceConfigurationException` code, any configuration that would bring
+back token claims or audience admission.
+
+Dependencies: framework and enterprise 1.4.3-SNAPSHOT or later, and
+`quantum-auth-client-provider` (the `RemotePrincipalSource`).
+
+Set (unprofiled, or in every deployed profile such as `%prod`):
+
+```properties
+auth.provider=quantum-auth-service
+quantum.auth-service.base-url=${QUANTUM_AUTH_SERVICE_URL}
+mp.jwt.verify.issuer=${HELIXORQ_ISSUER}
+mp.jwt.verify.publickey.location=${HELIXORQ_JWKS_URL}
+quantum.security.session.application-id=<the application id granted at Auth>
+quantum.auth.principal-source=remote
+```
+
+Remove from every profile that runs remote mode, and from the deployment's
+environment:
+
+- `quantum.auth.trust-token-claims` (`QUANTUM_AUTH_TRUST_TOKEN_CLAIMS`)
+- `quantum.auth.expected-audience` (`QUANTUM_AUTH_EXPECTED_AUDIENCE`)
+- `mp.jwt.verify.audiences` (`MP_JWT_VERIFY_AUDIENCES`). A `%dev,test` profile
+  that still builds the principal locally may keep it there.
+- `quantum.security.session.realm` and `quantum.security.session.selection-policy`
+- any `QUANTUM_AUTH_PRINCIPAL_SOURCE` override
+- `quarkus.http.auth.proactive=false` (the default, `true`, is required; it is a
+  build-time property, so an environment variable cannot change it)
+
+Grant the identities (users and service credentials) the application at Auth.
+Issuer and signature are still verified locally; the application gate is Auth's
+`APPLICATION_NOT_GRANTED` (403) on resolve.
+
+| Startup refusal | Cause |
+|---|---|
+| `PRINCIPAL_SOURCE_INVALID` | `quantum.auth.principal-source` is neither `remote` nor unset |
+| `PRINCIPAL_SOURCE_UNAVAILABLE` | no (or more than one) `RemotePrincipalSource` bean |
+| `PRINCIPAL_SOURCE_APPLICATION_MISSING` | no `quantum.security.session.application-id` (or `quantum.application-registration.application-id`) |
+| `PRINCIPAL_SOURCE_SESSION_REALM` | an application-session realm or selection policy is set |
+| `PRINCIPAL_SOURCE_TRUSTS_TOKEN_CLAIMS` | `quantum.auth.trust-token-claims=true` |
+| `PRINCIPAL_SOURCE_AUDIENCE_CONFIGURED` | `quantum.auth.expected-audience` or `mp.jwt.verify.audiences` is set |
+| `PRINCIPAL_SOURCE_LAZY_AUTHENTICATION` | `quarkus.http.auth.proactive=false` |
+| `PRINCIPAL_SOURCE_NOT_REMOTE` | a deployment (not dev or test) whose configuration declares `remote` for its profile, unset by a higher-priority source such as an environment variable |
+
+Verify after the flip: a validly signed token with no `aud`, or another
+application's `aud`, reaches resolve (403 `APPLICATION_NOT_GRANTED` when not
+granted, 200 when granted); a wrong issuer or signature is 401 and never reaches
+Auth; Auth unreachable is 503 `PRINCIPAL_RESOLUTION_UNAVAILABLE`.
+
+Code that pairs `SecurityIdentity.getRoles()` with a realm reads
+`PrincipalIdentityAttributes.rolesRealm(identity)` (the realm Auth resolved in
+remote mode), and code that needs the application reads the resolved
+`PrincipalContext` application, then `ReceivingApplication` (the configured
+`quantum.security.session.application-id`). Only an application that configures no
+id still falls back to the identity's `azp` there, until step 4; set the id when
+flipping.
+
 ### Guard: no new claim readers
 
 Until step 4 lands, nothing stops new code from reading the claims it removes.

@@ -146,7 +146,7 @@ These keys are read by `SecurityFilter` and its collaborators in `quantum-securi
 
 |`quantum.auth.principal-source`
 |unset
-|Unset keeps the local principal construction. `remote` resolves every verified bearer through a `RemotePrincipalSource` bean: the token only identifies the caller (an _identity-only token_) and the directory owner returns roles and tenancy. Startup fails if `remote` is set without exactly one source bean, without an application id, or together with `quantum.security.session.realm` or `quantum.security.session.selection-policy`.
+|Unset keeps the local principal construction. `remote` resolves every verified bearer through a `RemotePrincipalSource` bean: the token only identifies the caller (an _identity-only token_) and the directory owner returns roles and tenancy. Startup fails (typed `PrincipalSourceConfigurationException` codes) if `remote` is set without exactly one source bean, without an application id, together with `quantum.security.session.realm` or `quantum.security.session.selection-policy`, with `quantum.auth.trust-token-claims=true`, with `quantum.auth.expected-audience` or `mp.jwt.verify.audiences`, or with `quarkus.http.auth.proactive=false`. A deployment whose configuration declares `remote` for its profile but whose effective value is overridden to something else also fails (`PRINCIPAL_SOURCE_NOT_REMOTE`).
 
 |`quantum.security.session.application-id`
 |unset

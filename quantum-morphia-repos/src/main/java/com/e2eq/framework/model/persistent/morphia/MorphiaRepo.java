@@ -143,6 +143,9 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
    @ConfigProperty(name = "quantum.realmConfig.defaultRealm"  )
    protected String defaultRealm;
 
+   @Inject
+   protected ReceivingApplication receivingApplication;
+
    private TypeToken<T> paramClazz = new TypeToken<>(getClass()) {};
    private transient volatile RepoLifecycleHooks cachedLifecycleHooks;
    private transient volatile RepoSecurityContextResolver cachedSecurityContextResolver;
@@ -225,7 +228,8 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     private RepoSecurityContextResolver securityContextResolver() {
         RepoSecurityContextResolver resolver = cachedSecurityContextResolver;
         if (resolver == null) {
-            resolver = new RepoSecurityContextResolver(securityIdentity, credentialRepo, envConfigUtils, ruleContext, defaultRealm);
+            resolver = new RepoSecurityContextResolver(securityIdentity, credentialRepo, envConfigUtils, ruleContext,
+                    defaultRealm, receivingApplication == null ? null : receivingApplication.applicationId());
             cachedSecurityContextResolver = resolver;
         }
         return resolver;
