@@ -702,6 +702,8 @@ public class AccessInviteService {
         // Everything this acceptance grants is undone if any later step fails, so a released
         // (still pending) invite never leaves access behind.
         String realm = realmRecord.getRefName();
+        // The claimed invite's own applications, captured before any provisioner sees the invite.
+        List<String> inviteApplications = normalizeApplications(invite.getAuthorizedApplications());
         GrantRollback rollback = new GrantRollback(realm);
         CredentialUserIdPassword credential;
         UserProfile profile;
@@ -770,6 +772,8 @@ public class AccessInviteService {
             .inviteRefName(invite.getRefName())
             .grantedScopes(invite.getScopeRefs() == null ? List.of() : invite.getScopeRefs().stream().map(EntityReference::getEntityRefName).toList())
             .tenantId(grant.getTenantId())
+            // The invite's own applications, never the invitee's union of grants.
+            .authorizedApplications(inviteApplications)
             .build();
     }
 

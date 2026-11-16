@@ -12,6 +12,7 @@ import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
 import lombok.experimental.SuperBuilder;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
@@ -68,8 +69,16 @@ public class UserRealmRole extends BaseModel {
    /** The realm this assignment applies to. */
    protected String realmRefName;
 
-   /** Roles the user holds IN THAT REALM (e.g. admin, user, viewer). */
-   protected List<String> roles;
+   /**
+    * Roles the user holds IN THAT REALM (e.g. admin, user, viewer). Never null: an assignment
+    * that grants no roles (for example an invite that only authorizes applications) holds an
+    * empty list. Morphia does not store empty lists, so such a row is read back without the
+    * field, and older rows may carry an explicit null; {@link #getRoles()} reads both as empty
+    * and {@link #setRoles(List)} writes null as empty, so the directory contract
+    * ({@code UserRealmRoleEntry.roles} is required) always holds.
+    */
+   @lombok.Builder.Default
+   protected List<String> roles = new ArrayList<>();
 
    /**
     * Applications this user may authenticate for IN THIS REALM (application-scoped
@@ -138,6 +147,19 @@ public class UserRealmRole extends BaseModel {
                         String sponsoringOrgRefName, String status) {
       this(userId, subject, realmRefName, roles, authorizedApplications, defaultApplication,
           authorizedTenantIds, authorizedTenantRegEx, sponsoringOrgRefName, status, null);
+   }
+
+   /** The realm roles; an absent or null stored value reads as an empty list, never null. */
+   public List<String> getRoles() {
+      if (roles == null) {
+         roles = new ArrayList<>();
+      }
+      return roles;
+   }
+
+   /** Sets the realm roles; null is written as an empty list (no roles), never null. */
+   public void setRoles(List<String> roles) {
+      this.roles = roles == null ? new ArrayList<>() : roles;
    }
 
    /** True when this assignment marks {@code tenantId} as an external (outsider) tenant. */
@@ -210,7 +232,7 @@ public class UserRealmRole extends BaseModel {
    @Override
    public void validate() {
       super.validate();
-      requireNoExternalRole(roles, "UserRealmRole");
+      requireNoExternalRole(getRoles(), "UserRealmRole");
       if (externalTenantIds != null) {
          for (String tenantId : externalTenantIds) {
             if (tenantId == null || tenantId.isBlank()) {
