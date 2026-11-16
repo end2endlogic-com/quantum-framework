@@ -198,7 +198,7 @@ A service is a credential like any other, and its token is identity only
 Resolve request field: `actingOnBehalfOf { userId | subject }`. Response field:
 `actingService { userId, subject }`. Refusal: `DELEGATION_NOT_ALLOWED` (403).
 
-#### As built (step 3, auth contract 4.10.0)
+#### As built (step 3, auth contract 4.11.0)
 
 - **One delegation refusal.** An unknown target and a target outside the
   delegation scope both answer `DELEGATION_NOT_ALLOWED`. `DELEGATION_TARGET_UNKNOWN`
@@ -332,29 +332,29 @@ flipping.
 ### Step 3d: reissue runbook (owner runs the token calls)
 
 Prerequisites: framework 1.4.3 with the service-tokens-v2 change and Auth contract
-4.10.0 are deployed to the environment. Do dev first, then prod.
+4.11.0 are deployed to the environment. Do dev first, then prod.
 
 **What keeps working.** Tokens already issued keep working after the deploy: a
 role-bearing 4.x service token (its `jti`, when the signer adds one, is a random token
 id, never its subject) stays on the
 service-claims path, and an identity-bound 4.x token is a user token, until step 4
 (`SecurityFilterServiceTokenV2Test`, quantum-enterprise `ServiceTokenV2ApiTest`).
-**What stops.** Every runtime role mint: 4.10.0 answers it 400
-`SERVICE_TOKEN_FIELD_RETIRED`, and a v2 token can only be issued once 4.10.0 runs.
+**What stops.** Every runtime role mint: 4.11.0 answers it 400
+`SERVICE_TOKEN_FIELD_RETIRED`, and a v2 token can only be issued once 4.11.0 runs.
 
-**Before deploying Auth 4.10.0 (bridge, no downtime).** Move each runtime minter to a
-static token while 4.9.0 still mints:
+**Before deploying Auth 4.11.0 (bridge, no downtime).** Move each runtime minter to a
+static token while 4.10.0 (or 4.9.0) still mints:
 
 - `helixor-core` `ServiceTokenClient` users (login + mint with roles): Helixor Code API
   and its state stores, employee-api, employee-workflow, influencer-api,
   helixor-reasoning-backend's API-key store, the solver-server billing reporter in prod.
   Each takes `HELIXOR_AUTH_SERVICE_TOKEN` from helixor-core 1.6.0 (callers on an older
-  helixor-core move to 1.6.0 first). Mint one role token per service under 4.9.0 with the
+  helixor-core move to 1.6.0 first). Mint one role token per service under 4.10.0 with the
   roles it mints today and an expiry that outlasts the reissue below (a static
   token is never refreshed), set it as that secret, remove the login variables, roll the service.
-  The token stays valid after 4.10.0 and is replaced by a v2 token in the steps below.
+  The token stays valid after 4.11.0 and is replaced by a v2 token in the steps below.
 - The Reasoning UX "mint API key" proxy and the tenant-admin-ui issue dialog send
-  roles and an expiry: switch them to `{kind, description}` with 4.10.0.
+  roles and an expiry: switch them to `{kind, description}` with 4.11.0.
 - Scripts that mint role tokens (`rotate-local-service-token.mjs`,
   `mint-local-intake-token.mjs`, `prod-decision-identity.sh`,
   `reconcile_digitalworker_development.py`, the live-billing stack, employee
@@ -365,7 +365,7 @@ static token while 4.9.0 still mints:
 refused by a receiver that trusts token claims. `quantum-system-service`
 (`trust-token-claims=true` by default) must run the remote principal source first, by
 the App flip checklist above (application id, no claims trust, proactive authentication
-rebuilt, identities granted, one resolve verified). Then deploy Auth 4.10.0 and the jobrunner together, issue the delegating token
+rebuilt, identities granted, one resolve verified). Then deploy Auth 4.11.0 and the jobrunner together, issue the delegating token
 and grant it, and resume deployment runs; pause runs during that window.
 
 Order: **Solver big-box, decision-service, DI, Agent Framework.** For each service:
@@ -405,7 +405,7 @@ one delegating token (`QUANTUM_DEPLOY_SERVICE_TOKEN`, issued with
 `X-Acting-On-Behalf-Of-UserId` (quantum-enterprise#237). Nothing is minted per run.
 The 4.8.0 SDK pin is gone.
 
-Rollback: redeploy Auth 4.9.0. Tokens issued under 4.10.0 remain valid
+Rollback: redeploy Auth 4.10.0. Tokens issued under 4.11.0 remain valid
 identities with no roles. They grant only what was granted to their `userId`.
 
 ### Guard: no new claim readers

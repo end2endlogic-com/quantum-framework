@@ -38,7 +38,7 @@ paths:
             schema: {$ref: '#/components/schemas/ServiceTokenRequest'}
       responses:
         '200':
-          description: Issued service token (Auth contract 4.10.0, identity only)
+          description: Issued service token (Auth contract 4.11.0, identity only)
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ServiceTokenResponse'}

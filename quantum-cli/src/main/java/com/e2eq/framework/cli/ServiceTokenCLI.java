@@ -14,7 +14,7 @@ import java.net.URI;
 
 @TopCommand
 @Command(name = "generate-token", mixinStandardHelpOptions = true,
-         description = "Issues an identity-only service token (Auth contract 4.10.0). Run it as the realm admin.")
+         description = "Issues an identity-only service token (Auth contract 4.11.0). Run it as the realm admin.")
 public class ServiceTokenCLI implements java.util.concurrent.Callable<Integer> {
 
     @Option(names = {"-u", "--user"}, description = "User ID", required = true)

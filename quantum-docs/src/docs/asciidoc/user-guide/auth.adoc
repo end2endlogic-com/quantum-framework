@@ -484,7 +484,7 @@ For integrations that cannot perform interactive login -- MCP servers, cron jobs
 
 ==== Issuing a Service Token
 
-Service tokens are issued at `POST /security/service-token`. The endpoint is served by the service that owns sign-in (`quantum-auth-service` in the reference architecture, contract 4.10.0). The framework modules in this repository supply the signing primitive (`CustomTokenAuthProvider.generateServiceIdentityToken`), the local-credential resolution in `SecurityFilter`, and the CLI client. They do not expose the endpoint themselves.
+Service tokens are issued at `POST /security/service-token`. The endpoint is served by the service that owns sign-in (`quantum-auth-service` in the reference architecture, contract 4.11.0). The framework modules in this repository supply the signing primitive (`CustomTokenAuthProvider.generateServiceIdentityToken`), the local-credential resolution in `SecurityFilter`, and the CLI client. They do not expose the endpoint themselves.
 
 A service token is identity only (`IDENTITY_ONLY_TOKENS_DESIGN.md` section 4). Each application gets one token, issued by the admin of its realm. Its claims are `iss`, `sub`, `userId`, `iat`, `exp`, `jti` (the credential id), `scope` and `token_type: service`. It carries no roles, groups, realm, tenant, `aud` or `azp`. Its `exp` is fixed 100 years ahead only because the JWT validator requires one. Nobody chooses an expiry.
 
