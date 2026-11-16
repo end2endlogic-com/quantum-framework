@@ -17,6 +17,12 @@ public final class DelegatedIdentityHeaders {
 
     public static final String TOKEN_TYPE_CLAIM = "token_type";
     public static final String SERVICE_TOKEN_TYPE = "service";
+    /**
+     * {@code token_type} of an identity-only user access token (token contract v2,
+     * {@code IDENTITY_ONLY_TOKENS_DESIGN.md} section 1). A v1 user token carries no
+     * {@code token_type}.
+     */
+    public static final String ACCESS_TOKEN_TYPE = "access";
 
     private DelegatedIdentityHeaders() {
     }

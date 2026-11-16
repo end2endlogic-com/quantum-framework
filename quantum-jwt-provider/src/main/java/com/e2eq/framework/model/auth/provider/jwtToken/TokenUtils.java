@@ -230,6 +230,49 @@ public class TokenUtils {
 	}
 
 	/**
+	 * Identity-only user access token, token contract v2 ({@code IDENTITY_ONLY_TOKENS_DESIGN.md}
+	 * section 1): {@code iss}, {@code sub}, {@code userId}, {@code iat}, {@code exp}, a random
+	 * {@code jti} and {@code token_type=access}, plus {@code scope=authToken} (which tells an
+	 * access token from a refresh token, as for service tokens v2) and {@code auth_time} when the
+	 * authentication time is known. No groups, realm, tenant, organization, account, {@code aud},
+	 * {@code azp} or realm boundary: a receiver resolves roles, realm and tenancy for its own
+	 * application from the credential, through Auth (remote mode) or its own credential store.
+	 */
+	public static String generateIdentityAccessToken(String subject,
+												 String userId,
+												 Long authTime,
+												 long expiresAt,
+												 String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+		if (subject == null || subject.isBlank()) {
+			throw new ValidationException("subject is required");
+		}
+		if (userId == null || userId.isBlank()) {
+			throw new ValidationException("userId is required");
+		}
+		if (issuer == null || issuer.isBlank()) {
+			throw new ValidationException("issuer is required");
+		}
+		if (expiresAt <= REFRESH_ADDITIONAL_DURATION_SECONDS) {
+			throw new ValidationException("Duration must be greater than" + REFRESH_ADDITIONAL_DURATION_SECONDS + " seconds");
+		}
+		PrivateKey privateKey = signingKey();
+		JwtClaimsBuilder claimsBuilder = Jwt.claims()
+				.issuer(issuer.trim())
+				.subject(subject.trim())
+				.issuedAt(currentTimeInSecs())
+				.expiresAt(expiresAt)
+				.claim("userId", userId.trim())
+				.claim("jti", java.util.UUID.randomUUID().toString())
+				.claim("scope", AUTH_SCOPE)
+				.claim(com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.TOKEN_TYPE_CLAIM,
+						com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.ACCESS_TOKEN_TYPE);
+		if (authTime != null) {
+			claimsBuilder.claim(AUTH_TIME_CLAIM, authTime);
+		}
+		return claimsBuilder.jws().keyId(resolveSigningKeyId()).sign(privateKey);
+	}
+
+	/**
 	 * Generic authenticated-user token. Application admission is evaluated by
 	 * the application front door before this token is minted; it is deliberately
 	 * not bound to an application audience or requested resource.

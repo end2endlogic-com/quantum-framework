@@ -24,6 +24,7 @@ quantum-models/src/main/java/com/e2eq/framework/model/securityrules/PrincipalIde
 quantum-morphia-repos/src/main/java/com/e2eq/framework/model/persistent/morphia/RepoSecurityContextResolver.java | azp | 1 | must-move | TODO step 4: fallback only when the app configures no application id; ReceivingApplication first
 quantum-oauth-server/src/main/java/com/e2eq/framework/oauth/resource/OAuthUserInfoResource.java | groups | 4 | issuer | TODO step 4 (slim tokens; delete claims path): userinfo echoes groups; drop with token v2
 quantum-rest-core/src/main/java/com/e2eq/framework/rest/core/BaseResource.java | realm | 1 | not-a-claim | @PathParam realm, not a token read
+quantum-security-runtime/src/main/java/com/e2eq/framework/rest/filters/IdentityOnlyAccessTokens.java | dynamic | 1 | resolver | token contract v2 on a local credential store: reads identity claims (sub, userId, token_type) only
 quantum-security-runtime/src/main/java/com/e2eq/framework/rest/filters/MigrationCheckRequestFilter.java | dynamic | 1 | resolver | reads token_type (identity claim) only
 quantum-security-runtime/src/main/java/com/e2eq/framework/rest/filters/RemotePrincipals.java | dynamic | 1 | resolver | remote principal source: reads identity claims (iss, sub) only
 quantum-security-runtime/src/main/java/com/e2eq/framework/rest/filters/ResolutionContextImpl.java | dynamic | 1 | resolver | PrincipalContextResolver context: identity claim lookup

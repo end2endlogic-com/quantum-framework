@@ -85,6 +85,24 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
    @ConfigProperty(name = "quantum.realmConfig.systemRealm", defaultValue = "system-com")
    String systemRealm;
 
+   /**
+    * {@link TokenContract}: {@code v1} (default) mints claims-bearing access tokens; {@code v2}
+    * mints identity-only access tokens (identity-only tokens rollout step 4). Read on every mint so
+    * an invalid value fails the sign-in instead of minting the wrong contract.
+    */
+   @ConfigProperty(name = TokenContract.PROPERTY)
+   Optional<String> tokenContract = Optional.empty();
+
+   TokenContract tokenContract() {
+      return TokenContract.parse(tokenContract == null ? null : tokenContract.orElse(null));
+   }
+
+   /** Startup check: an invalid {@code quantum.auth.token-contract} stops the application. */
+   @jakarta.annotation.PostConstruct
+   void validateTokenContract() {
+      tokenContract();
+   }
+
    @Inject
    JWTParser jwtParser;
 
@@ -919,7 +937,14 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                   // The revision of the credential this login authenticated against: a reset
                   // that commits after the read moves it, and this session then stops refreshing.
                   long passwordRevision = credential.currentPasswordRevision();
-                  String authToken = TokenUtils.generateUserToken(
+                  // Token contract v2: the token says who the caller is; the realm, application
+                  // and roles this sign-in resolved are returned in the response body below and
+                  // resolved again by each receiver from the credential.
+                  String authToken = tokenContract() == TokenContract.V2
+                     ? TokenUtils.generateIdentityAccessToken(
+                        subject, credential.getUserId(), authTime,
+                        TokenUtils.expiresAt(durationInSeconds), issuer)
+                     : TokenUtils.generateUserToken(
                      subject,
                      credential.getUserId(),
                      groups,
@@ -1166,7 +1191,9 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
          }
 
          // Only RESOLVED reaches the mint (LEGACY/AMBIGUOUS/DENIED threw above).
-         String newAuthToken = TokenUtils.generateUserToken(
+         String newAuthToken = tokenContract() == TokenContract.V2
+            ? TokenUtils.generateIdentityAccessToken(refreshSubject, userId, authTime, accessExpiresAt, issuer)
+            : TokenUtils.generateUserToken(
             refreshSubject, userId, allRoles, tokenRealm,
             tokenDomainContext.getTenantId(), tokenDomainContext.getOrgRefName(),
             tokenDomainContext.getAccountId(), appAuth.audiences(),

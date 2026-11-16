@@ -294,6 +294,91 @@ listed with its class (`resolver`, `issuer`, `remote-gated`, `must-move`,
 Applications run the same check from a test with
 `TokenClaimReaderScan.assertNoNewReaders(root, allowlist)`.
 
+### Step 4: the slim-token switch
+
+`quantum.auth.token-contract` on the issuer (`quantum-auth-service`, or an
+embedded application that mints its own tokens) chooses what a user access
+token carries. Refresh tokens are read only by the issuer and do not change.
+
+| Value | Access token |
+|---|---|
+| `v1` (default; unset) | today's claims-bearing token |
+| `v2` | `iss`, `sub`, `userId`, `iat`, `exp`, a random `jti`, `token_type=access`, `scope=authToken`, and `auth_time` when known |
+
+`scope` tells an access token from a refresh token (`validateAccessToken` and
+several receivers check it), as for service tokens v2. `auth_time` is
+authentication metadata, not authorization. Neither is a removed claim. Any
+other value refuses startup (`TOKEN_CONTRACT_INVALID`).
+
+How each kind of receiver treats a v2 token:
+
+| Receiver | v2 token |
+|---|---|
+| `principal-source=remote` (Quarkus) or Python `RemotePrincipalSource` | resolved by Auth. Only `iss` and `sub` are read |
+| local credential store, `trust-token-claims=false` (Auth itself, embedded apps) | resolved in `IDENTITY` mode for `quantum.security.session.application-id`, exactly as Auth's resolve endpoint (`SecurityFilter` and `RolesAugmentor`): credential status, bindings, realm access, tenant selection and impersonation rules apply. No application id: **401 `TOKEN_CONTRACT_V2_UNRESOLVED`** |
+| `trust-token-claims=true` (delegated-claims path) | **401 `TOKEN_CONTRACT_V2_UNRESOLVED`**, fail closed |
+| `ApplicationTokenAdmissionFilter` / `quantum.auth.expected-audience` | refused: no `aud`/`azp` |
+| `mp.jwt.verify.audiences` set, Python `HELIXOR_AUTH_AUDIENCE` set | refused at signature verification: no `aud` |
+| Python `claims_to_principal`, TS session readers that decode the token | no roles, realm or tenant; refused or wrong |
+
+Two behaviour changes for clients:
+
+- A user who signs in to a realm other than the credential's home realm must
+  send `X-Realm`. The token no longer names it. The sign-in response still
+  returns `realm` and `activeApplication`.
+- In a `MULTI_TENANT` realm other than the home realm, `X-Tenant-Id` selects
+  the tenant. This is exactly what remote mode already does.
+
+#### Flip checklist (before `quantum.auth.token-contract=v2` at Auth)
+
+Every receiver of that Auth's tokens, in that environment, must be deployed
+with all of the following:
+
+1. Every Quarkus receiver runs `quantum.auth.principal-source=remote`, or
+   resolves from its own credential store with `trust-token-claims=false`, on a
+   framework build that contains this change. Nothing sets
+   `trust-token-claims=true`, `expected-audience` or `mp.jwt.verify.audiences`
+   in a deployed profile. `RemotePrincipalSettings` already refuses those
+   settings in remote mode. A receiver on the local path also keeps proactive
+   authentication (the default), as remote mode requires. With it,
+   `IdentityOnlyAccessRefusalFilter` answers a refused v2 token with its typed
+   code (401 `PRINCIPAL_DISABLED`, 403 `APPLICATION_NOT_GRANTED`, 503
+   `PRINCIPAL_RESOLUTION_UNAVAILABLE`, ...) before `@RolesAllowed`.
+2. Every Python receiver runs `HELIXOR_AUTH_PRINCIPAL_SOURCE=remote` and sets
+   no `HELIXOR_AUTH_AUDIENCE` or `HELIXOR_EMPLOYEE_AUTH_AUDIENCE`. No service
+   calls `claims_to_principal` directly.
+3. Every front end and BFF takes roles, realm and tenant from the sign-in
+   response or a resolve call, never by decoding the access token.
+4. Clients send `X-Realm` (and `X-Tenant-Id` where needed) for any realm that
+   is not the identity's default.
+5. Auth itself receives its own tokens: every remote receiver calls
+   `/v1/auth/principal-context/resolve` with the caller's bearer. Auth runs the
+   local path, so it needs a `quantum.security.session.application-id` that
+   every identity is granted, for example by a realm-wide default grant.
+   Otherwise every resolve call, and so every remote receiver, refuses v2
+   tokens. **Owner decision:** use a granted Auth application id, or resolve
+   Auth's own self-service endpoints without application admission.
+
+Verify after the flip, per receiver: a v2 token gets 200 where granted and 403
+`APPLICATION_NOT_GRANTED` where not. Roll back by unsetting the property. The
+next refresh then mints v1 again.
+
+#### Deleting the claims path (gated)
+
+The code below stays until the conditions hold, because a framework build
+without it breaks every application still configured for it:
+
+| Delete | Safe when |
+|---|---|
+| `SecurityFilter.buildDelegatedClaimsContext`, `trust-token-claims`, `delegatedRolesAfterRealmSwitch`, token tenant selection | no deployed application on this framework line sets `trust-token-claims=true` (checklist 1) |
+| `ApplicationTokenAdmissionFilter`, `expected-audience` (quantum-auth-client-provider) | no deployed application sets `expected-audience` |
+| `RolesAugmentor` groups/azp role derivation, `SessionSelectionCoordinator` azp/realm reads | v2 has been on in every environment for one access-token lifetime, and every role-bearing (v1) service token has been reissued as v2 and revoked (step 3) |
+| v1 mint (`TokenUtils.generateUserToken` claims overloads, `CustomTokenAuthProvider` claim copies, OAuth userinfo `groups`) | the same, and v2 is the default |
+| `azp` fallbacks (`RepoSecurityContextResolver`, `PermissionActionDependencyResolver`) | every application configures `quantum.security.session.application-id` |
+
+Each deletion lowers the matching `security/token-claim-readers.allowlist`
+counts.
+
 ## Decisions (accepted 2026-11-12)
 
 1. Cache window of 60 seconds for grant changes and revocation to take effect.

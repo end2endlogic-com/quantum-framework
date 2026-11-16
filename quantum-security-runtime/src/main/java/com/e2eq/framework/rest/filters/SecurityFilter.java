@@ -506,8 +506,9 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                 : sessionRealmSelection(requestContext.getHeaderString("X-Realm"), configured(sessionRealm), isUserPrincipal());
 
         if (localCredentialPath(authHeader)) {
-            com.e2eq.framework.security.principal.PrincipalContextResolution resolution =
-                    resolver().resolve(localCredentialRequest(requestContext, realm, tenantId));
+            com.e2eq.framework.security.principal.PrincipalContextResolution resolution = identityOnlyAccessToken()
+                    ? resolveIdentityOnlyAccessToken(requestContext, realm, tenantId)
+                    : resolver().resolve(localCredentialRequest(requestContext, realm, tenantId));
             PrincipalContext completed = applyCustomProperties(
                     requestContext, resolution.context(), resolution.callerCredential());
             if (requestState != null) requestState.complete(
@@ -581,11 +582,60 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
      * token, not delegated token claims): resolved by {@link #resolver()}.
      */
     private boolean localCredentialPath(String authHeader) {
-        return authHeader != null && currentJwt() != null && !trustTokenClaims
+        if (authHeader == null || currentJwt() == null) {
+            return false;
+        }
+        if (identityOnlyAccessToken()) {
+            // Never the delegated-claims path: a v2 token names no roles, realm or tenant.
+            // resolveIdentityOnlyAccessToken refuses it where only Auth can resolve it.
+            return true;
+        }
+        return !trustTokenClaims
                 && !com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.SERVICE_TOKEN_TYPE
                         .equalsIgnoreCase(claimString(
                                 com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.TOKEN_TYPE_CLAIM));
     }
+
+    /**
+     * A token contract v2 user access token ({@code IDENTITY_ONLY_TOKENS_DESIGN.md} section 1):
+     * {@code token_type=access}, which only the identity-only mint sets. It carries no roles,
+     * realm, tenant or application, so it resolves from the credential, in {@code IDENTITY} mode.
+     */
+    boolean identityOnlyAccessToken() {
+        return IdentityOnlyAccessTokens.isAccessToken(currentJwt());
+    }
+
+    /**
+     * Resolves a token contract v2 user access token on a receiver that holds the credential store,
+     * exactly as Auth's {@code /v1/auth/principal-context/resolve} does: {@code IDENTITY} mode for
+     * this application ({@code quantum.security.session.application-id}), so the caller's status,
+     * application bindings (suspension, tenant narrowing), realm access, tenant selection and
+     * impersonation authorization all apply, and nothing beyond {@code sub} and {@code userId} is
+     * read from the token. Fail closed, typed: a receiver on the delegated-claims path, without a
+     * credential store or without an application id cannot resolve it ({@code
+     * TOKEN_CONTRACT_V2_UNRESOLVED}); a refusal answers with its {@link
+     * com.e2eq.framework.security.principal.PrincipalResolutionError} status and code.
+     */
+    com.e2eq.framework.security.principal.PrincipalContextResolution resolveIdentityOnlyAccessToken(
+            ContainerRequestContext requestContext, String realm, String tenantId) {
+        String application = configured(sessionApplicationId);
+        IdentityOnlyAccessTokens.requireResolvable(trustTokenClaims, application, credentialRepo);
+        return IdentityOnlyAccessTokens.resolve(identityResolver(), IdentityOnlyAccessTokens.request(
+                currentJwt(), application, realm, requestContext::getHeaderString, isPlatformTenantExemptRequest()));
+    }
+
+    /** {@link #resolver()} with this application's access directory, for {@code IDENTITY} mode. */
+    com.e2eq.framework.security.principal.PrincipalContextResolver identityResolver() {
+        return new com.e2eq.framework.security.principal.PrincipalContextResolver(
+                systemDirectory, realmMembershipService, credentialRepo, identityRoleResolver,
+                securityUtils, envConfigUtils,
+                new com.e2eq.framework.security.principal.ImpersonationScriptEvaluator(
+                        scriptingEnabled, scriptingAllowAllAccess, scriptingTimeoutMillis, scriptingMaxStatements),
+                accessDirectory);
+    }
+
+    @Inject
+    com.e2eq.framework.model.persistent.morphia.ApplicationAccessDirectory accessDirectory;
 
     private com.e2eq.framework.security.principal.PrincipalContextRequest localCredentialRequest(
             ContainerRequestContext requestContext, String realm, String tenantId) {
