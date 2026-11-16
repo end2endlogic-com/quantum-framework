@@ -16,6 +16,7 @@ import com.e2eq.framework.model.security.InviteScope;
 import com.e2eq.framework.model.security.UserProfile;
 import com.e2eq.framework.model.security.UserRealmRole;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
+import com.e2eq.framework.model.securityrules.ResourceContext;
 import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import com.e2eq.framework.model.securityrules.SecurityContext;
 import com.e2eq.framework.rest.requests.AccessInviteAcceptRequest;
@@ -135,6 +136,20 @@ public class AccessInviteService {
      */
     @ConfigProperty(name = "quantum.access-invites.create-roles")
     Optional<List<String>> createRoles;
+
+    /** The issuer's own application: the vocabulary application its identity records belong to. */
+    static final String DEFAULT_ISSUER_APPLICATION_ID = "quantum-system";
+
+    /**
+     * The application the invite service's own system-scope work (reading and writing credentials,
+     * realm assignments, profiles and the acceptance policy) is authorized in. That work is the
+     * issuer acting on its own records, so it runs as the system principal in the issuer's own
+     * application, never in a caller's. With
+     * {@code quantum.security.policy-scope.require-application=true} rule evaluation needs an
+     * application; an anonymous acceptance carries none. Default {@code quantum-system}.
+     */
+    @ConfigProperty(name = "quantum.access-invites.issuer-application-id", defaultValue = DEFAULT_ISSUER_APPLICATION_ID)
+    String issuerApplicationId = DEFAULT_ISSUER_APPLICATION_ID;
 
     @Inject
     AuthProviderFactory authProviderFactory;
@@ -648,9 +663,7 @@ public class AccessInviteService {
         final String lastName = request.getLastName();
         final String password = accountExists ? null : request.getPassword();
         try {
-            return SecurityCallScope.runWithContexts(
-                securityUtils.getSystemPrincipalContext(),
-                securityUtils.getSystemSecurityResourceContext(),
+            return inSystemScope(
                 () -> acceptInviteInSystemScope(
                     realmRecord,
                     policy,
@@ -1962,12 +1975,49 @@ public class AccessInviteService {
         return securityUtils.getSystemPrincipalContext().getDefaultRealm();
     }
 
+    /**
+     * Runs {@code action} as the system principal in the issuer's own application
+     * ({@link #issuerApplicationId}). Every system-scope step of this service goes through here, so
+     * each runs under the same, application-scoped, rule evaluation.
+     */
     private <T> T inSystemScope(java.util.function.Supplier<T> action) {
-        return SecurityCallScope.runWithContexts(
-            securityUtils.getSystemPrincipalContext(),
-            securityUtils.getSystemSecurityResourceContext(),
-            action
-        );
+        String applicationId = issuerApplicationId();
+        PrincipalContext system = securityUtils.getSystemPrincipalContext();
+        ResourceContext systemResource = securityUtils.getSystemSecurityResourceContext();
+        PrincipalContext principal = new PrincipalContext.Builder()
+            .withDefaultRealm(system.getDefaultRealm())
+            .withApplicationId(applicationId)
+            .withDomainContext(system.getDomainContext())
+            .withDataDomain(system.getDataDomain())
+            .withUserId(system.getUserId())
+            .withSubjectId(system.getSubjectId())
+            .withRoles(system.getRoles())
+            .withScope(system.getScope())
+            .withArea2RealmOverrides(system.getArea2RealmOverrides())
+            .withDataDomainPolicy(system.getDataDomainPolicy())
+            .withCustomProperties(system.getCustomProperties())
+            .build();
+        ResourceContext resource = new ResourceContext.Builder()
+            .withRealm(systemResource.getRealm())
+            .withApplicationId(applicationId)
+            .withArea(systemResource.getArea())
+            .withFunctionalDomain(systemResource.getFunctionalDomain())
+            .withAction(systemResource.getAction())
+            .withResourceId(systemResource.getResourceId())
+            .withOwnerId(systemResource.getOwnerId())
+            .withDataDomain(systemResource.getDataDomain())
+            .withAttributes(systemResource.getAttributes())
+            .build();
+        return SecurityCallScope.runWithContexts(principal, resource, action);
+    }
+
+    private String issuerApplicationId() {
+        String configured = issuerApplicationId == null ? null : issuerApplicationId.trim();
+        if (configured == null || configured.isEmpty()) {
+            // Fail closed: an empty override must not silently drop application scope.
+            throw new IllegalStateException("quantum.access-invites.issuer-application-id must not be blank");
+        }
+        return configured;
     }
 
     /** Strips control characters (log forging) and bounds the length of caller-supplied values. */
