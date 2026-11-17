@@ -316,6 +316,58 @@ class ApplicationDeclarationValidatorTest {
       assertEquals(List.of(Code.AREA_OWNED_ELSEWHERE), out.stream().map(Diagnostic::code).toList(), out.toString());
    }
 
+   @Test
+   void aRealmAnotherApplicationDeclaresIsNotClaimable() {
+      Application orders = new Application();
+      orders.setRefName("acme-orders");
+      orders.setTenancy(ApplicationTenancy.builder().placement("REALMS").realms(List.of("acme-orders-R1")).build());
+      Application pooled = new Application();
+      pooled.setRefName("acme-pooled");
+      pooled.setTenancy(ApplicationTenancy.builder().placement("POOLED").build());
+      VocabularyRegistry held = ApplicationDeclarationValidator.heldVocabulary("planner", List.of(), List.of(),
+         List.of(orders, pooled));
+
+      Declaration shared = planner();
+      shared.application().setTenancy(
+         ApplicationTenancy.builder().placement("REALMS").realms(List.of("planner-R1", "acme-orders-R1")).build());
+
+      List<Diagnostic> refused = ApplicationDeclarationValidator.validate(shared, held, VocabularyEnforcement.REFUSE);
+      Diagnostic owned = refused.stream().filter(d -> d.code() == Code.TENANCY_REALM_OWNED_ELSEWHERE).findFirst().orElseThrow();
+      assertEquals(Severity.ERROR, owned.severity());
+      assertTrue(owned.message().contains("acme-orders-R1") && owned.message().contains("acme-orders"), owned.message());
+      assertEquals(1, refused.stream().filter(d -> d.code() == Code.TENANCY_REALM_OWNED_ELSEWHERE).count(),
+         "only the realm another application declares is reported");
+
+      // Packs admitted before the rule share realms, so the default mode warns instead of refusing.
+      List<Diagnostic> warned = ApplicationDeclarationValidator.validate(shared, held, VocabularyEnforcement.WARN);
+      assertEquals(Severity.WARNING, warned.stream()
+         .filter(d -> d.code() == Code.TENANCY_REALM_OWNED_ELSEWHERE).findFirst().orElseThrow().severity());
+   }
+
+   @Test
+   void anApplicationKeepsItsOwnRealmsAcrossPackVersions() {
+      Application earlier = new Application();
+      earlier.setRefName("Planner");
+      earlier.setTenancy(ApplicationTenancy.builder().placement("REALMS").realms(List.of("planner-R1")).build());
+      VocabularyRegistry held = ApplicationDeclarationValidator.heldVocabulary("planner", List.of(), List.of(),
+         List.of(earlier));
+
+      Declaration next = planner();
+      next.application().setTenancy(
+         ApplicationTenancy.builder().placement("REALMS").realms(List.of("planner-R1", "planner-R2")).build());
+
+      List<Diagnostic> out = ApplicationDeclarationValidator.validate(next, held, VocabularyEnforcement.REFUSE);
+      assertFalse(out.stream().anyMatch(d -> d.code() == Code.TENANCY_REALM_OWNED_ELSEWHERE), out.toString());
+   }
+
+   @Test
+   void aRegistryThatHoldsNoApplicationsReportsNoRealmOwner() {
+      Declaration d = planner();
+      d.application().setTenancy(ApplicationTenancy.builder().placement("REALMS").realms(List.of("anything")).build());
+      List<Diagnostic> out = ApplicationDeclarationValidator.validate(d, PLATFORM, VocabularyEnforcement.REFUSE);
+      assertFalse(out.stream().anyMatch(d2 -> d2.code() == Code.TENANCY_REALM_OWNED_ELSEWHERE), out.toString());
+   }
+
    // ---- fixtures
 
    private static FunctionalDomain tagged(FunctionalDomain domain, String applicationId) {
