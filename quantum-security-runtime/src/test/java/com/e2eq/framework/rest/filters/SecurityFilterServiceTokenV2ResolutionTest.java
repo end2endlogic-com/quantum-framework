@@ -7,6 +7,7 @@ import com.e2eq.framework.security.principal.PrincipalContextRequest;
 import com.e2eq.framework.security.principal.PrincipalFixture;
 import com.e2eq.framework.security.principal.RemotePrincipalResolutionException;
 import com.e2eq.framework.model.persistent.morphia.ApplicationAccessDirectory;
+import com.e2eq.framework.model.persistent.morphia.ReceivingApplication;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.enterprise.inject.Instance;
 import jakarta.ws.rs.ForbiddenException;
@@ -122,6 +123,50 @@ class SecurityFilterServiceTokenV2ResolutionTest {
         PrincipalContext viaFilter = viaFilter("svc-app@acme", null, Map.of());
         assertEquals("acme-D1", viaFilter.getDefaultRealm());
         assertEquals("svc-app@acme", viaFilter.getUserId());
+        // The token's azp ("another-application") is never taken as the application.
+        assertNull(viaFilter.getApplicationId());
+        assertEquals("acme", viaFilter.getDataDomain().getTenantId(), "the token's tenantId claim is ignored");
+    }
+
+    @Test
+    void theReceivingApplicationBeanNamesTheApplicationWhenNoSessionApplicationIsSet() {
+        // quantum.application-registration.application-id reaches the filter through the
+        // ReceivingApplication bean; the session application is unset.
+        SecurityFilter filter = filter("svc-app@acme", null);
+        ReceivingApplication receiving = new ReceivingApplication() {
+            @Override
+            public String applicationId() {
+                return PrincipalFixture.APP;
+            }
+        };
+        @SuppressWarnings("unchecked")
+        Instance<ReceivingApplication> bean = mock(Instance.class);
+        when(bean.isResolvable()).thenReturn(true);
+        when(bean.get()).thenReturn(receiving);
+        filter.receivingApplication = bean;
+        assertEquals(PrincipalFixture.APP, filter.receivingApplicationId());
+
+        Map<String, String> headers = new HashMap<>(Map.of("Authorization", "Bearer v2"));
+        PrincipalContext viaFilter = filter.determinePrincipalContext(request(headers));
+        assertEquals(PrincipalFixture.APP, viaFilter.getApplicationId());
+        assertEquals(PrincipalContext.SCOPE_SERVICE, viaFilter.getScope());
+    }
+
+    @Test
+    void anUnresolvableReceivingApplicationBeanFallsBackToTheSessionApplicationOnly() {
+        SecurityFilter filter = filter("svc-app@acme", null);
+        @SuppressWarnings("unchecked")
+        Instance<ReceivingApplication> bean = mock(Instance.class);
+        when(bean.isResolvable()).thenReturn(false);
+        filter.receivingApplication = bean;
+        assertNull(filter.receivingApplicationId(), "never the token's azp");
+    }
+
+    @Test
+    void theApplicationAgnosticWarningIsLoggedOncePerProcess() {
+        viaFilter("svc-app@acme", null, Map.of());
+        // The first v2 token at an application-agnostic receiver has warned; later ones do not.
+        assertFalse(SecurityFilter.warnApplicationAgnosticServiceToken());
     }
 
     private PrincipalContext viaFilter(String userId, String receivingApplication, Map<String, String> headers) {

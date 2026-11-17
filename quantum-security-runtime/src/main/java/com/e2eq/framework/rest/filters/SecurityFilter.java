@@ -527,6 +527,26 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         return configured(sessionApplicationId);
     }
 
+    private static final java.util.concurrent.atomic.AtomicBoolean APPLICATION_AGNOSTIC_WARNED =
+            new java.util.concurrent.atomic.AtomicBoolean();
+
+    /**
+     * Once per process: a v2 service token reached a receiver that names no application, so no
+     * application admission applies to it (correct for Auth itself; anywhere else, configure the
+     * receiving application). Not refused: Auth's own endpoints rely on this path.
+     */
+    static boolean warnApplicationAgnosticServiceToken() {
+        if (!APPLICATION_AGNOSTIC_WARNED.compareAndSet(false, true)) {
+            return false;
+        }
+        Log.warnf("A service token v2 reached a receiver that configures no application (%s or %s): it resolves "
+                        + "from its credential and realm grants without application admission. Configure the "
+                        + "receiving application unless this is an application-agnostic service such as Auth.",
+                com.e2eq.framework.model.persistent.morphia.ReceivingApplication.SESSION_APPLICATION_ID,
+                com.e2eq.framework.model.persistent.morphia.ReceivingApplication.REGISTRATION_APPLICATION_ID);
+        return true;
+    }
+
     protected PrincipalContext determinePrincipalContext(ContainerRequestContext requestContext) {
         RequestAuthorizationState requestState = RequestAuthorizationState.from(routingContext);
         if (requestState != null) requestState.beginAdmission();
@@ -550,6 +570,9 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                 admitIdentityOnlyServiceToken(requestContext);
             }
             String receivingApplicationId = identityOnlyService ? receivingApplicationId() : null;
+            if (identityOnlyService && receivingApplicationId == null) {
+                warnApplicationAgnosticServiceToken();
+            }
             com.e2eq.framework.security.principal.PrincipalContextResolution resolution = receivingApplicationId != null
                     ? resolveIdentityOnlyServiceToken(requestContext, realm, tenantId, receivingApplicationId)
                     : resolver().resolve(localCredentialRequest(requestContext, realm, tenantId, identityOnlyService));
@@ -759,7 +782,9 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                 isPlatformTenantExemptRequest());
         var request = com.e2eq.framework.security.principal.PrincipalContextRequest
                 .signedTokenClaims(sub, claims)
-                .applicationId(currentApplicationId())
+                // A v2 service token names no application: never its azp. Here (no receiving
+                // application configured) it resolves for no application.
+                .applicationId(identityOnlyService ? null : currentApplicationId())
                 .realm(baseRealmOverride(realm, trustTokenClaims, impersonationRequested(requestContext),
                         envConfigUtils.getSystemRealm()))
                 .tenantId(tenantId)
