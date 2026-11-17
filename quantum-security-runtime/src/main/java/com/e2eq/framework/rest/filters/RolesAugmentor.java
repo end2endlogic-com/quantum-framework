@@ -30,27 +30,76 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
     @Inject
     HttpHeaders httpHeaders;
 
+    @Inject
+    SessionSelectionCoordinator sessionSelection;
+
+    // Application session (see SecurityFilter): when it moves a user token to another application
+    // or realm, @RolesAllowed sees the session's roles, not the token's.
+    @org.eclipse.microprofile.config.inject.ConfigProperty(name = "quantum.security.session.application-id")
+    Optional<String> sessionApplicationId = Optional.empty();
+
+    @org.eclipse.microprofile.config.inject.ConfigProperty(name = "quantum.security.session.realm")
+    Optional<String> sessionRealm = Optional.empty();
+
+    @org.eclipse.microprofile.config.inject.ConfigProperty(name = "quantum.auth.trust-token-claims", defaultValue = "false")
+    boolean trustTokenClaims;
+
+    @Inject
+    com.e2eq.framework.model.persistent.morphia.IdentityRoleResolver identityRoleResolver;
+
+    // quantum.auth.principal-source=remote: @RolesAllowed sees the roles Auth resolves, never the
+    // token's groups. Absent (unit tests) or unset keeps the paths below.
+    @Inject
+    com.e2eq.framework.security.principal.RemotePrincipalSettings remotePrincipalSettings;
+
+    @Inject
+    com.e2eq.framework.api.system.SystemDirectory systemDirectory;
+
+    @Inject
+    com.e2eq.framework.system.membership.RealmMembershipService realmMembershipService;
+
     @Override
     public Uni<SecurityIdentity> augment(SecurityIdentity identity, AuthenticationRequestContext context) {
-        return Uni.createFrom().item(build(identity));
+        return augment(identity, context, java.util.Map.of());
     }
 
-    private Supplier<SecurityIdentity> build(SecurityIdentity identity) {
-        if (identity.isAnonymous()) {
-            return () -> identity;
+    @Override
+    public Uni<SecurityIdentity> augment(SecurityIdentity identity, AuthenticationRequestContext context,
+                                         java.util.Map<String, Object> attributes) {
+        if (identity.isAnonymous()) return Uni.createFrom().item(identity);
+        var routing = io.quarkus.vertx.http.runtime.security.HttpSecurityUtils.getRoutingContextAttribute(attributes);
+        String requestedRealm;
+        if (routing != null) {
+            requestedRealm = routing.request().getHeader("X-Realm");
+        } else {
+            try { requestedRealm = httpHeaders.getHeaderString("X-Realm"); }
+            catch (ContextNotActiveException unavailable) { requestedRealm = null; }
         }
+        final String realm = requestedRealm;
+        Supplier<SecurityIdentity> work = () -> build(identity, realm, routing);
+        // Direct non-container callers historically pass null; Quarkus supplies the dispatch context.
+        return context == null ? Uni.createFrom().item(work) : context.runBlocking(work);
+    }
 
-        QuarkusSecurityIdentity.Builder builder = QuarkusSecurityIdentity.builder(identity);
+    private SecurityIdentity build(SecurityIdentity identity, String contextRealm,
+                                   io.vertx.ext.web.RoutingContext routing) {
         String originalPrincipal = identity.getPrincipal().getName();
-        String contextRealm = null;
 
-        // Check if HTTP request context is active
-        try {
-            contextRealm = httpHeaders.getHeaderString("X-Realm");
-            Log.debugf("RoleAugmentor overriding realm with ContextRealm: %s", contextRealm);
-        } catch (ContextNotActiveException e) {
-            Log.debug("No HTTP request context available, falling back to default realm");
+        if (remotePrincipalSettings != null && remotePrincipalSettings.remote()
+                && identity.getPrincipal() instanceof org.eclipse.microprofile.jwt.JsonWebToken token) {
+            return remoteIdentity(identity, token, routing);
         }
+
+        // In an application session whose application or realm differs from the token's, the
+        // session's roles replace the token's, derived exactly as SecurityFilter derives them.
+        SessionRoles session = sessionRoles(identity, contextRealm, routing);
+        java.util.Set<String> sessionRoles = session == null ? null : session.roles();
+        if (sessionSelection != null && sessionSelection.enabled()) {
+            contextRealm = sessionSelection.realm(routing, identity, contextRealm, configured(sessionRealm));
+        }
+        QuarkusSecurityIdentity.Builder builder = sessionRoles != null
+                ? withoutTokenRoles(identity)
+                : QuarkusSecurityIdentity.builder(identity);
 
         // Fallback to system realm if contextRealm is not set
         if (contextRealm == null) {
@@ -63,7 +112,8 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
         // record. Without this, the coarse @RolesAllowed gate can't see the roles the token grants
         // (only the RuleContext policy engine, which reads the token directly, does), so it 403s.
         // Adding them here keeps both authz layers agreeing on the same role set.
-        if (identity.getPrincipal() instanceof org.eclipse.microprofile.jwt.JsonWebToken token) {
+        if (sessionRoles == null
+                && identity.getPrincipal() instanceof org.eclipse.microprofile.jwt.JsonWebToken token) {
             java.util.Set<String> groups = token.getGroups();
             if (groups != null && !groups.isEmpty()) {
                 builder.addRoles(new HashSet<>(groups));
@@ -72,11 +122,15 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
             }
         }
 
-        Optional<CredentialUserIdPassword> ocred = credentialRepo.findBySubject(originalPrincipal, contextRealm, true);
+        // A delegated provider owns identity. Never consult a local credential store in this mode.
+        Optional<CredentialUserIdPassword> ocred = trustTokenClaims ? Optional.empty()
+                : credentialRepo.findBySubject(originalPrincipal, contextRealm, true);
         if (ocred.isPresent()) {
             CredentialUserIdPassword cred = ocred.get();
-            // 1) Add roles from credential
-            builder.addRoles(new HashSet<>(List.of(cred.getRoles())));
+            // 1) Add roles from credential (session roles already carry the ones that apply)
+            if (sessionRoles == null) {
+                builder.addRoles(new HashSet<>(List.of(cred.getRoles())));
+            }
 
             // 2) Expose preferred identity (userId) as an attribute without altering the JWT principal
             String userId = cred.getUserId();
@@ -91,15 +145,237 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
                 builder.addAttribute("sub", cred.getSubject());
             }
             builder.addAttribute("originalPrincipal", originalPrincipal);
+        } else if (trustTokenClaims && identity.getPrincipal() instanceof org.eclipse.microprofile.jwt.JsonWebToken token) {
+            String userId = claim(token, "userId");
+            if (userId == null) userId = claim(token, "preferred_username");
+            if (userId != null) builder.addAttribute("userId", userId);
+            String subject = claim(token, "sub");
+            if (subject != null) {
+                builder.addAttribute("subjectId", subject);
+                builder.addAttribute("sub", subject);
+            }
+            builder.addAttribute("originalPrincipal", originalPrincipal);
         } else {
             Log.warnf("Could not find user %s in realm %s to augment roles", originalPrincipal, contextRealm);
         }
 
+        if (sessionRoles != null) {
+            builder.addRoles(sessionRoles);
+        }
+
         // Add user role by default if not present
-        if (!identity.getRoles().contains("user")) {
+        if (sessionRoles != null || !identity.getRoles().contains("user")) {
             builder.addRole("user");
         }
 
-        return builder::build;
+        // The realm these roles describe: the session's realm when it replaced the token's roles,
+        // else the realm the token was signed for. Consumers pairing roles with a realm read this.
+        if (identity.getPrincipal() instanceof org.eclipse.microprofile.jwt.JsonWebToken token) {
+            String rolesRealm = session != null ? session.realm() : signedRealm(token);
+            if (rolesRealm != null) {
+                builder.addAttribute(com.e2eq.framework.model.securityrules.PrincipalIdentityAttributes.ROLES_REALM,
+                        rolesRealm);
+            }
+        }
+
+        return builder.build();
+    }
+
+    /**
+     * Remote mode: the identity carries exactly the roles Auth resolved for this application and
+     * request (shared with SecurityFilter through the request's state), plus {@code user}. When Auth
+     * refuses or cannot answer, the identity keeps no roles at all (fail closed) and SecurityFilter
+     * answers the request with Auth's status and code.
+     */
+    private SecurityIdentity remoteIdentity(SecurityIdentity identity,
+                                            org.eclipse.microprofile.jwt.JsonWebToken token,
+                                            io.vertx.ext.web.RoutingContext routing) {
+        QuarkusSecurityIdentity.Builder builder = withoutTokenRoles(identity);
+        com.e2eq.framework.model.securityrules.PrincipalContext principal;
+        try {
+            // Roles do not depend on the tenant, and the resource (whose tenant rule SecurityFilter
+            // applies) is not known yet: ask with tenant selection optional.
+            principal = RemotePrincipals.resolve(remotePrincipalSettings, routing, token,
+                    name -> header(routing, name), true);
+        } catch (RuntimeException refused) {
+            // RemotePrincipalRefusalFilter answers this refusal with its status and code.
+            Log.debugf("RolesAugmentor: remote principal resolution failed for %s: %s",
+                    identity.getPrincipal().getName(), refused.getMessage());
+            return builder.build();
+        }
+        builder.addRoles(roleSet(principal.getRoles() == null ? new String[0] : principal.getRoles()));
+        builder.addRole("user");
+        if (principal.getDefaultRealm() != null && !principal.getDefaultRealm().isBlank()) {
+            builder.addAttribute(com.e2eq.framework.model.securityrules.PrincipalIdentityAttributes.ROLES_REALM,
+                    principal.getDefaultRealm().trim());
+        }
+        if (principal.getUserId() != null && !principal.getUserId().isBlank()) {
+            builder.addAttribute("userId", principal.getUserId());
+        }
+        if (principal.getSubjectId() != null && !principal.getSubjectId().isBlank()) {
+            builder.addAttribute("subjectId", principal.getSubjectId());
+            builder.addAttribute("sub", principal.getSubjectId());
+        }
+        builder.addAttribute("originalPrincipal", identity.getPrincipal().getName());
+        return builder.build();
+    }
+
+    private String header(io.vertx.ext.web.RoutingContext routing, String name) {
+        if (routing != null) {
+            return routing.request().getHeader(name);
+        }
+        if (httpHeaders == null) {
+            return null;
+        }
+        try {
+            return httpHeaders.getHeaderString(name);
+        } catch (ContextNotActiveException unavailable) {
+            return null;
+        }
+    }
+
+    /**
+     * The session's roles when an application session ({@code quantum.security.session.*}) moves
+     * a user token to another application or realm than it was minted for; null when the token's
+     * roles apply as before (no application session, a service token, or the token's own
+     * application and realm). Mirrors SecurityFilter: realm = X-Realm, else the session realm,
+     * else the token's signed realm (embedded: else the credential's home realm); delegated
+     * principals ({@code quantum.auth.trust-token-claims}) use {@link DelegatedSessionRoles},
+     * embedded ones {@code IdentityRoleResolver} on the system-realm credential.
+     */
+    java.util.Set<String> applicationSessionRoles(SecurityIdentity identity, String requestedRealm) {
+        SessionRoles session = sessionRoles(identity, requestedRealm, null);
+        return session == null ? null : session.roles();
+    }
+
+    /** An application session's roles and the realm they were resolved for. */
+    private record SessionRoles(java.util.Set<String> roles, String realm) {
+    }
+
+    private SessionRoles sessionRoles(SecurityIdentity identity, String requestedRealm,
+                                      io.vertx.ext.web.RoutingContext routing) {
+        String sessionApplication = configured(sessionApplicationId);
+        if (sessionApplication == null && configured(sessionRealm) == null
+                && (sessionSelection == null || !sessionSelection.enabled())) {
+            return null;
+        }
+        if (!(identity.getPrincipal() instanceof org.eclipse.microprofile.jwt.JsonWebToken token)
+                || serviceToken(token)) {
+            return null;
+        }
+        boolean foreign = foreignApplicationToken(identity);
+        String signed = signedRealm(token);
+        String selected = sessionSelection != null && sessionSelection.enabled()
+                ? sessionSelection.realm(routing, identity, requestedRealm, configured(sessionRealm))
+                : requestedRealm != null && !requestedRealm.isBlank()
+                    ? requestedRealm.trim() : configured(sessionRealm);
+
+        if (trustTokenClaims) {
+            String realm = selected != null ? selected : signed;
+            boolean realmChanged = realm != null && !realm.equalsIgnoreCase(signed);
+            if (!foreign && !realmChanged) {
+                return null;
+            }
+            return new SessionRoles(roleSet(delegatedSessionRoles(token, realm, routing)), realm);
+        }
+
+        String subject = claim(token, "sub");
+        Optional<CredentialUserIdPassword> credential = subject == null
+                ? Optional.empty()
+                : credentialRepo.findBySubject(subject, envConfigUtils.getSystemRealm(), true);
+        if (credential.isEmpty()) {
+            // SecurityFilter refuses this request; grant nothing beyond "user" meanwhile.
+            return foreign ? new SessionRoles(java.util.Set.of(), null) : null;
+        }
+        CredentialUserIdPassword cred = credential.get();
+        String home = cred.getDomainContext() == null ? null : cred.getDomainContext().getDefaultRealm();
+        String authorityRealm = signed != null ? signed : home;
+        String realm = selected != null ? selected : authorityRealm;
+        if (realm == null) {
+            return new SessionRoles(java.util.Set.of(), null);
+        }
+        boolean realmChanged = !realm.equalsIgnoreCase(authorityRealm);
+        if (!foreign && !realmChanged) {
+            return null;
+        }
+        String applicationId = sessionApplication != null ? sessionApplication : claim(token, "azp");
+        return new SessionRoles(roleSet(identityRoleResolver.resolveEffectiveRoles(
+                foreign ? null : identity, cred, authorityRealm, realm, applicationId)), realm);
+    }
+
+    private String[] delegatedSessionRoles(org.eclipse.microprofile.jwt.JsonWebToken token, String realm,
+                                            io.vertx.ext.web.RoutingContext routing) {
+        if (realm == null || realmMembershipService == null) {
+            return new String[0];
+        }
+        String subject = claim(token, "sub");
+        // The claims SecurityFilter reads first for a delegated userId. Without them the provider's
+        // own username mapping decides there, which this layer cannot reproduce: add nothing.
+        String userId = claim(token, "userId");
+        if (userId == null) userId = claim(token, "preferred_username");
+        if (userId == null) {
+            return new String[0];
+        }
+        String resolvedUserId = userId;
+        String application = configured(sessionApplicationId) != null ? configured(sessionApplicationId) : claim(token, "azp");
+        return RequestRoleResolution.delegated(routing, claim(token, "iss"), subject, userId,
+                token.getGroups(), realm, application,
+                () -> DelegatedSessionRoles.resolve(systemDirectory, realmMembershipService,
+                        subject, resolvedUserId, token.getGroups(), realm));
+    }
+
+    private static java.util.Set<String> roleSet(String[] roles) {
+        java.util.Set<String> out = new HashSet<>();
+        for (String role : roles) {
+            if (role != null && !role.isBlank() && !"ANONYMOUS".equals(role)) {
+                out.add(role);
+            }
+        }
+        return out;
+    }
+
+    private static boolean serviceToken(org.eclipse.microprofile.jwt.JsonWebToken token) {
+        Object tokenType = token.getClaim(
+                com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.TOKEN_TYPE_CLAIM);
+        return tokenType != null && com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.SERVICE_TOKEN_TYPE
+                .equalsIgnoreCase(tokenType.toString());
+    }
+
+    /** The realm the token was signed for (claims path only; step 4 deletes it). */
+    private static String signedRealm(org.eclipse.microprofile.jwt.JsonWebToken token) {
+        return claim(token, "realm");
+    }
+
+    private static String claim(org.eclipse.microprofile.jwt.JsonWebToken token, String name) {
+        Object value = token.getClaim(name);
+        return value == null || value.toString().isBlank() ? null : value.toString().trim();
+    }
+
+    private static String configured(Optional<String> value) {
+        return value == null ? null : value.map(String::trim).filter(v -> !v.isEmpty()).orElse(null);
+    }
+
+    boolean foreignApplicationToken(SecurityIdentity identity) {
+        String configured = configured(sessionApplicationId);
+        if (configured == null
+                || !(identity.getPrincipal() instanceof org.eclipse.microprofile.jwt.JsonWebToken token)) {
+            return false;
+        }
+        if (serviceToken(token)) {
+            return false;
+        }
+        Object azp = token.getClaim("azp");
+        return azp == null || !configured.equalsIgnoreCase(azp.toString().trim());
+    }
+
+    /** The identity's principal, credentials and attributes, without the roles it arrived with. */
+    static QuarkusSecurityIdentity.Builder withoutTokenRoles(SecurityIdentity identity) {
+        QuarkusSecurityIdentity.Builder builder = QuarkusSecurityIdentity.builder()
+                .setPrincipal(identity.getPrincipal())
+                .addCredentials(identity.getCredentials())
+                .addAttributes(identity.getAttributes())
+                .setAnonymous(false);
+        // Permission checkers derived from the token's roles are dropped with them (fail closed).
+        return builder;
     }
 }

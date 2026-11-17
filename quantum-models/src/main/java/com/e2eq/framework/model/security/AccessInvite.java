@@ -52,6 +52,9 @@ public class AccessInvite extends BaseModel {
 
     protected String targetUserId;
 
+    /** Optional: external; absent means an ordinary member invite. */
+    protected String kind;
+
     @NotNull
     protected String invitedByUserId;
 
@@ -135,6 +138,12 @@ public class AccessInvite extends BaseModel {
     @NotNull
     @Builder.Default
     protected Status status = Status.PENDING;
+
+    @Override
+    public void validate() {
+        super.validate();
+        UserRealmRole.requireNoExternalRole(grantedRoles, "AccessInvite");
+    }
 
     @Override
     public String bmFunctionalArea() {

@@ -2,6 +2,7 @@ package com.e2eq.ontology.model;
 
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.ontology.core.OntologyRegistry.*;
+import com.e2eq.ontology.core.RelationStability;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import dev.morphia.annotations.Entity;
 import dev.morphia.annotations.Index;
@@ -25,7 +26,8 @@ import java.util.Set;
 @Indexes({
     @Index(options = @IndexOptions(name = "idx_tbox_hash"), fields = { @Field("tboxHash") }),
     @Index(options = @IndexOptions(name = "idx_tbox_yaml_hash"), fields = { @Field("yamlHash") }),
-    @Index(options = @IndexOptions(name = "idx_tbox_applied"), fields = { @Field("appliedAt") })
+    @Index(options = @IndexOptions(name = "idx_tbox_applied"), fields = { @Field("appliedAt") }),
+    @Index(options = @IndexOptions(name = "idx_tbox_builder_applied"), fields = { @Field("builder"), @Field("appliedAt") })
 })
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class OntologyTBox extends UnversionedBaseModel {
@@ -34,6 +36,7 @@ public class OntologyTBox extends UnversionedBaseModel {
     private String yamlHash;            // Hash of source YAML (for correlation)
     private Date appliedAt;              // When this TBox was applied
     private String source;              // Source description (YAML path, etc.)
+    private String builder;             // Application that built it from its sources (stable-relation baseline key)
     
     // Serialized TBox content - stored as embedded documents
     private Map<String, ClassDefData> classes;
@@ -81,7 +84,8 @@ public class OntologyTBox extends UnversionedBaseModel {
                         e.getValue().inferred,
                         e.getValue().label,
                         e.getValue().aliases,
-                        e.getValue().metadata
+                        e.getValue().metadata,
+                        RelationStability.parse(e.getValue().name, e.getValue().stability)
                     )
                 )) : Map.of();
         
@@ -170,6 +174,9 @@ public class OntologyTBox extends UnversionedBaseModel {
         private String label;
         private Set<String> aliases;
         private Map<String, Object> metadata;
+        // Relation contract (P1): "stable", or null for internal (omit-at-default, so documents for
+        // packs that never opt in are unchanged). An unknown stored value fails on read.
+        private String stability;
 
         public PropertyDefData(PropertyDef def) {
             this.name = def.name();
@@ -185,6 +192,7 @@ public class OntologyTBox extends UnversionedBaseModel {
             this.label = def.label();
             this.aliases = def.aliases();
             this.metadata = def.metadata();
+            this.stability = def.isStable() ? RelationStability.STABLE.wireValue() : null;
         }
     }
     

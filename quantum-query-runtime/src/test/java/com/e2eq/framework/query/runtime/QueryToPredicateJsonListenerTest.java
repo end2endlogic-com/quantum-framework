@@ -53,6 +53,48 @@ public class QueryToPredicateJsonListenerTest {
     }
 
     @Test
+    void testTypedStringVariablePreservesLeadingZeroAccount() {
+        var vars = Map.of("pAccountId", "0000000001");
+        var predicate = QueryPredicates.compilePredicate("dataDomain.accountNum:${pAccountId}", vars, Map.copyOf(vars));
+        assertTrue(predicate.test(nodeOf(Map.of("dataDomain", Map.of("accountNum", "0000000001")))));
+        assertFalse(predicate.test(nodeOf(Map.of("dataDomain", Map.of("accountNum", "1")))));
+        assertFalse(predicate.test(nodeOf(Map.of("dataDomain", Map.of("accountNum", "0000000002")))));
+        var otherAccount = QueryPredicates.compilePredicate("dataDomain.accountNum:${pAccountId}", Map.of("pAccountId", "1"), Map.of("pAccountId", "1"));
+        assertFalse(otherAccount.test(nodeOf(Map.of("dataDomain", Map.of("accountNum", "0000000001")))));
+    }
+
+    @Test
+    void testTextEqualityAndInequalityPreserveIdentifiersInScalarsAndArrays() {
+        var node = nodeOf(Map.of("station", "0007", "organisations", List.of("0008", "0009")));
+        assertTrue(pred("station:\"0007\"").test(node));
+        assertFalse(pred("station:\"7\"").test(node));
+        assertFalse(pred("station:!\"0007\"").test(node));
+        assertTrue(pred("station:!\"7\"").test(node));
+        var vars = Map.of("organisation", "0008");
+        assertTrue(QueryPredicates.compilePredicate("organisations:${organisation}", vars, Map.copyOf(vars)).test(node));
+        assertFalse(QueryPredicates.compilePredicate("organisations:${organisation}", Map.of("organisation", "8"), Map.of("organisation", "8")).test(node));
+    }
+
+    @Test
+    void testTypedStringSubjectDoesNotCoerceObjectIdOrBooleanShapedText() {
+        for (String value : List.of("66d1f1ab452b94674bbd934a", "bfbfcf79-0aaa-4dea-847a-03f6961c336f", "TRUE", "2026-01-01")) {
+            var vars = Map.of("subject", value);
+            var predicate = QueryPredicates.compilePredicate("subject:${subject}", vars, Map.copyOf(vars));
+            assertTrue(predicate.test(nodeOf(Map.of("subject", value))), value);
+            assertFalse(predicate.test(nodeOf(Map.of("subject", "different"))), value);
+        }
+    }
+
+    @Test
+    void testTypedNumericAndDateOperandsRetainExistingComparisons() {
+        var node = nodeOf(Map.of("count", 10, "price", 12.5, "createdAt", "2026-01-01T00:00:00Z"));
+        assertTrue(pred("count:#10 && price:>##12.0").test(node));
+        assertFalse(pred("count:#11 || price:<##12.0").test(node));
+        assertTrue(pred("createdAt:>=2025-12-31T23:59:59Z").test(node));
+        assertFalse(pred("createdAt:>=2026-01-02T00:00:00Z").test(node));
+    }
+
+    @Test
     void testStringFiltersAreCaseInsensitiveByDefault() {
         JsonNode n = nodeOf(Map.of("name", "Alice"));
 

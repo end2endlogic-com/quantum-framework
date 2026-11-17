@@ -34,6 +34,7 @@ import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.eclipse.microprofile.openapi.annotations.Operation;
 import org.eclipse.microprofile.openapi.annotations.enums.SecuritySchemeType;
 import org.eclipse.microprofile.openapi.annotations.media.Content;
+import org.eclipse.microprofile.openapi.annotations.enums.SchemaType;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 import org.eclipse.microprofile.openapi.annotations.parameters.Parameter;
 import org.eclipse.microprofile.openapi.annotations.parameters.RequestBody;
@@ -292,6 +293,9 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
          response.setStatusCode(Response.Status.OK.getStatusCode());
          response.setMessage(String.format("Count: %d", count));
          return response;
+      } catch (com.e2eq.framework.model.security.ApplicationAccessException e) {
+         // A typed access refusal keeps its own status and code (see ApplicationAccessExceptionMapper).
+         throw e;
       } catch (IllegalArgumentException | ValidationException e) {
          RestError error = RestError.builder()
                  .status(Response.Status.BAD_REQUEST.getStatusCode())
@@ -762,7 +766,7 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
    @Consumes(MediaType.APPLICATION_JSON)
    @SecurityRequirement(name = "bearerAuth")
    @APIResponses(value = {
-           @APIResponse(responseCode = "200", description = "Success", content = @Content(mediaType = "application/json", schema = @Schema(implementation = EntityReference.class))),
+           @APIResponse(responseCode = "200", description = "Success", content = @Content(mediaType = "application/json", schema = @Schema(type = SchemaType.ARRAY, implementation = UnversionedBaseModel.class))),
            @APIResponse(responseCode = "400", description = "Bad Request / bad argument", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
    })
    public List<T> convertEntityRefList(@Context HttpHeaders headers, @RequestBody List<EntityReference> entityRefList) {
@@ -779,7 +783,7 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
     @Produces(MediaType.APPLICATION_JSON)
     @SecurityRequirement(name = "bearerAuth")
     @APIResponses(value = {
-            @APIResponse(responseCode = "200", description = "Success", content = @Content(mediaType = "application/json", schema = @Schema(implementation = EntityReference.class))),
+            @APIResponse(responseCode = "200", description = "Success", content = @Content(mediaType = "application/json", schema = @Schema(type = SchemaType.ARRAY, implementation = EntityReference.class))),
             @APIResponse(responseCode = "400", description = "Bad Request / bad argument", content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
     })
     public List<EntityReference> getEntityRefList(@Context HttpHeaders headers,
@@ -889,6 +893,9 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
          collection.setRealm(realmId == null ? repo.getDatabaseName() : realmId);
 
          return collection;
+      } catch (com.e2eq.framework.model.security.ApplicationAccessException e) {
+         // A typed access refusal keeps its own status and code (see ApplicationAccessExceptionMapper).
+         throw e;
       } catch (IllegalArgumentException | ValidationException e) {
          RestError error = RestError.builder()
                  .status(Response.Status.BAD_REQUEST.getStatusCode())
@@ -1114,6 +1121,9 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
            response.setStatusCode(Response.Status.OK.getStatusCode());
            response.setMessage(String.format("Updated: %d", modified));
            return Response.ok(response).build();
+       } catch (com.e2eq.framework.model.security.ApplicationAccessException e) {
+          // A typed access refusal keeps its own status and code (see ApplicationAccessExceptionMapper).
+          throw e;
        } catch (IllegalArgumentException | ValidationException | InvalidStateTransitionException e) {
            RestError error = RestError.builder()
                    .status(Response.Status.BAD_REQUEST.getStatusCode())
@@ -1153,6 +1163,9 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
            response.setStatusCode(Response.Status.OK.getStatusCode());
            response.setMessage(String.format("Updated: %d", modified));
            return Response.ok(response).build();
+       } catch (com.e2eq.framework.model.security.ApplicationAccessException e) {
+          // A typed access refusal keeps its own status and code (see ApplicationAccessExceptionMapper).
+          throw e;
        } catch (IllegalArgumentException | ValidationException | InvalidStateTransitionException e) {
            RestError error = RestError.builder()
                    .status(Response.Status.BAD_REQUEST.getStatusCode())
@@ -1194,6 +1207,9 @@ public class BaseResource<T extends UnversionedBaseModel, R extends BaseMorphiaR
            response.setStatusCode(Response.Status.OK.getStatusCode());
            response.setMessage(String.format("Updated: %d", modified));
            return Response.ok(response).build();
+       } catch (com.e2eq.framework.model.security.ApplicationAccessException e) {
+          // A typed access refusal keeps its own status and code (see ApplicationAccessExceptionMapper).
+          throw e;
        } catch (IllegalArgumentException | ValidationException | InvalidStateTransitionException e) {
            RestError error = RestError.builder()
                    .status(Response.Status.BAD_REQUEST.getStatusCode())

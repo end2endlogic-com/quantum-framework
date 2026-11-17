@@ -12,7 +12,8 @@ import java.lang.annotation.Target;
  *
  * <p>For annotated types the repository enforces {@link com.e2eq.framework.model.persistent.base.RefNameRule}
  * when a record is created, and rejects any change to {@code refName} once it exists. Existing records are never
- * re-validated or rewritten. A missing refName is rejected rather than defaulted to the ObjectId.</p>
+ * re-validated or rewritten. A refName that is not given defaults to the record's ObjectId, as for any other
+ * entity; the rule applies only to a refName that is given.</p>
  *
  * <p>{@link #legacy()} lists exact refNames that predate the rule and are still created for new realms by
  * framework code (changesets, startup services). Applications declare their own legacy names with the

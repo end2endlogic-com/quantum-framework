@@ -17,6 +17,7 @@ public class UserRealmRoleEntry {
     private List<String> authorizedApplications;
     private String defaultApplication;
     private List<String> authorizedTenantIds;
+    private List<String> externalTenantIds;
     private String sponsoringOrgRefName;
     private String status;
     private String id;
@@ -70,6 +71,12 @@ public class UserRealmRoleEntry {
 
     @JsonProperty("authorizedTenantIds")
     public void setAuthorizedTenantIds(List<String> authorizedTenantIds) { this.authorizedTenantIds = authorizedTenantIds; }
+
+    @JsonProperty("externalTenantIds")
+    public List<String> getExternalTenantIds() { return externalTenantIds; }
+
+    @JsonProperty("externalTenantIds")
+    public void setExternalTenantIds(List<String> externalTenantIds) { this.externalTenantIds = externalTenantIds; }
 
     @JsonProperty("sponsoringOrgRefName")
     public String getSponsoringOrgRefName() { return sponsoringOrgRefName; }

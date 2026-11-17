@@ -1,7 +1,12 @@
 # User + Actor Token Exchange: Design
 
-Status: **Proposed** (2026-10-31). Nothing in this document is implemented yet except
-where it says "today".
+Status: **Rejected** (2026-10-31). Not implemented and not planned. The existing
+service-token contract (service authorized as itself, `X-Tenant-Id`/`X-Realm`,
+`X-Acting-On-Behalf-Of-*` for attribution) and forwarding the user's own token within
+one application stay the supported patterns. The one case motivating this design
+(actor-gated TBox activation) does not justify new token handling in the framework;
+restrict such operations with existing roles and rules in the owning service. Kept for
+the record only.
 Owners: quantum-framework (`quantum-oauth-server`, `quantum-security-runtime`,
 `quantum-models`), quantum-enterprise (`quantum-auth-service`), helixor-core (Python
 receivers).

@@ -88,9 +88,9 @@ public class OAuthAuthorizeResource {
             return errorPage("redirect_uri is not registered for this client.");
         }
 
-        if (codeChallengeMethod != null && !"S256".equals(codeChallengeMethod)) {
-            return redirectError(redirectUri, state, "invalid_request",
-                    "Only S256 code_challenge_method is supported");
+        String validationError = OAuthRequestValidation.authorizationError(client, codeChallenge, codeChallengeMethod);
+        if (validationError != null) {
+            return redirectError(redirectUri, state, "invalid_request", validationError);
         }
 
         // Render the login form
@@ -127,12 +127,22 @@ public class OAuthAuthorizeResource {
             return errorPage("redirect_uri mismatch.");
         }
 
+        String validationError = OAuthRequestValidation.authorizationError(client, codeChallenge, codeChallengeMethod);
+        if (validationError != null) {
+            return redirectError(redirectUri, state, "invalid_request", validationError);
+        }
+
         // Authenticate user via the default auth provider
         if (username == null || username.isBlank() || password == null || password.isBlank()) {
             return errorPage("Username and password are required.");
         }
 
         try {
+            // Read before authenticating: the revision then can only be older than the hash the
+            // login checks, never newer, so a reset racing this request still voids the code.
+            Long passwordRevisionBeforeLogin = credentialRepo.findByUserId(username, systemRealm, true)
+                    .map(CredentialUserIdPassword::currentPasswordRevision)
+                    .orElse(null);
             AuthProvider provider = authProviderFactory.getAuthProvider();
             AuthProvider.LoginResponse loginResponse = provider.login(username, password);
 
@@ -164,6 +174,7 @@ public class OAuthAuthorizeResource {
                     .clientId(clientId)
                     .subject(cred.getSubject())
                     .userId(cred.getUserId())
+                    .passwordRevision(passwordRevisionBeforeLogin)
                     .redirectUri(redirectUri)
                     .codeChallenge(codeChallenge)
                     .codeChallengeMethod(codeChallengeMethod)

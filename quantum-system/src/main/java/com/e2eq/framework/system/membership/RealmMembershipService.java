@@ -2,10 +2,9 @@ package com.e2eq.framework.system.membership;
 
 import com.e2eq.framework.model.persistent.morphia.RealmTenantMembershipRepo;
 import com.e2eq.framework.system.config.QuantumModeConfig;
-import com.e2eq.framework.api.system.SystemDirectory;
 import com.e2eq.framework.system.remote.ControlPlaneException;
+import com.e2eq.framework.util.EnvConfigUtils;
 import com.e2eq.framework.system.remote.RemoteMembershipClient;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 import com.e2eq.framework.model.persistent.morphia.UserRealmRoleRepo;
 import com.e2eq.framework.model.security.RealmTenantMembership;
 import com.e2eq.framework.model.security.UserRealmRole;
@@ -44,13 +43,12 @@ public class RealmMembershipService {
     QuantumModeConfig quantumModeConfig;
 
     @Inject
-    SystemDirectory systemDirectory;
+    EnvConfigUtils envConfigUtils;
 
     @Inject
     JsonWebToken jwt;
 
-    @ConfigProperty(name = "quantum.system-service.token")
-    java.util.Optional<String> serviceToken;
+
 
     /**
      * Phase C: in remote mode membership resolution goes to the control plane.
@@ -60,9 +58,9 @@ public class RealmMembershipService {
      */
     RemoteMembershipClient remote() {
         return new RemoteMembershipClient(
-            quantumModeConfig.systemServiceBaseUrl().orElseThrow(() ->
+            quantumModeConfig.directoryBaseUrl().orElseThrow(() ->
                 ControlPlaneException.notConfigured("membership resolution",
-                    "quantum.system-service.base-url")),
+                    "quantum.directory.base-url")),
             requestBearerToken());
     }
 
@@ -76,28 +74,28 @@ public class RealmMembershipService {
             // No active request context (for example, startup). Use a configured
             // service token when present; otherwise the remote call fails closed.
         }
-        return serviceToken.filter(token -> !token.isBlank());
+        return quantumModeConfig.directoryToken();
     }
 
     /** All realm memberships for an org (owner and participant alike). */
     public List<RealmTenantMembership> membershipsForOrg(String orgRefName) {
-        if (quantumModeConfig.isRemote()) {
+        if (quantumModeConfig.membershipsRemote()) {
             throw new IllegalStateException(
                 "membershipsForOrg is not yet exposed by the control-plane API "
                 + "(contracts/control-plane.openapi.yaml) — extend the contract before using "
                 + "this query from a tier-2 deployment; failing loud, no local fallback.");
         }
         return membershipRepo.findByOrganizationRefNameWithIgnoreRules(
-            systemDirectory.systemRealmId(), orgRefName);
+            localSystemRealmId(), orgRefName);
     }
 
     /** Every org/account participating in a realm (the collaboration roster). */
     public List<RealmTenantMembership> membersOfRealm(String realmRefName) {
-        if (quantumModeConfig.isRemote()) {
+        if (quantumModeConfig.membershipsRemote()) {
             return remote().membersOfRealm(realmRefName);
         }
         return membershipRepo.findByRealmRefNameWithIgnoreRules(
-            systemDirectory.systemRealmId(), realmRefName);
+            localSystemRealmId(), realmRefName);
     }
 
     /** Create or update an org/account membership through the owning control plane. */
@@ -108,12 +106,12 @@ public class RealmMembershipService {
         if (membership.getRealmRefName() == null || membership.getRealmRefName().isBlank()) {
             throw new IllegalArgumentException("membership.realmRefName must not be blank");
         }
-        if (quantumModeConfig.isRemote()) {
+        if (quantumModeConfig.membershipsRemote()) {
             // The owning control plane reconciles identity and storage scope;
             // a refusal or outage surfaces as ControlPlaneException.
             return remote().upsertRealmMembership(membership);
         }
-        String systemRealmId = systemDirectory.systemRealmId();
+        String systemRealmId = localSystemRealmId();
         Optional<RealmTenantMembership> existingMembership = membershipRepo.findByRealmRefNameWithIgnoreRules(
                 systemRealmId, membership.getRealmRefName()).stream()
             .filter(existing -> java.util.Objects.equals(existing.getRefName(), membership.getRefName())
@@ -148,13 +146,13 @@ public class RealmMembershipService {
 
     /** The single owner membership of a realm (lifecycle/billing authority). */
     public Optional<RealmTenantMembership> ownerOfRealm(String realmRefName) {
-        if (quantumModeConfig.isRemote()) {
+        if (quantumModeConfig.membershipsRemote()) {
             return remote().membersOfRealm(realmRefName).stream()
                 .filter(m -> RealmTenantMembership.MEMBERSHIP_ROLE_OWNER.equals(m.getMembershipRole()))
                 .findFirst();
         }
         return membershipRepo.findByRealmRefNameWithIgnoreRules(
-                systemDirectory.systemRealmId(), realmRefName)
+                localSystemRealmId(), realmRefName)
             .stream()
             .filter(membership -> RealmTenantMembership.MEMBERSHIP_ROLE_OWNER.equals(
                 membership.getMembershipRole()))
@@ -163,11 +161,11 @@ public class RealmMembershipService {
 
     /** A user's per-realm role assignments (the GitHub-model membership list). */
     public List<UserRealmRole> realmsForUser(String userId) {
-        if (quantumModeConfig.isRemote()) {
+        if (quantumModeConfig.membershipsRemote()) {
             return remote().realmsForUser(userId);
         }
         return userRealmRoleRepo.findByUserIdWithIgnoreRules(
-            userId, systemDirectory.systemRealmId());
+            userId, localSystemRealmId());
     }
 
     /** Create or update a user's role assignment through the owning control plane. */
@@ -181,12 +179,13 @@ public class RealmMembershipService {
         if (assignment.getRealmRefName() == null || assignment.getRealmRefName().isBlank()) {
             throw new IllegalArgumentException("assignment.realmRefName must not be blank");
         }
-        if (quantumModeConfig.isRemote()) {
+        UserRealmRole.requireNoExternalRole(assignment.getRoles(), "UserRealmRole");
+        if (quantumModeConfig.membershipsRemote()) {
             // PUT /control/users/{userId}/realms/{realmRefName} round-trips persisted fields.
             // The control plane retains authority over existing storage scope.
             return remote().upsertUserRealmRole(assignment);
         }
-        String systemRealmId = systemDirectory.systemRealmId();
+        String systemRealmId = localSystemRealmId();
         Optional<UserRealmRole> existingRole = userRealmRoleRepo.findAssignmentForRealmWithIgnoreRules(
                 assignment.getUserId(), assignment.getRealmRefName(), systemRealmId);
         if (existingRole.isPresent()) {
@@ -221,6 +220,7 @@ public class RealmMembershipService {
             existing.setDefaultApplication(assignment.getDefaultApplication());
             existing.setAuthorizedTenantIds(assignment.getAuthorizedTenantIds());
             existing.setAuthorizedTenantRegEx(assignment.getAuthorizedTenantRegEx());
+            existing.setExternalTenantIds(assignment.getExternalTenantIds());
             existing.setSponsoringOrgRefName(assignment.getSponsoringOrgRefName());
             existing.setStatus(assignment.getStatus());
             existing.setDisplayName(assignment.getDisplayName());
@@ -233,7 +233,7 @@ public class RealmMembershipService {
 
     /** The user's roles within one realm; empty when not a member. */
     public List<String> rolesForUser(String userId, String realmRefName) {
-        if (quantumModeConfig.isRemote()) {
+        if (quantumModeConfig.membershipsRemote()) {
             return remote().realmsForUser(userId).stream()
                 .filter(a -> realmRefName.equals(a.getRealmRefName()))
                 .filter(a -> !UserRealmRole.STATUS_SUSPENDED.equals(a.getStatus()))
@@ -242,7 +242,7 @@ public class RealmMembershipService {
                 .orElse(List.of());
         }
         return userRealmRoleRepo.findActiveRolesForRealmWithIgnoreRules(
-            userId, realmRefName, systemDirectory.systemRealmId());
+            userId, realmRefName, localSystemRealmId());
     }
 
     /** Resolve an active user's complete assignment within one realm. */
@@ -270,5 +270,15 @@ public class RealmMembershipService {
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException("SHA-256 is required for stable control-plane identities", exception);
         }
+    }
+
+    /**
+     * This service's own system realm, where memberships live while they are local. Read from
+     * configuration, not from {@link com.e2eq.framework.api.system.SystemDirectory}: the realm
+     * catalog can be remote while memberships stay local (the older catalog-only
+     * {@code quantum.system.directory.mode=remote}), and a remote catalog has no local system realm.
+     */
+    String localSystemRealmId() {
+        return envConfigUtils.getSystemRealm();
     }
 }

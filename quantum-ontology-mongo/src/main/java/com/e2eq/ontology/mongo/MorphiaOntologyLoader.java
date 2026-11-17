@@ -5,6 +5,8 @@ import com.e2eq.ontology.annotations.OntologyProperty;
 import com.e2eq.ontology.annotations.RelationType;
 import com.e2eq.ontology.core.InMemoryOntologyRegistry;
 import com.e2eq.ontology.core.OntologyRegistry;
+import com.e2eq.ontology.core.RelationDerivation;
+import com.e2eq.ontology.core.RelationStability;
 import dev.morphia.MorphiaDatastore;
 
 import java.lang.reflect.Field;
@@ -88,9 +90,19 @@ public final class MorphiaOntologyLoader {
                 }
                 Set<String> superProps = new LinkedHashSet<>(Arrays.asList(pa.subPropertyOf()));
                 Optional<String> inverseOf = pa.inverseOf().isEmpty() ? Optional.empty() : Optional.of(pa.inverseOf());
+                // Relation contract (P1): unknown stability/derivation values fail the load.
+                boolean inferred = RelationDerivation.resolveInferred(pid, pa.derivation(), null);
+                RelationStability stability = RelationStability.parse(pid, pa.stability());
                 OntologyRegistry.PropertyDef def = new OntologyRegistry.PropertyDef(
-                        pid, domainOpt, rangeOpt, inverseOf.isPresent(), inverseOf, pa.transitive(), pa.symmetric(), functional, superProps
+                        pid, domainOpt, rangeOpt, inverseOf.isPresent(), inverseOf, pa.transitive(), pa.symmetric(), functional, superProps,
+                        inferred, null, Set.of(), Map.of(), stability
                 );
+                // Last declaration wins as before, but stability follows the merge rule (stable if any
+                // declaration says so) so it never depends on scan order.
+                OntologyRegistry.PropertyDef prior = props.get(pid);
+                if (prior != null && prior.isStable() && !def.isStable()) {
+                    def = def.withStability(RelationStability.STABLE);
+                }
                 props.put(pid, def);
             }
         }

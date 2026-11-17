@@ -30,5 +30,5 @@ public interface AuthEndpoint {
     @POST
     @Path("/security/service-token")
     @Consumes(MediaType.APPLICATION_JSON)
-    @Valid ServiceTokenResponse mintServiceToken(@HeaderParam("Authorization") @NotNull String authorization, @Valid @NotNull ServiceTokenRequest body);
+    @Valid ServiceTokenResponse mintServiceToken(@HeaderParam("Authorization") @NotNull String authorization, @HeaderParam("X-Realm") String xRealm, @Valid @NotNull ServiceTokenRequest body);
 }

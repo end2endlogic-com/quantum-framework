@@ -12,6 +12,11 @@ classes:
   - id: ChainClassC
   - id: ChainClassD
 
+  # expand(@relation) test classes (OntologyRelationExpansionTest)
+  - id: ItExpandCustomer
+  - id: ItExpandShipment
+  - id: ItExpandNote
+
 properties:
   - id: placedBy
     domain: Order
@@ -66,6 +71,24 @@ properties:
     domain: ChainClassA
     range: ChainClassD
     inferred: true
+
+  # expand(@relation): stable relations may be expanded, internal ones may not
+  - id: expandShipments
+    domain: ItExpandCustomer
+    range: ItExpandShipment
+    stability: stable
+  - id: expandPrimaryShipment
+    domain: ItExpandCustomer
+    range: ItExpandShipment
+    functional: true
+    stability: stable
+  - id: expandInternalShipments
+    domain: ItExpandCustomer
+    range: ItExpandShipment
+  - id: expandNotes
+    domain: ItExpandCustomer
+    range: ItExpandNote
+    stability: stable
 
 chains:
   - chain: [placedBy, memberOf]

@@ -69,6 +69,14 @@ public final class TBoxHasher {
             pData.put("functional", p.functional());
             pData.put("subPropertyOf", new TreeSet<>(p.subPropertyOf()));
             pData.put("inferred", p.inferred());
+            // Omit-at-default so existing legacy hashes are unchanged; a stability-only edit must
+            // still change the hash, or registry dedup never persists it.
+            if (p.isStable()) {
+                pData.put("stability", RelationStability.STABLE.wireValue());
+                if (p.metadata().get("replacedBy") instanceof String successor) {
+                    pData.put("replacedBy", successor);
+                }
+            }
             properties.put(p.name(), pData);
         }
         result.put("properties", properties);

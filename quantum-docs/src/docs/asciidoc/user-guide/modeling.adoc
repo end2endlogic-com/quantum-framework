@@ -302,7 +302,7 @@ Repo --> App: persist or error
 
 Morphia interceptors enhance and enforce behavior during persistence. Quantum registers the following for each realm-specific datastore:
 
-Order of registration (see MorphiaDataStore):
+Order of registration (see MorphiaDataStoreWrapper):
 1) ValidationInterceptor
 2) PermissionRuleInterceptor
 3) AuditInterceptor
@@ -317,6 +317,9 @@ High-level responsibilities:
 - PermissionRuleInterceptor (prePersist):
   - Evaluates RuleContext with PrincipalContext and ResourceContext from SecurityContext.
   - Throws SecurityCheckException if the rule decision is not ALLOW (enforcing write permissions for save/update/delete).
+  - Requires an explicit write action on the ResourceContext; a persist with no action is refused.
+  - After an ALLOW, checks the record being written against the filters of the matched ALLOW rules (`RuleContext.enforceWriteFilters`). The record, including its DataDomain, must satisfy them, so a rule that lets a caller write only their own tenant's rows also stops a write placed in another tenant. A filter variable that cannot be resolved denies the write.
+  - Code running in an ignore-rules scope (`SecurityCallScope.openIgnoringRules()`) is not checked.
 - AuditInterceptor (prePersist):
   - Sets AuditInfo on creation and updates lastUpdate fields on modification; captures impersonation details if present.
 - ReferenceInterceptor (prePersist):
@@ -331,17 +334,24 @@ When does validation occur?
 
 == Canonical refNames
 
+Every model has a `refName`. When a record is saved without one, the repository sets it to the record's ObjectId in hex (`MorphiaRepo.setDefaultValues`), and `displayName` defaults to the `refName`. A REST caller also cannot choose a record's `dataDomain`; see xref:{doc-root}/user-guide/rest-crud.adoc#rest-crud-write-rules[Write rules the server enforces].
+
 `refName` is the stable identifier other collections join on. Unlike `id`, it survives a delete and re-create,
 so it must be meaningful and spelled exactly one way. Entities annotated with `@CanonicalRefName`
 (currently `UserGroup` and `Policy`) are held to a canonical rule by `MorphiaRepo` on every write path,
 including REST resources, `/api/query/save`, CSV import, and seed packs:
 
-* On create, `refName` must match `^[A-Z][A-Z0-9_]*$`, be 3-64 characters, and not look like a generated id
-  (`^[0-9a-f]{16,}$`, case-insensitive). Values are judged as given; the server never trims or re-cases them.
-  A missing `refName` is rejected instead of defaulting to the ObjectId.
+* On create, a `refName` that is given must match `^[A-Z][A-Z0-9_]*$`, be 3-64 characters, and not look like a
+  generated id (`^[0-9a-f]{16,}$`, case-insensitive). Values are judged as given; the server never trims or
+  re-cases them. A `refName` that is not given defaults to the record's ObjectId (hex), as for every other entity;
+  sending the record's own id as its `refName` is the same default.
 * After create, `refName` is immutable. Saving, merging, or field-updating a different value fails. A merge that
-  omits `refName` leaves it untouched; a full save that omits it is treated as a change.
-* A record stored before the rule without any `refName` may stay unnamed or be named once under the rule.
+  omits `refName` leaves it untouched; a full save that omits it stands for the ObjectId default, so it is
+  accepted only when the stored `refName` is that default.
+* A record stored before the rule without any `refName` stays unnamed through a merge and may be named once under
+  the rule; a full save that leaves it unnamed gives it the ObjectId default, after which it is immutable.
+* A seed pack record for these types must give a `refName`, an `_id`, or come from a dataset with a `naturalKey`;
+  otherwise every re-apply would create another group or policy.
 * Existing records are never re-validated or rewritten.
 * `skipValidation` does not bypass the rule.
 
@@ -351,7 +361,7 @@ Violations raise `RefNameViolationException`, rendered as a `RestError` with `er
 |===
 | errorCode | HTTP | Meaning
 
-| `REFNAME_REQUIRED` | 400 | No refName supplied on create
+| `REFNAME_REQUIRED` | 400 | No refName where one is required (not raised on create: a missing refName defaults to the ObjectId)
 | `REFNAME_INVALID_FORMAT` | 400 | Pattern or length violation
 | `REFNAME_GENERATED_ID` | 400 | Looks like an ObjectId, dashless UUID, or hash
 | `REFNAME_RESERVED` | 400 | A client tried to create a declared legacy name reserved for framework code
@@ -1200,11 +1210,11 @@ Quantum provides three cooperating modules that make ontology modeling practical
     - New edges to add (implied by property chains, inverses, or other rules).
 
 - quantum-ontology-mongo (package com.e2eq.ontology.mongo)
-  - EdgeDao: A thin DAO around an edges collection in Mongo. Each edge contains tenantId, src, predicate p, dst, inferred flag, provenance, and timestamp.
+  - OntologyEdgeRepo: The repository over the `edges` collection in Mongo. Each edge carries the DataDomain of the entity it belongs to, src, predicate p, dst, an inferred flag, provenance, and a timestamp.
   - OntologyMaterializer: Runs the Reasoner for an entity snapshot and upserts the inferred edges, so queries can be rewritten to simple in/in eq filters.
 
 - quantum-ontology-policy-bridge (package com.e2eq.ontology.policy)
-  - ListQueryRewriter: Takes a base query and rewrites it using the EdgeDao to filter by the set of source entity ids that have a specific predicate to a given destination.
+  - ListQueryRewriter: Takes a base query and rewrites it using the OntologyEdgeRepo to filter by the set of source entity ids that have a specific predicate to a given destination.
   - This integrates ontology edges with RuleContext or policy decisions: policy asks for entities related by a predicate; the rewriter converts that into an efficient Mongo query.
 
 These modules let you define your ontology (core), materialize derived relations (mongo), and leverage them in access and list queries (policy bridge).
@@ -1230,24 +1240,24 @@ These modules let you define your ontology (core), materialize derived relations
   - Query: "Find Orders whose buyer belongs to Org X or its parents."
   - With @Reference: requires joining Order -> User -> Org and recursing org.parent; costly and tightly coupled to fields.
 - Ontology edge example (resilient/fast)
-  - Define predicates: placedBy(order, user), memberOf(user, org), ancestorOf(org, org). Define chain placedBy ∘ memberOf ⇒ placedInOrg.
-  - Materialize edges: (order --placedInOrg--> org). Also make ancestorOf transitive.
-  - Query becomes: where order._id in EdgeDao.srcIdsByDst(tenantId, "placedInOrg", orgX).
-  - With transitivity, you can precompute ancestor closure or add a chain placedInOrg ∘ ancestorOf ⇒ placedInOrg to include parents automatically.
+  - Define predicates: placedBy(order, user), memberOf(user, org), orgAncestor(org, org). Define chain placedBy ∘ memberOf ⇒ placedInOrg.
+  - Materialize edges: (order --placedInOrg--> org). Each org stores its ancestor closure as orgAncestor edges (non-transitive; see <<modeling-regular-chains-and-hierarchies>>).
+  - Query becomes: where order._id in OntologyEdgeRepo.srcIdsByDst(dataDomain, "placedInOrg", orgX).
+  - To include parents, add the chain placedBy ∘ memberOf ∘ orgAncestor ⇒ placedUnderOrg and declare placedInOrg a subPropertyOf placedUnderOrg; then query placedUnderOrg.
 
 ==== Migration: from @Reference to ontology edges
 
 - Start by introducing predicates alongside existing references; do not remove references immediately.
 - Materialize edges for hot read paths; keep provenance so you can reconstruct.
-- Gradually update queries (list screens, policy filters) to use ListQueryRewriter with EdgeDao instead of deep traversals or $lookup.
+- Gradually update queries (list screens, policy filters) to use ListQueryRewriter with OntologyEdgeRepo instead of deep traversals or $lookup.
 - Once stable, you can simplify models by removing rigid reference fields where unnecessary and rely on edges for read-side composition.
 
 ==== Performance and operational notes
 
-- Indexing: Create compound indexes on edges: (tenantId, p, dst) and (tenantId, src, p) to support both reverse and forward lookups.
+- Indexing: The `OntologyEdge` entity declares DataDomain-scoped compound indexes for both directions: `idx_domain_p_dst` (DataDomain, p, dst) for reverse lookups and `idx_domain_src_p` (DataDomain, src, p) for forward lookups. You do not create them yourself.
 - Write amplification vs read wins: Materialization adds write work, but dramatically improves read latency and simplifies queries.
 - Consistency: Re-materialize edges on relevant entity changes (source, destination, or intermediate) using OntologyMaterializer.
-- Multi-tenancy: Keep tenantId in the edge key and filters; the provided EdgeDao methods include tenant scoping.
+- Multi-tenancy: every edge is keyed and filtered by its DataDomain (organisation, account, tenant, data segment); the OntologyEdgeRepo methods take the DataDomain and scope every read and write to it.
 
 ==== How this integrates with Functional Areas/Domains
 
@@ -1284,7 +1294,7 @@ Key predicates (relationships)
 - orderHasShipment(order, shipment): outbound shipment for the order
 - shipsTo(shipment, address): shipment destination
 - locatedIn(address, region): address is located in a Region
-- ancestorOf(org, org): organizational ancestry (transitive)
+- orgAncestor(org, org): each of an organization's ancestors, stored on the organization (not transitive)
 
 Property chains (implied relationships)
 
@@ -1294,8 +1304,11 @@ Property chains (implied relationships)
   - If (order --orderHasShipment--> shipment) and (shipment --shipsTo--> address), infer (order --orderShipsTo--> address)
 - orderShipsTo ∘ locatedIn ⇒ orderShipsToRegion
   - If (order --orderShipsTo--> address) and (address --locatedIn--> region), infer (order --orderShipsToRegion--> region)
-- placedInOrg ∘ ancestorOf ⇒ placedInOrg
-  - Makes placedInOrg resilient to org hierarchy changes (ancestorOf is transitive). This is a common “closure” trick: re-assert the same predicate via chain to absorb hierarchy.
+- placedBy ∘ memberOf ∘ orgAncestor ⇒ placedUnderOrg, with placedInOrg ⊑ placedUnderOrg
+  - placedUnderOrg holds the order's own org (through the sub-property) and every ancestor (through the chain), so one query covers an org and its subsidiaries. When an org is re-parented and its orgAncestor edges change, chain propagation re-derives its orders without saving them (see "Property chains stay current when a later hop changes" in the Ontologies guide).
+
+[[modeling-regular-chains-and-hierarchies,Regular chains and hierarchies]]
+Chains must be regular: a chain step cannot be a transitive property, and a chain cannot imply one (OntologyValidator rejects both). To roll up through a hierarchy, keep the closure on the hierarchy node as a non-transitive predicate, written explicitly or by a ComputedEdgeProvider that writes the node's ancestors, and chain over it. Do not chain over a transitive ancestorOf, and do not re-imply placedInOrg from itself. Whatever writes orgAncestor must rewrite the closure of the moved org and of every descendant when the hierarchy changes: propagation starts only from orgAncestor edges that actually change.
 
 A minimal Java-style snippet to define this TBox
 
@@ -1314,24 +1327,25 @@ Map<String, ClassDef> classes = Map.of(
   "Region", new ClassDef("Region", Set.of(), Set.of(), Set.of())
 );
 
-Map<String, PropertyDef> props = Map.of(
-  "placedBy", new PropertyDef("placedBy", Optional.of("Order"), Optional.of("Customer"), false, Optional.empty(), false),
-  "memberOf", new PropertyDef("memberOf", Optional.of("Customer"), Optional.of("Organization"), false, Optional.empty(), false),
-  "orderHasShipment", new PropertyDef("orderHasShipment", Optional.of("Order"), Optional.of("Shipment"), false, Optional.empty(), false),
-  "shipsTo", new PropertyDef("shipsTo", Optional.of("Shipment"), Optional.of("Address"), false, Optional.empty(), false),
-  "locatedIn", new PropertyDef("locatedIn", Optional.of("Address"), Optional.of("Region"), false, Optional.empty(), false),
-  "ancestorOf", new PropertyDef("ancestorOf", Optional.of("Organization"), Optional.of("Organization"), false, Optional.empty(), true), // transitive
-  // implied predicates (no domain/range required, but you may add them for validation)
-  "placedInOrg", new PropertyDef("placedInOrg", Optional.of("Order"), Optional.of("Organization"), false, Optional.empty(), false),
-  "orderShipsTo", new PropertyDef("orderShipsTo", Optional.of("Order"), Optional.of("Address"), false, Optional.empty(), false),
-  "orderShipsToRegion", new PropertyDef("orderShipsToRegion", Optional.of("Order"), Optional.of("Region"), false, Optional.empty(), false)
-);
+// PropertyDef(name, domain, range, inverse, inverseOf, transitive, symmetric, functional, subPropertyOf, inferred)
+Map<String, PropertyDef> props = new LinkedHashMap<>();
+props.put("placedBy", new PropertyDef("placedBy", Optional.of("Order"), Optional.of("Customer"), false, Optional.empty(), false, false, false, Set.of()));
+props.put("memberOf", new PropertyDef("memberOf", Optional.of("Customer"), Optional.of("Organization"), false, Optional.empty(), false, false, false, Set.of()));
+props.put("orderHasShipment", new PropertyDef("orderHasShipment", Optional.of("Order"), Optional.of("Shipment"), false, Optional.empty(), false, false, false, Set.of()));
+props.put("shipsTo", new PropertyDef("shipsTo", Optional.of("Shipment"), Optional.of("Address"), false, Optional.empty(), false, false, false, Set.of()));
+props.put("locatedIn", new PropertyDef("locatedIn", Optional.of("Address"), Optional.of("Region"), false, Optional.empty(), false, false, false, Set.of()));
+// The org's stored ancestor closure; not transitive, so chains may use it
+props.put("orgAncestor", new PropertyDef("orgAncestor", Optional.of("Organization"), Optional.of("Organization"), false, Optional.empty(), false, false, false, Set.of()));
+// implied predicates
+props.put("placedInOrg", new PropertyDef("placedInOrg", Optional.of("Order"), Optional.of("Organization"), false, Optional.empty(), false, false, false, Set.of("placedUnderOrg"), true));
+props.put("placedUnderOrg", new PropertyDef("placedUnderOrg", Optional.of("Order"), Optional.of("Organization"), false, Optional.empty(), false, false, false, Set.of(), true));
+props.put("orderShipsTo", new PropertyDef("orderShipsTo", Optional.of("Order"), Optional.of("Address"), false, Optional.empty(), false, false, false, Set.of(), true));
+props.put("orderShipsToRegion", new PropertyDef("orderShipsToRegion", Optional.of("Order"), Optional.of("Region"), false, Optional.empty(), false, false, false, Set.of(), true));
 
 List<PropertyChainDef> chains = List.of(
   new PropertyChainDef(List.of("placedBy", "memberOf"), "placedInOrg"),
   new PropertyChainDef(List.of("orderHasShipment", "shipsTo"), "orderShipsTo"),
-  new PropertyChainDef(List.of("orderShipsTo", "locatedIn"), "orderShipsToRegion"),
-  new PropertyChainDef(List.of("placedInOrg", "ancestorOf"), "placedInOrg")
+  new PropertyChainDef(List.of("orderShipsTo", "locatedIn"), "orderShipsToRegion")
 );
 
 OntologyRegistry.TBox tbox = new OntologyRegistry.TBox(classes, props, chains);
@@ -1346,11 +1360,12 @@ Materializing edges for an Order
   - O1 orderHasShipment S17
   - S17 shipsTo Addr42
   - Addr42 locatedIn RegionWest
-  - OrgA ancestorOf OrgParent
+  - OrgA orgAncestor OrgParent
 
 - Inferred edges after running the reasoner for O1’s snapshot:
   - O1 placedInOrg OrgA
-  - O1 placedInOrg OrgParent (via closure with ancestorOf)
+  - O1 placedUnderOrg OrgA (placedInOrg ⊑ placedUnderOrg)
+  - O1 placedUnderOrg OrgParent (via placedBy ∘ memberOf ∘ orgAncestor)
   - O1 orderShipsTo Addr42
   - O1 orderShipsToRegion RegionWest
 
@@ -1366,7 +1381,7 @@ import org.bson.conversions.Bson;
 import com.e2eq.ontology.policy.ListQueryRewriter;
 
 Bson base = Filters.eq("status", "OPEN");
-Bson rewritten = rewriter.rewriteForHasEdge(base, tenantId, "placedInOrg", "OrgParent");
+Bson rewritten = rewriter.rewriteForHasEdge(base, tenantId, "placedUnderOrg", "OrgParent");
 // Use rewritten in your Mongo find
 ----
 
@@ -1380,7 +1395,7 @@ Bson rewritten2 = rewriter.rewriteForHasEdge(Filters.empty(), tenantId, "orderSh
 Why this is resilient
 
 - If tomorrow Customer becomes AccountContact and the organization model gains Divisions and multi-parent org graphs, you only adjust predicates and chains.
-- Queries that rely on placedInOrg or orderShipsToRegion remain unchanged and fast, because edges are re-materialized by OntologyMaterializer.
+- Queries that rely on placedUnderOrg or orderShipsToRegion remain unchanged and fast, because edges are re-materialized by OntologyMaterializer.
 
 Evolving the model: add Fulfillment
 
@@ -1445,7 +1460,7 @@ Comparison with direct references (@Reference/EntityReference)
 
 Operational tips for this scenario
 
-- Ensure EdgeDao has indexes on (tenantId, p, dst) and (tenantId, src, p).
+- The `OntologyEdge` entity declares its indexes (for example `idx_domain_p_dst` and `idx_domain_src_p`); Morphia creates them with the collection.
 - Use OntologyMaterializer when Order, Shipment, Customer, Address, or org hierarchy changes to keep edges fresh.
 - Keep provenance in edge.prov (rule, inputs) so you can recompute or retract edges when source data changes.
 
@@ -1463,7 +1478,7 @@ This section focuses on integration and developer experience: how ontology edges
   - An OntologyMaterializer runs when entities change to derive and upsert edges into the edges collection (per tenant).
 - Policy path (authorization and list filters):
   - The permission rule language evaluates the caller’s SecurityContext/RuleContext and produces logical filters.
-  - When a rule asks for a semantic relationship (hasEdge), we use ListQueryRewriter + EdgeDao to translate that into efficient Mongo filters over ids.
+  - When a rule asks for a semantic relationship (hasEdge), we use ListQueryRewriter + OntologyEdgeRepo to translate that into efficient Mongo filters over ids.
 - Read path (queries):
   - Morphia repos apply the base data-domain filters and the rewritten ontology constraint to queries, producing fast lists without deep joins.
 
@@ -1488,11 +1503,11 @@ Under the hood, policy evaluation uses ListQueryRewriter.rewriteForHasEdge(...),
 
 ==== Passing tenantId correctly
 
-- Always resolve tenantId from RuleContext/SecurityContext (the same source your repos use for realm/database selection).
-- EdgeDao and ListQueryRewriter already accept tenantId; never cross tenant boundaries when reading edges.
-- Index recommendation (per tenant):
-  - (tenantId, p, dst)
-  - (tenantId, src, p)
+- Always resolve the DataDomain from the caller's SecurityContext (the same source your repos use for realm/database selection).
+- OntologyEdgeRepo and ListQueryRewriter take the caller's DataDomain; never cross tenant boundaries when reading edges.
+- Indexes are declared on the `OntologyEdge` entity and are scoped by DataDomain (orgRefName, accountNum, tenantId, dataSegment):
+  - `idx_domain_p_dst`: DataDomain, p, dst
+  - `idx_domain_src_p`: DataDomain, src, p
 
 ==== Morphia repository integration patterns
 

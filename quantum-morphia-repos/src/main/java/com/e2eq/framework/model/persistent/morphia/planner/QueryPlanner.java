@@ -86,7 +86,7 @@ public class QueryPlanner {
         QueryAnalysisListener analysis = new QueryAnalysisListener();
         ParseTreeWalker.DEFAULT.walk(analysis, tree);
         PlannerResult.Mode mode = analysis.hasExpansions() ? PlannerResult.Mode.AGGREGATION : PlannerResult.Mode.FILTER;
-        return new PlannerResult(mode, analysis.getExpandPaths());
+        return new PlannerResult(mode, analysis.getExpandPaths(), analysis.getRelationExpands());
     }
 
     public <T extends UnversionedBaseModel> PlannedQuery plan(String query, Class<T> modelClass) {
@@ -180,7 +180,8 @@ public class QueryPlanner {
         }
         // AGGREGATION mode: build a minimal LogicalPlan and compile it
         if (Log.isDebugEnabled()) {
-            Log.debugf("Aggregation mode selected. expand paths=%s", result.getExpandPaths());
+            Log.debugf("Aggregation mode selected. expand paths=%s, relations=%s",
+                    result.getExpandPaths(), result.getRelationExpands());
         }
         // Build minimal logical plan: depth=1, array flag inferred from path
         com.e2eq.framework.model.persistent.morphia.metadata.MetadataRegistry md =

@@ -7,6 +7,17 @@ endif::[]
 
 This section explains how Quantum evaluates permissions for REST requests using rule bases that match on a SecurityURI composed of a header and a body. The header includes identity, area, functionalDomain, and action. The body includes realm, accountNumber, tenantId, dataSegment, ownerId, and resourceId. It also covers how identities and roles (as found on userProfile or credentialUserIdPassword) are matched, how priority works, and how multiple matching rule bases are evaluated.
 
+== Permission inspection authorization
+
+`POST /system/permissions/role-provenance`, `/system/permissions/check`,
+`/system/permissions/check-with-index`, and `/system/permissions/fd/evaluate`
+allow self inspection in the caller's request realm. Inspecting another identity
+or realm, or simulating unheld extra roles, requires the framework system
+principal or administration of the target realm (restricted to authorized target
+tenants in pooled realms). Unauthorized requests receive the same typed `403`
+regardless of target existence, before target credential/profile/group reads.
+See xref:permission-resource.adoc[Permission Resource] for scope requirements.
+
 == Introduction: Layered Enforcement Overview
 
 Quantum evaluates "can this identity do X?" through three complementary layers. Understanding them in order helps you pick the right tool for the job and combine them safely:
@@ -31,8 +42,8 @@ Quantum evaluates "can this identity do X?" through three complementary layers. 
 
 How roles, Functional Areas, and Functional Domains fit in
 
-* Roles: Used by both layers (1) and (3). Annotations directly reference roles. In the rule engine, roles are evaluated by treating each role as an identity: rules authored for a role name (for example, "ADMIN") are considered alongside rules authored for the user's own userId. Effective roles are resolved by merging IdP roles with roles on the user record; see "How roles are defined for an identity" below.
-* Functional Area/Domain: Derived from the URL convention `/{area}/{functionalDomain}/{action}` as parsed by `SecurityFilter.determineResourceContext`. Author policies using these fields to target business capabilities rather than raw URLs or ad‑hoc headers.
+* Roles: Used by both layers (1) and (3). Annotations directly reference roles. In the rule engine, roles are evaluated by treating each role as an identity: rules authored for a role name (for example, "ADMIN") are considered alongside rules authored for the user's own userId. Effective roles are resolved for the verified identity from the application's records (credential, realm assignment, user groups, application bindings), not granted by the token; see "How roles are defined for an identity" below.
+* Functional Area/Domain: Taken from `@FunctionalMapping` on the model or the JAX-RS resource (or the model's `bmFunctionalArea()` / `bmFunctionalDomain()`), resolved by `SecurityFilter.determineResourceContext`. The action comes from `@FunctionalAction`, a path keyword or the HTTP method. The URL is never parsed for area or domain: a resource with no mapping gets the anonymous resource context. Author policies using these fields to target business capabilities rather than raw URLs or ad‑hoc headers.
 * DataDomain: When rules ALLOW an action, they can attach data-scope filters (tenant/org/owner) so downstream reads/writes are constrained to the caller’s domain.
 
 Choosing the right approach
@@ -71,8 +82,8 @@ stop
 
 * Identity: The authenticated principal, typically originating from JWT or another provider. It includes:
   - userId (or credentialUserIdPassword username)
-  - roles (authorities/groups)
-  - tenantId, orgRefName, optional realm, and other claims that contribute to DomainContext
+  - roles (resolved per request for the realm and application the request runs in)
+  - the realm, tenant, organization and account the request runs in (the principal's DomainContext and DataDomain), resolved from the application's records rather than asserted by the caller
 * userProfile: A domain representation of the user that adds human information such as first name, last name, email address, phone number and provides a linkage back to  identity, roles, and policy decorations (feature flags, plans, expiration, etc.).
 * Rule Base (Permission Rule): A declarative rule with matching criteria and an effect (ALLOW or DENY). Criteria are authored against SecurityURI and may include:
   - SecurityURIHeader fields: identity (userId or role name), area, functionalDomain, action
@@ -153,7 +164,7 @@ end note
   finalRule: true
 ----
 
-- The securityURI.header section corresponds to SecurityURIHeader: identity (userId or role name), area, functionalDomain, and action. Functional area/domain/action are typically derived from the URL convention `/{area}/{functionalDomain}/{action}` by SecurityFilter.
+- The securityURI.header section corresponds to SecurityURIHeader: identity (userId or role name), area, functionalDomain, and action. Functional area, domain and action come from `@FunctionalMapping` / `@FunctionalAction` (see xref:{doc-root}/user-guide/security-annotations.adoc[Security Annotations]).
 - The securityURI.body section corresponds to SecurityURIBody: realm, accountNumber, tenantId, dataSegment, ownerId, and resourceId. These values are matched using simple string equality with support for the wildcard '*'.
 - Optional postconditionScript may be provided and is executed as JavaScript with pcontext and rcontext bindings; the rule only applies if the script evaluates to true.
 
@@ -194,7 +205,7 @@ deactivate RuleContext
 The engine evaluates permission rules using SecurityURI wildcard matching. At a high level:
 
 1. Build ResourceContext
-   - SecurityFilter derives area, functionalDomain, and action from the request path (or REST annotations if present) and sets the ResourceContext.
+   - SecurityFilter takes area and functionalDomain from `@FunctionalMapping` (model first, then resource), the action from `@FunctionalAction`, a path keyword or the HTTP method, and sets the ResourceContext.
 2. Expand identities
    - Build a set of identities consisting of the caller’s userId plus each effective role. Each of these identities is treated as a potential match target for rules.
 3. Gather candidate rules
@@ -274,7 +285,8 @@ access lists.
 
 . A `BaseResource` list/query calls `MorphiaRepo.getFilterArray(userFilters, modelClass)`. The caller's own query filters are the starting set; security filters are **AND-ed on top** of them.
 . `RepoSecurityFilterBuilder` short-circuits when `SecurityContext.isIgnoringRules()` is set — returning the filters **unscoped**. This `ignoreRules` path is reserved for system-internal/unauthenticated lookups (e.g. credential resolution at login, infrastructure reads). Otherwise it requires both a `PrincipalContext` and a `ResourceContext` and **fails closed** (throws) if either is missing.
-. `RuleContext.getFilters(filters, pcontext, rcontext, modelClass)` runs `checkRules`; if the final effect is not `ALLOW` the base filters are returned unchanged. Otherwise it resolves a variable bundle and, for each matched `ALLOW` rule, interpolates the rule's `andFilterString`/`orFilterString` via `MorphiaUtils.convertToFilter(...)`, combining them with the rule's `joinOp` (AND/OR) and de-duplicating.
+. `RuleContext.getFilters(filters, pcontext, rcontext, modelClass)` runs `checkRules`; if the final effect is not `ALLOW` it throws `ForbiddenException` ("Access denied: user=..., area=..., domain=..., action=...") and no query runs. Otherwise it resolves a variable bundle and, for each matched `ALLOW` rule, interpolates the rule's `andFilterString`/`orFilterString` via `MorphiaUtils.convertToFilter(...)`, combining them with the rule's `joinOp` (AND/OR) and de-duplicating. Each rule is composed from its own two clauses only; one rule's clause is never OR-ed into another rule's.
+. A rule filter that references a variable that cannot be resolved is not dropped: that rule contributes a filter that matches nothing (see <<rule-filter-fail-closed>>).
 . The resulting `Filter[]` is a single explicit `$and` of the rule filters and every caller filter (`RuleFilterComposition.conjoin`), applied with one `Query.filter(...)` call. Morphia merges top-level filters that share a key, so rule and caller filters are never passed to it as separate varargs.
 
 .Composing caller filters with rule filters
@@ -317,7 +329,11 @@ author rules that reference the corresponding variables (see below).
 
 `MorphiaUtils.createStandardVariableMapFrom` registers these scalars from the
 principal/resource context. They resolve from the principal's `DataDomain` and
-`DomainContext`, which are populated from the authenticated token's claims.
+`DomainContext`, which `SecurityFilter` builds for the verified identity: from
+the credential and realm records on the default path, from the Auth service's
+answer with the remote principal source, or from the trusted issuer's signed
+claims with `quantum.auth.trust-token-claims=true` (see
+xref:{doc-root}/user-guide/auth.adoc#authn-authz-separation[Authentication and Authorization Are Separate]).
 
 [cols="1,3"]
 |===
@@ -327,10 +343,10 @@ principal/resource context. They resolve from the principal's `DataDomain` and
 | `${pAccountId}`       | `DataDomain.accountNum`
 | `${orgRefName}`       | `DataDomain.orgRefName` (note: no `p` prefix)
 | `${ownerId}`          | `DataDomain.ownerId`
-| `${defaultRealm}`     | `PrincipalContext.defaultRealm` (drives X-Realm scoping)
+| `${defaultRealm}`     | `PrincipalContext.defaultRealm` (the realm the request runs in)
 | `${principalId}`      | `PrincipalContext.userId`
 | `${resourceId}`, `${action}`, `${functionalDomain}`, `${area}` | `ResourceContext`
-| `${dcTenantId}`, `${dcOrgRefName}`, `${dcAccountId}`, `${dcDataSegment}` | the `DomainContext` (X-Realm-aware; may differ from `DataDomain`)
+| `${dcTenantId}`, `${dcOrgRefName}`, `${dcAccountId}`, `${dcDataSegment}` | the `DomainContext` of the realm the request runs in (may differ from `DataDomain`)
 | `${systemTenantId}`   | `DataDomain.tenantId` (legacy alias)
 |===
 
@@ -350,11 +366,13 @@ combines them:
   effect: ALLOW
 ----
 
-IMPORTANT: Because every `${...}` value originates in the token, a token that
-omits tenant/org/account claims makes the corresponding filters unresolvable —
-even the default `${pTenantId}` filter. A centralized issuer MUST project the
-principal's `DomainContext` (realm/tenant/org/account) into token claims for
-this machinery to scope correctly.
+IMPORTANT: Every `${...}` value comes from the resolved `PrincipalContext`, not
+from the request. If the principal has no tenant, organization or account, the
+corresponding filters are unresolvable — even the default `${pTenantId}`
+filter — and the rule then matches nothing (see <<rule-filter-fail-closed>>).
+The fix is in the records the principal is resolved from (the credential's or
+realm's `DomainContext`, the tenant membership). It is not to add claims to a
+token: with identity-only resolution the token carries no tenancy at all.
 
 === Dynamic access lists (the `AccessListResolver` SPI)
 
@@ -384,11 +402,34 @@ Two behaviors distinguish dynamic lists from the static scalars:
   `supports(pcontext, rcontext, modelClass)` returns true for the _current
   request's_ context (not the rule's scope). Be permissive, or filter by
   `modelClass`, or the variable will be unresolvable for valid requests.
-- **Skip-on-unresolved.** If a rule's filter references a variable that cannot
-  be resolved for the current model class (e.g. `${accessibleLocationIds}` on a
-  `UserProfile` query), `getFilters` **skips that rule's filter** rather than
-  erroring — so a Location access rule does not wrongly constrain unrelated
-  queries.
+- **Fail closed on unresolved.** If a matched ALLOW rule's filter references a
+  variable that cannot be resolved for the current request (e.g.
+  `${accessibleLocationIds}` on a `UserProfile` query, because the resolver's
+  `supports()` said no), `getFilters` does **not** skip the rule. The rule
+  contributes a match-nothing filter, so the query returns no rows through that
+  rule. Scope a rule that uses a resolver variable to the area and domain the
+  resolver supports, so it does not match unrelated queries.
+
+[[rule-filter-fail-closed]]
+=== Unresolved variables fail closed
+
+A matched ALLOW rule's filter is a security constraint, so it is never dropped
+when it cannot be evaluated:
+
+* *Reads.* When a filter references a variable that is missing, null, or whose
+  `AccessListResolver` threw, the rule contributes `_id $in []` (match nothing)
+  and a WARN names the rule and the variables. `RuleVariableBundleResolver`
+  records the keys of resolvers that failed and removes any value for them.
+* *In-memory evaluation* (`RuleFilterApplicabilityEvaluator`, used by
+  single-resource checks): with unresolved variables or a failed bundle, an
+  ALLOW rule does not apply and a DENY rule does.
+* *Governed filter strings* (`RuleContext.getGovernedFilterString`, the form
+  handed to federated and expand queries) refuse to project a rule with an
+  unresolved variable. Variable values that carry query syntax, including
+  commas, are refused as well, so a value can never extend the filter.
+
+Because the match-nothing filter is combined with the caller's filters in one
+explicit `$and`, a caller filter on `_id` cannot replace it.
 
 === Summary
 
@@ -396,11 +437,77 @@ Two behaviors distinguish dynamic lists from the static scalars:
 |===
 | Scope | Kind | How it applies
 
-| Realm        | database selection | `getRealmId` → `defaultRealm` picks the DB
+| Realm        | database selection | `getRealmId` → `defaultRealm` picks the DB (the realm resolved for the principal, not a client default)
 | Tenant       | static, default    | built-in `dataDomain.tenantId:${pTenantId}`
 | Org / Account / Segment | static, opt-in | author a rule referencing `${orgRefName}` / `${pAccountId}` / `${dcDataSegment}`
 | Location (and similar) | dynamic, resolver-backed | `AccessListResolver` (often ontology-edge-backed) supplies `${accessibleLocationIds}`; requires a rule **and** a registered resolver
 |===
+
+[[write-side-enforcement]]
+== Write-Side Enforcement and Request Governance
+
+Row filters scope reads. The same rules also bound what a caller may write, and the REST layer refuses inputs that would let a caller choose where a record lives. All of the following is always on; none of it is configurable.
+
+=== Writes are checked against the rule filters
+
+* *The record must satisfy the rule filters.* `PermissionRuleInterceptor` runs on every persist. After the write action is ALLOWed it calls `RuleContext.enforceWriteFilters`: the entity being created or updated, including its resolved or supplied `dataDomain`, must satisfy every matched ALLOW rule filter for that action, evaluated in memory with the same variable bundle reads use. Otherwise a `SecurityCheckException` names the user, action, area, domain, data domain and rule. Unresolved variables or a filter that cannot be evaluated deny the write.
+* *A persist needs an explicit write action and a ResourceContext.* A persistence callback with no `ResourceContext` is refused. Privileged internal writes open an explicit scope with `SecurityCallScope`; they do not rely on a missing context.
+* *By-id writes are gated by the row filters.* `MorphiaRepo.update(id, ...)` and `updateActiveStatus` read the row under the caller's rule filters first and repeat the filters in the write (`$and` with the id); `updateManyByIds` and delete-by-id select through the same secured filters. An id outside the caller's scope is not updated or deleted.
+* *Hierarchy and reference resolution honour the filters.* `RepoUtils.resolve`, hierarchy tree reads and task completion writes run under the rule filters of the model they touch; a parent the rules hide is treated as absent.
+
+=== A request cannot choose a record's dataDomain
+
+A record's `dataDomain` decides which tenant it belongs to, so it is never taken from client input. `BaseResource` saves and QueryGateway saves apply the same rules:
+
+[cols="2,3", options="header"]
+|===
+| Request | Result
+
+| Create with no `dataDomain`, or one equal to the caller's own
+| The domain is resolved for the principal by `DataDomainResolver` (DataDomain policy included).
+
+| Create naming a different domain
+| `403 DATA_DOMAIN_NOT_PERMITTED`
+
+| Save with an id of a row in the caller's scope
+| The stored row keeps its domain. A body that changes it is refused with `403 DATA_DOMAIN_NOT_PERMITTED`. Reading a record and writing all of it back, including the returned `dataDomain`, is accepted.
+
+| Save with an id that exists outside the caller's scope
+| `404 ENTITY_NOT_IN_SCOPE`; the row is never overwritten. An unused id is still a create.
+
+| `PUT set` or a bulk set naming a `dataDomain` field path
+| `403 DATA_DOMAIN_NOT_UPDATABLE`
+
+| No security context
+| `500 SECURITY_CONTEXT_MISSING` (fail closed)
+|===
+
+Programmatic writers (seeders, tenant provisioning, migrations) may still pre-set a domain; the governance applies to request input.
+
+Two related inputs are refused for the same reason:
+
+* *CSV imports.* A requested column named `dataDomain` or any `dataDomain.*` component is refused with 400 naming the column, on the direct, session and profile import paths. Imported rows always take the importing principal's domain.
+* *`skipValidation`.* The flag bypasses data-domain resolution, bean validation and state-graph checks, so it is set only by server code. It is read-only for JSON (sent values are ignored; it is `readOnly` in the OpenAPI schema), and a CSV column named `skipValidation` is refused with 400.
+
+=== Expansion fails closed
+
+When a query expands a relationship (`expand(...)` through the QueryGateway), each hop is governed by the target's own row and field policy. A target whose row or field policy cannot be resolved is refused with a typed 403 (`"error": "ExpandPolicyUnresolved"`), and every `$lookup` must carry its target's row filter or the query is refused. Nothing is expanded ungoverned.
+
+=== Canonical refName for policies and user groups
+
+`Policy` and `UserGroup` are joined on by `refName`, so they are marked `@CanonicalRefName` and their refName has one canonical spelling:
+
+* A refName that is given must match `^[A-Z][A-Z0-9_]*$`, be 3 to 64 characters, and not look like a generated id (16 or more hex characters). There is no trimming or re-casing.
+* A refName that is not given defaults to the record's ObjectId, as for every other entity. A refName equal to the record's own id counts as that default.
+* refName is immutable after create, on save, merge, field updates and bulk updates. A merge that omits refName leaves it untouched.
+* The check runs in the repository on every write path (REST, QueryGateway save, CSV import, seed packs), and `skipValidation` does not bypass it. Existing records are not re-validated.
+* Names that predate the rule (declared on the annotation or in `quantum.refname.legacy-allowed.<SimpleClassName>`) are admitted only for framework writes. A client that tries to claim one is refused with `REFNAME_RESERVED`.
+
+Refusals are typed `RefNameViolationException`s (`REFNAME_INVALID_FORMAT`, `REFNAME_GENERATED_ID`, `REFNAME_RESERVED`, `REFNAME_IMMUTABLE`), rendered as a `RestError` with `errorCode` and `diagnostics`. See xref:{doc-root}/user-guide/modeling.adoc[Modeling] for the full contract and the migration that reports stored names that break the rule.
+
+=== Policy conformance vectors
+
+The policy decision itself is pinned by implementation-neutral test vectors (`quantum-morphia-repos/src/test/resources/policy-conformance-vectors`, run by `PolicyConformanceVectorTest`). Each vector gives a principal, a resource and the rules in force, and the expected `finalEffect`, `filterConstraints` and excluded field paths. They fix the semantics this guide describes: default deny; exact, wildcard and case-insensitive matching; user-id rules alongside role rules; the last applicable rule by ascending priority decides, with no deny-overrides; a final rule stops evaluation; excluded fields are unioned only on ALLOW; and each field of the SecurityURI body (realm, org, account, tenant, data segment, owner, resource id) scopes a rule. Scripts are out of scope for the vectors: a runner must refuse a vector whose rule carries a pre- or postcondition script rather than evaluate it without the script.
 
 == Feature Flags, Variants, and Target Rules
 
@@ -942,70 +1049,51 @@ That deeper operational behavior belongs in the enterprise documentation. The im
 
 === How roles are defined for an identity (role sources and resolution)
 
-Quantum composes the effective roles for a request by merging:
+Roles are not granted by a token. For each request the framework resolves the roles of the verified identity for the realm and application the request runs in. `IdentityRoleResolver` does this on the default path; the sources are tracked as `RoleSource` values:
 
-* Roles from the identity provider (JWT/`SecurityIdentity`)
-* Roles configured on the user record (`CredentialUserIdPassword.roles`)
+[cols="1,3", options="header"]
+|===
+| Source | Where it comes from and where it applies
 
-Source details:
+| `CREDENTIAL`
+| `CredentialUserIdPassword.roles`, the flat roles. They are global by design: whenever the principal is resolved from the credential they apply in every realm the credential can enter. Use them for roles that are meant to be global.
 
-* Identity Provider (JWT): roles commonly arrive via standard claims (for example, `groups`, `roles`, or provider-specific fields). Quarkus maps these into `SecurityIdentity.getRoles()`. In multi-realm setups, the realm in `X-Realm` can scope lookups but does not alter what the JWT asserts.
-* Quantum user record: `com.e2eq.framework.model.security.CredentialUserIdPassword` has a `String[] roles` field stored per realm. This can be administered by Quantum to grant platform- or tenant-level roles.
+| `REALM`
+| The roles of the user's active `UserRealmRole` for the realm the request runs in. This is where a role that should hold in one realm belongs. Not read from the local store when `quantum.directory.mode=remote`.
 
-Merge semantics (current implementation):
+| `USERGROUP`
+| Roles of the `UserGroup` records the user's `UserProfile` belongs to, in the system realm and the target realm, for groups that apply to the request's application.
 
-* Union: the effective role set is the union of JWT roles and `CredentialUserIdPassword.roles`. If either source is empty, the other source defines the set.
-* Fallback: when neither source yields roles, the framework defaults to `ANONYMOUS`.
-* Where implemented: `SecurityFilter.determinePrincipalContext` builds `PrincipalContext` with the merged roles.
+| `TOKEN`
+| Roles in the verified token. They are honored only in the realm the token was issued for; after a realm switch, or for a token minted for another application in an application session, they are not adopted. Identity-only resolution does not read them at all.
+|===
 
-Realm considerations:
+The effective role set is the union of the sources that apply. When there is none, the principal gets `ANONYMOUS`. In identity-only resolution the roles of the application bindings (`UserAppRole`) that grant the selected tenant are added; a binding never carries one of the platform's reserved roles.
 
-* The user record is looked up by subject or userId in the active realm (default or `X-Realm`). If a realm override is provided, it is validated with `CredentialUserIdPassword.realmRegEx`.
-* Roles stored in a user record are realm-specific; JWT roles are whatever the IdP asserts for the token.
+Choosing where a role lives:
 
-Operating models:
-
-* Quantum-managed roles:
-** IdP authenticates the user (subject, username). Authorization is primarily driven by roles stored in `CredentialUserIdPassword.roles`.
-** Use when you want central, auditable role assignment within Quantum, independent of IdP groups.
-* IdP-managed roles:
-** IdP carries authoritative roles/groups in the JWT. Keep `CredentialUserIdPassword.roles` minimal or empty.
-** Use when enterprises require IdP as the source of truth for access groups.
-* Hybrid (recommended in many deployments):
-** Effective roles = JWT roles union `CredentialUserIdPassword.roles`.
-** Use JWT for enterprise groups (for example, `DEPT_SALES`, `ORG_ADMIN`) and Quantum roles for app-specific grants (for example, `REPORT_EXPORTER`, `BETA`).
-** This avoids IdP churn for application-local concerns while respecting org policies.
-
-Examples:
-
-* JWT-only:
-** JWT.groups = [USER, REPORTER]; user record roles = []
-** Effective roles = [USER, REPORTER]
-* Quantum-only:
-** JWT.groups = []; user record roles = [USER, ADMIN]
-** Effective roles = [USER, ADMIN]
-* Hybrid union:
-** JWT.groups = [USER]; user record roles = [BETA, REPORT_EXPORTER]
-** Effective roles = [USER, BETA, REPORT_EXPORTER]
+* A role every realm should honor: the credential's flat roles.
+* A role for one realm: the user's `UserRealmRole` for that realm. Realm roles apply in every tenant of the realm the assignment authorizes.
+* A role for one application, for named tenants: an application binding.
+* Do not model per-tenant privilege by adding roles to a token or by editing role claims. A receiving application may not read them (see xref:{doc-root}/user-guide/auth.adoc#authn-authz-separation[Authentication and Authorization Are Separate]).
 
 Guidance and best practices:
 
 * Keep role names stable and environment-agnostic; use realms/permissions to scope where needed.
 * Avoid overloading roles for feature rollout; use Feature Flags for rollout and variants, and roles for durable authorization.
-* When IdP is authoritative, ensure consistent claim mapping so `SecurityIdentity.getRoles()` contains the expected values; commonly via `groups` claim in JWT.
-* Use grant-based permission rules and require the minimal set of roles (`rolesAny`/`rolesAll`) needed for each capability.
+* Author a separate grant-based rule for each role that needs a capability; rules have no `rolesAny`/`rolesAll` fields.
 
 Cross-references:
 
-* User model: `com.e2eq.framework.model.security.CredentialUserIdPassword.roles`
+* User model: `com.e2eq.framework.model.security.CredentialUserIdPassword.roles`, `com.e2eq.framework.model.security.UserRealmRole.roles`
 * Context: `com.e2eq.framework.model.securityrules.PrincipalContext.getRoles()`
-* Filter logic: `com.e2eq.framework.rest.filters.SecurityFilter.determinePrincipalContext`
+* Resolution: `com.e2eq.framework.model.persistent.morphia.IdentityRoleResolver`, `com.e2eq.framework.security.principal.PrincipalContextResolver`
 
 ==== Populating `RoleSource` and `roleAssignments`
 
 Quantum exposes structured provenance for each role via:
 
-* `com.e2eq.framework.model.auth.RoleSource` enum with values: `USERGROUP`, `IDP`, `CREDENTIAL`
+* `com.e2eq.framework.model.auth.RoleSource` enum with values: `USERGROUP`, `TOKEN`, `CREDENTIAL`, `REALM` (serialized in lower case)
 * `com.e2eq.framework.model.auth.RoleAssignment` record: `role` + `Set<RoleSource> sources`
 * Login response model `com.e2eq.framework.model.auth.AuthProvider.LoginPositiveResponse` now includes
   a `roleAssignments` field next to plain `roles`.
@@ -1024,16 +1112,17 @@ JSON example (login success):
   "userId": "alice",
   "roles": ["user", "admin"],
   "roleAssignments": [
-    {"role": "user",  "sources": ["idp", "credential"]},
-    {"role": "admin", "sources": ["usergroup"]}
+    {"role": "user",  "sources": ["token", "credential"]},
+    {"role": "admin", "sources": ["realm"]}
   ],
   "accessToken": "...",
   "refreshToken": "...",
   "expirationTime": 1732100000,
-  "mongodbUrl": "...",
   "realm": "system"
 }
 ```
+
+This is the provider-level `LoginPositiveResponse`. Its `mongodbUrl` component is never populated and never reaches a client.
 
 ==== AuthProviders: what you need to do
 
@@ -1042,11 +1131,14 @@ Auth providers (for example, `CustomTokenAuthProvider`) should add provenance at
 1. During login (`login(userId, password)`)
 2. During token refresh (`refreshTokens(refreshToken)`)
 
-At each point build three role sets and then compute per-role sources:
+At each point build the role sets and then compute per-role sources:
 
-* IDP roles → from `io.quarkus.security.identity.SecurityIdentity.getRoles()` for the current access/refresh token
+* Token roles → from `io.quarkus.security.identity.SecurityIdentity.getRoles()` for the current access/refresh token
 * Credential roles → from `com.e2eq.framework.model.security.CredentialUserIdPassword.getRoles()` in the DB
+* Realm roles → from the user's active `UserRealmRole` for the realm the token is issued for
 * User group roles → gathered by resolving the user's `UserProfile` and its `UserGroup` memberships
+
+`CustomTokenAuthProvider` already does this for sign-in and refresh, and `IdentityRoleResolver.buildRoleResolution(...)` returns the union together with its `roleAssignments`. The example below shows the shape for a provider of your own.
 
 Then build `List<RoleAssignment>` and pass the full constructor of `LoginPositiveResponse`.
 
@@ -1085,7 +1177,7 @@ java.util.List<com.e2eq.framework.model.auth.RoleAssignment> roleAssignments = a
     .map(role -> {
         java.util.EnumSet<com.e2eq.framework.model.auth.RoleSource> src =
             java.util.EnumSet.noneOf(com.e2eq.framework.model.auth.RoleSource.class);
-        if (idpRoles.contains(role)) src.add(com.e2eq.framework.model.auth.RoleSource.IDP);
+        if (idpRoles.contains(role)) src.add(com.e2eq.framework.model.auth.RoleSource.TOKEN);
         if (credentialRoles.contains(role)) src.add(com.e2eq.framework.model.auth.RoleSource.CREDENTIAL);
         if (userGroupRoles.contains(role)) src.add(com.e2eq.framework.model.auth.RoleSource.USERGROUP);
         return new com.e2eq.framework.model.auth.RoleAssignment(role, src);
@@ -1103,7 +1195,7 @@ return new com.e2eq.framework.model.auth.AuthProvider.LoginResponse(
         accessToken,
         refreshToken,
         expirationTime,
-        mongodbUrl,
+        null,                   // mongodbUrl: never return a connection string
         realm
     )
 );
@@ -1111,8 +1203,8 @@ return new com.e2eq.framework.model.auth.AuthProvider.LoginResponse(
 
 Notes and tips:
 
-* You may centralize this logic in `IdentityRoleResolver` by adding a method that returns `Map<String, EnumSet<RoleSource>>` (role → sources) and reuse it across login and `/check`.
-* If you cannot resolve a user record (for example, token-only identities), populate only `IDP` sources.
+* `IdentityRoleResolver.resolveRoleSources(...)` returns `Map<String, EnumSet<RoleSource>>` (role → sources); reuse it rather than duplicating the logic.
+* If you cannot resolve a user record (for example, token-only identities), populate only `TOKEN` sources.
 * Avoid adding synthetic roles like `ANONYMOUS` to `roleAssignments`—the structure should cover actual grants.
 * Consider caching group-derived roles per user/request if lookups are expensive.
 
@@ -1142,13 +1234,11 @@ This keeps the default behavior (no breaking changes) while enabling clients to 
 * Outcome: ALLOW; repository applies DataDomain filter orgRefName=PUBLIC
 
 . Tenant-scoped shipment update
-* Request: PUT /Collaboration/Shipments/UPDATE
-* Headers: x-tenant-id=T1
-* Body: { dataDomain: { tenantId: "T1" }, ... }
-* Identity: user in tenant T1 with roles [USER]
+* Request: PUT on a resource mapped to area `Collaboration`, domain `Shipments` (action UPDATE)
+* Identity: a user whose resolved principal is in tenant T1, with roles [USER]. The request sends no tenant header and does not choose a `dataDomain`.
 * Rules:
-** allow-collab-update (priority 300) requires body.dataDomain.tenantId == identity.tenantId and rolesAny USER, ADMIN => ALLOW
-* Outcome: ALLOW; Rule contributes writeScope tenantId=T1
+** allow-collab-update (priority 300), identity USER, with `andFilterString: "dataDomain.tenantId:${pTenantId}"` => ALLOW
+* Outcome: ALLOW. The stored row is read under the rule filter, so only a T1 shipment can be updated, and the updated record must still satisfy the filter. A body that tries to move the record to another tenant is refused with `403 DATA_DOMAIN_NOT_PERMITTED`.
 
 . Cross-tenant admin read with higher priority
 * Request: GET /api/partners
@@ -1160,7 +1250,7 @@ This keeps the default behavior (no breaking changes) while enabling clients to 
 
 . Conflicting ALLOW and DENY at same priority
 * Two rules match with priority 200: one ALLOW, one DENY
-* Resolution: DENY wins unless merge strategy configured to handle explicitly; recommended to avoid same-priority conflicts by policy.
+* Resolution: there is no deny-overrides rule. Rules are evaluated in ascending priority and the last applicable rule decides unless an earlier one is final. Two rules at the same priority leave that order to the sort, so never rely on it: give the DENY a lower number and mark it `finalRule: true`.
 
 == Operational Tips
 
@@ -1298,7 +1388,7 @@ Operational considerations:
 
 == How This Integrates End-to-End
 
-- BaseResource extracts identity and headers to construct DomainContext.
+- SecurityFilter resolves the verified identity to a PrincipalContext (realm, DataDomain, roles) and the endpoint to a ResourceContext (area, domain, action).
 - Rule evaluation uses SecurityURI (header + body) matching with optional postconditionScript and identity/userProfile to reach a decision and derive scope filters.
 - Repositories (e.g., MorphiaRepo) apply the filters to queries and updates, ensuring DataDomain-respecting access.
 
@@ -1309,12 +1399,13 @@ The PolicyResource exposes CRUD-style REST APIs for creating and managing polici
 
 - Base path: /security/permission/policies
 - Auth: Bearer JWT (see Authentication); resource methods are guarded by @RolesAllowed("user", "admin") at the BaseResource level and your own realm/role policies.
-- Multi-realm: pass X-Realm header to operate within a specific realm; otherwise the default realm is used.
+- Realm: policies are read and written in the realm the request runs in, which is resolved for the signed-in caller. Do not send `X-Realm` on ordinary calls. An operator who administers another realm's policies uses `X-Realm` as an explicit override and needs the authority for it (see "Realm override" below).
+- The resource is part of `quantum-system-rest`; an application that omits that module does not expose it.
 
 === Model shape (Policy)
 
 A Policy extends FullBaseModel and includes:
-- id, refName, displayName, dataDomain, archived/expired flags (inherited)
+- id, refName, displayName, dataDomain, archived/expired flags (inherited). `refName` follows the canonical rule (uppercase letters, digits and underscore; immutable after create; defaults to the ObjectId when omitted), and `dataDomain` cannot be chosen by the request. See <<write-side-enforcement>>.
 - principalId: userId or role name that this policy attaches to
 - description: human-readable summary
 - rules: array of Rule entries
@@ -1471,7 +1562,7 @@ The following standard variables are available in andFilterString/orFilterString
 
 |`${defaultRealm}`
 |PrincipalContext.defaultRealm
-|The current realm (changes with X-Realm override)
+|The realm the request runs in (the target realm after an authorized X-Realm override)
 
 |`${resourceId}`
 |ResourceContext.resourceId
@@ -1515,7 +1606,7 @@ The following standard variables are available in andFilterString/orFilterString
 
 |`${principal.<attr>}`
 |PrincipalContext attributes
-|Authenticated principal attributes and claims
+|`principal.userId`, `principal.defaultRealm`, and every custom property under `principal.<key>`
 
 |`${dd.<attr>}`
 |DataDomain fields
@@ -1524,7 +1615,7 @@ The following standard variables are available in andFilterString/orFilterString
 
 NOTE: **Dotted Variable Identifiers & Single-Variable IN**: Variables with dotted paths (`${facet.tier}`, `${coord.salesZone}`) resolve in a strict hierarchy. When evaluated with the list membership operator (`:^`), single variables resolving to a Java `Collection` (e.g. `allowedTiers = ["FLAGSHIP", "REGIONAL"]`) can be passed without brackets (`tier:^${facet.allowedTiers}`), automatically unpacking into native MongoDB `$in` clauses.
 
-**X-Realm integration**: When `X-Realm` is used, `${defaultRealm}` automatically reflects the target realm. This enables permission filters to dynamically scope data based on the active realm:
+**Realm variable**: `${defaultRealm}` is the realm the request runs in. After an authorized `X-Realm` override it reflects the target realm. This enables permission filters to scope data by the active realm:
 
 [source,yaml]
 ----
@@ -1655,7 +1746,7 @@ How it works:
   - `getUserId()`, `getSubjectId()`: User identifiers
   - `getRealm()`, `getDataDomain()`, `getDomainContext()`: Realm and domain context
   - `getHeader(name)`: HTTP request headers
-  - `getJwtClaim(name)`: JWT token claims
+  - `getJwtClaim(name)`: JWT token claims. Read identity or profile attributes only. Do not read roles, realm or tenancy from claims: take them from the context you are given (`getRealm()`, `getDataDomain()`, `getDomainContext()`), which is correct on every principal path, including the remote principal source where those claims are not used.
   - `hasCredentials()`, `getCredentialUserId()`, `getCredentialRoles()`: Database credentials
 - SecurityFilter discovers all resolvers via CDI, invokes them in priority order, and merges results into PrincipalContext.customProperties.
 - MorphiaUtils.createStandardVariableMapFrom includes custom properties, making them available as `${key}` in filter strings.
@@ -1817,7 +1908,7 @@ stop
 
 - getList / getListByQuery / find: RuleContext.getFilters augments the base filters with the effective security filters before executing the query.
 - count: same as read paths, ensuring counts reflect scoped visibility.
-- save (create): rules typically do not inject filters for inserts; writes are validated by separate preconditions or postconditionScript. If your policy encodes write-scope, author UPDATE/DELETE rules to guard modifications rather than CREATE, unless your domain enforces ownership/tenant on insert.
+- save (create or update): the write action is checked by `PermissionRuleInterceptor`, and the record being written must satisfy the matched ALLOW rule filters (see <<write-side-enforcement>>). A CREATE rule with a filter therefore constrains what may be inserted.
 - update / merge / set / bulk set: the security filters are ANDed into the target selection so only documents visible under the policy are affected.
 - delete (by id or by query): security filters are applied to the selection to prevent deleting outside the allowed scope.
 
@@ -1825,23 +1916,25 @@ Implementation reference:
 
 [source,java]
 ----
-// Repositories call into RuleContext to augment filters
+// Repositories call into RuleContext to augment filters, then conjoin rule and caller
+// filters into ONE explicit $and before handing them to Morphia
 List<Filter> filters = ruleContext.getFilters(baseFilters,
     SecurityContext.getPrincipalContext().get(),
     SecurityContext.getResourceContext().get(),
     getPersistentClass());
-Query<T> query = datastore.find(getPersistentClass()).filter(filters.toArray(new Filter[0]));
+Query<T> query = datastore.find(getPersistentClass()).filter(RuleFilterComposition.conjoin(filters));
 ----
 
 Notes:
 
-- Filters are applied regardless of whether the match decision was ALLOW or DENY; only ALLOW rules contribute filters. DENY rules decide the outcome but do not add filters.
+- Only ALLOW rules contribute filters. DENY rules decide the outcome but do not add filters.
 - finalRule: true stops evaluating later rules for both decision and filter contribution.
-- If no ALLOW rules match, repositories may still execute with caller-provided filters, but upstream permission checks should have DENIED the action; by convention, most endpoints call checkRules and short-circuit DENY before hitting the database.
+- If the final effect is not ALLOW, `getFilters` throws `ForbiddenException` and the repository operation does not run. A query never executes with the caller's filters alone.
+- Application code should not pass rule and caller filters to `Query.filter(...)` as separate arguments; use `getFilterArray(...)` or `securedQuery(...)` as described under "Composing caller filters with rule filters".
 
 Example impact per MorphiaRepo method:
 
-- save: no security filters are injected into the insert operation; enforce ownership/tenant fields via model validation and/or postconditionScript.
+- save: the write action must be allowed and the record must satisfy the matched ALLOW rule filters; a REST body cannot choose the record's `dataDomain`.
 - find/findById: adds security filters; if the requested id is outside scope, the result is empty.
 - getList/getListByQuery: adds security filters to user-supplied query; scope cannot be broadened by the client.
 - update/merge: AND the security filters into the update selector; records outside scope are unaffected.
@@ -1852,7 +1945,7 @@ Example payload:
 [source,json]
 ----
 {
-  "refName": "defaultUserPolicy",
+  "refName": "DEFAULT_USER_POLICY",
   "displayName": "Default user policy",
   "principalId": "user",
   "description": "Users can act on their own data; deny dangerous ops in security area",
@@ -1889,7 +1982,7 @@ All endpoints are relative to /security/permission/policies. These are inherited
 
 * GET /list
   - Query params: skip, limit, filter, sort, projection
-  - Returns a Collection<Policy> with paging metadata; respects X-Realm.
+  - Returns a Collection<Policy> with paging metadata, from the realm the request runs in.
 
 * GET /id/{id} and GET /id?id=...
   - Fetch a single Policy by id.
@@ -1907,7 +2000,7 @@ All endpoints are relative to /security/permission/policies. These are inherited
   - Create or upsert a Policy (if id is present and matches an existing entity in the selected realm, it is updated).
 
 * PUT /set?id=...&pairs=field:value
-  - Targeted field updates by id. pairs is a repeated query parameter specifying field/value pairs.
+  - Targeted field updates by id. pairs is a repeated query parameter specifying field/value pairs. `refName` cannot be changed, and a `dataDomain` field path is refused (`403 DATA_DOMAIN_NOT_UPDATABLE`); the same holds for the bulk set endpoints.
 
 * PUT /bulk/setByQuery?filter=...&pairs=...
   - Bulk updates by query. Note: ignoreRules=true is not supported on this endpoint.
@@ -1935,10 +2028,16 @@ All endpoints are relative to /security/permission/policies. These are inherited
 * Index management (admin only):
   - POST /indexes/ensureIndexes/{realm}?collectionName=policy
 
+* POST /import (roles `admin` or `system`)
+  - Imports policies from a YAML body (`text/plain`, `application/yaml` or `text/yaml`). Each entry is created or, when its refName already exists, updated; the answer lists created, updated and failed entries, with the `errorCode` of a refName violation. The rule context is reloaded when anything changed.
+
+* POST /refreshRuleContext
+  - Reloads the in-memory rules for the realm from the stored policies.
+
 Headers:
 
 - Authorization: Bearer <token>
-- X-Realm: realm identifier (optional but recommended in multi-tenant deployments)
+- X-Realm: only as an explicit override by a caller authorized for the target realm. Not needed, and not recommended, for a caller working in its own realm.
 
 Filtering and sorting:
 
@@ -1954,7 +2053,6 @@ Filtering and sorting:
 curl -X POST \
   -H "Authorization: Bearer $JWT" \
   -H "Content-Type: application/json" \
-  -H "X-Realm: system-com" \
   https://host/api/security/permission/policies \
   -d @policy.json
 ----
@@ -1964,7 +2062,6 @@ curl -X POST \
 [source,bash]
 ----
 curl -H "Authorization: Bearer $JWT" \
-     -H "X-Realm: system-com" \
      "https://host/api/security/permission/policies/list?filter=principalId:'user'&sort=+refName&limit=50"
 ----
 
@@ -1974,8 +2071,7 @@ curl -H "Authorization: Bearer $JWT" \
 ----
 curl -X DELETE \
   -H "Authorization: Bearer $JWT" \
-  -H "X-Realm: system-com" \
-  "https://host/api/security/permission/policies/refName/defaultUserPolicy"
+  "https://host/api/security/permission/policies/refName/DEFAULT_USER_POLICY"
 ----
 
 === How changes affect rule bases and enforcement
@@ -1987,7 +2083,7 @@ curl -X DELETE \
 - Making persisted policy changes effective:
   - On startup, migrations (see InitializeDatabase and AddAnonymousSecurityRules) typically seed default policies and/or programmatically add rules to RuleContext.
   - When you modify policies via REST, you have two options to apply them at runtime:
-    . Implement a reload step that reads policies from PolicyRepo and rehydrates RuleContext (for example, RuleContext.clear(); then add rules built from current policies).
+    . Call `POST /security/permission/policies/refreshRuleContext`, which runs `RuleContext.reloadFromRepo(realm)` for the realm of the request. `POST /import` does this itself after a successful change.
     . Restart the service or trigger whatever policy-loader your application uses at boot.
   - Tip: If you maintain a background watcher or admin endpoint to refresh policies, keep it tenant/realm-aware and idempotent.
 
@@ -1998,7 +2094,7 @@ curl -X DELETE \
 
 - Safe rollout:
   - Create new policies with a higher numeric priority (lower precedence) first, test with GET /schema and dry-run queries.
-  - Use realm scoping via X-Realm to stage changes in a non-production realm.
+  - Stage changes in a non-production realm first, signed in as a user of that realm.
   - Prefer DENY with low priority numbers for critical protections.
 
 See also:
@@ -2025,7 +2121,7 @@ if (Impersonation header present?) then (yes)
   endif
 else (no)
   :Build PrincipalContext from caller;
-  if (X-Realm provided and allowed by realmRegEx?) then (yes)
+  if (X-Realm provided and authorized (authorizedRealms, else realmRegEx)?) then (yes)
     :Set defaultRealm = X-Realm;
     :Lookup target Realm's DomainContext;
     :DataDomain = target realm's DomainContext (ownerId = caller);
@@ -2041,9 +2137,16 @@ stop
 
 This section explains how to use the request headers X-Realm, X-Impersonate-*, and X-Acting-On-Behalf-Of-* alongside permission rule bases. These headers influence which realm (database) a request operates against and, in the case of impersonation, which identity's roles are evaluated by the rule engine.
 
+[IMPORTANT]
+====
+All three are explicit overrides for operators and services, comparable to `sudo`. None is a default a client should send. An ordinary request carries only its bearer token: the realm it runs in is resolved for the signed-in identity (from the token or credential, from the application's configured session realm, or, with identity-only resolution, from the application), and the tenant likewise. Each override needs authority held on the caller's credential, and a request that names a realm, tenant or identity it has no authority for is refused. `X-Tenant-Id` follows the same rule inside a shared realm: it selects among the tenants the caller's realm assignment authorizes, and is not needed when the caller has one tenant or a default.
+
+The diagram and the details below describe the default (local credential) path. With the remote principal source the Auth service applies the same checks and answers typed refusals (`REALM_NOT_AUTHORIZED`, `TENANT_NOT_AUTHORIZED`, `IMPERSONATION_REFUSED`, `DELEGATION_NOT_ALLOWED`).
+====
+
 === What they do (at a glance)
 
-- X-Realm: Overrides the target realm (MongoDB database) used by repositories for this request. Your own identity and roles remain the same. **The DataDomain is updated to the target realm's default DomainContext** (while preserving your userId as the ownerId). This ensures that data created via X-Realm is properly scoped to the target realm's tenant/org structure.
+- X-Realm: Overrides the target realm (MongoDB database) used by repositories for this request. Your identity remains the same; your roles are re-derived for the target realm (flat credential roles, the target realm's own `UserRealmRole` roles and applicable group roles; roles carried in the token for the original realm are not adopted). **The DataDomain is updated to the target realm's default DomainContext** (while preserving your userId as the ownerId). This ensures that data created via X-Realm is properly scoped to the target realm's tenant/org structure.
 - X-Impersonate-Subject or X-Impersonate-UserId: Causes the request to run as another identity. The effective permissions become those of the impersonated identity (potentially more or less than your own). This is analogous to sudo on Unix or to "simulate a user/role" for troubleshooting.
 - X-Acting-On-Behalf-Of-Subject or X-Acting-On-Behalf-Of-UserId: Records that the caller is acting on behalf of another party (for audit/tracking purposes). Unlike impersonation, this does NOT change permissions—the caller retains their own identity and roles.
 
@@ -2055,11 +2158,12 @@ Only one of X-Impersonate-Subject or X-Impersonate-UserId may be supplied per re
 - With X-Realm (no impersonation):
   - The PrincipalContext.defaultRealm is set to the header value (after validation), and repositories operate in that realm.
   - **The DataDomain is updated** from the target realm's DomainContext (org, tenant, account, dataSegment), while preserving your userId as the ownerId.
-  - Your own roles and identity remain intact; the rule base is evaluated for your identity and roles but with the target realm's data context.
+  - Your identity remains intact; the rule base is evaluated for your identity and the roles that apply in the target realm, with the target realm's data context.
+  - When the request carries an application id, you must also be admitted to that application in the target realm; otherwise 403.
   - Permission filter strings can use `${defaultRealm}` to dynamically scope queries based on the active realm.
 - With impersonation:
-  - The PrincipalContext is rebuilt from the impersonated user's credential. The effective roles used by the rule engine include the impersonated user's roles; the platform also merges in the caller's security roles from Quarkus SecurityIdentity. This means permissions can be a superset; design policy rules accordingly.
-  - The effective realm for the request is set to the impersonated user's default realm (not the X-Realm header). If you passed X-Realm, it is still validated (see below) but not used to override the impersonated default realm in the current implementation.
+  - The PrincipalContext is rebuilt from the impersonated user's credential. The effective roles are the impersonated user's own (credential, realm and group roles in their home realm); the impersonator's token roles are not merged in. The impersonator is recorded on the principal (`impersonatedBySubject` / `impersonatedByUserId`).
+  - The effective realm for the request is the impersonated user's home realm (not the X-Realm header). X-Realm, if passed, names the realm the caller's `impersonateFilterScript` is asked about; the realm switch itself is skipped while impersonation is active.
   - The DataDomain is set from the impersonated user's DomainContext.
 - With Acting-On-Behalf-Of:
   - The caller retains their own identity, roles, realm, and DataDomain.
@@ -2068,11 +2172,13 @@ Only one of X-Impersonate-Subject or X-Impersonate-UserId may be supplied per re
 
 === Required credential configuration (CredentialUserIdPassword)
 
-Two fields on CredentialUserIdPassword govern whether a user may use these headers:
+These fields on CredentialUserIdPassword govern whether a user may use these headers:
 
-- realmRegEx (for X-Realm):
+- authorizedRealms (for X-Realm):
+  - An explicit list of realms the credential may enter besides its home realm. When the list is non-empty it decides, and realmRegEx is not consulted.
+- realmRegEx (for X-Realm, when authorizedRealms is empty):
   - A wildcard pattern ("*" matches any sequence; case-insensitive) listing the realms a user is allowed to target with X-Realm.
-  - If X-Realm is present but realmRegEx is null/blank or does not match the requested realm, the server returns 403 Forbidden.
+  - If X-Realm names a realm that is not registered, or that neither authorizedRealms nor realmRegEx authorizes, the server returns 403 Forbidden.
   - Examples:
     - "*" → allow any realm
     - "acme-*" → allow realms that start with acme-
@@ -2081,6 +2187,10 @@ Two fields on CredentialUserIdPassword govern whether a user may use these heade
   - A JavaScript snippet executed by the server (GraalVM) that must return a boolean. It receives three variables: username (the caller’s subject), userId (caller’s userId), and realm (the requested realm or current DB name).
   - If the script evaluates to false, the server returns 403 Forbidden for impersonation.
   - If the script is missing (null) and you attempt impersonation, the server rejects the request with 400/IllegalArgumentException.
+- authorizedImpersonateIds (for X-Impersonate-* and delegation):
+  - An optional list of identities (by userId or subject). In identity-only resolution, when the list is present the target must be on it, in addition to the script.
+- serviceKind (service credentials):
+  - Only a `DELEGATING` service credential may act on behalf of an identity in identity-only resolution; see "Impersonation and delegation" in the authentication guide.
 
 Example impersonation script (allow only company admins to impersonate in dev realms):
 
@@ -2095,23 +2205,23 @@ Tip: Manage these two fields via your auth provider’s admin APIs or directly t
 === End-to-end behavior from SecurityFilter (reference)
 
 The SecurityFilter constructs the PrincipalContext/ResourceContext before rule evaluation:
-- X-Realm is read and, if present, validated against the caller’s credential.realmRegEx.
+- X-Realm is read and, if present, validated against the realm catalog and the caller’s credential (authorizedRealms, else realmRegEx).
 - If impersonation headers are present:
   - The caller’s credential.impersonateFilterScript is executed. If it returns true, the impersonated user’s credential is loaded and used to build the PrincipalContext.
-  - The final PrincipalContext carries the impersonated user’s defaultRealm and roles (merged with the caller’s SecurityIdentity roles), and may copy area2RealmOverrides from the impersonated credential.
+  - The final PrincipalContext carries the impersonated user’s home realm and roles, and copies area2RealmOverrides and the data-domain policy from the impersonated credential.
 - Without impersonation, the PrincipalContext is built from the caller’s credential; X-Realm, when valid, sets the defaultRealm for this request.
 
 === Practical differences and use cases
 
 - Realm override (X-Realm):
-  - Who you are does not change; only where you act changes. Your permissions (as determined by policies attached to your identity/roles) are applied against data in the specified realm.
+  - Who you are does not change; only where you act changes. The policies attached to your identity and to the roles you hold in that realm are applied against data in the specified realm.
   - **DataDomain changes**: The DataDomain is updated from the target realm's DomainContext (tenant, org, account), ensuring new records are created with the correct scoping.
   - Use cases:
     - Multi-tenant admin tooling that needs to inspect or repair data in customer realms.
     - Reporting or backfills where the same service is pointed at different tenant databases per request.
     - Creating data in a target realm with proper DataDomain stamping.
 - Impersonation (X-Impersonate-*):
-  - Who you are (for authorization purposes) changes. You act with the impersonated identity's permissions; depending on your configuration, additional caller roles may be merged.
+  - Who you are (for authorization purposes) changes. You act with the impersonated identity's permissions, not your own.
   - The DataDomain is set from the impersonated user's credential.
   - Use cases:
     - Temporary elevation to an admin identity (sudo-like) for break-glass operations.
@@ -2128,10 +2238,12 @@ The SecurityFilter constructs the PrincipalContext/ResourceContext before rule e
 Caveats:
 - Never set a permissive impersonateFilterScript in production. Keep it restrictive and auditable.
 - When using both X-Realm and impersonation in one call, be aware that the effective realm will be the impersonated user's default realm; X-Realm is not applied in the impersonation branch in the current implementation.
-- realmRegEx must be populated for any user who needs realm override; leaving it blank effectively disables X-Realm for that user.
+- A user who needs realm override must have authorizedRealms or realmRegEx populated; with both empty, X-Realm is refused for any realm but the user's own.
 - Acting-On-Behalf-Of headers do NOT grant any additional permissions; they are purely for audit purposes.
 
 === Examples
+
+These examples are operator calls: the caller's credential authorizes the override in each case.
 
 - List policies in a different realm using your own identity
 
@@ -2485,50 +2597,53 @@ Another example using `hasIncomingEdge`:
   andFilterString: "hasIncomingEdge(canAccessLocation, ${principalId})"
 ----
 
-2) Evaluate policy and apply constraint in the repository/list path
+2) Evaluate the relationship from code
+
+`ListQueryRewriter` (`quantum-ontology-policy-bridge`, package `com.e2eq.ontology.policy`) is an
+application-scoped CDI bean. Inject it; do not construct it. Its methods take the caller's `DataDomain`,
+because edges are scoped by data domain rather than by a tenant id string. When the ontology Mongo module
+is installed it also reads LAZY and ONDEMAND computed edges.
 
 [source,java]
 ----
 import com.e2eq.ontology.policy.ListQueryRewriter;
-import com.e2eq.ontology.repo.OntologyEdgeRepo;
-import com.mongodb.client.model.Filters;
-import org.bson.conversions.Bson;
+import com.e2eq.framework.model.persistent.base.DataDomain;
 
-// Injected once per service when ontology is enabled (Quarkus CDI)
-@jakarta.inject.Inject OntologyEdgeDao edgeDao;
-ListQueryRewriter rewriter = new ListQueryRewriter(edgeDao);
+@jakarta.inject.Inject ListQueryRewriter rewriter;
 
-// Inside your list method, after building the base filter
-String tenantId = ruleContext.getRealmId(pctx, rctx); // or from DomainContext
-String predicate = "placedInOrg";
-String orgRefName = pctx.getDataDomain().getOrgRefName(); // resolves principal.orgRefName
+DataDomain dataDomain = pctx.getDataDomain();
+String orgRefName = dataDomain.getOrgRefName(); // resolves principal.orgRefName
 
-Bson base = Filters.and(existingFilters...);
-Bson rewritten = rewriter.rewriteForHasEdge(base, tenantId, predicate, orgRefName);
-var results = datastore.getDatabase().getCollection("orders").find(rewritten).iterator();
+// A Morphia filter: documents that have a "placedInOrg" edge to the caller's organisation
+dev.morphia.query.filters.Filter hasOrg = rewriter.hasEdge(dataDomain, "placedInOrg", orgRefName);
+query.filter(hasOrg);
 
-// Example for hasIncomingEdge in code
-Bson locationRewritten = rewriter.rewriteForHasIncomingEdge(locationBase, tenantId, "canAccessLocation", principalId);
+// Incoming direction, for example locations the caller can access
+dev.morphia.query.filters.Filter accessible =
+    rewriter.hasIncomingEdge(dataDomain, "canAccessLocation", principalId);
 ----
 
-3) Morphia-typed queries alternative
+3) Resolve the matching ids directly
 
 [source,java]
 ----
-// If you’re using Morphia’s typed Query API
-Set<String> ids = edgeDao.srcIdsByDst(tenantId, "placedInOrg", orgRefName);
+// ids of the sources that have a "placedInOrg" edge to the caller's organisation
+Set<String> ids = rewriter.idsForHasEdge(dataDomain, "placedInOrg", orgRefName);
 if (ids.isEmpty()) {
   return java.util.List.of(); // short-circuit
 }
 query.filter(dev.morphia.query.filters.Filters.in("_id", ids));
 ----
 
+The `rewriteForHasEdge(Bson base, String tenantId, …)` and `rewriteForHasIncomingEdge(…)` overloads are
+also available for callers that build raw `Bson` filters.
+
 Developer requirements and checklist
 
-- Enable ontology (optional feature): set e2eq.ontology.enabled=true in your app and add module dependencies.
+- Enable ontology (optional feature): add the ontology module dependencies (quantum-ontology-mongo); there is no separate enable flag.
 - Provide a TBox (OntologyRegistry) and run OntologyMaterializer on entity changes to keep edges up to date.
-- Inject EdgeDao as a CDI bean (@Inject); indexes are ensured automatically at startup.
-- Always pass tenantId from RuleContext/DomainContext; never cross tenants.
+- Inject OntologyEdgeRepo as a CDI bean (@Inject); indexes are ensured automatically at startup.
+- Edges are scoped by DataDomain; always pass the caller's DataDomain from the PrincipalContext and never cross tenants.
 - When using variables on the RHS (dstIdOrVar), ensure the RuleContext exposes them (for example, principal.orgRefName or request.region).
 - Monitor provenance (edge.prov) and re-materialize edges when intermediate nodes change.
 

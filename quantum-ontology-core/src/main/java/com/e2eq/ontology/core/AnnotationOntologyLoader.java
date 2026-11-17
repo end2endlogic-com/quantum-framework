@@ -147,10 +147,19 @@ public final class AnnotationOntologyLoader {
         if (halfLifeSeconds > 0) {
             propertyMetadata = Map.of(OntologyProperty.HALF_LIFE_METADATA_KEY, halfLifeSeconds);
         }
+        boolean inferred = RelationDerivation.resolveInferred(pid, pa.derivation(), null);
+        RelationStability stability = RelationStability.parse(pid, pa.stability());
         OntologyRegistry.PropertyDef def = new OntologyRegistry.PropertyDef(
                 pid, domainOpt, rangeOpt, inverseOf.isPresent(), inverseOf, pa.transitive(), pa.symmetric(),
-                functional, superProps, false, null, Set.of(), propertyMetadata
+                functional, superProps, inferred, null, Set.of(), propertyMetadata, stability
         );
+        // The same id may be declared on several members; the last one wins as before, except that
+        // stability follows the merge rule (stable if any declaration says so) so it never depends on
+        // scan order.
+        OntologyRegistry.PropertyDef prior = props.get(pid);
+        if (prior != null && prior.isStable() && !def.isStable()) {
+            def = def.withStability(RelationStability.STABLE);
+        }
         props.put(pid, def);
     }
 

@@ -21,6 +21,9 @@ public class AccessInviteRequest {
 
     protected String targetUserId;
 
+    /** Optional: external; absent means an ordinary member invite. */
+    protected String kind;
+
     protected List<String> scopeRefNames = new ArrayList<>();
 
     protected List<String> legalEntityRefNames = new ArrayList<>();

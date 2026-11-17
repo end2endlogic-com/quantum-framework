@@ -12,7 +12,7 @@ public class RefNameViolationException extends RuntimeException {
    private static final long serialVersionUID = 1L;
 
    public enum Code {
-      /** No refName was supplied on create; it is not defaulted to the ObjectId. */
+      /** No refName where one is required. The repository write path no longer raises it: a missing refName defaults to the ObjectId. */
       REFNAME_REQUIRED,
       /** refName does not match the canonical pattern or length. */
       REFNAME_INVALID_FORMAT,

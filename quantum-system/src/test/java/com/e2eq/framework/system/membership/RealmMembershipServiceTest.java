@@ -1,10 +1,7 @@
 package com.e2eq.framework.system.membership;
 
-import com.e2eq.framework.api.system.SystemDirectory;
 import com.e2eq.framework.model.persistent.base.DataDomain;
 import com.e2eq.framework.model.persistent.morphia.UserRealmRoleRepo;
-import com.e2eq.framework.model.security.CredentialUserIdPassword;
-import com.e2eq.framework.model.security.Realm;
 import com.e2eq.framework.model.security.UserRealmRole;
 import com.e2eq.framework.system.config.QuantumModeConfig;
 import org.junit.jupiter.api.Test;
@@ -19,14 +16,7 @@ class RealmMembershipServiceTest {
     void controlPlaneUpdatePreservesExistingTenantDataDomainWhenOmitted() {
         RealmMembershipService service = new RealmMembershipService();
         service.quantumModeConfig = QuantumModeConfig.of("embedded", Optional.empty());
-        service.systemDirectory = new SystemDirectory() {
-            @Override public String systemRealmId() { return "quantum-system"; }
-            @Override public Optional<Realm> findRealmByEmailDomain(String value) { return Optional.empty(); }
-            @Override public Optional<Realm> findRealmByRefName(String value) { return Optional.empty(); }
-            @Override public Realm registerRealm(Realm value) { return value; }
-            @Override public Optional<CredentialUserIdPassword> findCredentialBySubject(String value) { return Optional.empty(); }
-            @Override public Optional<CredentialUserIdPassword> findCredentialByUserId(String value) { return Optional.empty(); }
-        };
+        service.envConfigUtils = systemRealm("quantum-system");
 
         DataDomain tenantScope = DataDomain.builder()
             .tenantId("development")
@@ -73,6 +63,7 @@ class RealmMembershipServiceTest {
         existing.setSubject("stable-subject");
         existing.setRealmRefName("engineering");
         existing.setAuthorizedTenantRegEx("tenant-.*");
+        existing.setExternalTenantIds(List.of("tenant-outside"));
         existing.setDisplayName("User in Engineering");
         existing.setDataDomain(new DataDomain("org", "account", "tenant", 0, "owner"));
         service.userRealmRoleRepo = org.mockito.Mockito.mock(UserRealmRoleRepo.class);
@@ -86,6 +77,7 @@ class RealmMembershipServiceTest {
         assertEquals("tenant-.*", saved.getAuthorizedTenantRegEx());
         assertEquals("authoritative-assignment", saved.getRefName());
         assertEquals("stable-subject", saved.getSubject());
+        assertEquals(List.of("tenant-outside"), saved.getExternalTenantIds());
         assertEquals("User in Engineering", saved.getDisplayName());
         assertEquals(8L, saved.getVersion());
         assertEquals(wire.getId(), saved.getId().toHexString());
@@ -134,8 +126,40 @@ class RealmMembershipServiceTest {
     private static RealmMembershipService embeddedService() {
         var service = new RealmMembershipService();
         service.quantumModeConfig = QuantumModeConfig.of("embedded", Optional.empty());
-        service.systemDirectory = org.mockito.Mockito.mock(SystemDirectory.class);
-        org.mockito.Mockito.when(service.systemDirectory.systemRealmId()).thenReturn("system");
+        service.envConfigUtils = systemRealm("system");
         return service;
+    }
+
+    /**
+     * The older catalog-only setting (quantum.system.directory.mode=remote, quantum.directory.mode
+     * unset) routes the realm catalog to a remote owner whose SystemDirectory has no local system
+     * realm, while memberships stay local. Local membership reads and writes use this service's own
+     * configured system realm and never ask the catalog for it.
+     */
+    @Test
+    void localMembershipsUseTheConfiguredSystemRealmWhateverTheCatalogRouting() {
+        RealmMembershipService service = new RealmMembershipService();
+        service.quantumModeConfig = QuantumModeConfig.of("embedded", Optional.empty());
+        service.envConfigUtils = systemRealm("system-com");
+        UserRealmRole held = new UserRealmRole();
+        held.setUserId("pat");
+        held.setRealmRefName("acme-com");
+        java.util.List<String> realmsAsked = new java.util.ArrayList<>();
+        service.userRealmRoleRepo = new UserRealmRoleRepo() {
+            @Override
+            public List<UserRealmRole> findByUserIdWithIgnoreRules(String userId, String systemRealmId) {
+                realmsAsked.add(systemRealmId);
+                return List.of(held);
+            }
+        };
+
+        assertEquals(List.of(held), service.realmsForUser("pat"));
+        assertEquals(List.of("system-com"), realmsAsked);
+    }
+
+    private static com.e2eq.framework.util.EnvConfigUtils systemRealm(String realm) {
+        com.e2eq.framework.util.EnvConfigUtils env = new com.e2eq.framework.util.EnvConfigUtils();
+        env.setSystemRealm(realm);
+        return env;
     }
 }

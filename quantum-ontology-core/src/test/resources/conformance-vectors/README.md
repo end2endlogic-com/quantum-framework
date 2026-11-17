@@ -12,6 +12,15 @@ Each vector pins one aspect:
 - `closed-rejection.json` — closed-world rejection.
 - `chain.json`, `combined.json` — multi-rule interaction.
 - `hash-golden.json` — the canonical stable TBox hash (per the HASH_SPEC).
+- `hash-golden-stability.json` — the relation contract fields in the hash (`stability` is hashed
+  only when `stable`; `derivation` is the `inferred` bit).
+- `stable-derived-explicit-rejection.json` — explicit edges for a stable derived relation are
+  rejected (`rejected_derived_predicates`).
+- `stable-relation-diff.json` — the stable-relation admission diff (`StableRelationDiffTest`).
 
-`VectorConformanceTest` and `CanonicalTBoxHasherTest` run against these files.
+The three relation-contract vectors are copied byte-for-byte from the Python ontology repo, which
+runs the same files; do not edit them here.
+
+`VectorConformanceTest`, `CanonicalTBoxHasherTest`, `StableRelationContractTest` and
+`StableRelationDiffTest` run against these files.
 When the canonical semantics change, update the vector and the golden hash here.

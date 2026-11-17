@@ -1,0 +1,3 @@
+# A pack without a version: a rebuild must keep the version its TBox was recorded with.
+classes:
+  - id: Order

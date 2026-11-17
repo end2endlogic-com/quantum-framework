@@ -182,6 +182,21 @@ class MorphiaSeedRepositoryIntegrationTest {
     }
 
     @Test
+    void canonicalRefNameRecordWithoutAKeyIsRefusedInsteadOfDuplicated() {
+        SeedPackManifest.Dataset dataset = new SeedPackManifest.Dataset();
+        dataset.setModelClass(com.e2eq.framework.model.security.UserGroup.class.getName());
+        dataset.setRepoClass(com.e2eq.framework.model.persistent.morphia.UserGroupRepo.class.getName());
+        dataset.setUpsert(true);
+
+        Map<String, Object> record = new LinkedHashMap<>();
+        record.put("displayName", "Seeded group without a refName");
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> morphiaSeedRepository.upsertRecord(context(), dataset, record));
+        assertTrue(ex.getMessage().contains("UserGroup record has no refName, _id or naturalKey"), ex.getMessage());
+    }
+
+    @Test
     void upsertMatchesExistingSeededRecordByIdWhenNaturalKeyDrifts() {
         SecurityContext.setResourceContext(new ResourceContext.Builder()
                 .withRealm(REALM)

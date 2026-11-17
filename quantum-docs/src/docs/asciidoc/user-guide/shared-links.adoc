@@ -38,6 +38,10 @@ The `ShareLink` entity is stored in MongoDB and tracks the full lifecycle of a s
 | String
 | External-facing identifier used in URLs. Not the MongoDB `_id`.
 
+| `mediaReference`
+| EntityReference
+| The governed `MediaReference` the link targets. Used for newly created links; the `bucket`, `region` and `objectKey` fields below are deprecated and kept so stored links still load.
+
 | `bucket`
 | String
 | S3 bucket name
@@ -180,12 +184,10 @@ If the secret is not configured, `LinkSigner.isEnabled()` returns `false` and si
 
 [source,java]
 ----
-@Inject
-LinkSigner linkSigner;
-
-if (linkSigner.isEnabled()) {
+// LinkSigner is a utility class with static methods; it is not injected.
+if (LinkSigner.isEnabled()) {
     long now = Instant.now().getEpochSecond();
-    String signature = linkSigner.sign(shareLink.getPublicId(), now);
+    String signature = LinkSigner.sign(shareLink.getPublicId(), now);
     // Include signature and timestamp in the shareable URL
 }
 ----
@@ -195,10 +197,10 @@ if (linkSigner.isEnabled()) {
 [source,java]
 ----
 // Verify with default 24-hour clock skew tolerance
-boolean valid = linkSigner.verify(publicId, timestamp, signature);
+boolean valid = LinkSigner.verify(publicId, timestamp, signature);
 
 // Verify with custom skew tolerance (e.g., 1 hour)
-boolean valid = linkSigner.verify(publicId, timestamp, signature, 3600);
+boolean validWithinHour = LinkSigner.verify(publicId, timestamp, signature, 3600);
 ----
 
 The verifier checks:

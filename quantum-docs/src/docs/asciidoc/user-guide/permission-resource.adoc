@@ -4,6 +4,8 @@
 
 This guide explains how to use the Permission Resource check APIs and how to evaluate the server-produced access decisions on the client using the provided JavaScript library.
 
+All endpoints are under `/system/permissions` (`PermissionResource`, in `quantum-system-rest`). Where this guide writes `/check` or `/check-with-index` it means `/system/permissions/check` and `/system/permissions/check-with-index`.
+
 It covers:
 
 - The `/check` API (server-evaluated permission)
@@ -15,10 +17,66 @@ It covers:
 [NOTE]
 This document reflects the current and evolving server behavior. The JavaScript client library is available at runtime from Quarkus as `/security/acl-client.js` and is forward-compatible with the scoped access-matrix format described here.
 
+== Who may inspect permissions
+
+All four inspection endpoints under `/system/permissions` require authentication:
+`POST /role-provenance`, `/check`, `/check-with-index`, and `/fd/evaluate`.
+A caller may inspect their own request-context `userId` in their request-context
+realm. An omitted `realm` uses that context realm, including for role provenance.
+The successful response fields are unchanged.
+
+Another identity (including a role name), or a different realm, requires the
+framework system principal or a realm administrator of the requested realm.
+These are the same authorities used by access-invite management; a token role
+named `system` alone or a membership-administrator role is insufficient.
+In a pooled/multi-tenant realm the administrator must be authorized for every
+tenant on the target's realm assignment and any explicitly requested tenant.
+Because these diagnostics expose complete roles rather than a tenant-filtered
+projection, missing, empty, or regex-based target tenant scope is refused for
+pooled-realm administrators. The system principal may inspect across realms.
+
+For `/check` and `/fd/evaluate`, client-supplied extra `roles` must already be
+held in the authenticated request context, unless the caller has the above
+administrative authority. `/check-with-index` applies the same validation,
+although that endpoint does not add supplied roles to its snapshot.
+
+Unauthorized inspections return HTTP `403` with the standard `RestError` payload
+and `errorCode: PERMISSION_INSPECTION_FORBIDDEN`. The code and message are the
+same for existing and nonexistent targets. Authorization happens before target
+credential, profile, group, or role resolution; pooled scope checks use realm
+assignment metadata only after qualifying the caller as an administrator.
+Consumers that formerly simulated arbitrary identities, realms, or extra roles
+must use an appropriately authorized administrator or restrict requests to self.
+
+=== Role provenance
+
+`POST /system/permissions/role-provenance` accepts `userId` and optional `realm`.
+It returns credential/profile presence, credential roles, profile groups, token
+roles and mapped groups, net roles, and role-source assignments. The caller
+restriction above applies before any of those values are read.
+
 == APIs
 
-=== POST /permission/check
-Performs a server-side permission check for a single request using the caller identity and an optional data domain (organization/account/tenant/segment/owner).
+Every endpoint requires an authenticated caller (`@Authenticated`): send the bearer token. The checks answer a question about policy ("would this identity be allowed?"); they do not grant anything, and they do not let a caller act as the identity it asks about.
+
+Three inputs are resolved the same way by `/check`, `/check-with-index` and `/fd/evaluate`:
+
+* `applicationId`: policies are evaluated in the scope of one application. It is taken from the request, else from the authenticated caller's principal. When neither names one the call is refused with `400 applicationId is required`.
+* `realm`: from the request, else the realm the caller's request runs in, else the framework default realm.
+* Roles: when `identity` is a userId, its roles are resolved by `IdentityRoleResolver` for that realm and that application (credential, realm assignment and the groups of that application or `*`, plus token roles when the identity is the caller itself). A group of another application does not count, so the check agrees with what the application itself resolves. `roles` in the request adds roles to evaluate "what if"; it changes no stored grant.
+
+=== GET /system/permissions/fd and /fd/areas: an application's vocabulary
+
+`GET /system/permissions/fd[?includeActions=true]` without `applicationId` answers as before: the union of the vocabulary this service discovers in its own code and every stored `FunctionalDomain`, as `area -> [domain]` (or `area -> domain -> [action]` with `includeActions`).
+
+With `?applicationId=<app>` it answers that application's registered vocabulary only: its `FunctionalArea` rows (an area may hold no domain yet) and its `FunctionalDomain` rows with their declared actions (CRUD when a row declares none). Rows tagged `*` or with another application, and the code discovered in this service, are not part of it. An application this service does not know answers `404 {"code":"APPLICATION_UNKNOWN"}`.
+
+`GET /system/permissions/fd/areas?applicationId=<app>` lists that application's `FunctionalArea` records, sorted by `refName`. `applicationId` is required (`400` without it, `404 APPLICATION_UNKNOWN` for an unknown application).
+
+Both reads apply the caller's rules to the stored rows, the same as `/fd` always has. The rows reach a separate Auth through the application's identity contribution (`/v1/identity-contributions`: submit, activate, apply).
+
+=== POST /system/permissions/check
+Performs a server-side permission check for a single request using the named identity and an optional data domain (organization/account/tenant/segment/owner). Data-domain fields that are omitted fall back to the caller's own principal.
 
 .Request
 [source,json]
@@ -26,6 +84,7 @@ Performs a server-side permission check for a single request using the caller id
 {
   "identity": "user-123",
   "realm": "b2bi",
+  "applicationId": "acme-orders",
   "area": "security",
   "functionalDomain": "userProfile",
   "action": "view",
@@ -56,7 +115,7 @@ Notes:
 - This endpoint is authoritative and understands scripts/postconditions and any dynamic runtime evaluation.
 - Use `/check` when you must account for scripts, context-enriched rules, or when you don’t have the precomputed snapshot.
 
-=== POST /permission/check-with-index
+=== POST /system/permissions/check-with-index
 Returns a precomputed permission snapshot for the supplied identity. This snapshot can be cached on the client and used for fast allow/deny decisions without server roundtrips.
 
 Depending on server version/config, the response can include:
@@ -246,13 +305,13 @@ Interpretation:
 
 Field semantics
 
-- enabled: false indicates the compiled index is disabled or unavailable. Clients should treat the snapshot as non-authoritative and prefer calling /permission/check for critical decisions; the matrix may still be present for some scopes but is not guaranteed complete.
+- enabled: false indicates the compiled index is disabled or unavailable. Clients should treat the snapshot as non-authoritative and prefer calling /system/permissions/check for critical decisions; the matrix may still be present for some scopes but is not guaranteed complete.
 - version: 0 accompanies enabled=false. When enabled is true, version corresponds to the compiled index version and can be used for caching together with policyVersion.
 - policyVersion: the ruleset/policy timestamp or version for cache invalidation.
 - rules: legacy flat list preserved for backward compatibility. Clients should prefer the scoped matrix when available.
 - sources: identities included when the snapshot was materialized (e.g., user id and/or roles).
-- requiresServer (top-level): true means at least one rule could not be safely materialized (e.g., uses scripts/postconditions or dynamic filters). Clients should be prepared to call /permission/check for affected scopes/decisions.
-- scopes[<key>].requiresServer: per-scope flag. If true, client should not rely on that scope’s matrix for final decisions and should call /permission/check when evaluating in that scope.
+- requiresServer (top-level): true means at least one rule could not be safely materialized (e.g., uses scripts/postconditions or dynamic filters). Clients should be prepared to call /system/permissions/check for affected scopes/decisions.
+- scopes[<key>].requiresServer: per-scope flag. If true, client should not rely on that scope’s matrix for final decisions and should call /system/permissions/check when evaluating in that scope.
 - requestedScope / requestedFallback: convenience keys provided when the request included data-domain values. Clients should attempt lookup starting at requestedScope, then walk requestedFallback in order.
 
 == Data-Domain Scope and Fallback
@@ -267,6 +326,8 @@ org=<v>|acct=<v>|tenant=<v>|seg=<v>|owner=<v>
 - Fallback traversal order: owner → segment → tenant → account → org → global.
 
 == JavaScript Client Library
+
+NOTE: The browser examples in this guide show only the request body. Every call must also carry the caller's bearer token (`Authorization: Bearer <token>`), and `applicationId` unless the caller's principal already names an application.
 
 The JavaScript client provides helpers to evaluate the snapshot on the client.
 
@@ -328,6 +389,7 @@ Request fields (additive):
 
 * `identity` (string, required)
 * `realm` (string, optional)
+* `applicationId` (string; required unless the authenticated caller's principal already names an application)
 * `area`, `functionalDomain`, `action`, `resourceId` (optional; may be wildcard `*` unless doing a specific check)
 * `modelClass` (string, optional): fully qualified class name or resolvable entity name
 * `resource` (object, optional): shallow JSON snapshot of the domain resource
@@ -497,7 +559,7 @@ Q: How do I know which rule produced the result?
 <script>
   async function canViewProfile() {
     // 1) Get a snapshot for the user
-    const res = await fetch('/permission/check-with-index', {
+    const res = await fetch('/system/permissions/check-with-index', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ identity: 'user-123', realm: 'b2bi', orgRefName: 'acme', accountNumber: 'A1', tenantId: 't-001', dataSegment: 0, ownerId: 'user-123' })
     });
@@ -529,7 +591,7 @@ export default function ProfileButton() {
 
   useEffect(() => {
     async function run() {
-      const res = await fetch('/permission/check-with-index', {
+      const res = await fetch('/system/permissions/check-with-index', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ identity: 'user-123', realm: 'b2bi' })
       });
@@ -558,7 +620,7 @@ export default function ProfileButton() {
 export default {
   data() { return { allowed: false }; },
   async mounted() {
-    const res = await fetch('/permission/check-with-index', {
+    const res = await fetch('/system/permissions/check-with-index', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ identity: 'user-123', realm: 'b2bi' })
     });
@@ -576,8 +638,9 @@ export default {
 [source,bash]
 ----
 curl -sS -X POST \
+  -H "Authorization: Bearer $JWT" \
   -H 'Content-Type: application/json' \
-  http://localhost:8080/permission/check \
+  http://localhost:8080/system/permissions/check \
   -d '{
     "identity":"user-123",
     "realm":"b2bi",
@@ -596,8 +659,9 @@ curl -sS -X POST \
 [source,bash]
 ----
 curl -sS -X POST \
+  -H "Authorization: Bearer $JWT" \
   -H 'Content-Type: application/json' \
-  http://localhost:8080/permission/check-with-index \
+  http://localhost:8080/system/permissions/check-with-index \
   -d '{
     "identity":"user-123",
     "realm":"b2bi",

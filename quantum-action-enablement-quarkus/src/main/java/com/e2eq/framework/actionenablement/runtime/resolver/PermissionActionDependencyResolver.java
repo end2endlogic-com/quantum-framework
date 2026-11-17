@@ -7,6 +7,7 @@ import com.e2eq.framework.actionenablement.runtime.DependencyResolutionResult;
 import com.e2eq.framework.actionenablement.runtime.EnablementEvaluationContext;
 import com.e2eq.framework.actionenablement.spi.ActionDependencyResolver;
 import com.e2eq.framework.model.persistent.morphia.IdentityRoleResolver;
+import com.e2eq.framework.model.persistent.morphia.ReceivingApplication;
 import com.e2eq.framework.model.securityrules.EvalMode;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.ResourceContext;
@@ -36,6 +37,9 @@ public class PermissionActionDependencyResolver implements ActionDependencyResol
     @Inject
     SecurityIdentity securityIdentity;
 
+    @Inject
+    ReceivingApplication receivingApplication;
+
     @Override
     public String supportsType() {
         return "permission";
@@ -56,7 +60,7 @@ public class PermissionActionDependencyResolver implements ActionDependencyResol
         String applicationId = SecurityContext.getPrincipalContext()
                 .map(PrincipalContext::getApplicationId)
                 .filter(value -> value != null && !value.isBlank())
-                .orElseGet(this::identityApplicationId);
+                .orElseGet(this::configuredApplicationId);
 
         PrincipalContext principalContext = new PrincipalContext.Builder()
                 .withDefaultRealm(context.getRealm())
@@ -106,7 +110,16 @@ public class PermissionActionDependencyResolver implements ActionDependencyResol
         return DependencyResolutionResult.blocked(blocker);
     }
 
-    private String identityApplicationId() {
+    /**
+     * No resolved principal application: this application's configured id; only when none is
+     * configured, the identity's azp, so application-scoped policies (denies included) still
+     * apply. Step 4 deletes the azp fallback once every app configures its id.
+     */
+    private String configuredApplicationId() {
+        String configured = receivingApplication == null ? null : receivingApplication.applicationId();
+        if (configured != null) {
+            return configured;
+        }
         if (securityIdentity == null) {
             return null;
         }
@@ -114,11 +127,8 @@ public class PermissionActionDependencyResolver implements ActionDependencyResol
         if (value == null && securityIdentity.getPrincipal() instanceof org.eclipse.microprofile.jwt.JsonWebToken jwt) {
             value = jwt.getClaim("azp");
         }
-        if (value == null) {
-            return null;
-        }
-        String applicationId = String.valueOf(value).trim();
-        return applicationId.isEmpty() ? null : applicationId;
+        String applicationId = value == null ? null : String.valueOf(value).trim();
+        return applicationId == null || applicationId.isEmpty() ? null : applicationId;
     }
 
     private String buildPermissionMessage(SecurityCheckResponse response, EnablementEvaluationContext context) {

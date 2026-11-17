@@ -103,6 +103,9 @@ public class OntologyTBoxPublisher {
             OntologyRegistry registry = registryProvider.buildSourceRegistry(realm);
             publish(realm, registry, serviceBaseUrl.get());
         }
+        catch (com.e2eq.ontology.core.SourceTBoxGate.RefusedException e) {
+            Log.errorf("Ontology TBox publish for realm %s refused: %s", realm, e.getMessage());
+        }
         catch (Exception e) {
             Log.warnf("Ontology TBox publish for realm %s failed (control plane unreachable?): %s", realm, e.getMessage());
         }
@@ -192,6 +195,12 @@ public class OntologyTBoxPublisher {
             m.put("functional", p.functional());
             m.put("subPropertyOf", new ArrayList<>(p.subPropertyOf()));
             m.put("label", p.label());
+            // Relation contract (P1), omit-at-default: only a stable relation carries its stability and
+            // derivation, so the published body (and hash) of packs that never opt in is unchanged.
+            if (p.isStable()) {
+                m.put("stability", p.stability().wireValue());
+                m.put("derivation", p.derivation().wireValue());
+            }
             properties.add(m);
         }
         body.put("properties", properties);

@@ -23,7 +23,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -438,20 +440,125 @@ class SecurityFilterTenantSelectionTest {
     }
 
     @Test
-    void realmSelectionAllowsCurrentSessionRealmWhenMembershipGrantOmitsApplication() {
+    void theSessionRealmDoesNotAdmitAnApplicationTheIdentityIsNotGranted() {
+        // One admission rule (A3): a session minted in the realm is not itself a grant.
+        SecurityFilter filter = filter(codeRealm(), staleGrant(), null);
+        filter.credentialRepo = credentials(credentialWithPattern(null));
+        filter.envConfigUtils = envConfig();
+
+        assertThrows(ForbiddenException.class,
+                () -> filter.applyRealmOverride(sessionContext(), "helixor-code-P1"));
+    }
+
+    @Test
+    void theCredentialsApplicationPatternAdmitsTheApplicationInTheSessionRealm() {
+        // Granted as login grants it: the assignment's applications or the credential pattern.
+        SecurityFilter filter = filter(codeRealm(), staleGrant(), null);
+        filter.credentialRepo = credentials(credentialWithPattern("quantum-.*"));
+        filter.envConfigUtils = envConfig();
+
+        PrincipalContext context = sessionContext();
+        assertSame(context, filter.applyRealmOverride(context, "helixor-code-P1"));
+
+        filter.credentialRepo = credentials(credentialWithPattern("other-.*"));
+        assertThrows(ForbiddenException.class, () -> filter.applyRealmOverride(context, "helixor-code-P1"));
+    }
+
+    @Test
+    void aResourceServerTrustingTokenClaimsReadsNoCredential() {
+        Realm other = realm("other-app-realm", RealmTenancyMode.SINGLE_TENANT, "tenant-a");
+        other.setApplicationRef(EntityReference.builder()
+                .entityRefName("other-application").entityDisplayName("Other application").build());
+        SecurityFilter filter = filter(other, staleGrant(), null);
+        filter.trustTokenClaims = true;
+        com.e2eq.framework.model.persistent.morphia.CredentialRepo repo =
+                org.mockito.Mockito.mock(com.e2eq.framework.model.persistent.morphia.CredentialRepo.class);
+        filter.credentialRepo = repo;
+        filter.envConfigUtils = envConfig();
+
+        assertThrows(ForbiddenException.class, () -> filter.applyRealmOverride(sessionContext(), "other-app-realm"));
+        org.mockito.Mockito.verifyNoInteractions(repo);
+    }
+
+    @Test
+    void aCallingServicesRealmSwitchIsNotAnApplicationAdmission() {
+        // Service contexts run in the realm they name; their reach is their own realm authorization.
+        Realm other = realm("other-app-realm", RealmTenancyMode.SINGLE_TENANT, "tenant-a");
+        other.setApplicationRef(EntityReference.builder()
+                .entityRefName("other-application").entityDisplayName("Other application").build());
+        SecurityFilter filter = filter(other, null, null);
+        com.e2eq.framework.model.persistent.morphia.CredentialRepo repo =
+                org.mockito.Mockito.mock(com.e2eq.framework.model.persistent.morphia.CredentialRepo.class);
+        filter.credentialRepo = repo;
+        filter.envConfigUtils = envConfig();
+        PrincipalContext service = new PrincipalContext.Builder()
+                .withDefaultRealm("other-app-realm")
+                .withApplicationId("quantum-b2bi")
+                .withDataDomain(DataDomain.builder().tenantId("tenant-a").orgRefName("default-org")
+                        .accountNum("default-account").ownerId("svc-sub").build())
+                .withUserId("svc-sub")
+                .withRoles(new String[]{"user"})
+                .withScope("SERVICE")
+                .build();
+
+        assertSame(service, filter.applyRealmOverride(service, "other-app-realm"));
+        org.mockito.Mockito.verifyNoInteractions(repo);
+    }
+
+    @Test
+    @SuppressWarnings("removal")
+    void theDeprecatedEntryPointsApplyTheOneRuleAndNoLongerTrustTheSessionRealm() {
+        // Kept for binary compatibility; they must not keep the same-session-realm trust alive.
+        SecurityFilter filter = filter(codeRealm(), staleGrant(), null);
+        com.e2eq.framework.model.persistent.morphia.CredentialRepo repo = credentials(credentialWithPattern("*"));
+        filter.credentialRepo = repo;
+        filter.envConfigUtils = envConfig();
+        var resolver = filter.resolver();
+
+        // The token's own realm used to admit any application; it no longer does, and no
+        // credential pattern is consulted through the old entry point.
+        assertFalse(resolver.applicationAdmittedInRealm("user@example.test", "helixor-code-P1",
+                "quantum-b2bi", "helixor-code", "helixor-code-P1"));
+        // A caller-supplied home application is not trusted; the directory names the owner.
+        assertFalse(resolver.applicationAdmittedInRealm("user@example.test", "helixor-code-P1",
+                "quantum-b2bi", "quantum-b2bi", null));
+        assertTrue(resolver.applicationAdmittedInRealm("user@example.test", "helixor-code-P1",
+                "helixor-code", null, null));
+        assertThrows(ForbiddenException.class,
+                () -> resolver.requireSessionApplicationAdmitted(sessionContext()));
+        org.mockito.Mockito.verifyNoInteractions(repo);
+
+        PrincipalContext owned = new PrincipalContext.Builder()
+                .withDefaultRealm("helixor-code-P1")
+                .withApplicationId("helixor-code")
+                .withDataDomain(sessionContext().getDataDomain())
+                .withUserId("user@example.test")
+                .withRoles(new String[]{"user"})
+                .withScope("AUTHENTICATED")
+                .build();
+        assertDoesNotThrow(() -> resolver.requireSessionApplicationAdmitted(owned));
+    }
+
+    private static Realm codeRealm() {
         Realm realm = realm("helixor-code-P1", RealmTenancyMode.SINGLE_TENANT, "helixor-code-P1");
         realm.setApplicationRef(EntityReference.builder()
                 .entityRefName("helixor-code")
                 .entityDisplayName("Helixor Code")
                 .build());
-        UserRealmRole staleGrant = UserRealmRole.builder()
+        return realm;
+    }
+
+    private static UserRealmRole staleGrant() {
+        return UserRealmRole.builder()
                 .userId("user@example.test")
                 .realmRefName("helixor-code-P1")
                 .status(UserRealmRole.STATUS_ACTIVE)
                 .authorizedApplications(List.of("helixor-code"))
                 .build();
-        SecurityFilter filter = filter(realm, staleGrant, null);
-        PrincipalContext context = new PrincipalContext.Builder()
+    }
+
+    private static PrincipalContext sessionContext() {
+        return new PrincipalContext.Builder()
                 .withDefaultRealm("helixor-code-P1")
                 .withApplicationId("quantum-b2bi")
                 .withDataDomain(DataDomain.builder()
@@ -464,8 +571,29 @@ class SecurityFilterTenantSelectionTest {
                 .withRoles(new String[]{"user"})
                 .withScope("AUTHENTICATED")
                 .build();
+    }
 
-        assertSame(context, filter.applyRealmOverride(context, "helixor-code-P1"));
+    private static CredentialUserIdPassword credentialWithPattern(String applicationRegEx) {
+        CredentialUserIdPassword credential = new CredentialUserIdPassword();
+        credential.setUserId("user@example.test");
+        credential.setApplicationRegEx(applicationRegEx);
+        return credential;
+    }
+
+    private static com.e2eq.framework.model.persistent.morphia.CredentialRepo credentials(
+            CredentialUserIdPassword credential) {
+        com.e2eq.framework.model.persistent.morphia.CredentialRepo repo =
+                org.mockito.Mockito.mock(com.e2eq.framework.model.persistent.morphia.CredentialRepo.class);
+        org.mockito.Mockito.when(repo.findByUserId(credential.getUserId(), "system-realm", true))
+                .thenReturn(Optional.of(credential));
+        return repo;
+    }
+
+    private static com.e2eq.framework.util.EnvConfigUtils envConfig() {
+        com.e2eq.framework.util.EnvConfigUtils env =
+                org.mockito.Mockito.mock(com.e2eq.framework.util.EnvConfigUtils.class);
+        org.mockito.Mockito.when(env.getSystemRealm()).thenReturn("system-realm");
+        return env;
     }
 
     @Test

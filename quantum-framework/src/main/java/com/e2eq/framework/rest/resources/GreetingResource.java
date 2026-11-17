@@ -64,9 +64,8 @@ public class GreetingResource {
             name = ctx.getUserPrincipal().getName();
         }
         if (hasJwt()) {
-            for (String claimName: jwt.getClaimNames()) {
-                Log.info(claimName + ":" + jwt.getClaim(claimName));
-            }
+            // Identity only: roles, realm and tenancy come from the resolved principal context.
+            Log.info("iss:" + jwt.getIssuer() + " sub:" + jwt.getSubject());
         }
         return String.format("principleName: + %s,"
             + " isHttps: %s,"

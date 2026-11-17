@@ -49,17 +49,41 @@ import java.util.Arrays;
 @ApplicationScoped
 public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthProvider, ClaimsAuthProvider, UserManagement{
 
+   /**
+    * Claims passed through as identity attributes (each under its own name), with the further
+    * attribute names each is also published under. The signed realm is also the realm the token's
+    * roles were issued for ({@link com.e2eq.framework.model.securityrules.PrincipalIdentityAttributes#ROLES_REALM}),
+    * which consumers read instead of the claim.
+    */
+   private static final Map<String, List<String>> PASS_THROUGH_CLAIMS = passThroughClaims();
+
+   private static Map<String, List<String>> passThroughClaims() {
+      Map<String, List<String>> claims = new LinkedHashMap<>();
+      claims.put("userId", List.of());
+      claims.put("realm", List.of(com.e2eq.framework.model.securityrules.PrincipalIdentityAttributes.ROLES_REALM));
+      claims.put("tenantId", List.of());
+      claims.put("orgRefName", List.of());
+      claims.put("accountNum", List.of());
+      claims.put("azp", List.of());
+      return Collections.unmodifiableMap(claims);
+   }
+
    @ConfigProperty(name = "mp.jwt.verify.issuer")
    String issuer;
 
    @ConfigProperty(name = "com.b2bi.jwt.duration")
    Long durationInSeconds;
 
+   /** The refresh token's own lifetime; unset keeps {@link RefreshTokenLifetime#DEFAULT_REFRESH_SECONDS}. */
+   @ConfigProperty(name = "quantum.auth.refresh-token.duration")
+   Optional<Long> refreshDurationInSeconds = Optional.empty();
+
+   /** Longest a session may be refreshed, from sign-in; unset keeps {@link RefreshTokenLifetime#DEFAULT_MAX_SESSION_SECONDS}. */
+   @ConfigProperty(name = "quantum.auth.session.max-duration")
+   Optional<Long> maxSessionDurationInSeconds = Optional.empty();
+
    @ConfigProperty(name = "quantum.realmConfig.systemRealm", defaultValue = "system-com")
    String systemRealm;
-
-   @ConfigProperty(name = "quarkus.mongodb.connection-string")
-   String mongodbConnectionString;
 
    @Inject
    JWTParser jwtParser;
@@ -146,8 +170,49 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
       }
    }
 
+   /**
+    * Identity-only service token (design {@code IDENTITY_ONLY_TOKENS_DESIGN.md} section 4):
+    * the service credential's subject and userId, and the credential id as {@code jti}. It
+    * carries no roles, realm, tenant or audience and does not expire; revoke the credential.
+    */
+   public String generateServiceIdentityToken(String subject, String userId, String credentialId) {
+      try {
+         return TokenUtils.generateServiceIdentityToken(subject, userId, credentialId, issuer);
+      } catch (IOException | NoSuchAlgorithmException | InvalidKeySpecException e) {
+         throw new RuntimeException("Failed to generate service identity token", e);
+      }
+   }
 
-
+   /**
+    * Long-lived token for one user and one service. The signed claims are that user's
+    * ({@code userId}, realm, tenant, org, account, and the granted roles) and the
+    * service as both {@code aud} and {@code azp}. It does not set {@code token_type=service}.
+    * {@code credentialId} is the revocable credential record and is signed as {@code jti}.
+    */
+   public String generateBoundUserToken(String subject,
+                                         String userId,
+                                         Set<String> roles,
+                                         String realm,
+                                         String tenantId,
+                                         String orgRefName,
+                                         String accountNum,
+                                         String applicationRef,
+                                         long expirationSeconds,
+                                         String credentialId) {
+      if (expirationSeconds <= 0) {
+         throw new IllegalArgumentException("expirationSeconds must be positive");
+      }
+      if (applicationRef == null || applicationRef.isBlank()) {
+         throw new IllegalArgumentException("applicationRef is required");
+      }
+      try {
+         return TokenUtils.generateIdentityServiceToken(
+                 subject, userId, roles, realm, tenantId, orgRefName, accountNum,
+                 applicationRef, credentialId, TokenUtils.expiresAt(expirationSeconds), issuer);
+      } catch (IOException | NoSuchAlgorithmException | InvalidKeySpecException e) {
+         throw new RuntimeException("Failed to generate bound user token", e);
+      }
+   }
 
    @Override
    public void changePassword(String userId, String oldPassword, String newPassword, Boolean forceChangePassword) {
@@ -157,7 +222,9 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
       }
 
       CredentialUserIdPassword cred = ocred.get();
-      if (!EncryptionUtils.hashPassword(oldPassword).equals(cred.getPasswordHash())) {
+      // Hashes are salted, so the old password is verified, not re-hashed and compared.
+      if (oldPassword == null || cred.getPasswordHash() == null || cred.getPasswordHash().isBlank()
+            || !EncryptionUtils.checkPassword(oldPassword, cred.getPasswordHash())) {
          throw new SecurityException("Old Password was incorrect");
       }
       // Normalize hashing algorithm to the canonical value and update hash
@@ -614,18 +681,29 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
     */
    public LoginResponse loginWithVerifiedSubject(String subject, String applicationId,
                                                   String realm, String oauthClientId) {
+      return loginWithVerifiedSubject(subject, applicationId, realm, oauthClientId, null);
+   }
+
+   /**
+    * As above, for a subject verified earlier (an authorization code): {@code passwordRevision}
+    * is the credential's revision when it authenticated, and the mint is refused if a password
+    * change has moved it since. {@code null} skips the check (no revision was recorded).
+    */
+   public LoginResponse loginWithVerifiedSubject(String subject, String applicationId,
+                                                  String realm, String oauthClientId, Long passwordRevision) {
       if (subject == null || subject.isBlank()) throw new SecurityException("VERIFIED_SUBJECT_REQUIRED");
-      return loginInternal(null, null, applicationId, realm, false, subject, oauthClientId);
+      return loginInternal(null, null, applicationId, realm, false, subject, oauthClientId, passwordRevision);
    }
 
    private LoginResponse loginInternal(String userId, String password, String applicationId,
                                        String requestedRealm, boolean verifiedEmail) {
-      return loginInternal(userId, password, applicationId, requestedRealm, verifiedEmail, null, null);
+      return loginInternal(userId, password, applicationId, requestedRealm, verifiedEmail, null, null, null);
    }
 
    private LoginResponse loginInternal(String userId, String password, String applicationId,
                                        String requestedRealm, boolean verifiedEmail,
-                                       String verifiedSubject, String oauthClientId) {
+                                       String verifiedSubject, String oauthClientId,
+                                       Long verifiedAtPasswordRevision) {
       try {
          String configuredRealm = envConfigUtils.getSystemRealm();
          Log.infof("CustomProvider: Checking for auth against %s realm", configuredRealm);
@@ -693,12 +771,12 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                      envConfigUtils.getSystemRealm())
                );
             }
-            // Email login is opt-in per credential. External/SSO/service identities and
-            // legacy password credentials cannot acquire a weaker authentication path.
-            boolean emailCredential = credential.getCredentialType()
-                  == com.e2eq.framework.model.security.CredentialType.EMAIL;
-            if (verifiedSubject == null && verifiedEmail != emailCredential) {
+            if (verifiedSubject == null && !authenticationMethodAdmitted(credential, verifiedEmail)) {
                throw new SecurityException("AUTHENTICATION_METHOD_NOT_ADMITTED");
+            }
+            if (verifiedAtPasswordRevision != null
+                  && verifiedAtPasswordRevision != credential.currentPasswordRevision()) {
+               throw new SecurityException("SESSION_ENDED_BY_PASSWORD_CHANGE");
             }
             String alg = credential.getHashingAlgorithm();
             if (verifiedSubject != null || verifiedEmail || (alg != null && (alg.equalsIgnoreCase("BCrypt.default") || alg.toLowerCase().startsWith("bcrypt") || alg.toLowerCase().equals(EncryptionUtils.hashAlgorithm().toLowerCase())))) {
@@ -848,6 +926,12 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                   java.util.Set<String> userGroupRoles = resolveUserGroupRoles(
                      subject, tokenRealm, appAuth.activeApplication());
                   groups.addAll(userGroupRoles);
+                  // A verified-subject mint (OAuth code exchange) did not witness the
+                  // authentication, so its time is unknown, not "now".
+                  Long authTime = verifiedSubject != null ? null : Long.valueOf(TokenUtils.currentTimeInSecs());
+                  // The revision of the credential this login authenticated against: a reset
+                  // that commits after the read moves it, and this session then stops refreshing.
+                  long passwordRevision = credential.currentPasswordRevision();
                   String authToken = TokenUtils.generateUserToken(
                      subject,
                      credential.getUserId(),
@@ -862,6 +946,7 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                      // authorize X-Realm switches within the credential's own
                      // declared boundary instead of pinning to the login realm.
                      credential.getRealmRegEx(),
+                     authTime,
                      TokenUtils.expiresAt(durationInSeconds),
                      issuer);
 
@@ -871,7 +956,7 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                      tokenRealm,
                      appAuth.resolved() ? appAuth.activeApplication() : null,
                      authToken,
-                     durationInSeconds, oauthClientId);
+                     refreshLifetime().refreshSeconds(), oauthClientId, authTime, passwordRevision);
                   SecurityIdentity identity = validateAccessToken(authToken);
                   // Compute role provenance locally for login response: IDP + CREDENTIAL + USERGROUP
                   // Auth plugins do NOT need to do this; it's optional for login response only.
@@ -908,7 +993,7 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                         authToken,
                         refreshToken,
                         TokenUtils.currentTimeInSecs() + durationInSeconds,
-                        mongodbConnectionString,
+                        null, // never the service's database URL: it carries credentials
                         realm,
                         appAuth.resolved() ? appAuth.audiences() : null,
                         appAuth.resolved() ? appAuth.activeApplication() : null)
@@ -1034,6 +1119,27 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
             Log.warnf("Refresh rejected: credential %s has activeStatus=%s", userId, credential.getActiveStatus());
             throw new SecurityException("Credential is no longer authorized");
          }
+         // A token without a known auth_time (issued before it was carried, or from a verified
+         // subject's sign-in, which carries 0) counts its session from its own issue, and passes
+         // that on, so rotating it cannot stretch the session past its maximum length.
+         Long tokenAuthTime = claimLong(refreshJwt, TokenUtils.AUTH_TIME_CLAIM);
+         Long authTime = tokenAuthTime != null && tokenAuthTime > 0 ? tokenAuthTime : refreshJwt.getIssuedAtTime();
+         Long tokenRevision = claimLong(refreshJwt, TokenUtils.PASSWORD_REVISION_CLAIM);
+         if (sessionEndedByPasswordChange(credential, tokenRevision, refreshJwt.getIssuedAtTime())) {
+            throw new SecurityException("SESSION_ENDED_BY_PASSWORD_CHANGE");
+         }
+         // A legacy token adopts the current revision: from here on its session ends with the
+         // next password change like any other.
+         long passwordRevision = tokenRevision != null ? tokenRevision : credential.currentPasswordRevision();
+         // Refreshing keeps a session alive only up to its maximum length from sign-in: neither
+         // new token may expire after that deadline (the minting overhang included).
+         long now = TokenUtils.currentTimeInSecs();
+         long sessionSecondsLeft = refreshLifetime().remainingSeconds(authTime, refreshJwt.getIssuedAtTime(), now);
+         if (sessionSecondsLeft <= TokenUtils.REFRESH_ADDITIONAL_DURATION_SECONDS) {
+            throw new SecurityException("SESSION_MAX_DURATION_REACHED");
+         }
+         long refreshExpiresAt = now + sessionSecondsLeft;
+         long accessExpiresAt = Math.min(TokenUtils.expiresAt(durationInSeconds), refreshExpiresAt);
 
          Set<String> credentialRoles = credentialRolesForRealm(
             credential.getRoles(), credentialRealm, tokenRealm);
@@ -1077,12 +1183,12 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
             refreshSubject, userId, allRoles, tokenRealm,
             tokenDomainContext.getTenantId(), tokenDomainContext.getOrgRefName(),
             tokenDomainContext.getAccountId(), appAuth.audiences(),
-            appAuth.activeApplication(), credential.getRealmRegEx(),
-            TokenUtils.expiresAt(durationInSeconds), issuer);
-         String newRefreshToken = generateRefreshToken(
+            appAuth.activeApplication(), credential.getRealmRegEx(), authTime,
+            accessExpiresAt, issuer);
+         String newRefreshToken = TokenUtils.generateRefreshTokenExpiringAt(
             refreshSubject, userId, tokenRealm,
             appAuth.resolved() ? appAuth.activeApplication() : null,
-            newAuthToken, durationInSeconds, oauthClientId);
+            refreshExpiresAt, issuer, oauthClientId, authTime, passwordRevision);
          SecurityIdentity identity = validateAccessToken(newAuthToken);
 
          java.util.List<RoleAssignment> roleAssignments = allRoles.stream()
@@ -1104,8 +1210,8 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
               roleAssignments,
               newAuthToken,
               newRefreshToken,
-              TokenUtils.currentTimeInSecs() + durationInSeconds,
-              mongodbConnectionString,
+              accessExpiresAt,
+              null, // never the service's database URL: it carries credentials
               tokenRealm,
               appAuth.resolved() ? appAuth.audiences() : null,
               appAuth.resolved() ? appAuth.activeApplication() : null));
@@ -1189,9 +1295,11 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
          if (email != null) b.putAttribute("email", email);
          String iss = jwt.getIssuer();
          if (iss != null) b.putAttribute("iss", iss);
-         for (String claim : List.of("userId", "realm", "tenantId", "orgRefName", "accountNum", "azp")) {
-            String value = claimString(jwt, claim);
-            if (value != null) b.putAttribute(claim, value);
+         for (Map.Entry<String, List<String>> claim : PASS_THROUGH_CLAIMS.entrySet()) {
+            String value = claimString(jwt, claim.getKey());
+            if (value == null) continue;
+            b.putAttribute(claim.getKey(), value);
+            for (String alias : claim.getValue()) b.putAttribute(alias, value);
          }
          return b.build();
       } catch (ParseException e) {
@@ -1205,7 +1313,8 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                                         String realm,
                                         String activeApplication,
                                         String accessToken,
-                                        long durationInSeconds, String oauthClientId) throws IOException
+                                        long durationInSeconds, String oauthClientId,
+                                        Long authTime, Long passwordRevision) throws IOException
                                                                                                              ,
                                                                                                              NoSuchAlgorithmException, InvalidKeySpecException {
 
@@ -1215,7 +1324,7 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
          realm,
          activeApplication,
          durationInSeconds,
-         issuer, oauthClientId);
+         issuer, oauthClientId, authTime, passwordRevision);
 
       CredentialRefreshToken refreshToken1 = CredentialRefreshToken.builder()
                                                 .userId(userId)
@@ -1223,13 +1332,18 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
                                                 .accessToken(accessToken)
                                                 .creationDate(new Date())
                                                 .lastRefreshDate(new Date())
-                                                .expirationDate(new Date(System.currentTimeMillis() + (durationInSeconds * 1000) + TokenUtils.REFRESH_ADDITIONAL_DURATION_SECONDS))
+                                                .expirationDate(new Date(System.currentTimeMillis() + (durationInSeconds + TokenUtils.REFRESH_ADDITIONAL_DURATION_SECONDS) * 1000))
                                                 .build();
 
       //credentialRefreshTokenRepo.save(refreshToken1);
 
 
       return refreshToken;
+   }
+
+   RefreshTokenLifetime refreshLifetime() {
+      return RefreshTokenLifetime.of(durationInSeconds,
+         refreshDurationInSeconds.orElse(null), maxSessionDurationInSeconds.orElse(null));
    }
 
    private Optional<CredentialUserIdPassword> getCredentials (String realm, String userId) {
@@ -1286,6 +1400,45 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
       attributes.forEach(builder::addAttribute);
 
       return builder.build();
+   }
+
+   /**
+    * Email login is opt-in per credential: external/SSO/service identities and legacy password
+    * credentials cannot acquire a weaker authentication path. An EMAIL credential admits
+    * password login only once its holder has set a password.
+    */
+   static boolean authenticationMethodAdmitted(CredentialUserIdPassword credential, boolean verifiedEmail) {
+      boolean emailCredential = credential.getCredentialType()
+            == com.e2eq.framework.model.security.CredentialType.EMAIL;
+      if (verifiedEmail) {
+         return emailCredential;
+      }
+      boolean hasPassword = credential.getPasswordHash() != null && !credential.getPasswordHash().isBlank();
+      return !emailCredential || hasPassword;
+   }
+
+   /**
+    * Whether a refresh token's session was ended by a password change. A token that carries the
+    * password revision its sign-in read is ended once the credential's revision has moved on.
+    * A legacy token without one is judged by its issue second against the change time, counting
+    * the change's own second as before it.
+    */
+   static boolean sessionEndedByPasswordChange(CredentialUserIdPassword credential, Long tokenRevision,
+                                              long issuedAtSeconds) {
+      if (tokenRevision != null) {
+         return tokenRevision != credential.currentPasswordRevision();
+      }
+      Date changedAt = credential.getPasswordChangedAt();
+      return changedAt != null && issuedAtSeconds * 1000 <= changedAt.getTime();
+   }
+
+   private static Long claimLong(org.eclipse.microprofile.jwt.JsonWebToken jwt, String claim) {
+      // SmallRye answers 0 for an absent numeric claim; absent must stay unknown.
+      if (!jwt.containsClaim(claim)) return null;
+      Object value = jwt.getClaim(claim);
+      if (value instanceof Number number) return number.longValue();
+      if (value instanceof jakarta.json.JsonNumber number) return number.longValue();
+      return null;
    }
 
    private String claimString(org.eclipse.microprofile.jwt.JsonWebToken jwt, String claim) {

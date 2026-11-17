@@ -12,7 +12,10 @@ import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
 import lombok.experimental.SuperBuilder;
 
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Per-realm role assignment for a user (B4 identity model; realm-membership
@@ -66,8 +69,16 @@ public class UserRealmRole extends BaseModel {
    /** The realm this assignment applies to. */
    protected String realmRefName;
 
-   /** Roles the user holds IN THAT REALM (e.g. admin, user, viewer). */
-   protected List<String> roles;
+   /**
+    * Roles the user holds IN THAT REALM (e.g. admin, user, viewer). Never null: an assignment
+    * that grants no roles (for example an invite that only authorizes applications) holds an
+    * empty list. Morphia does not store empty lists, so such a row is read back without the
+    * field, and older rows may carry an explicit null; {@link #getRoles()} reads both as empty
+    * and {@link #setRoles(List)} writes null as empty, so the directory contract
+    * ({@code UserRealmRoleEntry.roles} is required) always holds.
+    */
+   @lombok.Builder.Default
+   protected List<String> roles = new ArrayList<>();
 
    /**
     * Applications this user may authenticate for IN THIS REALM (application-scoped
@@ -116,9 +127,120 @@ public class UserRealmRole extends BaseModel {
    /** active | invited | suspended */
    protected String status;
 
+   /**
+    * Tenants, among {@link #authorizedTenantIds}, in which this user is an outsider
+    * rather than a member. Absent or empty means member in every authorized tenant.
+    */
+   protected List<String> externalTenantIds;
+
    public static final String STATUS_ACTIVE = "active";
    public static final String STATUS_INVITED = "invited";
    public static final String STATUS_SUSPENDED = "suspended";
+
+   /** Platform-reserved role held by a principal finalized as an outsider in the selected tenant. */
+   public static final String ROLE_EXTERNAL = "external";
+
+   /** Preserves the pre-externalTenantIds 10-argument constructor signature. */
+   public UserRealmRole(String userId, String subject, String realmRefName, List<String> roles,
+                        List<String> authorizedApplications, String defaultApplication,
+                        List<String> authorizedTenantIds, String authorizedTenantRegEx,
+                        String sponsoringOrgRefName, String status) {
+      this(userId, subject, realmRefName, roles, authorizedApplications, defaultApplication,
+          authorizedTenantIds, authorizedTenantRegEx, sponsoringOrgRefName, status, null);
+   }
+
+   /** The realm roles; an absent or null stored value reads as an empty list, never null. */
+   public List<String> getRoles() {
+      if (roles == null) {
+         roles = new ArrayList<>();
+      }
+      return roles;
+   }
+
+   /** Sets the realm roles; null is written as an empty list (no roles), never null. */
+   public void setRoles(List<String> roles) {
+      this.roles = roles == null ? new ArrayList<>() : roles;
+   }
+
+   /** True when this assignment marks {@code tenantId} as an external (outsider) tenant. */
+   public boolean externalInTenant(String tenantId) {
+      if (tenantId == null || tenantId.isBlank() || externalTenantIds == null || externalTenantIds.isEmpty()) {
+         return false;
+      }
+      String normalized = tenantId.trim();
+      return externalTenantIds.stream()
+          .filter(Objects::nonNull)
+          .map(String::trim)
+          .anyMatch(normalized::equals);
+   }
+
+   /** True when {@code role} names the platform-reserved {@link #ROLE_EXTERNAL} role (case-insensitive). */
+   public static boolean isReservedExternalRole(String role) {
+      return role != null && ROLE_EXTERNAL.equalsIgnoreCase(role.trim());
+   }
+
+   /** Refuses any persisted role list that attempts to grant {@link #ROLE_EXTERNAL}. */
+   public static void requireNoExternalRole(Collection<String> roles, String recordType) {
+      if (roles == null) {
+         return;
+      }
+      for (String role : roles) {
+         if (isReservedExternalRole(role)) {
+            throw new IllegalArgumentException(
+                "Role '" + ROLE_EXTERNAL + "' belongs to the platform and cannot be granted on " + recordType);
+         }
+      }
+   }
+
+   /** Refuses any persisted role array that attempts to grant {@link #ROLE_EXTERNAL}. */
+   public static void requireNoExternalRole(String[] roles, String recordType) {
+      if (roles == null) {
+         return;
+      }
+      for (String role : roles) {
+         if (isReservedExternalRole(role)) {
+            throw new IllegalArgumentException(
+                "Role '" + ROLE_EXTERNAL + "' belongs to the platform and cannot be granted on " + recordType);
+         }
+      }
+   }
+
+   /** Refuses any field-update payload (collection, array, or scalar) that attempts to grant {@link #ROLE_EXTERNAL}. */
+   public static void requireNoExternalRoleValue(Object value, String recordType) {
+      if (value == null) {
+         return;
+      }
+      if (value instanceof String[] array) {
+         requireNoExternalRole(array, recordType);
+         return;
+      }
+      if (value instanceof Iterable<?> iterable) {
+         for (Object item : iterable) {
+            if (item != null && isReservedExternalRole(String.valueOf(item))) {
+               throw new IllegalArgumentException(
+                   "Role '" + ROLE_EXTERNAL + "' belongs to the platform and cannot be granted on " + recordType);
+            }
+         }
+         return;
+      }
+      if (isReservedExternalRole(String.valueOf(value))) {
+         throw new IllegalArgumentException(
+             "Role '" + ROLE_EXTERNAL + "' belongs to the platform and cannot be granted on " + recordType);
+      }
+   }
+
+   @Override
+   public void validate() {
+      super.validate();
+      requireNoExternalRole(getRoles(), "UserRealmRole");
+      if (externalTenantIds != null) {
+         for (String tenantId : externalTenantIds) {
+            if (tenantId == null || tenantId.isBlank()) {
+               throw new IllegalArgumentException("externalTenantIds must not contain null or blank entries");
+            }
+         }
+      }
+   }
 
    @Override
    public String bmFunctionalArea() {

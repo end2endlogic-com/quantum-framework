@@ -84,6 +84,22 @@ public class CredentialUserIdPassword extends BaseModel {
    @ToString.Exclude
    protected String passwordHash;
    Boolean forceChangePassword;
+   /**
+    * When the password hash last changed; server-owned (never read from or written by REST).
+    * A session that started at or before it no longer refreshes, so a password change ends
+    * every earlier session once its access token expires.
+    */
+   @JsonIgnore
+   @ToString.Exclude
+   protected Date passwordChangedAt;
+   /**
+    * Counts password-hash changes; server-owned like {@link #passwordChangedAt}. A session
+    * remembers the revision its sign-in read and stops refreshing once it moves, which holds
+    * even when a sign-in races a reset (no wall-clock ordering involved). null reads as 0.
+    */
+   @JsonIgnore
+   @ToString.Exclude
+   protected Long passwordRevision;
    protected String[] roles; // can be set by identity provider or explictly here, code should union token roles and
    // this.
 
@@ -133,14 +149,28 @@ public class CredentialUserIdPassword extends BaseModel {
     */
    public void setPassword(String password) {
       if (password != null) {
-         if (credentialType == CredentialType.EMAIL) {
-            throw new IllegalStateException("EMAIL_CREDENTIAL_PASSWORD_FORBIDDEN");
-         }
-         this.passwordHash = EncryptionUtils.hashPassword(password);
+         setPasswordHash(EncryptionUtils.hashPassword(password));
          this.hashingAlgorithm = EncryptionUtils.hashAlgorithm();
       }
    }
 
+
+   /**
+    * Every change of the hash, by any caller, records {@link #passwordChangedAt}, so no
+    * password write can leave earlier sessions refreshable.
+    */
+   public void setPasswordHash(String passwordHash) {
+      if (!java.util.Objects.equals(this.passwordHash, passwordHash)) {
+         this.passwordChangedAt = new Date();
+         this.passwordRevision = currentPasswordRevision() + 1;
+      }
+      this.passwordHash = passwordHash;
+   }
+
+   /** The password revision, with an unset (legacy) revision reading as 0. */
+   public long currentPasswordRevision() {
+      return passwordRevision == null ? 0L : passwordRevision;
+   }
 
    /** Distinguishes PASSWORD credentials from SERVICE_TOKEN, API_KEY, etc. */
    @Builder.Default
@@ -156,12 +186,16 @@ public class CredentialUserIdPassword extends BaseModel {
    /** For SERVICE_TOKEN credentials: the subject of the owning PASSWORD credential. */
    protected String parentCredentialSubject;
 
+   /**
+    * For service credentials: whether the identity runs only as itself
+    * ({@link ServiceKind#APPLICATION}) or may resolve an acted-for identity
+    * ({@link ServiceKind#DELEGATING}). null = neither; delegation is refused.
+    */
+   protected ServiceKind serviceKind;
+
    @Override
    public void validate () {
       super.validate();
-      if (credentialType == CredentialType.EMAIL && passwordHash != null) {
-         throw new IllegalArgumentException("EMAIL_CREDENTIAL_PASSWORD_FORBIDDEN");
-      }
       if (roles != null) {
          // check that roles array does not include null or empty strings
          for (String role : roles) {
@@ -169,6 +203,7 @@ public class CredentialUserIdPassword extends BaseModel {
                throw new IllegalArgumentException("roles array must not contain null or empty strings");
             }
          }
+         UserRealmRole.requireNoExternalRole(roles, "CredentialUserIdPassword");
       }
    }
 

@@ -248,6 +248,19 @@ public class CanonicalizeRefNamesIT extends BaseRepoTest {
    }
 
    @Test
+   void aRefNameDefaultedToTheObjectIdIsNotAViolation() {
+      ObjectId defaulted = legacyGroup("placeholder-" + run, List.of("defaulted"), null);
+      collection(REALM, "userGroup").updateOne(Filters.eq("_id", defaulted),
+            Updates.set("refName", defaulted.toHexString()));
+      ObjectId foreignId = legacyGroup(new ObjectId().toHexString(), List.of("foreign"), null);
+      Map<ObjectId, Action> plan = migrator.plan(REALM).actions().stream()
+            .filter(action -> List.of(defaulted.toHexString(), foreignId.toHexString()).contains(action.id()))
+            .collect(Collectors.toMap(action -> new ObjectId(action.id()), Function.identity()));
+      assertNull(plan.get(defaulted), "the repository default is kept as it is");
+      assertEquals(Kind.UNRESOLVABLE, plan.get(foreignId).kind(), "another record's id is still reported");
+   }
+
+   @Test
    void aDeclaredLegacyNameIsKeptAndHoldsItsName() {
       // quantum.refname.legacy-allowed.UserGroup includes refname_it_legacy (test configuration).
       ObjectId legacy = legacyGroup("refname_it_legacy", List.of("legacy"), null);

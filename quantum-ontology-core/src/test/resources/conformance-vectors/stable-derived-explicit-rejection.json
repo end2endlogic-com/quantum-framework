@@ -1,0 +1,89 @@
+{
+  "name": "stable-derived-explicit-rejection",
+  "description": "An explicit edge for a stable derived relation is rejected: its edges come only from its derivation. Internal derived relations keep today's behaviour (explicit edges are accepted).",
+  "tbox": {
+    "version": 1,
+    "id": "vector-stable-derived-explicit",
+    "openness": "closed",
+    "classes": [
+      {
+        "id": "Party"
+      },
+      {
+        "id": "Customer",
+        "parents": [
+          "Party"
+        ]
+      },
+      {
+        "id": "PremiumCustomer",
+        "parents": [
+          "Customer"
+        ]
+      },
+      {
+        "id": "PurchaseOrder"
+      },
+      {
+        "id": "POLine"
+      },
+      {
+        "id": "Shipment"
+      }
+    ],
+    "properties": [
+      {
+        "id": "hasPO",
+        "domain": "Customer",
+        "range": "PurchaseOrder"
+      },
+      {
+        "id": "poShipment",
+        "domain": "PurchaseOrder",
+        "range": "Shipment"
+      },
+      {
+        "id": "hasLine",
+        "domain": "PurchaseOrder",
+        "range": "POLine"
+      },
+      {
+        "id": "lineShipment",
+        "domain": "POLine",
+        "range": "Shipment"
+      },
+      {
+        "id": "hasShipment",
+        "domain": "Customer",
+        "range": "Shipment",
+        "derivation": "derived",
+        "stability": "stable"
+      }
+    ],
+    "chains": [
+      {
+        "chain": [
+          "hasPO",
+          "poShipment"
+        ],
+        "implies": "hasShipment"
+      }
+    ]
+  },
+  "explicit_edges": [
+    {
+      "src_id": "c1",
+      "src_type": "Customer",
+      "predicate": "hasShipment",
+      "dst_id": "s1",
+      "dst_type": "Shipment"
+    }
+  ],
+  "expected": {
+    "status": "invalid",
+    "inferred_edges": [],
+    "rejected_derived_predicates": [
+      "hasShipment"
+    ]
+  }
+}

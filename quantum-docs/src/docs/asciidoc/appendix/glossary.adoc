@@ -13,9 +13,11 @@ endif::[]
 
 **DomainContext**:: Runtime context representing the current execution scope (tenant, org, user, functional area/domain, action) used by repositories and security rules.
 
-**Functional Area**:: Broad business capability grouping (e.g., Catalog, Collaboration, Identity) used for organizing models and security policies.
+**Functional Area**:: Broad business capability grouping (e.g., Catalog, Collaboration, Identity) used for organizing models and security policies. As a stored record (`FunctionalArea`) it is the top level of an application's policy vocabulary and belongs to exactly one application; other applications may only borrow its domains.
 
-**Functional Domain**:: Specific entity type within a functional area (e.g., Product within Catalog, Shipment within Collaboration) used for fine-grained permissions.
+**Functional Domain**:: Specific entity type within a functional area (e.g., Product within Catalog, Shipment within Collaboration) used for fine-grained permissions. A stored `FunctionalDomain` lists the actions that can be performed in it.
+
+**Vocabulary**:: The set of functional areas, functional domains and actions an application declares, written area -> domain -> action. Policy rules may only name triples from the vocabulary the application declares or borrows (its `uses` list). The `quantum-vocabulary-processor` annotation processor derives the vocabulary from `@FunctionalMapping` and `@FunctionalAction` in code and checks the application's identity pack against it.
 
 **RuleContext**:: Policy evaluation engine that determines allowed actions and contributes data filters based on identity, functional area/domain, and business rules.
 
@@ -25,13 +27,25 @@ endif::[]
 
 **Organization (Org)**:: Business unit within a tenant, identified by orgRefName, enabling sub-tenant grouping and sharing.
 
-**Realm**:: Database or data partition, often corresponding to a MongoDB database, that can be selected per request via X-Realm header.
+**Realm**:: Database or data partition, often corresponding to a MongoDB database. A request runs in the realm its caller's identity resolves to; the `X-Realm` header is an explicit override, checked against what the caller may access.
+
+**Application**:: A registered product that users sign in to (`Application` record). It declares the roles a binding may carry, where its tenants live (its tenancy) and its vocabulary. Every realm belongs to exactly one application.
+
+**Application install**:: An application installed for one tenant of a realm (`ApplicationInstall`). Only an active install counts: an application binding needs one for each of its tenants, and principal resolution ignores tenants whose install is gone.
+
+**Application binding**:: An identity's access to one application in one realm (`UserAppRole`): one record per subject, application and realm, where the subject is a user or a user group. It carries roles the application declares and the tenants of the realm it grants. Principal resolution reads bindings first and falls back to the realm membership's application grant only when no binding exists. A suspended or invalid binding refuses access; it never falls back.
+
+**Directory mode**:: Where the realm catalog and memberships are read from, set by `quantum.directory.mode`: `local` (this deployment's system realm) or `remote` (the environment's directory owner). It is separate from `quantum.mode`, which says whether the deployment owns a system realm.
 
 **Shared Domain**:: Data domain accessible across multiple tenants (e.g., public catalogs, partner directories) as opposed to tenant-isolated data.
 
 ==== Security
 
 **Principal**:: Authenticated user identity with associated roles, tenant membership, and permissions.
+
+**Principal context**:: The resolved principal a request runs as (`PrincipalContext`): user id, realm, roles, DataDomain, and, when present, the impersonator and the acting service. `PrincipalContextResolver` builds it from a verified identity for one application; `SecurityFilter` binds it to the request.
+
+**Identity-only token**:: A bearer token that is used only to prove who the caller is. Roles, realm and tenancy are not read from its claims; the receiving application resolves them for that identity and application. With `quantum.auth.principal-source=remote` the application verifies the token's signature locally and asks the directory owner for the principal. Unset, the local principal construction is unchanged.
 
 **Permission Rule**:: Declarative policy that matches requests (URL, method, headers, body) and decides ALLOW/DENY with optional data filters.
 
@@ -69,6 +83,8 @@ endif::[]
 
 **Migration**:: Versioned database schema and data changes managed by Quantum's migration framework with changeset tracking.
 
+**Canonical refName**:: The spelling rule for the `refName` of `@CanonicalRefName` entities (`UserGroup`, `Policy`): upper snake case (`^[A-Z][A-Z0-9_]*$`), 3 to 64 characters, immutable after create. A refName that is not given defaults to the record's ObjectId.
+
 ==== Annotations
 
 **@FunctionalMapping**:: Class-level annotation declaring a model's functional area and domain, replacing legacy bmFunctionalArea() methods.
@@ -83,7 +99,7 @@ endif::[]
 
 **JWT Provider**:: Authentication module that validates JSON Web Tokens and populates security context with user identity and roles.
 
-**OIDC Integration**:: OpenID Connect support for enterprise identity providers like Keycloak, Auth0, and AWS Cognito.
+**OIDC Integration**:: OpenID Connect sign-in through an external identity provider. `auth.provider` can name an OIDC provider next to `custom`, but the provider implementation is a separate module; this repository ships the `custom` JWT provider and the optional `quantum-oauth-server`.
 
 **Feature Flags**:: Configuration-driven capability toggles with targeting rules for gradual rollouts and A/B testing.
 
@@ -98,7 +114,13 @@ endif::[]
 
 **Property Chain**:: A rule of the form p∘q⇒r meaning if (A --p--> B) and (B --q--> C), infer (A --r--> C). Chains make common traversals first-class and fast.
 
-**Edge (materialized)**:: A persisted tuple (tenantId, src, p, dst) representing a relationship, often inferred from rules. Edges live in a dedicated collection and power single-hop queries and policies.
+**Edge (materialized)**:: A persisted tuple (DataDomain, src, p, dst) representing a relationship, often inferred from rules. Edges live in a dedicated collection and power single-hop queries and policies.
+
+**Stable relation**:: An ontology property declared `stability: stable`. Consumers such as views, rules and `expand(@relation)` may bind to it. The pack may rewrite how it is derived, but removing, demoting or narrowing it needs a published successor (`metadata.replacedBy`) and a higher pack version. Properties are `internal` by default.
+
+**Chain propagation**:: Re-deriving the entities at the head of a property chain when an edge further along the chain changes, so derived edges stay current without saving the head again.
+
+**TBox**:: The schema part of an ontology: its classes, properties and chains. A realm's TBox is stored under the realm's registered domain.
 
 **Ontology Materializer**:: A component that computes inferred edges for an entity snapshot and upserts them to the edges collection. Keeps edges fresh as data changes.
 

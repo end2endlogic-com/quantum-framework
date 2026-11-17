@@ -116,6 +116,7 @@ class ControlPlaneRealmMapperTest {
         entry.setAuthorizedApplications(List.of("helixor-code", "helixor-reasoning-ux"));
         entry.setDefaultApplication("helixor-code");
         entry.setAuthorizedTenantIds(List.of("tenant-a", "tenant-b"));
+        entry.setExternalTenantIds(List.of("tenant-b"));
         entry.setSponsoringOrgRefName("HelixorAI");
         entry.setStatus("active");
 
@@ -124,6 +125,8 @@ class ControlPlaneRealmMapperTest {
         assertEquals("mingardia@helixor.ai-helixor-code-D1", role.getRefName());
         assertEquals(entry.getAuthorizedApplications(), role.getAuthorizedApplications());
         assertEquals(entry.getAuthorizedTenantIds(), role.getAuthorizedTenantIds());
+        assertEquals(List.of("tenant-b"), role.getExternalTenantIds());
+        assertEquals(List.of("tenant-b"), ControlPlaneRealmMapper.toEntry(role).getExternalTenantIds());
         assertEquals("HelixorAI", ControlPlaneRealmMapper.toEntry(role).getSponsoringOrgRefName());
     }
 
@@ -203,6 +206,37 @@ class ControlPlaneRealmMapperTest {
                     org.junit.jupiter.api.Assertions.assertTrue(names.contains(field.getName()),
                         () -> "Contract drops persisted field " + field.getName());
                 }
+            }
+        }
+    }
+
+    /**
+     * The directory's realms-for-user response is validated on return ({@code UserRealmRoleEntry.roles}
+     * is required): an assignment that grants no roles, whether built without them or read back from a
+     * stored row with the field absent or null, must map to an entry with an empty role list, or one
+     * row fails the whole response with a 400.
+     */
+    @Test
+    void anAssignmentWithoutRolesMapsToAValidEntryWithAnEmptyRoleList() throws Exception {
+        var wire = new com.fasterxml.jackson.databind.ObjectMapper();
+        List<UserRealmRole> assignments = List.of(
+            UserRealmRole.builder().userId("outsider@example.com").realmRefName("helixor-code-D1")
+                .authorizedApplications(List.of("quantum-filesystem")).status(UserRealmRole.STATUS_ACTIVE).build(),
+            new UserRealmRole("outsider@example.com", "outsider@example.com", "helixor-code-D1", null,
+                List.of("quantum-filesystem"), null, null, null, null, UserRealmRole.STATUS_ACTIVE),
+            wire.readValue("{\"userId\":\"outsider@example.com\",\"realmRefName\":\"helixor-code-D1\",\"roles\":null}",
+                UserRealmRole.class));
+        try (var factory = jakarta.validation.Validation.buildDefaultValidatorFactory()) {
+            var validator = factory.getValidator();
+            for (UserRealmRole assignment : assignments) {
+                UserRealmRoleEntry entry = ControlPlaneRealmMapper.toEntry(assignment);
+                assertEquals(List.of(), entry.getRoles());
+                assertEquals(java.util.Set.of(), validator.validate(entry));
+                // The wire form carries [] and a client reads it back as an assignment with no roles.
+                byte[] json = wire.writeValueAsBytes(entry);
+                org.junit.jupiter.api.Assertions.assertTrue(wire.readTree(json).get("roles").isArray());
+                assertEquals(List.of(), ControlPlaneRealmMapper.fromEntry(
+                    wire.readValue(json, UserRealmRoleEntry.class)).getRoles());
             }
         }
     }

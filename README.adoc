@@ -78,6 +78,47 @@ For a local build:
 
 For the isolated Mongo setup, dynamic HTTP ports, and complete test selection, see link:quantum-docs/src/docs/asciidoc/user-guide/testing.adoc[the testing guide].
 
+==== Snapshot CI/CD
+
+`.github/workflows/publish-snapshot.yml` runs on every push to `1.4.3-SNAPSHOT`
+and supports manual dispatch on that branch. A push builds the pushed head commit;
+multiple commits in one push produce one build. The workflow uses GraalVM JDK 23,
+starts a disposable Mongo replica set, and runs `clean verify` with the existing
+`oss-release` profile. Default Surefire tests run; this is not the separately
+selected full `*IT` or native/provider compatibility suite.
+
+Only successful verification proceeds to `deploy`. It reuses the same checkout,
+skips the already-run tests, and publishes unsigned development snapshots through
+the existing Central publishing plugin. Snapshot publication does not require GPG
+signing. The parent POM and framework modules are included; `quantum-docs` remains
+in the separate Pages workflow. The release profile itself is unchanged.
+
+To activate publication after merging the workflow into `1.4.3-SNAPSHOT`:
+
+* Enable SNAPSHOT publishing for `com.end2endlogic` in Sonatype Central Portal.
+* Generate a Central Portal publishing token and add its username as the GitHub
+  Actions repository secret `CENTRAL_USERNAME`, and its password as
+  `CENTRAL_PASSWORD`. These are token credentials, not the account login.
+* Push a commit to the branch, or dispatch the workflow on that branch. Missing
+  credentials fail the publication step explicitly; build failures prevent it.
+
+Publication targets `https://central.sonatype.com/repository/maven-snapshots/`.
+The existing snapshot repository declarations allow Maven consumers to resolve
+these artifacts (use `-U` to refresh a cached snapshot). Workflow runs are serialized
+with `queue: max`, retaining up to GitHub's 100 pending runs instead of replacing
+the previous pending run. GitHub does not guarantee concurrency queue ordering.
+Test reports are retained as workflow artifacts for 14 days.
+
+Local validation without uploading artifacts:
+
+[source,bash]
+----
+mvn -B -ntp -Poss-release -pl '!quantum-docs' verify -Dgpg.skip=true
+----
+
+See https://central.sonatype.org/publish/publish-portal-snapshots/[Sonatype snapshot setup]
+and https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax[GitHub concurrency limits].
+
 ==== Running the application locally
 You will need to have mongodb running locally and a .env file will need to be created in the root directory of project.  There is a env_example file in the root of the project you can use.  Copy this file to .env and modify accordingly
 

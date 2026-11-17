@@ -14,6 +14,9 @@ Use it to jump directly to a subject and then explore details in context.
 
 - Overview: xref:{doc-root}/tutorials/quantum-tutorial.adoc#sec-overview[Platform overview]
 - Project setup: xref:{doc-root}/tutorials/quantum-tutorial.adoc#sec-setup[Project setup]
+- Getting started and module list: xref:{doc-root}/user-guide/getting-started.adoc#getting-started-modules[Dependencies, modules, and a first resource]
+- Control-plane architecture: xref:{doc-root}/user-guide/control-plane-architecture.adoc[Embedded and remote deployment modes, system realm ownership]
+- Application registration: xref:{doc-root}/user-guide/application-registration.adoc[Optional SPI for an application to register with its environment at startup]
 
 == Modeling and Tenancy
 
@@ -28,10 +31,14 @@ Use it to jump directly to a subject and then explore details in context.
 - User-definable facet segmentation & coordinate SPI: xref:{doc-root}/user-guide/tenant-models.adoc#user-definable-facet-segmentation[Multi-tenant coordinate SPI and facet resolution]
 - Tenant onboarding and access invites: xref:{doc-root}/user-guide/tenant-models.adoc#tenant-onboarding-and-invites[Provision tenants, configure onboarding workflow, and invite users into a tenant]
 - Domain rule context: xref:{doc-root}/tutorials/quantum-tutorial.adoc#sec-domain-rule-context[Domain rule context]
+- Canonical refNames: xref:{doc-root}/user-guide/modeling.adoc[Modeling] (the refName rule for user groups and policies, and migrating stored names)
+- Stable relations: xref:{doc-root}/user-guide/ontology.adoc#stable-relations[A relation contract consumers can bind to, successors, and the admission diff]
+- Chain propagation and reindex: xref:{doc-root}/user-guide/ontology.adoc#chain-propagation[How derived edges stay current when a later hop changes]
 
 == APIs and Queries
 
 - REST CRUD: xref:{doc-root}/tutorials/quantum-tutorial.adoc#sec-rest-crud[Building RESTful CRUD APIs]
+- Write rules: xref:{doc-root}/user-guide/rest-crud.adoc#rest-crud-write-rules[What the server decides on save and update] (DataDomain, refName, strict update pairs)
 - Query language: xref:{doc-root}/tutorials/quantum-tutorial.adoc#sec-query-language[Query language and filtering]
 - Planner and QueryGateway: xref:{doc-root}/user-guide/planner-and-query-gateway.adoc[Governed aggregation pipelines, multi-hop traversal, and REST endpoints]
 - Relationship hydration: xref:{doc-root}/user-guide/query-expansion.adoc[Relationship hydration with expand(path)]
@@ -43,6 +50,8 @@ Use it to jump directly to a subject and then explore details in context.
 == Security
 
 - Authentication: xref:{doc-root}/tutorials/quantum-tutorial.adoc#sec-security[Authentication, permissions, and annotations]
+- Identity and membership: xref:{doc-root}/user-guide/identity-and-membership.adoc[Identity, organizations and realm access]
+- Security annotations: xref:{doc-root}/user-guide/security-annotations.adoc[Functional mapping, functional actions, and vocabulary from code]
 - JWT tokens for API access: xref:{doc-root}/user-guide/auth.adoc#jwt-tokens-for-api-access[Generating JWT Tokens] (login, service tokens, key pair generation)
 - Service tokens for integrations: xref:{doc-root}/user-guide/auth.adoc#service-tokens[Service Tokens] (MCP servers, cron jobs, CI/CD, partner APIs)
 - Multiple auth providers: xref:{doc-root}/user-guide/multiple-auth-providers.adoc[Multiple Authentication Providers] (issuer resolution, per-tenant key pairs, external identity providers)
@@ -55,6 +64,7 @@ Use it to jump directly to a subject and then explore details in context.
 - Permission Resource Check APIs: xref:{doc-root}/user-guide/permission-resource.adoc[Permission Resource: Check APIs and Client Usage]
 - Label resolution and script helpers: xref:{doc-root}/user-guide/permissions.adoc#label-resolution-spi[Labels (SPI) and hasLabel()]
 - Secrets and vault (global vs tenant-level): xref:{doc-root}/user-guide/secrets-and-vault.adoc[Secrets and Vault Configuration]
+- Managed secrets: xref:{doc-root}/user-guide/secrets-and-vault.adoc#managed-secrets[Encrypted tenant-level secrets, key rotation, and SecretResolver]
 
 == Data Seeding
 
@@ -69,6 +79,7 @@ Use it to jump directly to a subject and then explore details in context.
 == Operations
 
 - Migrations: xref:{doc-root}/tutorials/quantum-tutorial.adoc#sec-migrations[Migrations]
+- Canonical refName migration: xref:{doc-root}/user-guide/migrations.adoc#migrations-canonical-refnames[Report, review, and explicit apply]
 - Testing: xref:{doc-root}/tutorials/quantum-tutorial.adoc#sec-testing[Testing]
 - Usage metering and token allocation: xref:{doc-root}/user-guide/usage-and-token-allocation.adoc[Usage Metering and Token Allocation] (API/LLM usage, token pools per tenant, scoped to APIs and Tools/LLM configs)
 
@@ -76,6 +87,19 @@ Use it to jump directly to a subject and then explore details in context.
 
 - Supply Chain tutorial: xref:{doc-root}/tutorials/supply-chain.adoc[Supply Chain]
 
+== Design notes
+
+These pages record designs and decisions. They describe intent at the time of writing; the user-guide pages above describe current behaviour.
+
+- Realm membership: xref:{doc-root}/design/realm-membership-adr.adoc[Realm membership decision record]
+- Per-tenant key pairs: xref:{doc-root}/design/per-tenant-key-pairs.adoc[Per-tenant key pairs]
+- Calculated relations: xref:{doc-root}/design/calculated-relations-roadmap.adoc[Calculated relations roadmap]
+- Query Gateway and ontology: xref:{doc-root}/design/query-gateway-ontology-support.adoc[Query Gateway ontology support]
+- CSV import: xref:{doc-root}/design/csv-import-enhancements.adoc[CSV import enhancements] and xref:{doc-root}/design/csv-dynamic-attributes-design.adoc[CSV dynamic attributes]
+
 == Appendix
 
-For configuration, Quarkus integration details, and glossary, see the Appendix in the main index.
+- Configuration: xref:{doc-root}/appendix/configuration.adoc[Configuration Reference]
+- Quarkus: xref:{doc-root}/appendix/quarkus-foundation.adoc[Quarkus Foundation]
+- Glossary: xref:{doc-root}/appendix/glossary.adoc[Glossary]
+- Pre-release notes: xref:{doc-root}/prerelease-defect-remediation.adoc[Pre-release correctness and security fixes]

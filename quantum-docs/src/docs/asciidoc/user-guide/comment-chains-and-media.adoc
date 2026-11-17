@@ -17,4 +17,6 @@ The REST surface is rooted at `/comment-chains`. It supports chain creation and 
 . Comments and application models persist only the `MediaReference` identity.
 . `POST /media-references/{id}/download-grants` returns a fresh short-lived URL only when the object is available.
 
-Deployments must provide exactly one CDI `MediaStorageGateway` bean for the selected object store. Quantum fails closed when no unique gateway is configured, when uploaded length/type/checksum differs from the prepared reference, or when the object is not available for download. Configure `quantum.media.grant-lifetime` and `quantum.media.max-content-length` for deployment policy.
+Deployments must provide exactly one CDI `MediaStorageGateway` bean for the selected object store. Quantum fails closed when no unique gateway is configured, when uploaded length/type/checksum differs from the prepared reference, or when the object is not available for download. Configure `quantum.media.grant-lifetime` (default `PT15M`) and `quantum.media.max-content-length` (default `104857600` bytes) for deployment policy. An upload whose declared length is zero or exceeds the maximum is refused.
+
+Both resources require the `user`, `admin` or `system` role.

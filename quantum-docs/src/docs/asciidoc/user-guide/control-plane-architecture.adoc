@@ -72,9 +72,13 @@ user roles (`UserRealmRole`)
 |system-realm repos; consumed by the IdP at token issuance
 |===
 
-In remote mode (Phase C, in progress) each contract gains an HTTP client
-implementation against the control-plane service; consumers are unaffected
-because they inject the contract.
+With a remote directory the realm catalog (`RemoteSystemDirectory`) and
+membership resolution and writes (`RemoteMembershipClient`) go to the directory
+owner over HTTP through the generated control-plane client; consumers are
+unaffected because they inject the contract. Not everything is remote:
+`RemoteSystemDirectory` fails loud for the system realm id and credential
+lookups (a tier-2 deployment has no local system realm and verifies identity
+through JWKS), and `membershipsForOrg` is not in the contract.
 
 === Remote membership writes
 
@@ -95,8 +99,83 @@ control-plane client (`quantum-control-plane-client`, generated from
 
 The contract leaves out `dataDomain`. The control plane keeps the
 authoritative storage scope of an existing assignment. The request forwards
-the caller's bearer token, or `quantum.system-service.token` when no request
-is in scope, so the control plane authorizes the write under its own policy.
+the caller's bearer token, or `quantum.directory.token` (falling back to
+`quantum.system-service.token`) when no request is in scope, so the control
+plane authorizes the write under its own policy.
+
+=== Directory routing
+
+The two settings answer different questions:
+
+* `quantum.mode` (`embedded` | `remote`, default `embedded`): does this
+  deployment own a system realm?
+* `quantum.directory.mode` (`local` | `remote`, unset by default): where do the
+  realm catalog and the memberships live? It covers both together.
+
+In the reference architecture one `quantum-auth-service` per environment owns
+the directory (`local`), and every other service reads it with `remote`. That
+includes a service that still keeps its own system realm for its own records
+(`quantum.mode=embedded`): its realm catalog and memberships go to Auth, while
+its system realm and credential lookups stay local (`SplitSystemDirectory`).
+
+[cols="1,1,3",options="header"]
+|===
+|`quantum.mode` |`quantum.directory.mode` |Result
+
+|`embedded` |unset or `local`
+|Everything local: system realm, credentials, realm catalog, memberships.
+
+|`embedded` |`remote`
+|Own system realm and credential lookups stay local; realm catalog and
+memberships are read and written at the directory owner.
+
+|`remote` |unset or `remote`
+|No local system realm; realm catalog and memberships at the directory owner.
+
+|`remote` |`local`
+|System-realm startup work is skipped (`quantum.mode`), while the catalog and
+memberships are read from the local repositories (`quantum.directory.mode`).
+|===
+
+When `quantum.directory.mode` is unset, the older routing applies unchanged:
+memberships follow `quantum.mode`, and the realm catalog follows
+`quantum.system.directory.mode` (an older catalog-only override, ignored once
+`quantum.directory.mode` is set) or else `quantum.mode`. Existing deployments
+therefore change only when they set the new key.
+
+Startup fails on an unknown mode value, and when the directory is remote but
+no endpoint is configured. The endpoint is `quantum.directory.base-url`; calls
+made outside a request use `quantum.directory.token`. The older
+`quantum.system-service.base-url` and `quantum.system-service.token` are still
+read as fallbacks and are deprecated for the directory.
+
+What a remote directory changes for the service that reads it:
+
+* Realm roles are not read from local `UserRealmRole` rows. A local copy is not
+  an authority, and a stale row could keep a role that was revoked at the
+  directory owner. With the key unset the older behaviour is kept.
+* Application bindings and installs (`UserAppRole`, `ApplicationInstall`) can be
+  neither read nor written: the calls refuse with `DIRECTORY_REMOTE`, and
+  identity-only principal resolution for an application refuses with
+  `APPLICATION_NOT_GRANTED` instead of letting the realm assignment decide in
+  place of bindings it cannot read. The service that owns the directory
+  resolves principals.
+* Access-invite acceptance writes the realm assignment at the directory owner,
+  and a rollback undoes the grant there. A new assignment that cannot be
+  deleted remotely is emptied and suspended.
+* The local copy of records the owner holds is frozen. Every write to it
+  (`RealmRepo` for the realm catalog; `RealmTenantMembershipRepo` and
+  `UserRealmRoleRepo` for memberships) refuses with `DIRECTORY_REMOTE` (409),
+  and the `/security/realm`, `/security/realm-memberships` and
+  `/security/user-realm-roles` endpoints refuse with `DIRECTORY_REMOTE` instead
+  of serving the stale copy. The application and tenant grant endpoints
+  (`/security/user-realm-roles/{userId}/{realm}/applications` and `…/tenants`)
+  stay open and read and write at the owner. The default realms are not seeded
+  into a catalog the owner holds.
+* The catalog and the memberships are guarded separately. Under the older
+  catalog-only setting (`quantum.system.directory.mode=remote` with
+  `quantum.directory.mode` unset) only the catalog writes and endpoints are
+  refused; memberships stay local and writable.
 
 Every remote failure raises a typed `ControlPlaneException`, and nothing falls
 back to local storage:
@@ -110,6 +189,11 @@ back to local storage:
 |`REJECTED` |non-2xx answer; `httpStatus()` holds the status
 |`CONTRACT_VIOLATION` |2xx answer with an empty body or a mismatched identity
 |===
+
+A REST endpoint that hits one of these answers with the owner's status when the
+owner refused with a 4xx, and with 502 Bad Gateway otherwise
+(`ControlPlaneExceptionMapper`, in quantum-system-rest). The `RestError`
+`reasonMessage` carries the kind. Before 1.4.3 these failures surfaced as 500.
 
 `membershipsForOrg` is the one call the contract does not expose yet. It
 still fails loud in remote mode.
@@ -128,8 +212,11 @@ still fails loud in remote mode.
 |System-realm seed packs |runs |excluded from realm list
 |System-realm bootstrap packs |runs |excluded from realm list
 |App-realm migrations/seeds/bootstrap |runs |*still runs locally*
-|SystemDirectory |local |remote client (fails loud until Phase C)
+|SystemDirectory |local |remote client for the realm catalog; the system realm id and credential lookups fail loud
 |===
+
+The SystemDirectory row is the default routing. `quantum.directory.mode`
+overrides it independently of `quantum.mode`; see <<Directory routing>>.
 
 Known Phase C gap (documented in the design doc): when seeding *app* realms,
 the seed runner still reads realm records and admin credentials from the
@@ -168,7 +255,7 @@ endpoints publicly.
 
 |2 (split planes)
 |`quantum.mode=remote` +
-`quantum.system-service.base-url=...` +
+`quantum.directory.base-url=...` +
 tier-1 build switch
 |Control plane owns the system realm and identity; this app runs only
 app-realm workloads and validates JWTs against the control plane's JWKS.
@@ -178,11 +265,25 @@ the tenant-plane app is the reference deployment.
 == Identity in the split
 
 Per the realm-membership ADR: users hold ONE global identity (credential in
-the system realm) plus per-realm role assignments (`UserRealmRole`). At token
-issuance the IdP unions the assignment for the target realm into the JWT's
-role claims (`CustomTokenAuthProvider.login`), with role provenance exposed
-in the login response (`RoleSource.REALM`). The tenant plane validates via
-JWKS and routes by claims — no per-request callback to the control plane.
+the system realm) plus per-realm role assignments (`UserRealmRole`) and
+per-application bindings (`UserAppRole`). A token proves that identity. What
+the identity may do is resolved from those records, and a tenant-plane service
+chooses how through configuration:
+
+* *Delegated claims* (`quantum.auth.trust-token-claims=true`): at sign-in the
+  issuer unions the assignment for the target realm into the token's role
+  claims (`CustomTokenAuthProvider.login`, provenance `RoleSource.REALM` in the
+  login response). The tenant plane validates via JWKS and builds the principal
+  from the signed claims, with no per-request call to the control plane. Roles
+  and grants are as fresh as the token.
+* *Remote principal source* (`quantum.auth.principal-source=remote`,
+  identity-only tokens step 2): the tenant plane verifies the signature locally,
+  reads only `iss` and `sub`, and asks the Auth service to resolve identity plus
+  this application to roles, realm and tenant. There is no fallback to claims.
+
+Both are opt-in; with neither set a service resolves the principal from its own
+credential store. See
+xref:auth.adoc#authn-authz-separation[Authentication and Authorization Are Separate].
 
 == Field-level and relationship policy (one policy source, every egress)
 

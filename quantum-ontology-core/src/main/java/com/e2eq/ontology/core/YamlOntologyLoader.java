@@ -45,7 +45,11 @@ public final class YamlOntologyLoader {
             Boolean inferred,
             String label,
             List<String> aliases,
-            Map<String, Object> metadata
+            Map<String, Object> metadata,
+            // Relation contract (P1): stable | internal (default), and asserted | derived, the
+            // authoring form of 'inferred'. Unknown values fail rather than default.
+            String stability,
+            String derivation
     ) {}
     public record YChain(List<String> chain, String implies) {}
 
@@ -67,6 +71,26 @@ public final class YamlOntologyLoader {
 
     public TBox load(InputStream in) throws IOException {
         return toTBox(mapper.readValue(in, YOntology.class));
+    }
+
+    /** A pack's TBox together with its declared {@code version:} (empty when the pack has none). */
+    public record Pack(TBox tbox, Optional<Integer> version) {}
+
+    public Pack loadPackFromClasspath(String resourcePath) throws IOException {
+        try (InputStream in = getClass().getResourceAsStream(resourcePath)) {
+            if (in == null) throw new IOException("Resource not found: " + resourcePath);
+            return toPack(mapper.readValue(in, YOntology.class));
+        }
+    }
+
+    public Pack loadPackFromPath(Path path) throws IOException {
+        try (InputStream in = Files.newInputStream(path)) {
+            return toPack(mapper.readValue(in, YOntology.class));
+        }
+    }
+
+    private Pack toPack(YOntology y) {
+        return new Pack(toTBox(y), Optional.ofNullable(y.version()));
     }
 
     /**
@@ -137,8 +161,16 @@ public final class YamlOntologyLoader {
                         new LinkedHashSet<>(Optional.ofNullable(c.aliases()).orElse(List.of())),
                         Optional.ofNullable(c.metadata()).orElse(Map.of())), (a,b)->a, LinkedHashMap::new));
 
+        // Relation contract fields first, in property-name order, so the first error is the same one
+        // the Python runtime reports.
+        List<YProperty> authored = new ArrayList<>(Optional.ofNullable(y.properties()).orElse(List.of()));
+        authored.stream()
+                .filter(p -> p.id() != null)
+                .sorted(Comparator.comparing(YProperty::id))
+                .forEach(p -> RelationDerivation.checkAuthored(p.id(), p.stability(), p.derivation(), p.inferred()));
+
         Map<String, PropertyDef> props = new LinkedHashMap<>();
-        for (YProperty p : Optional.ofNullable(y.properties()).orElse(List.of())) {
+        for (YProperty p : authored) {
             Set<String> supers = new LinkedHashSet<>(Optional.ofNullable(p.subPropertyOf()).orElse(List.of()));
 
             // Determine functional based on relation if provided; fallback to explicit functional flag
@@ -155,7 +187,8 @@ public final class YamlOntologyLoader {
                 functional = Boolean.TRUE.equals(p.functional());
             }
 
-            boolean isInferred = Boolean.TRUE.equals(p.inferred());
+            boolean isInferred = RelationDerivation.resolveInferred(p.id(), p.derivation(), p.inferred());
+            RelationStability stability = RelationStability.parse(p.id(), p.stability());
             PropertyDef def = new PropertyDef(
                     p.id(),
                     Optional.ofNullable(p.domain()),
@@ -169,7 +202,8 @@ public final class YamlOntologyLoader {
                     isInferred,
                     p.label(),
                     new LinkedHashSet<>(Optional.ofNullable(p.aliases()).orElse(List.of())),
-                    Optional.ofNullable(p.metadata()).orElse(Map.of())
+                    Optional.ofNullable(p.metadata()).orElse(Map.of()),
+                    stability
             );
             props.put(p.id(), def);
         }

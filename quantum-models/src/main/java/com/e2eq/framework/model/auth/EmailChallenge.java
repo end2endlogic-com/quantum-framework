@@ -8,7 +8,12 @@ public record EmailChallenge(
         String id, String email, String applicationId, Purpose purpose,
         String secretDigest, String clientBindingDigest, Instant expiresAt,
         int attempts, int maxAttempts, State state, long revision) {
-    public enum Purpose { CLI_SIGN_IN, PORTAL_SIGN_IN }
+    /**
+     * What a challenge proves the address for. A challenge redeems only for its own
+     * purpose: PASSWORD_SETUP (an emailed set-password link) never signs anyone in,
+     * and a sign-in link never sets a password.
+     */
+    public enum Purpose { CLI_SIGN_IN, PORTAL_SIGN_IN, PASSWORD_SETUP }
     public enum State { PENDING_DELIVERY, PENDING, VERIFIED, EXPIRED, LOCKED, REVOKED }
 
     public EmailChallenge {

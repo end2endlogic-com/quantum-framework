@@ -62,6 +62,16 @@ class EmailChallengeVerifierTest {
         assertThrows(EmailChallengeVerifier.Rejected.class, () -> verifier.verify("challenge", "test-app", EmailChallenge.Purpose.CLI_SIGN_IN, "012345", "b".repeat(43)));
         assertEquals(1, store.value.get().attempts());
     }
+    @Test void signInAndPasswordSetupLinksDoNotRedeemForEachOther() {
+        Store setup = pending(EmailChallenge.Purpose.PASSWORD_SETUP);
+        assertThrows(EmailChallengeVerifier.Rejected.class, () -> verifier(setup, NOW)
+                .verify("challenge", "test-app", EmailChallenge.Purpose.PORTAL_SIGN_IN, "012345", null));
+        assertEquals(EmailChallenge.State.VERIFIED, verifier(setup, NOW)
+                .verify("challenge", "test-app", EmailChallenge.Purpose.PASSWORD_SETUP, "012345", null).state());
+        Store signIn = pending(EmailChallenge.Purpose.PORTAL_SIGN_IN);
+        assertThrows(EmailChallengeVerifier.Rejected.class, () -> verifier(signIn, NOW)
+                .verify("challenge", "test-app", EmailChallenge.Purpose.PASSWORD_SETUP, "012345", null));
+    }
     @Test void concurrentConsumptionCannotReturnVerifiedProof() {
         Store store = pending(EmailChallenge.Purpose.PORTAL_SIGN_IN);
         EmailChallengeRepository losingWriter = new EmailChallengeRepository() {

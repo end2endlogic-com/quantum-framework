@@ -16,6 +16,7 @@ import static org.mockito.Mockito.*;
 
 /** Exercises the endpoint and real JWT mint/verify/refresh pipeline, with storage isolated. */
 class OAuthTokenResourceTest {
+    static final String CLIENT_SECRET = "test-client-secret";
     OAuthTokenResource resource;
     CustomTokenAuthProvider provider;
     CredentialUserIdPassword credential;
@@ -56,25 +57,53 @@ class OAuthTokenResourceTest {
         resource.envConfigUtils=env;resource.tokenDuration=60;
         resource.oauthClientRepo=mock(OAuthClientRepo.class);resource.authCodeRepo=mock(AuthorizationCodeRepo.class);
         for(String id:List.of("client-a","client-b")) {
-            var client=new OAuthClient();client.setClientId(id);client.setPublicClient(true);client.setActive(true);
+            var client=new OAuthClient();client.setClientId(id);client.setPublicClient(false);client.setActive(true);
+            client.setClientSecretHash(EncryptionUtils.hashPassword(CLIENT_SECRET));
             client.setApplicationId("app");client.setRealm("realm");
             client.setAllowedGrantTypes(List.of("authorization_code","client_credentials","refresh_token"));
             when(resource.oauthClientRepo.findByClientId("system",id)).thenReturn(Optional.of(client));
         }
-        var code=new AuthorizationCode();code.setClientId("client-a");code.setSubject("subject");code.setRealm("realm");
+        code=new AuthorizationCode();code.setClientId("client-a");code.setSubject("subject");code.setRealm("realm");
         when(resource.authCodeRepo.findValidCode("system","code")).thenReturn(Optional.of(code));
         when(resource.authCodeRepo.consumeCode("system","code")).thenReturn(true);
     }
+    AuthorizationCode code;
     @AfterEach void restoreKey() throws Exception {
         var field=TokenUtils.class.getDeclaredField("cachedPrivateKey");field.setAccessible(true);field.set(null,previousKey);
     }
     Response exchange(String grant,String client,String refresh) {
-        return resource.token(null,grant,"code",null,null,client,null,refresh,null);
+        return resource.token(null,grant,"code",null,null,client,CLIENT_SECRET,refresh,null);
     }
     String token(Response response,String field) {
         assertEquals(200,response.getStatus(),String.valueOf(response.getEntity()));
         var body=(OAuthTokenResponse)response.getEntity();
         return "access_token".equals(field)?body.accessToken():body.refreshToken();
+    }
+
+    @Test void publicMachineGrantIsRefusedEvenForAnExistingRegistration() {
+        var client=resource.oauthClientRepo.findByClientId("system","client-a").orElseThrow();
+        client.setPublicClient(true);
+        var response=resource.token(null,"client_credentials",null,null,null,"client-a",null,null,null);
+        assertEquals(400,response.getStatus());
+        assertEquals("unauthorized_client",((OAuthErrorResponse)response.getEntity()).error());
+        assertFalse(client.isGrantConfigurationValid());
+        verifyNoInteractions(resource.credentialRepo);
+    }
+
+    @Test void publicCodeRequiresS256ProofBeforeItCanBeConsumed() throws Exception {
+        var client=resource.oauthClientRepo.findByClientId("system","client-a").orElseThrow();
+        client.setPublicClient(true);
+        client.setAllowedGrantTypes(List.of("authorization_code","refresh_token"));
+        assertEquals(400,exchange("authorization_code","client-a",null).getStatus());
+        verify(resource.authCodeRepo,never()).consumeCode(anyString(),anyString());
+        String verifier="a".repeat(43);
+        code.setCodeChallenge(Base64.getUrlEncoder().withoutPadding().encodeToString(
+                java.security.MessageDigest.getInstance("SHA-256").digest(verifier.getBytes(java.nio.charset.StandardCharsets.US_ASCII))));
+        code.setCodeChallengeMethod("S256");
+        assertEquals(400,resource.token(null,"authorization_code","code",null,"b".repeat(43),"client-a",null,null,null).getStatus());
+        verify(resource.authCodeRepo,never()).consumeCode(anyString(),anyString());
+        assertEquals(200,resource.token(null,"authorization_code","code",null,verifier,"client-a",null,null,null).getStatus());
+        verify(resource.authCodeRepo).consumeCode("system","code");
     }
 
     @Test void typedResponsesPreserveOAuthWireFieldsAndCacheHeaders() throws Exception {
@@ -125,6 +154,27 @@ class OAuthTokenResourceTest {
         credential.setPasswordHash("");
         assertFalse(provider.login("user","local-review-password","app","realm").authenticated());
     }
+    @Test void theRefreshTokenOutlivesItsAccessToken() throws Exception {
+        var login=provider.loginWithVerifiedSubject("subject","app","realm",null).positiveResponse();
+        long access=parser.parse(login.accessToken()).getExpirationTime();
+        long refresh=parser.parse(login.refreshToken()).getExpirationTime();
+        assertTrue(refresh-access>6*24*3600, "refresh token must outlive its 60s access token by days");
+        var rotated=provider.refreshTokens(login.refreshToken()).positiveResponse();
+        assertTrue(parser.parse(rotated.refreshToken()).getExpirationTime()-parser.parse(rotated.accessToken()).getExpirationTime()>6*24*3600);
+    }
+    @Test void refreshingNeverOutlastsTheMaximumSession() throws Exception {
+        inject(provider,"refreshDurationInSeconds",Optional.of(70L));
+        inject(provider,"maxSessionDurationInSeconds",Optional.of(100L));
+        long now=TokenUtils.currentTimeInSecs();
+        String nearEnd=TokenUtils.generateRefreshToken("subject","user","realm","app",60,"https://issuer.invalid",null,now-80,null);
+        var rotated=provider.refreshTokens(nearEnd).positiveResponse();
+        long deadline=now-80+100;
+        assertTrue(parser.parse(rotated.accessToken()).getExpirationTime()<=deadline+1);
+        assertTrue(parser.parse(rotated.refreshToken()).getExpirationTime()<=deadline+1);
+        String pastEnd=TokenUtils.generateRefreshToken("subject","user","realm","app",60,"https://issuer.invalid",null,now-95,null);
+        assertThrows(SecurityException.class,()->provider.refreshTokens(pastEnd));
+        assertTrue(rotated.expirationTime()<=deadline+1, "the response reports the capped expiry");
+    }
     @Test void unboundSessionCannotEnterOAuthExchange() {
         var login=provider.loginWithVerifiedSubject("subject","app","realm",null);
         assertTrue(login.authenticated());
@@ -146,5 +196,13 @@ class OAuthTokenResourceTest {
         assertFalse(provider.loginWithVerifiedSubject("subject",null,"realm",null).authenticated());
         assertTrue(provider.loginWithVerifiedSubject("subject","app","realm",null).authenticated());
         assertFalse(provider.loginWithVerifiedSubject("subject","app","unregistered",null).authenticated());
+    }
+    @Test void aCodeObtainedBeforeAPasswordChangeCannotBeExchanged() {
+        code.setPasswordRevision(credential.currentPasswordRevision());
+        assertEquals(200,exchange("authorization_code","client-a",null).getStatus());
+        credential.setPassword("changed-after-the-code-was-issued");
+        assertEquals(400,exchange("authorization_code","client-a",null).getStatus());
+        code.setPasswordRevision(credential.currentPasswordRevision());
+        assertEquals(200,exchange("authorization_code","client-a",null).getStatus());
     }
 }

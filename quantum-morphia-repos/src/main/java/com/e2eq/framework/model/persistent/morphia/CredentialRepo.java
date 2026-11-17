@@ -11,6 +11,7 @@ import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.Realm;
 import com.e2eq.framework.util.EnvConfigUtils;
 import dev.morphia.Datastore;
+import dev.morphia.transactions.MorphiaSession;
 import dev.morphia.query.Query;
 import dev.morphia.query.filters.Filter;
 import dev.morphia.query.filters.Filters;
@@ -255,6 +256,55 @@ public class CredentialRepo extends MorphiaRepo<CredentialUserIdPassword> {
    @Override
    public CredentialUserIdPassword save (CredentialUserIdPassword value) {
       return this.save(envConfigUtils.getSystemRealm(), value);
+   }
+
+   /** The hash changes only through the credential's setter, which records the change. */
+   @Override
+   protected java.util.Set<String> serverOwnedFields () {
+      return java.util.Set.of("passwordHash", "hashingAlgorithm", "passwordChangedAt", "passwordRevision");
+   }
+
+   /**
+    * The stored credential is the authority for the server-owned password state on every save
+    * and merge: an incoming copy's revision and stamp are never trusted (they never travel over
+    * REST, and a copy could otherwise clear or roll them back and revive ended sessions).
+    * An omitted hash preserves the stored hash, revision and stamp on both replace and merge.
+    * Credential reads intentionally omit secrets; a metadata round trip is not a password reset.
+    * A non-null changed hash still advances the stored revision and stamp.
+    */
+   @Override
+   protected void reconcileServerOwnedState (Datastore datastore, CredentialUserIdPassword value, RefNameContract.WriteMode mode) {
+      if (value != null) {
+         com.e2eq.framework.model.security.UserRealmRole.requireNoExternalRole(value.getRoles(), "CredentialUserIdPassword");
+      }
+      if (value == null || value.getId() == null) {
+         return;
+      }
+      CredentialUserIdPassword stored = datastore.find(CredentialUserIdPassword.class)
+         .filter(Filters.eq("_id", value.getId()))
+         .first();
+      if (stored == null) {
+         return;
+      }
+      if (value.getPasswordHash() == null) {
+         value.setPasswordHash(stored.getPasswordHash());
+      }
+      boolean unchanged = java.util.Objects.equals(stored.getPasswordHash(), value.getPasswordHash());
+      if (unchanged) {
+         value.setHashingAlgorithm(stored.getHashingAlgorithm());
+         value.setPasswordRevision(stored.getPasswordRevision());
+         value.setPasswordChangedAt(stored.getPasswordChangedAt());
+      } else {
+         value.setPasswordRevision(stored.currentPasswordRevision() + 1);
+         value.setPasswordChangedAt(new java.util.Date());
+      }
+   }
+
+   @Override
+   protected void validateFieldUpdate (String requestedPath, Object value) {
+      if (requestedPath != null && (requestedPath.equals("roles") || requestedPath.startsWith("roles."))) {
+         com.e2eq.framework.model.security.UserRealmRole.requireNoExternalRoleValue(value, "CredentialUserIdPassword");
+      }
    }
 
    @Override

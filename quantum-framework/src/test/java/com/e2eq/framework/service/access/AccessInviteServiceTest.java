@@ -15,6 +15,8 @@ import com.e2eq.framework.model.security.UserRealmRole;
 import com.e2eq.framework.model.security.Realm;
 import com.e2eq.framework.api.system.SystemDirectory;
 import com.e2eq.framework.system.membership.RealmMembershipService;
+import com.e2eq.framework.system.remote.ControlPlaneRealmMapper;
+import com.e2eq.framework.controlplane.model.UserRealmRoleEntry;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import com.e2eq.framework.persistent.BaseRepoTest;
@@ -28,6 +30,7 @@ import dev.morphia.query.filters.Filters;
 import dev.morphia.query.updates.UpdateOperators;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
+import jakarta.validation.Validator;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -93,6 +96,9 @@ class AccessInviteServiceTest extends BaseRepoTest {
 
     @Inject
     ScriptableTestInviteNotificationService notifications;
+
+    @Inject
+    Validator validator;
 
     private String realm;
     /** A second, non-system realm the test inviters can be granted access to. */
@@ -422,6 +428,31 @@ class AccessInviteServiceTest extends BaseRepoTest {
         AccessInviteAcceptRequest fresh = accept(resent.getInviteToken());
         fresh.setPassword(PASSWORD);
         assertEquals(invitee, anonymous(() -> inviteService.acceptInvite(fresh)).getUserId());
+    }
+
+    @Test
+    void failedCreateDeliveryRevokesTheInviteAndAllowsInvitingAgain() {
+        String inviter = user("inviter");
+        String invitee = user("cr-fail");
+        java.util.concurrent.atomic.AtomicReference<String> attempted = new java.util.concurrent.atomic.AtomicReference<>();
+        notifications.onDelivery((sent, token) -> {
+            attempted.set(sent.getRefName());
+            throw new IllegalStateException("simulated mail outage");
+        });
+        assertRefused(Code.INVITE_NOTIFICATION_FAILED, () -> createInvite(inviter, invitee, null));
+        notifications.reset();
+
+        AccessInvite undelivered = as(pContext, () -> inviteRepo.findByRefNameIgnoreRules(realm, attempted.get()).orElseThrow());
+        assertEquals(AccessInvite.Status.REVOKED, undelivered.getStatus(), "an undelivered invite does not stay pending");
+        assertEquals(AccessInvite.Status.PENDING.name(), createInvite(inviter, invitee, null).getStatus());
+    }
+
+    @Test
+    void secondPendingInviteForTheSameIdentityIsRefusedWithACode() {
+        String inviter = user("inviter");
+        String invitee = user("dup");
+        createInvite(inviter, invitee, null);
+        assertRefused(Code.INVITE_ALREADY_PENDING, () -> createInvite(inviter, invitee, null));
     }
 
     // ---- resend: delivery-safe rotation -----------------------------------------------------
@@ -925,6 +956,96 @@ class AccessInviteServiceTest extends BaseRepoTest {
         AccessInviteRequest denied = inviteRequest(user("apps-2"), List.of());
         denied.setAuthorizedApplications(List.of("app-a"));
         assertRefused(Code.INVITE_APPLICATION_NOT_GRANTABLE, () -> createInviteAs(realm, inviter, denied));
+    }
+
+    /**
+     * An invite that grants no roles, only an application, writes an assignment with an empty role
+     * list, and the directory's realms-for-user response for that user stays valid
+     * ({@code UserRealmRoleEntry.roles} is required; one null fails the whole response with a 400).
+     */
+    @Test
+    void aNoRolesInviteWritesAnEmptyRoleListTheDirectoryCanReturn() {
+        String admin = realmAdmin();
+        String invitee = user("no-roles");
+        AccessInviteRequest request = inviteRequest(invitee, List.of());
+        request.setAuthorizedApplications(List.of("app-a"));
+        AccessInviteResponse invite = createInviteAs(realm, admin, request);
+
+        AccessInviteAcceptRequest acceptRequest = accept(invite.getInviteToken());
+        acceptRequest.setPassword(PASSWORD);
+        AccessInviteAcceptResponse accepted = anonymous(() -> inviteService.acceptInvite(acceptRequest));
+        assertEquals(List.of("app-a"), accepted.getAuthorizedApplications(), "the response names the invite's one application");
+
+        assertDirectoryReturnsRealmsFor(invitee, 1);
+        UserRealmRole stored = assignments(invitee).get(0);
+        assertEquals(List.of(), stored.getRoles(), "an assignment without roles reads back as an empty list");
+        assertEquals(List.of("app-a"), stored.getAuthorizedApplications());
+    }
+
+    /**
+     * The accept response names the applications the invite itself named: only those, not the
+     * person's existing grants in the realm, and an empty list (never null) when it named none.
+     */
+    @Test
+    void theAcceptResponseNamesOnlyTheInvitesOwnApplications() {
+        String admin = realmAdmin();
+
+        String none = user("apps-none");
+        AccessInviteAcceptRequest acceptNone = accept(createInviteAs(realm, admin, inviteRequest(none, List.of())).getInviteToken());
+        acceptNone.setPassword(PASSWORD);
+        AccessInviteAcceptResponse withoutApps = anonymous(() -> inviteService.acceptInvite(acceptNone));
+        assertNotNull(withoutApps.getAuthorizedApplications());
+        assertEquals(List.of(), withoutApps.getAuthorizedApplications());
+
+        // A second invite to the same person names a different application: the response carries
+        // that invite's list only, while the assignment holds the union.
+        String member = user("apps-union");
+        AccessInviteRequest first = inviteRequest(member, List.of());
+        first.setAuthorizedApplications(List.of("app-a"));
+        AccessInviteAcceptRequest acceptFirst = accept(createInviteAs(realm, admin, first).getInviteToken());
+        acceptFirst.setPassword(PASSWORD);
+        assertEquals(List.of("app-a"), anonymous(() -> inviteService.acceptInvite(acceptFirst)).getAuthorizedApplications());
+
+        AccessInviteRequest second = inviteRequest(member, List.of());
+        second.setAuthorizedApplications(List.of("app-b"));
+        AccessInviteResponse secondInvite = createInviteAs(realm, admin, second);
+        AccessInviteAcceptResponse secondAccepted = as(principal(member, "user"),
+            () -> inviteService.acceptInvite(accept(secondInvite.getInviteToken())));
+        assertEquals(List.of("app-b"), secondAccepted.getAuthorizedApplications());
+        assertEquals(Set.of("app-a", "app-b"), Set.copyOf(assignments(member).get(0).getAuthorizedApplications()));
+    }
+
+    /**
+     * Rows already stored without roles (the field absent, as Morphia stores an empty list, or an
+     * explicit null) read as an empty role list, so the directory needs no data migration for them.
+     */
+    @Test
+    void storedAssignmentsWithAbsentOrNullRolesStillReadThroughTheDirectory() {
+        String member = user("legacy-null-roles");
+        ensureAccount(member);
+        writeAssignment(member, realm, List.of("viewer"));
+        var collection = morphiaDataStoreWrapper.getDataStore(envConfigUtils.getSystemRealm()).getCollection(UserRealmRole.class);
+        var byUser = com.mongodb.client.model.Filters.eq("userId", member);
+
+        assertEquals(1, collection.updateOne(byUser, com.mongodb.client.model.Updates.set("roles", null)).getModifiedCount());
+        assertDirectoryReturnsRealmsFor(member, 1);
+        assertEquals(List.of(), assignments(member).get(0).getRoles());
+
+        assertEquals(1, collection.updateOne(byUser, com.mongodb.client.model.Updates.unset("roles")).getModifiedCount());
+        assertEquals(List.of(), assignments(member).get(0).getRoles());
+        assertDirectoryReturnsRealmsFor(member, 1);
+    }
+
+    /** What the control-plane directory returns for {@code GET /control/users/{userId}/realms}, validated as it is on return. */
+    private void assertDirectoryReturnsRealmsFor(String userId, int expected) {
+        List<UserRealmRoleEntry> entries = as(pContext, () -> realmMembershipService.realmsForUser(userId)).stream()
+            .map(ControlPlaneRealmMapper::toEntry)
+            .toList();
+        assertEquals(expected, entries.size());
+        for (UserRealmRoleEntry entry : entries) {
+            assertEquals(Set.of(), validator.validate(entry), "the directory entry must satisfy its contract");
+            assertNotNull(entry.getRoles());
+        }
     }
 
 

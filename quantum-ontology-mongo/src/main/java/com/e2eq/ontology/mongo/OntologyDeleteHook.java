@@ -5,9 +5,11 @@ import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.persistent.morphia.PostDeleteHook;
 import com.e2eq.framework.model.persistent.morphia.PreDeleteHook;
 import com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper;
+import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import com.e2eq.ontology.annotations.OntologyClass;
 import com.e2eq.ontology.annotations.OntologyProperty;
 import com.e2eq.ontology.annotations.CascadeType;
+import com.e2eq.ontology.core.EdgeChanges;
 import com.e2eq.ontology.model.OntologyEdge;
 import com.e2eq.ontology.repo.OntologyEdgeRepo;
 import dev.morphia.Datastore;
@@ -23,7 +25,8 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * Enforces ontology delete-time policies with DataDomain scoping.
  * - beforeDelete: blocks deletion when incoming references exist and policy demands it (BLOCK_IF_REFERENCED)
- * - afterDelete: triggers DELETE cascade for outgoing relations that declare it, and removes residual edges from src
+ * - afterDelete: triggers DELETE cascade for outgoing relations that declare it, removes residual edges from src,
+ *   and re-derives the property-chain heads upstream of the deleted node ({@link ChainPropagator})
  */
 @ApplicationScoped
 public class OntologyDeleteHook implements PreDeleteHook, PostDeleteHook {
@@ -33,6 +36,12 @@ public class OntologyDeleteHook implements PreDeleteHook, PostDeleteHook {
 
     @Inject
     CascadeExecutor cascadeExecutor;
+
+    @Inject
+    ChainPropagator chainPropagator;
+
+    @Inject
+    OntologyMaterializer materializer;
 
     @Inject
     MorphiaDataStoreWrapper morphiaDataStoreWrapper;
@@ -58,7 +67,10 @@ public class OntologyDeleteHook implements PreDeleteHook, PostDeleteHook {
         
         // If any incoming edges exist and any property declares BLOCK_IF_REFERENCED, block
         Set<String> blockingPredicates = collectBlockingPredicates();
-        List<OntologyEdge> incoming = edgeRepo.findByDst(dataDomain, id);
+        // The entity's own inverse and symmetric images on other nodes are not references to it
+        List<OntologyEdge> incoming = edgeRepo.findByDst(dataDomain, id).stream()
+                .filter(e -> !(e.isInferred() && id != null && id.equals(OntologyMaterializer.ownerOf(e))))
+                .toList();
         boolean shouldBlock;
         if (blockingPredicates.isEmpty()) {
             // Conservative default: block when there is any incoming edge
@@ -87,8 +99,15 @@ public class OntologyDeleteHook implements PreDeleteHook, PostDeleteHook {
             // Execute cascade operations with full DataDomain scoping
             cascadeExecutor.onAfterDelete(dataDomain, entityType, idAsString);
             
-            // Remove any edges that still have this node as src
-            edgeRepo.deleteBySrc(dataDomain, idAsString, false);
+            // Remove the node's edges and the inverse/symmetric images it owns elsewhere, then re-derive
+            // the chain heads upstream and the nodes those images sat on (all in the hook's realm)
+            EdgeChanges removed = materializer.removeNode(realmId, dataDomain, idAsString);
+            try (SecurityCallScope.Scope ignored = SecurityCallScope.openIgnoringRules()) {
+                chainPropagator.propagate(realmId, dataDomain, idAsString, removed);
+            } catch (RuntimeException e) {
+                Log.errorf(e, "Chain propagation after deleting %s failed; derived edges of upstream chain heads "
+                        + "may be stale until DriftRepairJob or a reindex runs", idAsString);
+            }
         } catch (Throwable t) {
             Log.warn("OntologyDeleteHook.afterDelete error: "+t.getMessage());
         }

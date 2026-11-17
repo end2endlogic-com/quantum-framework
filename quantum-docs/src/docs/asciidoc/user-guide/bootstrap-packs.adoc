@@ -247,7 +247,7 @@ Useful query parameters:
 - `mode=REAPPLY`
 - `mode=VALIDATE_ONLY`
 
-These endpoints are protected for `admin` and `system` roles.
+These endpoints are protected for `admin` and `system` roles. They are part of the control-plane admin surface: building with `quantum.system-rest.enabled=false` removes the resource.
 
 ==== Startup application
 
@@ -262,6 +262,8 @@ quantum.bootstrap-pack.apply.on-startup=false
 quantum.bootstrap-pack.apply.realms=system-com,mycompany-com,test-com
 quantum.bootstrap-pack.apply.filter=pack-a,pack-b
 ----
+
+Startup application is off by default (`quantum.bootstrap-pack.apply.on-startup=false`); the infrastructure itself is on (`quantum.bootstrap-pack.enabled=true`). When `quantum.bootstrap-pack.apply.realms` is unset the runner targets the system, default and test realms. In `quantum.mode=remote` the system realm is skipped, because the control plane owns it.
 
 If startup application is enabled, the runner:
 

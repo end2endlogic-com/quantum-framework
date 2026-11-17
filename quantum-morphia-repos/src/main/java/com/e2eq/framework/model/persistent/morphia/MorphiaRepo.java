@@ -143,6 +143,9 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
    @ConfigProperty(name = "quantum.realmConfig.defaultRealm"  )
    protected String defaultRealm;
 
+   @Inject
+   protected ReceivingApplication receivingApplication;
+
    private TypeToken<T> paramClazz = new TypeToken<>(getClass()) {};
    private transient volatile RepoLifecycleHooks cachedLifecycleHooks;
    private transient volatile RepoSecurityContextResolver cachedSecurityContextResolver;
@@ -225,7 +228,8 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     private RepoSecurityContextResolver securityContextResolver() {
         RepoSecurityContextResolver resolver = cachedSecurityContextResolver;
         if (resolver == null) {
-            resolver = new RepoSecurityContextResolver(securityIdentity, credentialRepo, envConfigUtils, ruleContext, defaultRealm);
+            resolver = new RepoSecurityContextResolver(securityIdentity, credentialRepo, envConfigUtils, ruleContext,
+                    defaultRealm, receivingApplication == null ? null : receivingApplication.applicationId());
             cachedSecurityContextResolver = resolver;
         }
         return resolver;
@@ -761,7 +765,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         PlannedQuery planned = MorphiaUtils.convertToPlannedQuery(
                 query, getPersistentClass(), limit, skip, plannerSort);
         if (planned.getMode() != PlannerResult.Mode.AGGREGATION) {
-            throw new IllegalArgumentException("Query does not contain a valid expand(...) operation");
+            throw new IllegalArgumentException("Query does not contain a valid expand(...) or expand(@relation) operation");
         }
 
         List<Document> pipeline = new ArrayList<>();
@@ -790,10 +794,16 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
         String rootCollection = morphiaDatastore.getMapper()
                 .getEntityModel(getPersistentClass()).collectionName();
-        return morphiaDatastore.getDatabase()
+        List<Document> rows = morphiaDatastore.getDatabase()
                 .getCollection(rootCollection)
                 .aggregate(new ArrayList<Bson>(pipeline), Document.class)
                 .into(new ArrayList<>());
+        // expand(@relation): targets are read after the root page, under the target's own policy
+        com.e2eq.framework.model.persistent.morphia.planner.RelationExpansion.hydrateIfRequested(
+                morphiaDatastore.getDatabase().getName(), getPersistentClass(), rows,
+                new com.e2eq.framework.model.persistent.morphia.planner.QueryPlanner()
+                        .analyze(query).getRelationExpands());
+        return rows;
     }
 
     private Document compilePolicyMatch(MongoAggregationCompiler compiler, List<Filter> filters) {
@@ -1114,9 +1124,8 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
             model.setId(new ObjectId());
         }
 
-        // Canonical refNames are never generated; RefNameContract has already required one on create.
-        if ((model.getRefName() == null || model.getRefName().trim().isEmpty())
-                && !RefNameContract.applies(model.getClass())) {
+        // A refName that is not given defaults to the ObjectId, canonical types included (RefNameContract allows it)
+        if (model.getRefName() == null || model.getRefName().trim().isEmpty()) {
             model.setRefName (model.getId().toString());
         }
 
@@ -1362,6 +1371,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
     @Override
     public long delete (@NotNull String realmId, @NotNull ObjectId id) throws ReferentialIntegrityViolationException {
         Objects.requireNonNull(id, "Null argument passed to delete, api requires a non-null object");
+        requireWritable(); // before the pre-delete hooks, which may have effects of their own
 
         Optional<T> found = this.findById(id, realmId);
         if (found.isEmpty()) return 0;
@@ -1403,6 +1413,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
     @Override
     public long delete(@NotNull MorphiaSession session, T aobj) throws ReferentialIntegrityViolationException{
+        requireWritable();
         Objects.requireNonNull(aobj, "Null argument passed to delete, api requires a non-null object");
         Objects.requireNonNull(aobj.getId(), "Null argument passed to delete, api requires a non-null id");
         Optional<T> oobj = this.findById(session,aobj.getId());
@@ -1457,6 +1468,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
    @Override
    public long updateActiveStatus (Datastore datastore, @PathParam("id") ObjectId id, ActiveStatus activeStatus) {
       Objects.requireNonNull(id, "id is required");
+      requireWritable();
       // Row gate: the caller must be able to read the row, and the write repeats the caller's
       // rule filters so it cannot reach a row that left scope between the read and the update.
       if (findById(datastore, id).isEmpty()) {
@@ -1562,6 +1574,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
 
        for (Pair<String, Object> pair : pairs) {
           assertFieldUpdateAllowed(pair.getKey());
+          validateFieldUpdate(pair.getKey(), pair.getValue());
           if (reservedFields.contains(pair.getKey())) {
              throw new IllegalArgumentException("Field:" + pair.getKey() + " is a reserved field and can't be updated");
           }
@@ -1659,6 +1672,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         List<UpdateOperator> updateOperators = new ArrayList<>();
         for (Pair<String, Object> pair : pairs) {
            assertFieldUpdateAllowed(pair.getKey());
+           validateFieldUpdate(pair.getKey(), pair.getValue());
             // check that the pair key corresponds to a field in the persistent class that is an enum
             Field field = null;
             try {
@@ -1860,6 +1874,7 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         List<String> reservedFields = List.of("refName", "id", "version", "references", "auditInfo", "persistentEvents");
          for (Pair<String, Object> pair : pairs) {
              assertFieldUpdateAllowed(pair.getKey());
+             validateFieldUpdate(pair.getKey(), pair.getValue());
             if (reservedFields.contains(pair.getKey())) {
                 throw new IllegalArgumentException("Field:" + pair.getKey() + " is a reserved field and can't be updated");
             }
@@ -1914,19 +1929,23 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
       * field-policy restoration and the refName contract cannot drift apart across overloads.
       */
      private T prepareWrite(Datastore datastore, T entity, RefNameContract.WriteMode mode) {
+         requireWritable();
          T restored = (datastore instanceof MorphiaSession session)
                  ? restorePolicyExcludedFields(session, entity)
                  : restorePolicyExcludedFields(datastore, entity);
+         reconcileServerOwnedState(datastore, restored, mode);
          RefNameContract.enforceOnWrite(datastore, restored, mode);
          return restored;
      }
 
      private List<T> prepareWrites(Datastore datastore, List<T> entities, RefNameContract.WriteMode mode) {
+         requireWritable();
          List<T> restored = entities.stream()
                  .map(entity -> (datastore instanceof MorphiaSession session)
                          ? restorePolicyExcludedFields(session, entity)
                          : restorePolicyExcludedFields(datastore, entity))
                  .collect(Collectors.toCollection(ArrayList::new));
+         restored.forEach(entity -> reconcileServerOwnedState(datastore, entity, mode));
          RefNameContract.enforceOnWrites(datastore, restored, mode);
          return restored;
      }
@@ -1993,8 +2012,45 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
          return entity;
      }
 
+     /**
+      * Fields only the owning code path may write (for example a password hash and its change
+      * stamp). Field-pair and bulk updates refuse them; ordinary saves are left to the repository.
+      */
+     protected java.util.Set<String> serverOwnedFields() {
+         return java.util.Set.of();
+     }
+
+     /**
+      * Runs on every save and merge, after field-policy restoration, so a repository can set its
+      * server-owned fields from the stored record rather than trust the incoming copy. The
+      * datastore may be a {@link MorphiaSession}. Default: nothing to reconcile.
+      */
+     protected void reconcileServerOwnedState(Datastore datastore, T entity, RefNameContract.WriteMode mode) {
+     }
+
+     /**
+      * Runs before every write this repository makes (save, merge, field and bulk update, active
+      * status change, delete), ahead of any read or write, so a repository whose records this
+      * service does not own can refuse them all in one place. Default: writable.
+      */
+     protected void requireWritable() {
+     }
+
+     /**
+      * Runs on field-pair and bulk updates so a repository can enforce value-level invariants on
+      * updated fields. Default: nothing to validate.
+      */
+     protected void validateFieldUpdate(String requestedPath, Object value) {
+     }
+
      private void assertFieldUpdateAllowed(String requestedPath) {
+         requireWritable();
          RefNameContract.enforceOnFieldUpdate(getPersistentClass(), requestedPath);
+         for (String owned : serverOwnedFields()) {
+             if (pathsOverlap(requestedPath, owned)) {
+                 throw new SecurityException("Field '" + requestedPath + "' is server-owned and can't be updated");
+             }
+         }
          java.util.Set<String> excluded = securityFilterBuilder().buildExcludedFieldPaths();
          for (String excludedPath : excluded) {
              if (pathsOverlap(requestedPath, excludedPath)) {

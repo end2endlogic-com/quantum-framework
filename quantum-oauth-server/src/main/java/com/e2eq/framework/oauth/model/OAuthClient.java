@@ -63,6 +63,13 @@ public class OAuthClient extends BaseModel {
     /** Whether this client is active. Inactive clients cannot obtain tokens. */
     private boolean active = true;
 
+    /** Public clients cannot authenticate a machine grant. Existing rows are also checked at exchange. */
+    @jakarta.validation.constraints.AssertTrue(message = "Public clients cannot register client_credentials")
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    public boolean isGrantConfigurationValid() {
+        return !publicClient || allowedGrantTypes == null || !allowedGrantTypes.contains("client_credentials");
+    }
+
     @Override
     public String bmFunctionalArea() {
         return "SECURITY";

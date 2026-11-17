@@ -35,6 +35,14 @@ import jakarta.validation.ValidationException;
 public class TokenUtils {
 
         public static final String REFRESH_SCOPE = "refreshToken";
+        /** OIDC {@code auth_time}: epoch seconds of the authentication the session came from. */
+        public static final String AUTH_TIME_CLAIM = "auth_time";
+        /**
+         * Refresh-token only: the credential's password revision the session's sign-in read.
+         * Rotation copies it unchanged, so a password change ends the whole session, however
+         * often it was refreshed.
+         */
+        public static final String PASSWORD_REVISION_CLAIM = "pwd_rev";
         public static final String AUTH_SCOPE = "authToken";
         public static final String AUDIENCE = "b2bi-api-client";
         public static final int REFRESH_ADDITIONAL_DURATION_SECONDS= 10;
@@ -168,6 +176,26 @@ public class TokenUtils {
 											 String accountNum,
 											 long expiresAt,
 											 String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+		return generateUserToken(subject, userId, groups, realm, tenantId, orgRefName, accountNum,
+				expiresAt, issuer, null);
+	}
+
+	/**
+	 * Tenant-aware user token with a credential id ({@code jti}). The id is the
+	 * revocable credential record. The token stays a user token: it carries
+	 * {@code userId} and does not set {@code token_type=service}. A null or blank
+	 * credential id omits {@code jti}.
+	 */
+	public static String generateUserToken ( String subject,
+											 String userId,
+											 Set<String> groups,
+											 String realm,
+											 String tenantId,
+											 String orgRefName,
+											 String accountNum,
+											 long expiresAt,
+											 String issuer,
+											 String credentialId) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
 
 		Objects.requireNonNull(subject, "subject cannot be null");
 		Objects.requireNonNull(issuer, "Issuer cannot be null");
@@ -196,6 +224,7 @@ public class TokenUtils {
 		if (tenantId != null && !tenantId.isBlank())     claimsBuilder.claim("tenantId", tenantId);
 		if (orgRefName != null && !orgRefName.isBlank()) claimsBuilder.claim("orgRefName", orgRefName);
 		if (accountNum != null && !accountNum.isBlank()) claimsBuilder.claim("accountNum", accountNum);
+		if (credentialId != null && !credentialId.isBlank()) claimsBuilder.claim("jti", credentialId.trim());
 
 		return claimsBuilder.jws().keyId(resolveSigningKeyId()).sign(privateKey);
 	}
@@ -234,6 +263,50 @@ public class TokenUtils {
 		if (realmBoundary != null && !realmBoundary.isBlank()) {
 			claimsBuilder.claim("realmRegEx", realmBoundary.trim());
 		}
+		return claimsBuilder.jws().keyId(resolveSigningKeyId()).sign(privateKey);
+	}
+
+	/**
+	 * Token for one user and one service. {@code aud} and {@code azp} are that
+	 * service. The token carries the user's identity and {@code jti}, and it does
+	 * not set {@code token_type=service}. An identity-agnostic service token is
+	 * {@link #generateServiceToken(String, Set, String, long, String)} instead.
+	 */
+	public static String generateIdentityServiceToken(String subject,
+											 String userId,
+											 Set<String> groups,
+											 String realm,
+											 String tenantId,
+											 String orgRefName,
+											 String accountNum,
+											 String applicationRef,
+											 String credentialId,
+											 long expiresAt,
+											 String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+		Objects.requireNonNull(subject, "subject cannot be null");
+		Objects.requireNonNull(issuer, "Issuer cannot be null");
+		if (applicationRef == null || applicationRef.isBlank()) {
+			throw new ValidationException("applicationRef is required");
+		}
+		if (credentialId == null || credentialId.isBlank()) {
+			throw new ValidationException("credentialId is required");
+		}
+		if (expiresAt <= REFRESH_ADDITIONAL_DURATION_SECONDS) {
+			throw new ValidationException("Duration must be greater than" + REFRESH_ADDITIONAL_DURATION_SECONDS + " seconds");
+		}
+		String service = applicationRef.trim();
+		PrivateKey privateKey = signingKey();
+		JwtClaimsBuilder claimsBuilder = Jwt.claims();
+		claimsBuilder.issuer(issuer);
+		claimsBuilder.subject(subject);
+		claimsBuilder.issuedAt(currentTimeInSecs());
+		claimsBuilder.audience(Set.of(service));
+		claimsBuilder.expiresAt(expiresAt);
+		claimsBuilder.groups(groups);
+		claimsBuilder.claim("scope", AUTH_SCOPE);
+		claimsBuilder.claim("azp", service);
+		claimsBuilder.claim("jti", credentialId.trim());
+		addPrincipalClaims(claimsBuilder, userId, realm, tenantId, orgRefName, accountNum);
 		return claimsBuilder.jws().keyId(resolveSigningKeyId()).sign(privateKey);
 	}
 
@@ -280,6 +353,51 @@ public class TokenUtils {
 			claimsBuilder.claim("azp", activeApplication.trim());
 		}
 		return claimsBuilder.jws().keyId(resolveSigningKeyId()).sign(privateKey);
+	}
+
+	/**
+	 * {@code exp} of an identity-only service token. Service tokens do not expire
+	 * ({@code IDENTITY_ONLY_TOKENS_DESIGN.md} section 1): revoking the credential is how
+	 * one stops working. MicroProfile JWT verifiers refuse a token without {@code exp},
+	 * so the claim is present and set this far ahead; no caller chooses it.
+	 */
+	public static final long SERVICE_IDENTITY_LIFETIME_SECONDS = 100L * 365 * 24 * 60 * 60;
+
+	/**
+	 * Identity-only service token ({@code IDENTITY_ONLY_TOKENS_DESIGN.md} sections 1 and 4):
+	 * {@code iss}, {@code sub}, {@code userId}, {@code iat}, {@code jti} (the credential id) and
+	 * {@code token_type=service}, plus {@code scope=authToken}, which marks an access token
+	 * rather than a refresh token, and the fixed far-future {@code exp} above. No groups, realm,
+	 * tenant, organization, account, {@code aud}, {@code azp} or realm boundary: receivers
+	 * resolve roles and tenancy from the credential through Auth.
+	 */
+	public static String generateServiceIdentityToken(String subject,
+											 String userId,
+											 String credentialId,
+											 String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+		requireText(subject, "subject");
+		requireText(userId, "userId");
+		requireText(credentialId, "credentialId");
+		requireText(issuer, "issuer");
+		PrivateKey privateKey = signingKey();
+		long now = currentTimeInSecs();
+		return Jwt.claims()
+				.issuer(issuer.trim())
+				.subject(subject.trim())
+				.issuedAt(now)
+				.expiresAt(now + SERVICE_IDENTITY_LIFETIME_SECONDS)
+				.claim("userId", userId.trim())
+				.claim("jti", credentialId.trim())
+				.claim("scope", AUTH_SCOPE)
+				.claim(com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.TOKEN_TYPE_CLAIM,
+						com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.SERVICE_TOKEN_TYPE)
+				.jws().keyId(resolveSigningKeyId()).sign(privateKey);
+	}
+
+	private static void requireText(String value, String name) {
+		if (value == null || value.isBlank()) {
+			throw new ValidationException(name + " is required");
+		}
 	}
 
 	/**
@@ -335,6 +453,28 @@ public class TokenUtils {
 											String realmBoundary,
 											long expiresAt,
 											String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+		return generateUserToken(subject, userId, groups, realm, tenantId, orgRefName, accountNum,
+				audiences, activeApplication, realmBoundary, null, expiresAt, issuer);
+	}
+
+	/**
+	 * As above, plus {@code auth_time}: when the user actually authenticated (epoch seconds).
+	 * Unlike {@code iat} it does not move on refresh, so a relying party can tell a fresh
+	 * sign-in from a long-lived refreshed session. {@code null} omits the claim.
+	 */
+	public static String generateUserToken(String subject,
+											String userId,
+											Set<String> groups,
+											String realm,
+											String tenantId,
+											String orgRefName,
+											String accountNum,
+											Set<String> audiences,
+											String activeApplication,
+											String realmBoundary,
+											Long authTime,
+											long expiresAt,
+											String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
 
 		Objects.requireNonNull(subject, "subject cannot be null");
 		Objects.requireNonNull(issuer, "Issuer cannot be null");
@@ -363,6 +503,9 @@ public class TokenUtils {
 		if (realmBoundary != null && !realmBoundary.isBlank()) {
 			claimsBuilder.claim("realmRegEx", realmBoundary.trim());
 		}
+		if (authTime != null) {
+			claimsBuilder.claim(AUTH_TIME_CLAIM, authTime);
+		}
 		return claimsBuilder.jws().keyId(resolveSigningKeyId()).sign(privateKey);
 	}
 
@@ -384,25 +527,51 @@ public class TokenUtils {
     public static String generateRefreshToken(String subject, String userId, String realm,
             String activeApplication, long durationInSeconds, String issuer, String oauthClientId)
             throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+        return generateRefreshToken(subject, userId, realm, activeApplication, durationInSeconds,
+                issuer, oauthClientId, null, null);
+    }
 
-		Objects.requireNonNull(subject, "subject cannot be null");
-		Objects.requireNonNull(issuer, "Issuer cannot be null");
+    /**
+     * Carries the session's {@code auth_time} (when known) and {@code pwd_rev} so refresh
+     * can pass both on unchanged. {@code null} omits a claim.
+     */
+    public static String generateRefreshToken(String subject, String userId, String realm,
+            String activeApplication, long durationInSeconds, String issuer, String oauthClientId,
+            Long authTime, Long passwordRevision)
+            throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
 		if (durationInSeconds <= 0) {
 			throw new ValidationException("Refresh-token duration must be greater than zero seconds");
 		}
+		return generateRefreshTokenExpiringAt(subject, userId, realm, activeApplication,
+				expiresAt(durationInSeconds), issuer, oauthClientId, authTime, passwordRevision);
+	}
+
+    /** As above, expiring at {@code expiresAtSeconds} (epoch seconds) rather than after a duration. */
+    public static String generateRefreshTokenExpiringAt(String subject, String userId, String realm,
+            String activeApplication, long expiresAtSeconds, String issuer, String oauthClientId,
+            Long authTime, Long passwordRevision)
+            throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+
+		Objects.requireNonNull(subject, "subject cannot be null");
+		Objects.requireNonNull(issuer, "Issuer cannot be null");
                 PrivateKey privateKey = signingKey();
 		JwtClaimsBuilder claimsBuilder = Jwt.claims();
 		long currentTimeInSecs = currentTimeInSecs();
+		if (expiresAtSeconds <= currentTimeInSecs) {
+			throw new ValidationException("Refresh-token expiry must be in the future");
+		}
 		claimsBuilder.issuer(issuer);
 		claimsBuilder.subject(subject);
 		claimsBuilder.issuedAt(currentTimeInSecs);
 		claimsBuilder.audience("b2bi-api-client-refresh");
-		claimsBuilder.expiresAt(currentTimeInSecs + durationInSeconds + REFRESH_ADDITIONAL_DURATION_SECONDS);
+		claimsBuilder.expiresAt(expiresAtSeconds);
 		claimsBuilder.claim("scope", REFRESH_SCOPE);
         if (oauthClientId != null && !oauthClientId.isBlank()) claimsBuilder.claim("oauth_client_id", oauthClientId);
 		if (userId != null && !userId.isBlank()) claimsBuilder.claim("userId", userId);
 		if (realm != null && !realm.isBlank()) claimsBuilder.claim("realm", realm);
 		if (activeApplication != null && !activeApplication.isBlank()) claimsBuilder.claim("azp", activeApplication);
+		if (authTime != null) claimsBuilder.claim(AUTH_TIME_CLAIM, authTime);
+		if (passwordRevision != null) claimsBuilder.claim(PASSWORD_REVISION_CLAIM, passwordRevision);
 		return claimsBuilder.jws().keyId(resolveSigningKeyId()).sign(privateKey);
 	}
 

@@ -56,7 +56,7 @@ public class FrameworkStartupCoordinator {
             Log.infof("FrameworkStartupCoordinator: quantum.mode=remote — the control plane owns the "
                 + "system realm; skipping system-realm migrations and baseline identity, "
                 + "app-realm startup work still runs locally (control plane: %s)",
-                quantumModeConfig.systemServiceBaseUrl().orElse("<unset>"));
+                quantumModeConfig.directoryBaseUrl().orElse("<unset>"));
         }
         List<FrameworkStartupHook> ordered = hooks.stream()
             .sorted(Comparator.comparingInt(FrameworkStartupHook::order))

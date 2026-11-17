@@ -27,6 +27,10 @@ paths:
           in: header
           required: true
           schema: {type: string}
+        - name: X-Realm
+          in: header
+          required: false
+          schema: {type: string}
       requestBody:
         required: true
         content:
@@ -34,7 +38,7 @@ paths:
             schema: {$ref: '#/components/schemas/ServiceTokenRequest'}
       responses:
         '200':
-          description: Minted service token
+          description: Issued service token (Auth contract 4.11.0, identity only)
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ServiceTokenResponse'}
@@ -53,21 +57,22 @@ components:
         access_token: {type: string}
     ServiceTokenRequest:
       type: object
-      required: [roles]
+      additionalProperties: false
+      required: [kind]
       properties:
-        roles: {type: array, items: {type: string}}
-        expirationSeconds: {type: integer, format: int64, nullable: true}
-        description: {type: string, nullable: true}
+        kind: {type: string, enum: [application, delegating]}
         realm: {type: string, nullable: true}
-        audiences: {type: array, items: {type: string}}
+        description: {type: string, nullable: true}
     ServiceTokenResponse:
       type: object
       additionalProperties: true
-      required: [token, subject]
+      required: [token, subject, userId, kind, realm]
       properties:
         token: {type: string}
+        credentialId: {type: string}
         subject: {type: string}
-        roles: {type: array, items: {type: string}}
-        nonExpiring: {type: boolean}
-        expires_at: {type: string, nullable: true}
+        userId: {type: string}
+        kind: {type: string}
+        realm: {type: string}
+        tenantId: {type: string, nullable: true}
         description: {type: string, nullable: true}

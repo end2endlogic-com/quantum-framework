@@ -40,6 +40,20 @@ public class UserGroupRepo extends MorphiaRepo<UserGroup> {
       }
    }
 
+   @Override
+   protected void reconcileServerOwnedState(Datastore datastore, UserGroup entity, RefNameContract.WriteMode mode) {
+      if (entity != null) {
+         com.e2eq.framework.model.security.UserRealmRole.requireNoExternalRole(entity.getRoles(), "UserGroup");
+      }
+   }
+
+   @Override
+   protected void validateFieldUpdate(String requestedPath, Object value) {
+      if (requestedPath != null && (requestedPath.equals("roles") || requestedPath.startsWith("roles."))) {
+         com.e2eq.framework.model.security.UserRealmRole.requireNoExternalRoleValue(value, "UserGroup");
+      }
+   }
+
    // given a UserProfileEntityReference find all the userGroups associated with it
    public List<UserGroup> findByUserProfileRef(@Valid @NotNull EntityReference userProfileRef) {
       // query userGroups.userProfiles.entityRefName == userProfileRef.entityRefName
@@ -83,6 +97,14 @@ public class UserGroupRepo extends MorphiaRepo<UserGroup> {
          Log.debugf("Found %d userGroups for userProfileRef:\"%s\" in realm:%s (ignoreRules=true)", userGroups.size(), userProfileRef.getEntityRefName(), realm);
       }
       return userGroups;
+   }
+
+   /** The group with {@code refName} in {@code realm}, without security rules (principal resolution, system writes). */
+   public java.util.Optional<UserGroup> findByRefNameWithIgnoreRules(@NotNull String realm, @NotNull String refName) {
+      return java.util.Optional.ofNullable(morphiaDataStoreWrapper.getDataStore(realm)
+         .find(getPersistentClass())
+         .filter(Filters.eq("refName", refName))
+         .first());
    }
 
    /**

@@ -81,11 +81,11 @@ Quantum provides three cooperating modules that make ontology modeling practical
     - New edges to add (implied by property chains, inverses, or other rules).
 
 - quantum-ontology-mongo (package com.e2eq.ontology.mongo)
-  - EdgeDao: A thin DAO around an edges collection in Mongo. Each edge contains tenantId, src, predicate p, dst, inferred flag, provenance, and timestamp.
+  - OntologyEdgeRepo: The repository over the `edges` collection in Mongo. Each edge carries the DataDomain of the entity it belongs to, src, predicate p, dst, an inferred flag, provenance, and a timestamp.
   - OntologyMaterializer: Runs the Reasoner for an entity snapshot and upserts the inferred edges, so queries can be rewritten to simple in/in eq filters.
 
 - quantum-ontology-policy-bridge (package com.e2eq.ontology.policy)
-  - ListQueryRewriter: Takes a base query and rewrites it using the EdgeDao to filter by the set of source entity ids that have a specific predicate to a given destination.
+  - ListQueryRewriter: Takes a base query and rewrites it using the OntologyEdgeRepo to filter by the set of source entity ids that have a specific predicate to a given destination.
   - This integrates ontology edges with RuleContext or policy decisions: policy asks for entities related by a predicate; the rewriter converts that into an efficient Mongo query.
 
 - quantum-ontology-policy-bridge (package com.e2eq.ontology.policy.rest)
@@ -93,7 +93,7 @@ Quantum provides three cooperating modules that make ontology modeling practical
 
 These modules let you define your ontology (core), materialize derived relations (mongo), and leverage them in access and list queries (policy bridge).
 
-NOTE: In Quarkus, all ontology components are CDI-managed. Inject EdgeDao and services via @Inject; indexes are ensured automatically at startup by OntologyMongoProducers. Configure collection/database with properties ontology.mongo.database and ontology.mongo.collection.edges.
+NOTE: In Quarkus, all ontology components are CDI-managed. Inject `OntologyEdgeRepo` and the services with `@Inject`. Edges are stored in the `edges` collection of the realm's database; the indexes are declared on the `OntologyEdge` entity.
 
 === Modeling guidance: from object fields to predicates
 
@@ -116,24 +116,24 @@ NOTE: In Quarkus, all ontology components are CDI-managed. Inject EdgeDao and se
   - Query: "Find Orders whose buyer belongs to Org X or its parents."
   - With @Reference: requires joining Order -> User -> Org and recursing org.parent; costly and tightly coupled to fields.
 - Ontology edge example (resilient/fast)
-  - Define predicates: placedBy(order, user), memberOf(user, org), ancestorOf(org, org). Define chain placedBy ∘ memberOf ⇒ placedInOrg.
-  - Materialize edges: (order --placedInOrg--> org). Also make ancestorOf transitive.
-  - Query becomes: where order._id in EdgeDao.srcIdsByDst(tenantId, "placedInOrg", orgX).
-  - With transitivity, you can precompute ancestor closure or add a chain placedInOrg ∘ ancestorOf ⇒ placedInOrg to include parents automatically.
+  - Define predicates: placedBy(order, user), memberOf(user, org), orgAncestor(org, org). Define chain placedBy ∘ memberOf ⇒ placedInOrg.
+  - Materialize edges: (order --placedInOrg--> org). Each org stores its ancestor closure as orgAncestor edges (non-transitive; see <<regular-chains-and-hierarchies>>).
+  - Query becomes: where order._id in OntologyEdgeRepo.srcIdsByDst(dataDomain, "placedInOrg", orgX).
+  - To include parents, add the chain placedBy ∘ memberOf ∘ orgAncestor ⇒ placedUnderOrg and declare placedInOrg a subPropertyOf placedUnderOrg; then query placedUnderOrg.
 
 === Migration: from @Reference to ontology edges
 
 - Start by introducing predicates alongside existing references; do not remove references immediately.
 - Materialize edges for hot read paths; keep provenance so you can reconstruct.
-- Gradually update queries (list screens, policy filters) to use ListQueryRewriter with EdgeDao instead of deep traversals or $lookup.
+- Gradually update queries (list screens, policy filters) to use ListQueryRewriter with OntologyEdgeRepo instead of deep traversals or $lookup.
 - Once stable, you can simplify models by removing rigid reference fields where unnecessary and rely on edges for read-side composition.
 
 === Performance and operational notes
 
-- Indexing: Create compound indexes on edges: (tenantId, p, dst) and (tenantId, src, p) to support both reverse and forward lookups.
+- Indexing: The `OntologyEdge` entity declares DataDomain-scoped compound indexes for both directions: `idx_domain_p_dst` (DataDomain, p, dst) for reverse lookups and `idx_domain_src_p` (DataDomain, src, p) for forward lookups. You do not create them yourself.
 - Write amplification vs read wins: Materialization adds write work, but dramatically improves read latency and simplifies queries.
 - Consistency: Re-materialize edges on relevant entity changes (source, destination, or intermediate) using OntologyMaterializer.
-- Multi-tenancy: Keep tenantId in the edge key and filters; the provided EdgeDao methods include tenant scoping.
+- Multi-tenancy: every edge is keyed and filtered by its DataDomain (organisation, account, tenant, data segment); the OntologyEdgeRepo methods take the DataDomain and scope every read and write to it.
 
 === How this integrates with Functional Areas/Domains
 
@@ -168,7 +168,7 @@ Key predicates (relationships)
 - orderHasShipment(order, shipment): outbound shipment for the order
 - shipsTo(shipment, address): shipment destination
 - locatedIn(address, region): address is located in a Region
-- ancestorOf(org, org): organizational ancestry (transitive)
+- orgAncestor(org, org): each of an organization's ancestors, stored on the organization (not transitive)
 
 Property chains (implied relationships)
 
@@ -178,8 +178,11 @@ Property chains (implied relationships)
   - If (order --orderHasShipment--> shipment) and (shipment --shipsTo--> address), infer (order --orderShipsTo--> address)
 - orderShipsTo ∘ locatedIn ⇒ orderShipsToRegion
   - If (order --orderShipsTo--> address) and (address --locatedIn--> region), infer (order --orderShipsToRegion--> region)
-- placedInOrg ∘ ancestorOf ⇒ placedInOrg
-  - Makes placedInOrg resilient to org hierarchy changes (ancestorOf is transitive). This is a common “closure” trick: re-assert the same predicate via chain to absorb hierarchy.
+- placedBy ∘ memberOf ∘ orgAncestor ⇒ placedUnderOrg, with placedInOrg ⊑ placedUnderOrg
+  - placedUnderOrg holds the order's own org (through the sub-property) and every ancestor (through the chain), so one query covers an org and its subsidiaries. When an org is re-parented and its orgAncestor edges change, chain propagation re-derives its orders without saving them (<<chain-propagation>>).
+
+[[regular-chains-and-hierarchies,Regular chains and hierarchies]]
+Chains must be regular: a chain step cannot be a transitive property, and a chain cannot imply one (OntologyValidator rejects both). To roll up through a hierarchy, keep the closure on the hierarchy node as a non-transitive predicate, written explicitly or by a ComputedEdgeProvider that writes the node's ancestors, and chain over it. Do not chain over a transitive ancestorOf, and do not re-imply placedInOrg from itself. Whatever writes orgAncestor must rewrite the closure of the moved org and of every descendant when the hierarchy changes: propagation starts only from orgAncestor edges that actually change.
 
 Diagram of the core classes and predicates for this example:
 
@@ -203,10 +206,11 @@ digraph Ontology {
   Order -> Shipment    [label="orderHasShipment"];
   Shipment -> Address  [label="shipsTo"];
   Address -> Region    [label="locatedIn"];
-  Organization -> Organization [label="ancestorOf"];
+  Organization -> Organization [label="orgAncestor"];
 
   // Implied predicates (dashed)
   Order -> Organization [label="placedInOrg", style=dashed, color=gray40];
+  Order -> Organization [label="placedUnderOrg", style=dashed, color=gray40];
   Order -> Address      [label="orderShipsTo", style=dashed, color=gray40];
   Order -> Region       [label="orderShipsToRegion", style=dashed, color=gray40];
 }
@@ -229,24 +233,26 @@ Map<String, ClassDef> classes = Map.of(
   "Region", new ClassDef("Region", Set.of(), Set.of(), Set.of())
 );
 
-Map<String, PropertyDef> props = Map.of(
-  "placedBy", new PropertyDef("placedBy", Optional.of("Order"), Optional.of("Customer"), false, Optional.empty(), false),
-  "memberOf", new PropertyDef("memberOf", Optional.of("Customer"), Optional.of("Organization"), false, Optional.empty(), false),
-  "orderHasShipment", new PropertyDef("orderHasShipment", Optional.of("Order"), Optional.of("Shipment"), false, Optional.empty(), false),
-  "shipsTo", new PropertyDef("shipsTo", Optional.of("Shipment"), Optional.of("Address"), false, Optional.empty(), false),
-  "locatedIn", new PropertyDef("locatedIn", Optional.of("Address"), Optional.of("Region"), false, Optional.empty(), false),
-  "ancestorOf", new PropertyDef("ancestorOf", Optional.of("Organization"), Optional.of("Organization"), false, Optional.empty(), true), // transitive
-  // implied predicates (no domain/range required, but you may add them for validation)
-  "placedInOrg", new PropertyDef("placedInOrg", Optional.of("Order"), Optional.of("Organization"), false, Optional.empty(), false),
-  "orderShipsTo", new PropertyDef("orderShipsTo", Optional.of("Order"), Optional.of("Address"), false, Optional.empty(), false),
-  "orderShipsToRegion", new PropertyDef("orderShipsToRegion", Optional.of("Order"), Optional.of("Region"), false, Optional.empty(), false)
-);
+// PropertyDef(name, domain, range, inverse, inverseOf, transitive, symmetric, functional, subPropertyOf, inferred)
+Map<String, PropertyDef> props = new LinkedHashMap<>();
+props.put("placedBy", new PropertyDef("placedBy", Optional.of("Order"), Optional.of("Customer"), false, Optional.empty(), false, false, false, Set.of()));
+props.put("memberOf", new PropertyDef("memberOf", Optional.of("Customer"), Optional.of("Organization"), false, Optional.empty(), false, false, false, Set.of()));
+props.put("orderHasShipment", new PropertyDef("orderHasShipment", Optional.of("Order"), Optional.of("Shipment"), false, Optional.empty(), false, false, false, Set.of()));
+props.put("shipsTo", new PropertyDef("shipsTo", Optional.of("Shipment"), Optional.of("Address"), false, Optional.empty(), false, false, false, Set.of()));
+props.put("locatedIn", new PropertyDef("locatedIn", Optional.of("Address"), Optional.of("Region"), false, Optional.empty(), false, false, false, Set.of()));
+// The org's stored ancestor closure; not transitive, so chains may use it
+props.put("orgAncestor", new PropertyDef("orgAncestor", Optional.of("Organization"), Optional.of("Organization"), false, Optional.empty(), false, false, false, Set.of()));
+// implied predicates
+props.put("placedInOrg", new PropertyDef("placedInOrg", Optional.of("Order"), Optional.of("Organization"), false, Optional.empty(), false, false, false, Set.of("placedUnderOrg"), true));
+props.put("placedUnderOrg", new PropertyDef("placedUnderOrg", Optional.of("Order"), Optional.of("Organization"), false, Optional.empty(), false, false, false, Set.of(), true));
+props.put("orderShipsTo", new PropertyDef("orderShipsTo", Optional.of("Order"), Optional.of("Address"), false, Optional.empty(), false, false, false, Set.of(), true));
+props.put("orderShipsToRegion", new PropertyDef("orderShipsToRegion", Optional.of("Order"), Optional.of("Region"), false, Optional.empty(), false, false, false, Set.of(), true));
 
 List<PropertyChainDef> chains = List.of(
   new PropertyChainDef(List.of("placedBy", "memberOf"), "placedInOrg"),
+  new PropertyChainDef(List.of("placedBy", "memberOf", "orgAncestor"), "placedUnderOrg"),
   new PropertyChainDef(List.of("orderHasShipment", "shipsTo"), "orderShipsTo"),
-  new PropertyChainDef(List.of("orderShipsTo", "locatedIn"), "orderShipsToRegion"),
-  new PropertyChainDef(List.of("placedInOrg", "ancestorOf"), "placedInOrg")
+  new PropertyChainDef(List.of("orderShipsTo", "locatedIn"), "orderShipsToRegion")
 );
 
 OntologyRegistry.TBox tbox = new OntologyRegistry.TBox(classes, props, chains);
@@ -261,11 +267,12 @@ Materializing edges for an Order
   - O1 orderHasShipment S17
   - S17 shipsTo Addr42
   - Addr42 locatedIn RegionWest
-  - OrgA ancestorOf OrgParent
+  - OrgA orgAncestor OrgParent
 
 - Inferred edges after running the reasoner for O1’s snapshot:
   - O1 placedInOrg OrgA
-  - O1 placedInOrg OrgParent (via closure with ancestorOf)
+  - O1 placedUnderOrg OrgA (placedInOrg ⊑ placedUnderOrg)
+  - O1 placedUnderOrg OrgParent (via placedBy ∘ memberOf ∘ orgAncestor)
   - O1 orderShipsTo Addr42
   - O1 orderShipsToRegion RegionWest
 
@@ -281,7 +288,7 @@ import org.bson.conversions.Bson;
 import com.e2eq.ontology.policy.ListQueryRewriter;
 
 Bson base = Filters.eq("status", "OPEN");
-Bson rewritten = rewriter.rewriteForHasEdge(base, tenantId, "placedInOrg", "OrgParent");
+Bson rewritten = rewriter.rewriteForHasEdge(base, tenantId, "placedUnderOrg", "OrgParent");
 // Use rewritten in your Mongo find
 ----
 
@@ -295,7 +302,7 @@ Bson rewritten2 = rewriter.rewriteForHasEdge(Filters.empty(), tenantId, "orderSh
 Why this is resilient
 
 - If tomorrow Customer becomes AccountContact and the organization model gains Divisions and multi-parent org graphs, you only adjust predicates and chains.
-- Queries that rely on placedInOrg or orderShipsToRegion remain unchanged and fast, because edges are re-materialized by OntologyMaterializer.
+- Queries that rely on placedUnderOrg or orderShipsToRegion remain unchanged and fast, because edges are re-materialized by OntologyMaterializer.
 
 Evolving the model: add Fulfillment
 
@@ -360,7 +367,7 @@ Comparison with direct references (@Reference/EntityReference)
 
 Operational tips for this scenario
 
-- Ensure EdgeDao has indexes on (tenantId, p, dst) and (tenantId, src, p).
+- The `OntologyEdge` entity declares its indexes (for example `idx_domain_p_dst` and `idx_domain_src_p`); Morphia creates them with the collection.
 - Use OntologyMaterializer when Order, Shipment, Customer, Address, or org hierarchy changes to keep edges fresh.
 - Keep provenance in edge.prov (rule, inputs) so you can recompute or retract edges when source data changes.
 
@@ -388,11 +395,11 @@ digraph G {
   // Explicit facts (solid)
   O1 -> C9       [label="placedBy"];
   C9 -> OrgA     [label="memberOf"];
-  OrgA -> OrgParent [label="ancestorOf"];
+  OrgA -> OrgParent [label="orgAncestor"];
 
   // Inferred edges (dashed)
   O1 -> OrgA       [label="placedInOrg", style=dashed, color=gray40];
-  O1 -> OrgParent  [label="placedInOrg", style=dashed, color=gray40];
+  O1 -> OrgParent  [label="placedUnderOrg", style=dashed, color=gray40];
 }
 ----
 
@@ -501,6 +508,17 @@ hasIncomingEdge(canAccessLocation, "associate-123", { tier:^[#1, #2] })
 # Combine with root entity filters
 hasEdge(placedInOrg, "OrgA", { department:"FINANCE" }) && status:PENDING
 ----
+
+Both functions resolve through the `OntologyEdgeLookup` SPI, implemented in `quantum-ontology-mongo`.
+A predicate matches whether or not its edges were ever written: stored (EAGER) edges are read from
+the edge store, and LAZY and ONDEMAND computed edges are computed. When the ontology module is not
+installed, a filter query that uses these functions fails instead of matching everything.
+
+In a permission rule, how far these lookups reach is set by `quantum.ontology.rule-edge-scope`.
+`DATA_DOMAIN` (the default) reads edges in the caller's whole DataDomain. `ACCOUNT` reads edges in
+any tenant of the caller's organisation, account and data segment, for an application whose tenants
+share one realm and whose relationships cross them. Only rule lookups are widened; chain derivation
+and every write keep the record's own DataDomain.
 
 ==== Programmatic Querying with OntologyEdgeRepo
 
@@ -900,7 +918,7 @@ This section focuses on integration and developer experience: how ontology edges
   - An OntologyMaterializer runs when entities change to derive and upsert edges into the edges collection (per tenant).
 - Policy path (authorization and list filters):
   - The permission rule language evaluates the caller’s SecurityContext/RuleContext and produces logical filters.
-  - When a rule asks for a semantic relationship (hasEdge), we use ListQueryRewriter + EdgeDao to translate that into efficient Mongo filters over ids.
+  - When a rule asks for a semantic relationship (hasEdge), we use ListQueryRewriter + OntologyEdgeRepo to translate that into efficient Mongo filters over ids.
 - Read path (queries):
   - Morphia repos apply the base data-domain filters and the rewritten ontology constraint to queries, producing fast lists without deep joins.
 
@@ -925,11 +943,11 @@ Under the hood, policy evaluation uses ListQueryRewriter.hasEdge(...), which con
 
 === Passing tenantId correctly
 
-- Always resolve tenantId from RuleContext/SecurityContext (the same source your repos use for realm/database selection).
-- EdgeDao and ListQueryRewriter already accept tenantId; never cross tenant boundaries when reading edges.
-- Index recommendation (per tenant):
-  - (tenantId, p, dst)
-  - (tenantId, src, p)
+- Always resolve the DataDomain from the caller's SecurityContext (the same source your repos use for realm/database selection).
+- OntologyEdgeRepo and ListQueryRewriter take the caller's DataDomain; never cross tenant boundaries when reading edges.
+- Indexes are declared on the `OntologyEdge` entity and are scoped by DataDomain (orgRefName, accountNum, tenantId, dataSegment):
+  - `idx_domain_p_dst`: DataDomain, p, dst
+  - `idx_domain_src_p`: DataDomain, src, p
 
 === Morphia repository integration patterns
 
@@ -984,6 +1002,67 @@ public final class OntologyFilterHelper {
     - extracts explicit edges from fields/getters annotated with @OntologyProperty using a startup-built metadata cache (no per-call reflection), and
     - calls OntologyMaterializer to infer inverse, transitive, symmetric, and super-property edges and upsert them to the edges collection.
   - This is enabled by default. To disable temporarily (e.g., for bulk loads), set: ontology.auto-materialize=false
+
+[[chain-propagation]]
+==== Property chains stay current when a later hop changes
+
+A property chain such as `[hasPO, hasLine, lineShipment] => hasShipment` is stored on the entity at
+the head of the path: the Customer holds `Customer hasShipment Shipment`. Saving a Customer
+re-derives its chains. Since 1.4.3, a change further along the path also reaches the head, without
+the Customer being saved again:
+
+- After an entity is materialized (`OntologyWriteHook`) or deleted (`OntologyDeleteHook`), the
+  `ChainPropagator` takes the predicates of the edges that changed at that entity. For each chain that
+  uses one of them at hop k (after the first), it walks back over the incoming edges for hops
+  k-1 .. 1 to the chain heads, and re-derives each head from its stored edges. Inferred edges that are
+  no longer justified are pruned, so unlinking a POLine from its Shipment removes the Customer's
+  `hasShipment` edge.
+- A head whose own derived edges changed is propagated in turn, so chains built on derived
+  relations also stay current.
+- It runs only from writes: there is no polling or scheduled job.
+- The number of re-derivations per write is bounded by
+  `quantum.ontology.chain-propagation.max-rederivations` (default 1000). When the bound is reached,
+  the propagation stops and logs an ERROR naming the heads it did not reach. Their derived edges stay
+  stale until DriftRepairJob or a reindex runs.
+
+A chain may start with the inverse side of a relation. Under
+`[documentHasLink, linkTarget] => documentSupports`, with `documentHasLink` the inverse of the
+link's explicit `linkSourceDocument`, saving an EvidenceLink writes `Document documentHasLink link`
+at the document and derives `Document documentSupports Declaration` there. An inverse or symmetric
+edge belongs to the entity whose explicit edge produced it: that entity prunes it when the edge goes
+away, and re-saving the document keeps it.
+
+[[inverse-edge-ownership]]
+The ownership rule has these consequences:
+
+- An inferred edge is never written over an asserted (explicit) or computed edge, on the entity or
+  on the other node. An inferred edge is blocked only by an asserted edge the same write writes,
+  not by a stored one that write is about to prune.
+- When an entity drops an explicit edge whose predicate has an inverse or is symmetric, the entity
+  at the other end is re-derived, so that entity's image of its own assertion comes back.
+- Deleting an entity removes its own edges and the inverse and symmetric edges it owns on other
+  nodes (`OntologyMaterializer.removeNode`), then propagates from those nodes.
+- Propagation re-derives any other node whose edge changed when a rule reads the predicate: a
+  chain step, a sub-property or a transitive property.
+
+Recursive chains (an implied predicate that is also one of the chain's steps) are retracted with
+delete-and-rederive (DRed). Under `[linkedTo, hasTag] => reaches` and
+`[linkedTo, reaches] => reaches`, two nodes linked to each other would otherwise keep each other's
+`reaches` edge after the tag that supported both is removed. When an edge used by a chain that
+implies a recursive predicate is removed, the propagation first walks upstream over those chains and
+deletes each head's own inferred edges of the recursive predicates, then re-derives every such head
+until nothing changes, so only edges with a justification outside the cycle come back. These heads
+count toward `max-rederivations`; when they do not fit, nothing is deleted, the plain propagation
+runs, and the ERROR names them.
+
+Not covered: reindex (`OntologyMaterializer.applyBulk`) and governed `ingestEdges` writes. A reindex
+re-derives every entity it touches anyway, and its result does not depend on the order of the
+entities in a batch (see <<reindex-after-yaml-changes>>). After ingesting edges directly, run a
+reindex for the affected types.
+
+The write hook's own edge reads and writes are not judged by the caller's row filters: the hook runs
+after a save the caller was already allowed to make, and scopes every edge to that entity's
+DataDomain. A direct `OntologyEdge` write by a caller is still checked.
 
 [[custom-edge-providers]]
 === Custom Edge Providers: OntologyEdgeProvider and HierarchyListEdgeProvider
@@ -1084,9 +1163,9 @@ Property chains are ideal when your derived relationship follows a **fixed seque
    - Example: `Order --placedBy-> Customer --memberOf-> Organization => Order --placedInOrg-> Organization`
    - Example: `Order --orderHasShipment-> Shipment --shipsTo-> Address => Order --orderShipsTo-> Address`
 
-2. **Transitive closure within chains**: When one step is a transitive property
-   - Example: `Order --placedInOrg-> Org1 --ancestorOf-> Org2 => Order --placedInOrg-> Org2`
-   - Propagates derived relationships up hierarchies automatically
+2. **Hierarchy roll-up over a stored closure**: When the last step is a hierarchy closure kept on the node
+   - Example: `Order --placedBy-> Customer --memberOf-> Org1 --orgAncestor-> Org2 => Order --placedUnderOrg-> Org2`
+   - A chain step cannot be a transitive property (<<regular-chains-and-hierarchies>>), so the closure is a non-transitive predicate, written explicitly or by a ComputedEdgeProvider
 
 3. **Chain composition**: Output of one chain feeds another
    - Chain 1: `[orderHasShipment, shipsTo]` => `orderShipsTo`
@@ -1111,6 +1190,69 @@ chains:
 - No backtracking or negation
 - Cannot involve **external data lookups** or **dynamic queries** during computation
 - Cannot handle **collection expansion** where one entity has a list that must be resolved
+- Chain endpoints must be **type-compatible** with the implied property (see below)
+
+**Chain endpoint typing.** A chain may only produce edges that its implied property admits, so
+`OntologyValidator` checks both ends of every chain:
+
+- the first step's `domain` must be the implied property's `domain` or a subclass of it;
+- the last step's `range` must be the implied property's `range` or a subclass of it.
+
+A side without a declared type is not checked, and neither is a class another pack owns (an external
+stub added during the source build). For example, this chain is valid: `hasPO` starts at
+`Customer`, which is `hasShipment`'s own domain, and `lineShipment` ends at `Parcel`, a subclass of
+`Shipment`:
+
+[source,yaml]
+----
+classes:
+  - id: Party
+  - id: Customer
+    parents: [Party]
+  - id: PurchaseOrder
+  - id: PurchaseOrderLine
+  - id: Shipment
+  - id: Parcel
+    parents: [Shipment]
+properties:
+  - id: hasPO
+    domain: Customer
+    range: PurchaseOrder
+  - id: hasLine
+    domain: PurchaseOrder
+    range: PurchaseOrderLine
+  - id: lineShipment
+    domain: PurchaseOrderLine
+    range: Parcel
+  - id: hasShipment
+    domain: Customer
+    range: Shipment
+    inferred: true
+chains:
+  - chain: [hasPO, hasLine, lineShipment]
+    implies: hasShipment
+----
+
+If `hasPO` were declared with `domain: Party`, a superclass of `Customer`, the chain could produce
+`hasShipment` edges from parties that are not customers, so validation fails with:
+
+----
+Property chain [hasPO, hasLine, lineShipment] implies 'hasShipment': first step 'hasPO' domain 'Party' is not 'hasShipment' domain 'Customer' or a subclass of it
+----
+
+A common mistake this catches is a chain that walks *against* a property's direction. For example,
+`[linkSourceDocument, linkTargetDeclaration]`, where both properties have `domain: EvidenceLink`,
+starts at the link rather than the document and can never produce `Document -> Declaration` edges.
+Write the chain in the direction its edges are stored. For example, give the document an explicit
+`documentLinks` property (`domain: Document`, `range: EvidenceLink`) and chain
+`[documentLinks, linkTargetDeclaration]`. Declaring `documentLinks` only as `inverseOf:
+linkSourceDocument` is not enough: the reasoner evaluates chains over explicit edges before it
+materializes inverses, so an inverse-only first step matches nothing.
+
+TIP: Several chains may imply the same property. That lets consumers query a stable relation such as
+`hasShipment` while the path beneath it changes, for example from `[hasPO, poShipment]` to
+`[hasPO, hasLine, lineShipment]`, without changing their queries. Declare it `stability: stable` to
+make that a checked contract (see <<stable-relations>>).
 
 ===== ComputedEdgeProvider: Use for Complex Logic Beyond Sequential Paths
 
@@ -1216,9 +1358,9 @@ public class AssociateCanSeeLocationProvider
 |Sequential multi-hop through direct predicates; no external data lookups needed
 |`Order --placedBy-> Customer --memberOf-> Org`
 
-|**Property Chain with Transitive**
-|Hierarchy rollup where relationships are direct predicates
-|`Order --placedInOrg-> Org --ancestorOf-> ParentOrg`
+|**Property Chain over a hierarchy closure**
+|Hierarchy rollup where each node stores its ancestors (non-transitive)
+|`Order --placedBy-> Customer --memberOf-> Org --orgAncestor-> ParentOrg`
 
 |**ComputedEdgeProvider**
 |Complex logic, conditional branching, or external data lookups
@@ -1537,7 +1679,7 @@ This release expands the ontology engine and query integration to support a rich
 - symmetric properties
   - For symmetric p, asserting (s, p, o) materializes (o, p, s). Example: peerOf between organizations.
 - transitive properties
-  - For transitive p, if (s, p, m) and (m, p, o) then (s, p, o) is inferred. Typical for ancestorOf, partOf, locatedIn, memberOf within hierarchical contexts.
+  - For transitive p, if (s, p, m) and (m, p, o) then (s, p, o) is inferred. Typical for ancestorOf, partOf and locatedIn within hierarchical contexts. A transitive property cannot be a chain step, so keep a predicate used in chains (such as memberOf in placedBy ∘ memberOf) non-transitive.
 - functional properties
   - For functional p, each source s has at most one destination o. Upserts replace the prior value. Useful for single-valued relations like placedBy on Order.
 
@@ -1547,7 +1689,7 @@ All inferred edges carry inferred=true and provenance containing the rule used (
 
 - E‑commerce organizational access
   - Problem: “Show me all orders placed in ACME (including subsidiaries).”
-  - Solution: Define placedBy, memberOf, placedInOrg with chain placedBy ∘ memberOf ⇒ placedInOrg, and make ancestorOf transitive. Either materialize closure with a chain placedInOrg ∘ ancestorOf ⇒ placedInOrg or use p being transitive. Queries use hasEdge("placedInOrg", orgId).
+  - Solution: Define placedBy, memberOf and placedInOrg with chain placedBy ∘ memberOf ⇒ placedInOrg. Store each org's ancestors as non-transitive orgAncestor edges, add the chain placedBy ∘ memberOf ∘ orgAncestor ⇒ placedUnderOrg, and declare placedInOrg ⊑ placedUnderOrg. Queries use hasEdge("placedUnderOrg", orgId).
 
 - HR management
   - Problem: “List employees who report to VP_X directly or indirectly.”
@@ -1583,7 +1725,7 @@ digraph TBox {
   // Explicit predicates (solid)
   Order -> Customer     [label="placedBy"];
   Customer -> Organization [label="memberOf"];
-  Organization -> Organization [label="ancestorOf"];
+  Organization -> Organization [label="orgAncestor"];
 
   // Implied predicate via chain (dashed)
   Order -> Organization [label="placedInOrg", style=dashed, color=gray40];
@@ -1627,7 +1769,12 @@ public OntologyRegistry ontologyRegistry() {
       "inOrg", Optional.of("Order"), Optional.of("Organization"), false, Optional.empty(),
       false, false, false, Set.of()
   ));
-  // Transitive ancestor relation
+  // The org's stored ancestor closure, not transitive, for use in chains
+  props.put("orgAncestor", new OntologyRegistry.PropertyDef(
+      "orgAncestor", Optional.of("Organization"), Optional.of("Organization"), false, Optional.empty(),
+      false, false, false, Set.of()
+  ));
+  // Transitive ancestor relation; not usable as a chain step
   props.put("ancestorOf", new OntologyRegistry.PropertyDef(
       "ancestorOf", Optional.of("Organization"), Optional.of("Organization"), false, Optional.empty(),
       true, /*transitive*/ false, false, Set.of()
@@ -1649,8 +1796,8 @@ public OntologyRegistry ontologyRegistry() {
   List<OntologyRegistry.PropertyChainDef> chains = List.of(
       // Order --placedBy--> Customer --memberOf--> Org  ⇒ Order --placedInOrg--> Org
       new OntologyRegistry.PropertyChainDef(List.of("placedBy", "memberOf"), "placedInOrg"),
-      // Include ancestor closure for placedInOrg results
-      new OntologyRegistry.PropertyChainDef(List.of("placedInOrg", "ancestorOf"), "placedInOrg")
+      // Roll up through the stored ancestor closure (ancestorOf is transitive, so a chain may not use it)
+      new OntologyRegistry.PropertyChainDef(List.of("placedBy", "memberOf", "orgAncestor"), "inOrg")
   );
 
   return OntologyRegistry.inMemory(new OntologyRegistry.TBox(classes, props, chains));
@@ -1661,6 +1808,7 @@ Notes:
 - subPropertyOf is modeled via the PropertyDef.subPropertyOf set.
 - Inverse and symmetric are encoded in PropertyDef.inverseOf and PropertyDef.symmetric.
 - Transitivity is toggled via PropertyDef.transitive.
+- With placedInOrg ⊑ inOrg and the orgAncestor chain, inOrg means "the order's own org or one of its ancestors".
 
 ==== 2) Materialize inferences when data changes
 
@@ -1689,7 +1837,7 @@ public void onOrderSaved(String tenant, String orderId, String customerId, Strin
 The materializer computes and persists:
 - subPropertyOf roll‑ups (e.g., placedInOrg ⊑ inOrg ⇒ write inOrg)
 - inverse/symmetric counterparts
-- transitive closures (bounded to the snapshot inputs; you can also chain for closures)
+- transitive closures (bounded to the snapshot inputs; a chain cannot contain a transitive step)
 
 ==== 3) Query with ListQueryRewriter (Quarkus/Morphia)
 
@@ -2057,6 +2205,9 @@ properties:
     domain: Organization
     range: Organization
     transitive: true
+  - id: orgAncestor
+    domain: Organization
+    range: Organization
   - id: peerOf
     domain: Organization
     range: Organization
@@ -2064,8 +2215,9 @@ properties:
 chains:
   - chain: [ "placedBy", "memberOf" ]
     implies: "placedInOrg"
-  - chain: [ "placedInOrg", "ancestorOf" ]
-    implies: "placedInOrg"
+  # Roll up through the org's stored ancestors; ancestorOf is transitive, so a chain may not use it
+  - chain: [ "placedBy", "memberOf", "orgAncestor" ]
+    implies: "inOrg"
 ----
 
 Loading YAML in code:
@@ -2101,6 +2253,368 @@ OntologyCoreProducers will try to overlay YAML on top of the Morphia-discovered 
 If found, it loads the YAML TBox and merges it with the base TBox from annotations using OntologyMerger, then validates using OntologyValidator.
 
 TIP: Keep overlays additive. If you need to override flags (e.g., mark an existing property as transitive), ensure your overlay defines the same predicate id with the desired traits; the merger will apply the union/override semantics where supported.
+
+When the same class or property is declared on both sides, `OntologyMerger` combines them as follows:
+
+[cols="1,3"]
+|===
+| Field | Merge rule
+
+| `domain`, `range`, `inverseOf`
+| The overlay's value wins when present; otherwise the base value is kept.
+
+| `transitive`, `symmetric`, `functional`, `inverse`, `inferred`
+| OR'd: true on either side means true.
+
+| `stability`
+| `stable` when either side declares it, so an overlay never silently drops a relation contract
+  (see <<stable-relations>>).
+
+| `parents`, `disjointWith`, `sameAs`, `subPropertyOf`, `aliases`
+| Union of both sides.
+
+| `label`
+| The overlay's label wins when it is non-blank; otherwise the base label is kept.
+
+| `metadata`
+| Keys from both sides are kept; on a key conflict the overlay's value wins. ViewGateway join keys
+  (`joinFromField`, `joinToField`) and resource-context keys therefore survive an overlay that only
+  changes flags.
+
+| `chains`
+| Union, with duplicate `(chain, implies)` pairs removed.
+|===
+
+`OntologyMerger` validates the result of every merge with `OntologyValidator`. The registry is
+built in stages (annotations, then Morphia, then the YAML overlay), and if a stage fails to load or
+its merge fails validation, that **whole stage is skipped** with a warning (`Failed to load
+annotations…`, `Failed to load Morphia TBox…` or `Failed to load YAML overlay…`) and the registry is
+built without it. Check the startup log after changing annotations or `ontology.yaml`.
+
+[[realm-tbox-key]]
+=== Where a realm's TBox is stored
+
+A realm's TBox is stored and looked up under one DataDomain, the same for every caller. It is the
+realm's registered domain: the `domainContext` of the realm record (tenant, organisation, account
+and data segment), read through `SystemDirectory` (the local repositories in embedded mode, the
+control plane in remote mode). A tenant administrator who publishes a model therefore writes it
+into their own tenant, and that write is checked like any other. The key never depends on who is
+calling: an HTTP request, the reindexer and a startup thread all derive the same key from the
+realm registry (`RealmOntologyKeys`).
+
+- A realm that is not registered keeps the legacy key, in which every DataDomain field is the realm
+  name.
+- The first time a realm's registered key is used, TBoxes stored under the legacy key are moved to
+  it, so a realm that published before keeps its active model.
+- A registry or migration failure is not treated as "unregistered" or as an empty TBox. The lookup
+  fails with `RealmOntologyKeys.ResolutionException` (`REGISTRY_UNAVAILABLE`, `INCOMPLETE_DOMAIN`
+  or `MIGRATION_FAILED`) and is retried on the realm's next lookup.
+
+[[stable-relations]]
+=== Stable relations: a contract consumers can bind to
+
+A view, rule or integration that queries `Customer hasShipment Shipment` should keep working when the
+modelling underneath changes, for example when purchase orders gain lines and the path becomes
+PO -> line -> shipment. Declaring the relation *stable* makes that a contract: the pack may rewrite
+how the relation is derived, but it may not change whether it is derived without bumping the pack
+version, and it may not remove or narrow it without first publishing a stable successor
+(<<stable-relation-successors>>) and then bumping the pack version.
+
+Every rule in this section is opt-in. A property that does not declare `stability: stable` is
+`internal` and behaves exactly as before, and existing pack hashes are unchanged.
+
+==== Fields
+
+[cols="1,1,3"]
+|===
+| Field | Values | Meaning
+
+| `stability`
+| `stable` \| `internal` (default)
+| Whether consumers may bind to the relation. Case-insensitive; stored and hashed in lowercase.
+
+| `derivation`
+| `asserted` \| `derived`
+| Authoring form of the existing `inferred` flag: `derived` means `inferred: true`. Only the
+  `inferred` bit is kept, so `derivation` never adds a key to the canonical hash.
+|===
+
+The same fields exist on `@OntologyProperty` (`stability = "stable"`, `derivation = "derived"`) and
+on `PropertyDef` (`stability()`, `isStable()`, `derivation()`, `isStableDerived()`). When the same
+property id is declared on several annotated members, it is stable if any declaration says so. In
+the canonical TBox hash (and the legacy `TBoxHasher` hash) a stable property adds
+`"stability": "stable"`; an internal one adds nothing. In JSON a `PropertyDef` carries
+`"stability"` in lowercase.
+
+Any other value is a load error; it never falls back to `internal` silently. The message quotes
+the value trimmed and lowercased:
+
+----
+Property 'hasShipment' has unknown stability 'frozen': use stable or internal
+Property 'hasShipment' has unknown derivation 'computed': use asserted or derived
+Property 'hasShipment' declares derivation 'derived' but inferred is false
+----
+
+Properties are checked in name order, and the first error is reported.
+
+==== Example: rewriting the chain beneath `hasShipment`
+
+Version 1 of the pack derives `hasShipment` from `[hasPO, poShipment]`. Version 2 introduces
+purchase-order lines and derives it from `[hasPO, hasLine, lineShipment]` instead. The relation
+itself does not change, so consumers bound to it keep working, and the rewrite is admitted without
+a version bump:
+
+[source,yaml]
+----
+classes:
+  - id: Party
+  - id: Customer
+    parents: [Party]
+  - id: PurchaseOrder
+  - id: POLine
+  - id: Shipment
+properties:
+  - id: hasPO
+    domain: Customer
+    range: PurchaseOrder
+  - id: hasLine
+    domain: PurchaseOrder
+    range: POLine
+  - id: lineShipment
+    domain: POLine
+    range: Shipment
+  - id: hasShipment
+    domain: Customer
+    range: Shipment
+    stability: stable
+    derivation: derived
+chains:
+  - chain: [hasPO, hasLine, lineShipment]
+    implies: hasShipment
+----
+
+==== Validation rules
+
+`OntologyValidator` applies two rules to every stable property, in name order:
+
+. It must declare a domain and a range:
++
+----
+Stable relation 'hasShipment' must declare a domain and a range
+----
+. If it is derived, something must derive it: a property chain whose `implies` is it, an inverse
+(another property declaring `inverseOf` it, or it declaring `inverseOf` another property), or a
+sub-property (another property listing it in `subPropertyOf`):
++
+----
+Stable derived relation 'hasShipment' has no derivation: declare a property chain that implies it, an inverse, or a sub-property of it
+----
+
+Removing the `chains` block from the example above fails with the second message.
+
+==== Explicit edges are rejected
+
+A stable derived relation gets its edges only from its derivation. Every edge passed as explicit
+input naming it is refused, whatever its `inferred` flag; only edges from a `ComputedEdgeProvider`
+are exempt. The check runs in `MaterializationEngine`, in `OntologyMaterializer` (before anything is
+written) and in the `OntologyEdgeRepo` write paths for non-inferred edges (`upsert`, `upsertMany` and
+`bulkUpsertEdgeRecords`, which check the whole batch first), so governed ingest quarantines such a
+row with the reason:
+
+----
+Explicit edge for stable derived relation 'hasShipment' is not allowed: its edges come only from its derivation
+----
+
+The exception is `StableRelationGuard.StableDerivedEdgeException`, whose `rejectedPredicates()` lists
+every refused predicate. Because the repository write hook materializes after the entity is saved, a
+refused edge is logged by the hook and that entity's edges are not materialized; the entity itself is
+saved. During a reindex, `OntologyMaterializer.applyBulk` leaves out only the refused entities and
+materializes the rest of the batch; the reindexer lists them in `failures()` and finishes with status
+`COMPLETED_WITH_ERRORS`. Do not mark a field that carries the edge with `derivation = "derived"` and
+`stability = "stable"`. Internal derived relations keep accepting explicit edges.
+
+==== Admission diff
+
+`StableRelationDiff` compares the active TBox with a candidate for every relation that is stable in
+the active TBox. It is a pure function; refusing a non-admissible candidate is done by Quantum
+Enterprise TBox admission, not by the framework.
+
+[cols="2,3,3"]
+|===
+| Code | When | Message
+
+| `stable_relation_removed`
+| The candidate does not declare it.
+| `Stable relation 'hasShipment' was removed`
+
+| `stable_relation_demoted`
+| The candidate declares it internal.
+| `Stable relation 'hasShipment' was made internal`
+
+| `stable_relation_domain_narrowed`
+| The active domain is neither the candidate domain nor a subclass of it in the candidate's class
+  hierarchy (parents transitively, `sameAs` both ways). An undeclared class reaches only itself, so
+  an unchanged type never narrows. A candidate without a domain never narrows.
+| `Stable relation 'hasShipment' domain narrowed from 'Customer' to 'PremiumCustomer'`
+
+| `stable_relation_range_narrowed`
+| The same check for the range.
+| `Stable relation 'hasShipment' range narrowed from 'Shipment' to 'Parcel'`
+
+| `stable_relation_derivation_changed`
+| The derived/asserted bit changed, in either direction.
+| `Stable relation 'hasShipment' derivation changed from 'derived' to 'asserted'`
+
+| `stable_relation_replacement_required`
+| The pack version was raised, the relation was removed, demoted or narrowed, and it has no
+  published successor (see below). Appended after all other violations.
+| `Stable relation 'hasShipment' needs a previously published stable replacement in metadata.replacedBy covering its domain and range`
+|===
+
+Violations are listed in relation-name order, then in table order. A removed relation reports only
+its removal; otherwise every check runs.
+
+[source,java]
+----
+StableRelationDiff.Result result = StableRelationDiff.diff(activeTBox, 1, candidateTBox, 1);
+result.violations();  // List<StableRelationDiff.Violation(relation, code, message)>
+result.admissible();
+----
+
+The candidate is *admissible* in three cases:
+
+. There are no violations.
+. The only violations are `stable_relation_derivation_changed` and the candidate's pack `version`
+  is greater than the active `version`.
+. A relation is removed, demoted or narrowed, the candidate's pack `version` is greater than the
+  active `version`, and every such relation has a published *successor*.
+
+A version bump alone no longer admits a removal, a demotion or a narrowing.
+
+[[stable-relation-successors]]
+===== Successors for breaking migrations
+
+A successor is another stable relation that consumers move to before the old one goes away. The
+old relation names it in its metadata, under the key `replacedBy`. The diff accepts the successor
+only when all of these hold:
+
+* The *active* TBox already declares `replacedBy` on the old relation, and already declares the
+  successor as stable. The successor must be published in a release before the one that breaks
+  the old relation; declaring both in the same release is refused.
+* The candidate still declares the successor, and it is still stable.
+* The successor is not the relation itself.
+* The successor covers the old relation's domain and range, in the active TBox and in the
+  candidate: each is the same class or a superclass.
+
+So a breaking migration takes two releases:
+
+[source,yaml]
+----
+# Release N: publish the successor and point the old relation at it. Non-breaking.
+properties:
+  - id: hasShipment
+    domain: Customer
+    range: Shipment
+    stability: stable
+    derivation: derived
+    metadata:
+      replacedBy: hasDelivery
+  - id: hasDelivery
+    domain: Customer
+    range: Shipment
+    stability: stable
+    derivation: derived
+----
+
+Release N+1 may then remove, demote or narrow `hasShipment`, with a higher pack `version:`.
+Each relation's chains are omitted here for brevity. A `replacedBy` on a stable relation is part of
+the legacy `TBoxHasher` hash, so adding it persists a new TBox build.
+
+`StableRelationDiff.admissible(violations, activeVersion, candidateVersion)` has no TBoxes to
+check a successor against, so it admits only derivation changes with a version bump. Use `diff`
+to validate a migration.
+
+Allowed without a version bump: adding, removing or rewriting the chains beneath a stable relation,
+adding stable relations, widening a domain or range (for example `Customer` to `Party`), and
+label, alias or metadata changes. The diff does not validate the candidate; validation runs
+separately.
+
+==== When the TBox is built from sources
+
+A realm with no admitted TBox builds its registry from its sources: `@OntologyProperty`
+annotations, the Morphia entities and the YAML pack. Each build is checked with the same rules
+against the last TBox the same application built for the realm (the `ontology_tbox` collection),
+so a refactor cannot silently drop a contract. The application is `quantum.ontology.tbox.builder`,
+else `quarkus.application.name`; applications that share a realm database are checked against
+their own builds, not each other's. A build that breaks a stable relation is refused unless the
+pack `version:` is greater than the version recorded with the last build and, for a removal,
+demotion or narrowing, the last build already published a successor
+(<<stable-relation-successors>>). The refused TBox is not
+persisted or cached, and loads of the realm's registry fail with
+`SourceTBoxGate.StableContractException`:
+
+----
+Ontology for realm 'acme' breaks the stable relation contract (pack version 3, last built 3): stable_relation_removed: Stable relation 'hasShipment' was removed. Restore the relations, or publish a stable successor in metadata.replacedBy before removal or narrowing and raise the pack version.
+----
+
+The message also names any source that failed to load (annotations, Morphia entities, the YAML
+pack), since a missing source looks like removed relations. A last build with no recorded version
+(built before versions were recorded) cannot show a bump, so a breaking change against it is
+refused too. If the last build cannot be read, the build is refused with
+`SourceTBoxGate.BaselineUnreadableException`: the contract cannot be checked. Both extend
+`SourceTBoxGate.RefusedException`. A refusal is rethrown without rescanning the sources for
+`quantum.ontology.stable-diff.retry-after-ms` (default 30000); invalidating the realm or a forced
+rebuild retries at once.
+
+A TBox the application built before is admitted with a warning even when it breaks the last
+build, so rolling back to an earlier release works. Rolling forward again needs no bump either:
+that TBox was built before too.
+
+To upgrade an application whose last build has no version, deploy one release with
+`quantum.ontology.stable-diff=warn`, or first deploy a non-breaking release with a pack
+`version:`. An unversioned rebuild of a TBox keeps the version it was recorded with.
+
+`quantum.ontology.stable-diff` controls the check: `enforce` (the default, and any value other
+than `warn`) refuses; `warn` logs the same message as an error and builds anyway. In warn mode the
+breaking TBox is persisted and becomes the baseline of the next build, so the breach is logged
+once. The check needs the persisted baseline, so `quantum.ontology.tbox.persist=false` turns it
+off.
+
+Each build also logs a warning for a relation that is stable only through an annotation, with no
+stable declaration in the YAML pack. Annotations describe storage, which changes on refactor;
+declare or promote stable relations in the pack, where the contract is versioned and reviewed.
+
+[cols="1,1,2"]
+|===
+| Layer | Like | Stability
+
+| `@OntologyProperty` on fields
+| Tables and foreign keys
+| Internal by default: edges come from storage
+
+| Pack YAML properties backed by chains, inverses or sub-properties
+| Views
+| `stable` when consumers may depend on them
+|===
+
+==== Consumer binding guard
+
+`StableRelationGuard.bindingViolations(tbox, predicates, consumer)` returns one violation per bound
+predicate that is not stable, de-duplicated and in first-occurrence order, with code
+`binding_unknown_relation` or `binding_internal_relation`:
+
+----
+Consumer 'orders-view' binds unknown relation 'nope'
+Consumer 'orders-view' binds internal relation 'hasPO': only stable relations may be bound
+----
+
+`expand(@relation)` in queries enforces it (consumer `query:expand`): only stable relations can be
+expanded (see xref:{doc-root}/user-guide/query-expansion.adoc[Query expansion], Expanding a named
+relation). The targets of one page of results are read from the edge store and from LAZY and
+ONDEMAND providers, and merged into each row under `_rel.<relation>`. An expansion that reaches more
+than `quantum.ontology.expand.max-targets` (default 1000) distinct targets, or reads more than
+`quantum.ontology.expand.max-edges` (default 10000) edges for a page, is refused. Other consumers do
+not call the guard yet.
 
 === Materializing inferences from annotated models
 
@@ -2146,9 +2660,7 @@ public List<Order> openOrdersIn(String tenant, String orgId) {
 }
 ----
 
-To include subsidiaries via ancestor/parent relationships, either:
-- Declare ancestorOf as transitive in the model and materialize a closure, or
-- Add a property chain placedInOrg ∘ ancestorOf ⇒ placedInOrg in your registry initialization.
+To include subsidiaries, store each org's ancestors as non-transitive orgAncestor edges, add the chain placedBy ∘ memberOf ∘ orgAncestor ⇒ placedUnderOrg with placedInOrg ⊑ placedUnderOrg, and query placedUnderOrg (<<regular-chains-and-hierarchies>>).
 
 === Business case recipes with annotations
 
@@ -2259,14 +2771,13 @@ TIP: For a complete, copy‑paste friendly reference of every parameter and more
 - Base path: /ontology
 - Media type: application/json
 - Security: Bearer JWT, roles user or admin
-- Multi‑tenancy: pass X-Realm: <tenant-id> header for ABox queries (and for any repo‑backed calls). TBox demos may work without it if your deployment wires an in‑memory registry.
+- Multi‑tenancy: the realm and tenant come from the caller's identity; do not send `X-Realm` on ordinary calls. TBox demos may work without a resolved realm if your deployment wires an in‑memory registry.
 
 Example (replace token and realm):
 
 [source,shell]
 ----
 curl -H "Authorization: Bearer $TOKEN" \
-     -H "X-Realm: demo" \
      http://localhost:8080/ontology/summary
 ----
 
@@ -2294,7 +2805,6 @@ curl -H "Authorization: Bearer $TOKEN" \
 Builds a neighborhood graph around a specific instance (src id + type). Useful for investigating relationships and verifying inferences.
 
 - GET /ontology/graph/instances/jointjs
-  - Headers: X-Realm: <tenant-id> (required)
   - Query params:
     - src: source id (required)
     - type: ontology class/type of the source id (required)
@@ -2307,7 +2817,6 @@ Example:
 [source,shell]
 ----
 curl -H "Authorization: Bearer $TOKEN" \
-     -H "X-Realm: demo" \
      "http://localhost:8080/ontology/graph/instances/jointjs?src=O1&type=Order&direction=both&limit=100"
 ----
 
@@ -2328,7 +2837,7 @@ Response shape:
 [source,javascript]
 ----
 async function renderJointJs(divId, url) {
-  const res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + window.token, 'X-Realm': 'demo' } });
+  const res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + window.token } });
   const { cells } = await res.json();
   const graph = new joint.dia.Graph();
   graph.fromJSON({ cells });
@@ -2390,12 +2899,15 @@ properties:
   - id: locatedIn
     domain: Address
     range: Region
-  - id: ancestorOf
+  - id: orgAncestor        # each org's ancestors, stored on the org; not transitive
     domain: Organization
     range: Organization
-    transitive: true
   # implied predicates materialized by chains
   - id: placedInOrg
+    domain: Order
+    range: Organization
+    subPropertyOf: [placedUnderOrg]
+  - id: placedUnderOrg
     domain: Order
     range: Organization
   - id: orderShipsTo
@@ -2412,13 +2924,13 @@ chains:
     implies: orderShipsTo
   - chain: [orderShipsTo, locatedIn]
     implies: orderShipsToRegion
-  - chain: [placedInOrg, ancestorOf]
-    implies: placedInOrg
+  - chain: [placedBy, memberOf, orgAncestor]
+    implies: placedUnderOrg
 ----
 
 Notes:
 - Chains are ordered. The last predicate referenced must already exist as a property id.
-- You may chain an implied property (e.g., placedInOrg) with another property (ancestorOf) to re-imply itself (useful with transitivity on ancestorOf).
+- Chains must be regular: no step may be a transitive property and the implied property may not be transitive (<<regular-chains-and-hierarchies>>). Roll up through a stored, non-transitive closure such as orgAncestor instead.
 - Domain and range help with type checking and tooling; they are optional but recommended.
 
 See also: <<Defining an ontology with YAML (YamlOntologyLoader)>> for a broader introduction.
@@ -2454,6 +2966,7 @@ Provider-based edges
 
 - Implement OntologyEdgeProvider to contribute explicit edges not backed by fields. The extractor merges these before materialization. See <<Where ontology materialization happens>> for a full example.
 
+[[reindex-after-yaml-changes]]
 === Reindex after YAML changes
 
 If you change ontology.yaml (add properties, mark a property transitive, add chains), you should trigger a tenant-wide re-materialization so derived edges reflect the new rules.
@@ -2462,17 +2975,33 @@ REST endpoints (admin-only):
 
 [source,shell]
 ----
-# Start reindex for a realm (tenant)
+# Start reindex for a realm (returns 202 at once)
 curl -X POST "http://localhost:8080/ontology/admin/reindex?realm=default"
 
 # Check status
 curl -s "http://localhost:8080/ontology/admin/reindex/status"
+
+# Reindex with progress streamed as Server-Sent Events; force=true purges derived edges first
+curl -N -X POST "http://localhost:8080/ontology/admin/reindex/stream?realm=default&force=true"
 ----
 
 Tips:
 - Reindex discovers all @OntologyClass entities via Morphia and re-applies write-time materialization to each instance.
 - For large tenants, consider running during off-hours. The service streams per class; status shows progress.
-- If you need to purge previously derived edges before recomputing, use a force mode if exposed by your deployment (some environments wire runAsync(realm, force=true)).
+- To purge previously derived edges before recomputing, use `force=true` on the `/reindex/stream` endpoint.
+
+A reindex materializes entities in batches (`OntologyMaterializer.applyBulk`), and follows the same
+ownership rules as a single save (<<inverse-edge-ownership>>):
+
+- Inverse and symmetric edges that another entity owns join the entity's chain snapshot and are
+  kept; an entity's own images on other nodes are pruned when it no longer justifies them.
+- The result does not depend on the order of entities in a batch. After the batch is stored, nodes
+  that received an image a rule reads (a chain step, a sub-property or a transitive property), and
+  the far ends of dropped explicit edges with an inverse or symmetric predicate, are re-derived
+  from what the batch stored.
+- An entity whose explicit edges name a stable derived relation is left out; the rest of the batch
+  is materialized. The reindexer lists such entities in `failures()` and ends with status
+  `COMPLETED_WITH_ERRORS` (see <<stable-relations>>).
 
 Related: Drift-repair job
 
@@ -2556,18 +3085,18 @@ Worked examples (source Order = O, Customer = C, Organization = G, Shipment = S,
  "support":[{"ruleId":"chain:orderShipsTo>locatedIn","pathEdgeIds":["O|orderShipsTo|A","A|locatedIn|R"]}]}
 ----
 
-4) [placedInOrg, ancestorOf] ⇒ placedInOrg
+4) [placedBy, memberOf, orgAncestor] ⇒ placedUnderOrg
 
-- Inputs: O --placedInOrg--> G1, G1 --ancestorOf--> G2 (ancestorOf is transitive)
-- Implied: O --placedInOrg--> G2 (can repeat over the ancestor chain)
+- Inputs: O --placedBy--> C, C --memberOf--> G1, G1 --orgAncestor--> G2 (G1 stores its ancestors; orgAncestor is not transitive)
+- Implied: O --placedUnderOrg--> G2, one edge per stored ancestor
 
 [source=json]
 ----
-{"src":"O","srcType":"Order","p":"placedInOrg","dst":"G2","dstType":"Organization","inferred":true,"derived":true,
- "prov":{"rule":"chain(placedInOrg,ancestorOf)","inputs":["O|placedInOrg|G1","G1|ancestorOf|G2"]},
- "support":[{"ruleId":"chain:placedInOrg>ancestorOf","pathEdgeIds":["O|placedInOrg|G1","G1|ancestorOf|G2"]}]}
+{"src":"O","srcType":"Order","p":"placedUnderOrg","dst":"G2","dstType":"Organization","inferred":true,"derived":true,
+ "prov":{"rule":"chain(placedBy,memberOf,orgAncestor)","inputs":["O|placedBy|C","C|memberOf|G1","G1|orgAncestor|G2"]},
+ "support":[{"ruleId":"chain:placedBy>memberOf>orgAncestor","pathEdgeIds":["O|placedBy|C","C|memberOf|G1","G1|orgAncestor|G2"]}]}
 ----
 
 Operational notes
-- If you delete inputs (e.g., remove C.memberOf=G), the next write of O (or a reindex) will prune stale placedInOrg edges. If inputs are removed out-of-band, run drift-repair to prune unsupported derived edges.
+- If you delete inputs (e.g., remove C.memberOf=G), the write of C prunes O's stale placedInOrg edge at once (<<chain-propagation>>). If inputs are removed out-of-band (direct edge ingest, or past the propagation budget), run drift-repair or a reindex to prune unsupported derived edges.
 - Always scope operations by realm/tenant. Edges are partitioned by dataDomain.tenantId and indexed accordingly.

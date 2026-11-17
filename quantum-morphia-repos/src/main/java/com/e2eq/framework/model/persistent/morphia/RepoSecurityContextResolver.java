@@ -24,6 +24,7 @@ final class RepoSecurityContextResolver {
     private final EnvConfigUtils envConfigUtils;
     private final RuleContext ruleContext;
     private final String defaultRealm;
+    private final String applicationId;
 
     RepoSecurityContextResolver(
             SecurityIdentity securityIdentity,
@@ -31,6 +32,21 @@ final class RepoSecurityContextResolver {
             EnvConfigUtils envConfigUtils,
             RuleContext ruleContext,
             String defaultRealm) {
+        this(securityIdentity, credentialRepo, envConfigUtils, ruleContext, defaultRealm, null);
+    }
+
+    /**
+     * {@code applicationId}: this application's configured id ({@link ReceivingApplication}), the
+     * application of a principal context rebuilt from the identity; never the token's azp.
+     */
+    RepoSecurityContextResolver(
+            SecurityIdentity securityIdentity,
+            CredentialRepo credentialRepo,
+            EnvConfigUtils envConfigUtils,
+            RuleContext ruleContext,
+            String defaultRealm,
+            String applicationId) {
+        this.applicationId = applicationId;
         this.securityIdentity = securityIdentity;
         this.credentialRepo = credentialRepo;
         this.envConfigUtils = envConfigUtils;
@@ -118,7 +134,7 @@ final class RepoSecurityContextResolver {
 
         PrincipalContext rebuiltContext = new PrincipalContext.Builder()
                 .withDefaultRealm(contextRealm)
-                .withApplicationId(identityAttribute("azp"))
+                .withApplicationId(applicationId != null ? applicationId : identityApplication())
                 .withDataDomain(dataDomain)
                 .withUserId(userId)
                 .withRoles(roles)
@@ -138,12 +154,16 @@ final class RepoSecurityContextResolver {
         }
     }
 
-    private String identityAttribute(String name) {
+    /**
+     * No configured receiving application: the application the identity's provider recorded
+     * (the embedded token's azp). Without an application, application-scoped policies, denies
+     * included, would not apply. Step 4 deletes this once every app configures its id.
+     */
+    private String identityApplication() {
         if (securityIdentity == null) return null;
-        Object value = securityIdentity.getAttribute(name);
-        if (value == null) return null;
-        String text = String.valueOf(value).trim();
-        return text.isEmpty() ? null : text;
+        Object value = securityIdentity.getAttribute("azp");
+        String text = value == null ? null : String.valueOf(value).trim();
+        return text == null || text.isEmpty() ? null : text;
     }
 
     String getSecurityContextRealmId() {

@@ -5,6 +5,7 @@ import com.e2eq.framework.grammar.BIAPIQueryParser;
 
 import com.e2eq.framework.model.persistent.base.BaseModel;
 import com.e2eq.framework.model.persistent.base.DataDomain;
+import com.e2eq.framework.model.persistent.base.OntologyEdgeLookup;
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import dev.morphia.annotations.Reference;
 import dev.morphia.query.filters.Filter;
@@ -170,86 +171,28 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
         return null;
     }
 
-    @SuppressWarnings("unchecked")
+    /** hasEdge ids through {@link OntologyEdgeLookup} (all materialization modes); fails closed without it. */
     protected Set<String> ontologySrcIdsByDst(DataDomain dataDomain, String predicate, String dst, Filter edgeFilter) {
-        try {
-            var cdi = jakarta.enterprise.inject.spi.CDI.current();
-            if (cdi == null) {
-                throw new IllegalStateException("CDI is not available");
-            }
-            Class<?> edgeRepoClass = Class.forName("com.e2eq.ontology.repo.OntologyEdgeRepo");
-            var selection = cdi.select(edgeRepoClass);
-            if (selection.isUnsatisfied()) {
-                throw new IllegalStateException("OntologyEdgeRepo bean is not available");
-            }
-            Object edgeRepo = selection.get();
-            Filter[] filters = (edgeFilter != null) ? new Filter[]{ edgeFilter } : new Filter[0];
-            try {
-                java.lang.reflect.Method method = edgeRepoClass.getMethod(
-                    "srcIdsByDst", DataDomain.class, String.class, String.class, Filter[].class);
-                Object result = method.invoke(edgeRepo, dataDomain, predicate, dst, (Object) filters);
-                if (!(result instanceof Set<?>)) {
-                    throw new IllegalStateException("OntologyEdgeRepo returned an invalid source-id result");
-                }
-                return (Set<String>) result;
-            } catch (NoSuchMethodException nsme) {
-                java.lang.reflect.Method method = edgeRepoClass.getMethod(
-                    "srcIdsByDst", DataDomain.class, String.class, String.class);
-                Object result = method.invoke(edgeRepo, dataDomain, predicate, dst);
-                if (!(result instanceof Set<?>)) {
-                    throw new IllegalStateException("OntologyEdgeRepo returned an invalid source-id result");
-                }
-                return (Set<String>) result;
-            }
-        } catch (ReflectiveOperationException | IllegalStateException e) {
-            throw new IllegalStateException(
-                "Unable to enforce ontology outgoing-edge predicate for DataDomain", e);
-        }
+        return edgeLookup("outgoing").srcIdsByDst(dataDomain, predicate, dst, edgeFilter);
     }
 
     protected Set<String> ontologySrcIdsByDst(DataDomain dataDomain, String predicate, String dst) {
         return ontologySrcIdsByDst(dataDomain, predicate, dst, null);
     }
 
-    @SuppressWarnings("unchecked")
+    /** hasIncomingEdge ids through {@link OntologyEdgeLookup} (all materialization modes); fails closed without it. */
     protected Set<String> ontologyDstIdsBySrc(DataDomain dataDomain, String predicate, String src, Filter edgeFilter) {
-        try {
-            var cdi = jakarta.enterprise.inject.spi.CDI.current();
-            if (cdi == null) {
-                throw new IllegalStateException("CDI is not available");
-            }
-            Class<?> edgeRepoClass = Class.forName("com.e2eq.ontology.repo.OntologyEdgeRepo");
-            var selection = cdi.select(edgeRepoClass);
-            if (selection.isUnsatisfied()) {
-                throw new IllegalStateException("OntologyEdgeRepo bean is not available");
-            }
-            Object edgeRepo = selection.get();
-            Filter[] filters = (edgeFilter != null) ? new Filter[]{ edgeFilter } : new Filter[0];
-            try {
-                java.lang.reflect.Method method = edgeRepoClass.getMethod(
-                    "dstIdsBySrc", DataDomain.class, String.class, String.class, Filter[].class);
-                Object result = method.invoke(edgeRepo, dataDomain, predicate, src, (Object) filters);
-                if (!(result instanceof Set<?>)) {
-                    throw new IllegalStateException("OntologyEdgeRepo returned an invalid destination-id result");
-                }
-                return (Set<String>) result;
-            } catch (NoSuchMethodException nsme) {
-                java.lang.reflect.Method method = edgeRepoClass.getMethod(
-                    "dstIdsBySrc", DataDomain.class, String.class, String.class);
-                Object result = method.invoke(edgeRepo, dataDomain, predicate, src);
-                if (!(result instanceof Set<?>)) {
-                    throw new IllegalStateException("OntologyEdgeRepo returned an invalid destination-id result");
-                }
-                return (Set<String>) result;
-            }
-        } catch (ReflectiveOperationException | IllegalStateException e) {
-            throw new IllegalStateException(
-                "Unable to enforce ontology incoming-edge predicate for DataDomain", e);
-        }
+        return edgeLookup("incoming").dstIdsBySrc(dataDomain, predicate, src, edgeFilter);
     }
 
     protected Set<String> ontologyDstIdsBySrc(DataDomain dataDomain, String predicate, String src) {
         return ontologyDstIdsBySrc(dataDomain, predicate, src, null);
+    }
+
+    private static OntologyEdgeLookup edgeLookup(String direction) {
+        return OntologyEdgeLookup.current().orElseThrow(() -> new IllegalStateException(
+            "Unable to enforce ontology " + direction + "-edge predicate: no OntologyEdgeLookup "
+                + "(quantum-ontology-mongo) is installed"));
     }
 
 

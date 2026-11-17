@@ -7,12 +7,12 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.end2endlogic</groupId>
   <artifactId>quantum-framework</artifactId>
-  <version>1.4.2</version>
+  <version>1.4.3-SNAPSHOT</version>
 
   <parent>
     <groupId>com.end2endlogic</groupId>
     <artifactId>quantum-parent</artifactId>
-    <version>1.4.2</version>
+    <version>1.4.3-SNAPSHOT</version>
   </parent>
 
   <name>${project.groupId}:${project.artifactId}</name>
@@ -464,6 +464,12 @@
     <dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-test-security</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <!-- CollectionResponseSchemaContractTest reads resource bytecode; version from the Quarkus BOM -->
+    <dependency>
+      <groupId>org.ow2.asm</groupId>
+      <artifactId>asm-tree</artifactId>
       <scope>test</scope>
     </dependency>
     <dependency>

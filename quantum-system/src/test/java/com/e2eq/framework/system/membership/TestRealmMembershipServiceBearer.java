@@ -1,5 +1,6 @@
 package com.e2eq.framework.system.membership;
 
+import com.e2eq.framework.system.config.QuantumModeConfig;
 import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
@@ -12,7 +13,7 @@ class TestRealmMembershipServiceBearer {
     @Test
     void requestBearerPrefersTheAuthenticatedCaller() {
         RealmMembershipService service = serviceWithJwt("caller-token", false);
-        service.serviceToken = Optional.of("service-token");
+        service.quantumModeConfig = withToken(Optional.of("service-token"));
 
         Assertions.assertEquals(Optional.of("caller-token"), service.requestBearerToken());
     }
@@ -20,7 +21,7 @@ class TestRealmMembershipServiceBearer {
     @Test
     void requestBearerUsesConfiguredServiceIdentityOutsideARequest() {
         RealmMembershipService service = serviceWithJwt(null, true);
-        service.serviceToken = Optional.of("service-token");
+        service.quantumModeConfig = withToken(Optional.of("service-token"));
 
         Assertions.assertEquals(Optional.of("service-token"), service.requestBearerToken());
     }
@@ -28,9 +29,14 @@ class TestRealmMembershipServiceBearer {
     @Test
     void requestBearerRemainsEmptyWithoutCallerOrServiceIdentity() {
         RealmMembershipService service = serviceWithJwt("  ", false);
-        service.serviceToken = Optional.empty();
+        service.quantumModeConfig = withToken(Optional.empty());
 
         Assertions.assertEquals(Optional.empty(), service.requestBearerToken());
+    }
+
+    private static QuantumModeConfig withToken(Optional<String> token) {
+        return QuantumModeConfig.of("remote", Optional.of("http://directory.test"),
+            Optional.empty(), Optional.empty(), token);
     }
 
     private static RealmMembershipService serviceWithJwt(

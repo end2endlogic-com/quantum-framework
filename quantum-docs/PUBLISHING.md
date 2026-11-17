@@ -2,16 +2,16 @@
 
 **LTS (1.4.2)** is published to **`gh-pages` root** — that is the default documentation URL visitors see.
 
-**1.4.2-SNAPSHOT** (in progress) is published only under **`gh-pages/1.4.2-SNAPSHOT/`**.
+**1.4.3-SNAPSHOT** (in progress) is published only under **`gh-pages/1.4.3-SNAPSHOT/`**.
 
-`maven-scm-publish-plugin` uses **`ignorePathsToDelete`** so that when LTS is pushed to the root, the **`1.4.2-SNAPSHOT/`** directory is not removed.
+`maven-scm-publish-plugin` uses **`ignorePathsToDelete`** so that when LTS is pushed to the root, the **`1.4.3-SNAPSHOT/`** directory is not removed.
 
 ## Profiles
 
 | Profile | Purpose |
 |--------|---------|
 | `docs-ghpages-lts` (alias `docs-ghpages-1.3.x`) | Empty `docs.ghpages.subdir` → publish to **root**; enables `publish-scm` on `deploy`. |
-| `docs-ghpages-1.4` | `docs.ghpages.subdir` = `1.4.2-SNAPSHOT` → publish preview under that folder only. |
+| `docs-ghpages-1.4` | `docs.ghpages.subdir` = `1.4.3-SNAPSHOT` → publish preview under that folder only. |
 
 By default, versioned `publish-scm` is **skipped** unless you activate one of these profiles.
 
@@ -20,12 +20,12 @@ By default, versioned `publish-scm` is **skipped** unless you activate one of th
 The banner uses Asciidoctor **`revnumber`** = **`${project.version}`** in `quantum-docs/pom.xml` (Maven reactor version, not the profile name).
 
 - For **correct LTS text** at the root URL: build on the release tag **`v1.4.2`** (POM **1.4.2**), then `-Pdocs-ghpages-lts`.
-- For **correct 1.4 preview text**: build on **`1.4.2-SNAPSHOT`**, then `-Pdocs-ghpages-1.4`.
+- For **correct 1.4 preview text**: build on **`1.4.3-SNAPSHOT`**, then `-Pdocs-ghpages-1.4`.
 
 ## URLs
 
 - **LTS (default):** `https://<org>.github.io/<repo>/` (and paths under it, e.g. `user-guide/index.html`).
-- **1.4 preview:** `https://<org>.github.io/<repo>/1.4.2-SNAPSHOT/…`
+- **1.4 preview:** `https://<org>.github.io/<repo>/1.4.3-SNAPSHOT/…`
 
 ## Examples
 
@@ -38,13 +38,17 @@ mvn -pl quantum-docs -DskipTests -Dgpg.skip=true package
 Publish **LTS** to site root (from tag `v1.4.2`):
 
 ```bash
-mvn -pl quantum-docs -am -Pdocs-ghpages-lts -DskipTests -Dgpg.skip=true package deploy
+mvn -pl quantum-docs -Pdocs-ghpages-lts -DskipTests -Dgpg.skip=true deploy
 ```
 
-Publish **1.4.2-SNAPSHOT** preview:
+Publish **1.4.3-SNAPSHOT** preview:
 
 ```bash
-mvn -pl quantum-docs -am -Pdocs-ghpages-1.4 -DskipTests -Dgpg.skip=true package deploy
+mvn -pl quantum-docs -Pdocs-ghpages-1.4 -DskipTests -Dgpg.skip=true deploy
 ```
 
-SCM authentication: Maven `settings.xml`, e.g. `<server><id>github</id>…` matching `quantum-docs/pom.xml`.
+Run `deploy` on its own: `package deploy` runs packaging twice and fails in `maven-jar-plugin`. Leave out `-am`, which would also deploy `quantum-parent` to the Maven repository; the docs module only needs its parent POM, resolved from `../pom.xml`.
+
+Preview what a publish would change (nothing is pushed) by adding `-Dscmpublish.dryRun=true`.
+
+SCM authentication: Maven `settings.xml`, e.g. `<server><id>github</id>…` matching `quantum-docs/pom.xml`. A git credential helper for `github.com` (for example `gh auth setup-git`) also works.

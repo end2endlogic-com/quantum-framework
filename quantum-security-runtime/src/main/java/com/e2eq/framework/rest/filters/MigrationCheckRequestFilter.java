@@ -5,6 +5,7 @@ import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.exceptions.DatabaseMigrationException;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.util.EnvConfigUtils;
+import com.e2eq.framework.system.config.SystemRealmOwnership;
 import io.quarkus.logging.Log;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.inject.Inject;
@@ -31,13 +32,31 @@ public class MigrationCheckRequestFilter implements ContainerRequestFilter {
     EnvConfigUtils envConfigUtils;
 
     @Inject
+    SystemRealmOwnership systemRealmOwnership;
+
+    @Inject
     CredentialRepo credentialRepo;
 
     @Inject
     JsonWebToken jwt;
 
+    @Inject
+    SessionSelectionCoordinator sessionSelection;
+
+    @Inject
+    io.vertx.ext.web.RoutingContext routingContext;
+
+    @Inject
+    com.e2eq.framework.security.principal.RemotePrincipalSettings remotePrincipalSettings;
+
     @ConfigProperty(name = "quantum.database.migration.enabled", defaultValue = "true")
     boolean migrationCheckEnabled;
+
+    @ConfigProperty(name = "quantum.auth.trust-token-claims", defaultValue = "false")
+    boolean trustTokenClaims;
+
+    @ConfigProperty(name = "quantum.security.session.realm")
+    Optional<String> sessionRealm = Optional.empty();
 
     @Override
     public void filter(ContainerRequestContext requestContext) throws IOException {
@@ -54,8 +73,8 @@ public class MigrationCheckRequestFilter implements ContainerRequestFilter {
 
         try {
             String effectiveRealm = resolveMigrationRealm(requestContext);
-            migrationService.checkInitialized(effectiveRealm);
-           migrationService.checkInitialized(envConfigUtils.getSystemRealm());
+            checkOwnedRealm(effectiveRealm);
+           checkOwnedRealm(envConfigUtils.getSystemRealm());
 
         } catch (DatabaseMigrationException e) {
             Log.warn("!! Migration check failed: " + e.getMessage());
@@ -67,7 +86,7 @@ public class MigrationCheckRequestFilter implements ContainerRequestFilter {
         if (failRequest && (requestContext.getUriInfo().getPath().contains("login") ||
                   requestContext.getUriInfo().getPath().contains("migration"))) {
             try {
-                migrationService.checkInitialized(envConfigUtils.getSystemRealm());
+                checkOwnedRealm(envConfigUtils.getSystemRealm());
             } catch (DatabaseMigrationException e) {
                 Log.warn("!! System Migration check failed: " + e.getMessage());
                 Log.warnf(" Execution of Request:%s caused this error", requestContext.getUriInfo().getPath());
@@ -80,11 +99,50 @@ public class MigrationCheckRequestFilter implements ContainerRequestFilter {
         }
     }
 
+    /** Remote services validate their application schema, not the control plane's schema. */
+    private void checkOwnedRealm(String realm) {
+        if (java.util.Objects.equals(realm, envConfigUtils.getSystemRealm())
+                && !systemRealmOwnership.ownedLocally()) {
+            return;
+        }
+        migrationService.checkInitialized(realm);
+    }
+
     String resolveMigrationRealm(ContainerRequestContext requestContext) {
-        String realmOverride = requestContext.getHeaderString("X-Realm");
+        // Remote mode: the realm is the one Auth resolved for this request (X-Realm included),
+        // never the token's realm claim. A refusal was already answered by RemotePrincipalRefusalFilter.
+        if (remotePrincipalSettings != null && remotePrincipalSettings.remote()
+                && identity != null && !identity.isAnonymous()
+                && identity.getPrincipal() instanceof JsonWebToken token) {
+            return RemotePrincipals.resolve(remotePrincipalSettings, routingContext, token,
+                    requestContext::getHeaderString, true).getDefaultRealm();
+        }
+        String realmOverride = sessionSelection != null && sessionSelection.enabled()
+                ? sessionSelection.realm(routingContext, identity, requestContext.getHeaderString("X-Realm"),
+                    sessionRealm.map(String::trim).filter(value -> !value.isEmpty()).orElse(null))
+                : requestContext.getHeaderString("X-Realm");
         if (realmOverride != null && !realmOverride.isBlank()) {
             Log.debug("Realm override found: " + realmOverride);
             return realmOverride;
+        }
+
+        if (trustTokenClaims && identity != null && !identity.isAnonymous()
+                && identity.getPrincipal() instanceof JsonWebToken token) {
+            Object kind = token.getClaim(com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.TOKEN_TYPE_CLAIM);
+            if (kind != null && com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.SERVICE_TOKEN_TYPE
+                    .equalsIgnoreCase(kind.toString())) {
+                return envConfigUtils.getSystemRealm();
+            }
+            String selected = sessionSelection != null && sessionSelection.enabled() ? null
+                    : sessionRealm.map(String::trim).filter(value -> !value.isEmpty()).orElse(null);
+            if (selected != null) return selected;
+            // The realm the roles augmentor resolved the identity's roles for (the signed realm on
+            // this claims path), not a claim read of our own.
+            String signedRealm = com.e2eq.framework.model.securityrules.PrincipalIdentityAttributes.rolesRealm(identity);
+            if (signedRealm == null) {
+                throw new jakarta.ws.rs.ForbiddenException("Trusted-issuer token is missing the required realm claim");
+            }
+            return signedRealm;
         }
 
         String authenticatedRealm = resolveAuthenticatedPrincipalRealm();

@@ -6,6 +6,7 @@ import com.e2eq.framework.model.persistent.base.ReferenceEntry;
 import com.e2eq.framework.model.persistent.base.ReferenceTarget;
 import com.e2eq.framework.model.persistent.base.UnversionedBaseModel;
 import com.e2eq.framework.model.persistent.morphia.BaseMorphiaRepo;
+import com.e2eq.framework.model.persistent.morphia.RefNameContract;
 import com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonMappingException;
@@ -106,6 +107,7 @@ public class MorphiaSeedRepository implements SeedRepository {
 
             // Implement upsert semantics based on dataset.naturalKey
             List<String> naturalKey = effectiveNaturalKey(dataset, modelClass, record);
+            requireSeedKeyForCanonicalRefName(dataset, modelClass, record, naturalKey, entity);
             if (naturalKey == null || naturalKey.isEmpty()) {
                 @SuppressWarnings("unchecked")
                 BaseMorphiaRepo<UnversionedBaseModel> typedRepo = (BaseMorphiaRepo<UnversionedBaseModel>) repo;
@@ -203,6 +205,29 @@ public class MorphiaSeedRepository implements SeedRepository {
             if (collection.find(filter).limit(1).first() == null) {
                 collection.insertOne(document);
             }
+        }
+    }
+
+    /**
+     * A canonical-refName record (UserGroup, Policy) without a refName would be defaulted to a fresh ObjectId on every
+     * apply, and a re-applied pack would add another group or policy each time. Such a record must name its refName,
+     * give an {@code _id}, or come from a dataset with an explicit naturalKey.
+     */
+    private static void requireSeedKeyForCanonicalRefName(SeedPackManifest.Dataset dataset,
+                                                          Class<? extends UnversionedBaseModel> modelClass,
+                                                          Map<String, Object> record, List<String> naturalKey,
+                                                          UnversionedBaseModel entity) {
+        if (!RefNameContract.applies(modelClass) || entity.getId() != null) {
+            return;
+        }
+        boolean explicitKey = dataset.getNaturalKey() != null && !dataset.getNaturalKey().isEmpty();
+        Object refName = record.get("refName");
+        boolean hasRefName = refName instanceof String text && !text.isBlank();
+        if (!explicitKey && !hasRefName) {
+            throw new IllegalArgumentException(String.format(
+                    "Seed dataset %s: a %s record has no refName, _id or naturalKey, so re-applying the pack would"
+                            + " create a duplicate; give it a refName",
+                    dataset.getFile(), modelClass.getSimpleName()));
         }
     }
 

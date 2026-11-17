@@ -31,6 +31,20 @@ public class UserGroup extends BaseModel {
    protected List<EntityReference> userProfiles;
    protected List<String> roles;
 
+   /**
+    * The tenant that owns the group. An application binding ({@link UserAppRole}) of the group
+    * grants exactly this tenant, may be written only by someone with authority over it, and applies
+    * only to members with an active membership in it. Unset (groups written before the field): only
+    * the platform may bind the group.
+    */
+   protected String ownerTenantId;
+
+   @Override
+   public void validate () {
+      super.validate();
+      UserRealmRole.requireNoExternalRole(roles, "UserGroup");
+   }
+
    @Override
    public String bmFunctionalArea () {
       return "SECURITY";

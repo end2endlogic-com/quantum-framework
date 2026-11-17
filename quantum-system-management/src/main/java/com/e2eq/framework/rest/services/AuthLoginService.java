@@ -234,7 +234,8 @@ public class AuthLoginService {
                 .toList();
     }
 
-    private AuthResponse toAuthResponse(
+    // Package-private for the test that pins what a login answer may carry.
+    AuthResponse toAuthResponse(
             AuthProvider authProvider,
             AuthProvider.LoginResponse loginResponse,
             CredentialUserIdPassword credential) {
@@ -243,7 +244,8 @@ public class AuthLoginService {
         response.setAccess_token(positive.accessToken());
         response.setRefresh_token(positive.refreshToken());
         response.setExpires_at(positive.expirationTime());
-        response.setMongodburl(positive.mongodbUrl());
+        // positive.mongodbUrl() is never copied: it is the service's own database
+        // connection string, credentials included, and no caller may see it.
         response.setRealm(positive.realm());
         response.setRoles(positive.roleAssignments().stream().map(RoleAssignment::toString).collect(Collectors.toList()));
         response.setAuthProvider(authProvider.getName());

@@ -7,12 +7,16 @@ import com.e2eq.framework.model.security.DataDomainResolver;
 import com.e2eq.framework.model.security.SourceAttributes;
 import com.e2eq.ontology.core.EdgeRecord;
 import com.e2eq.ontology.core.OntologyRegistry;
+import com.e2eq.ontology.core.StableRelationGuard;
 import com.e2eq.ontology.exceptions.CardinalityViolationException;
 import com.e2eq.ontology.model.OntologyEdge;
 import com.e2eq.ontology.model.QuarantinedEdge;
 import com.e2eq.framework.model.securityrules.SecurityContext;
 import dev.morphia.Datastore;
+import dev.morphia.DeleteOptions;
+import dev.morphia.query.FindOptions;
 import dev.morphia.query.Query;
+import dev.morphia.query.Sort;
 import dev.morphia.query.filters.Filter;
 import dev.morphia.query.filters.Filters;
 import io.quarkus.logging.Log;
@@ -36,6 +40,9 @@ import java.util.Optional;
  */
 @ApplicationScoped
 public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
+
+    /** Morphia 3 deletes only the first match unless asked for all of them. */
+    private static final DeleteOptions MULTI = new DeleteOptions().multi(true);
 
    // Optional injection to avoid circular dependency issues during startup
    // Uses Instance<> for lazy resolution
@@ -224,6 +231,27 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
     }
 
     /**
+     * Refuses an explicit edge whose predicate is a stable derived relation in the DataDomain's
+     * registry (relation contract, P1). When no registry is available nothing is known to be stable,
+     * so the write proceeds, matching {@link #isFunctionalProperty}.
+     *
+     * @throws StableRelationGuard.StableDerivedEdgeException when the predicate is stable derived
+     */
+    public void validateExplicitEdgeAllowed(DataDomain dataDomain, String predicate) {
+        OntologyRegistry registry;
+        try {
+            if (registryProviderInstance == null || registryProviderInstance.isUnsatisfied()) {
+                return;
+            }
+            registry = registryProviderInstance.get().getRegistryForTenant(dataDomain);
+        } catch (Throwable t) {
+            Log.debugf("Could not resolve the registry to check explicit edge '%s': %s", predicate, t.getMessage());
+            return;
+        }
+        StableRelationGuard.requireExplicitEdgeAllowed(registry, predicate);
+    }
+
+    /**
      * Checks if a property is functional (ONE_TO_ONE or MANY_TO_ONE).
      * <p>
      * A functional property allows at most one value per subject. This is determined
@@ -387,6 +415,10 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
 
         // Validate functional constraint before upserting
         validateFunctionalConstraint(realmId, dataDomain, srcType, src, p, dst);
+        // A stable derived relation's edges come only from its derivation (relation contract, P1)
+        if (!inferred) {
+            validateExplicitEdgeAllowed(dataDomain, p);
+        }
 
         Datastore d = ds(realmId);
         Query<OntologyEdge> q = d.find(OntologyEdge.class);
@@ -438,6 +470,19 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
 
     public void bulkUpsertEdgeRecords(String realmId, Collection<EdgeRecord> edges) {
         if (edges == null || edges.isEmpty()) return;
+        // Relation contract (P1): refuse the whole batch before writing if an explicit record (not
+        // inferred, not computed/derived, no support) names a stable derived relation
+        for (EdgeRecord e : edges) {
+            if (e == null || e.isInferred() || e.isDerived() || e.getSupport() != null) continue;
+            com.e2eq.ontology.core.DataDomainInfo ddi = e.getDataDomainInfo();
+            if (ddi == null) continue;
+            DataDomain dd = new DataDomain();
+            dd.setOrgRefName(ddi.orgRefName());
+            dd.setAccountNum(ddi.accountNum());
+            dd.setTenantId(ddi.tenantId());
+            dd.setDataSegment(ddi.dataSegment());
+            validateExplicitEdgeAllowed(dd, e.getP());
+        }
         List<WriteModel<OntologyEdge>> ops = new ArrayList<>(edges.size());
         Date now = new Date();
         for (EdgeRecord e : edges) {
@@ -515,6 +560,27 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
      */
     public void upsertMany(Collection<?> edgesOrDocs) {
         if (edgesOrDocs == null || edgesOrDocs.isEmpty()) return;
+        // Relation contract (P1): check the whole collection before writing anything, so a refused
+        // explicit edge for a stable derived relation never leaves the batch half-written
+        for (Object o : edgesOrDocs) {
+            if (o instanceof OntologyEdge e) {
+                if (e.getDataDomain() != null && !Boolean.TRUE.equals(e.isDerived()) && !e.isInferred()) {
+                    validateExplicitEdgeAllowed(e.getDataDomain(), e.getP());
+                }
+            } else if (o instanceof org.bson.Document d) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> ddDoc = (Map<String, Object>) d.get("dataDomain");
+                if (ddDoc != null && !Boolean.TRUE.equals(d.getBoolean("derived"))
+                        && !Boolean.TRUE.equals(d.getBoolean("inferred"))) {
+                    DataDomain dd = new DataDomain();
+                    dd.setOrgRefName((String) ddDoc.get("orgRefName"));
+                    dd.setAccountNum((String) ddDoc.get("accountNum"));
+                    dd.setTenantId((String) ddDoc.get("tenantId"));
+                    dd.setDataSegment(ddDoc.get("dataSegment") != null ? ((Number) ddDoc.get("dataSegment")).intValue() : 0);
+                    validateExplicitEdgeAllowed(dd, d.getString("p"));
+                }
+            }
+        }
         for (Object o : edgesOrDocs) {
             if (o instanceof OntologyEdge e) {
                 DataDomain dd = e.getDataDomain();
@@ -741,7 +807,7 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
         }
         q.filter(Filters.eq("src", src));
         if (inferredOnly) q.filter(Filters.eq("inferred", true));
-        q.delete();
+        q.delete(MULTI);
     }
 
     /**
@@ -759,7 +825,7 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
         }
         q.filter(Filters.eq("src", src))
          .filter(Filters.eq("p", p))
-         .delete();
+         .delete(MULTI);
     }
 
     /**
@@ -779,7 +845,21 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
          .filter(Filters.eq("p", p))
          .filter(Filters.eq("inferred", true))
          .filter(Filters.nin("dst", dstKeep))
-         .delete();
+         .delete(MULTI);
+    }
+
+    /** Delete one inferred edge by its key. */
+    public void deleteInferredEdge(String realmId, DataDomain dataDomain, String src, String p, String dst) {
+        validateWritableDataDomain(dataDomain);
+        Query<OntologyEdge> q = ds(realmId).find(OntologyEdge.class);
+        for (Filter f : dataDomainFilters(dataDomain)) {
+            q.filter(f);
+        }
+        q.filter(Filters.eq("src", src))
+         .filter(Filters.eq("p", p))
+         .filter(Filters.eq("dst", dst))
+         .filter(Filters.eq("inferred", true))
+         .delete(MULTI);
     }
 
     /**
@@ -803,7 +883,7 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
          .filter(Filters.ne("inferred", true))
          .filter(Filters.ne("derived", true))  // Exclude derived/computed edges
          .filter(Filters.nin("dst", dstKeep))
-         .delete();
+         .delete(MULTI);
     }
 
     /**
@@ -824,7 +904,7 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
          .filter(Filters.eq("p", p))
          .filter(Filters.eq("derived", true))  // Only derived/computed edges
          .filter(Filters.nin("dst", dstKeep))
-         .delete();
+         .delete(MULTI);
     }
 
     /**
@@ -1085,6 +1165,26 @@ public class OntologyEdgeRepo extends MorphiaRepo<OntologyEdge> {
     /**
      * Find edges from source with given predicate, within the DataDomain.
      */
+    /** Edges with predicate {@code p} leaving any of {@code srcIds} in {@code realmId}, scoped to {@code dataDomain}. */
+    public List<OntologyEdge> findBySrcInAndP(String realmId, DataDomain dataDomain, Collection<String> srcIds, String p) {
+        return findBySrcInAndP(realmId, dataDomain, srcIds, p, 0);
+    }
+
+    /** {@link #findBySrcInAndP(String, DataDomain, Collection, String)}, ordered by src then dst, at most {@code limit} rows ({@code <= 0}: all). */
+    public List<OntologyEdge> findBySrcInAndP(String realmId, DataDomain dataDomain, Collection<String> srcIds, String p,
+                                              int limit) {
+        if (srcIds == null || srcIds.isEmpty()) return List.of();
+        validateDataDomain(dataDomain);
+        Query<OntologyEdge> q = ds(realmId).find(OntologyEdge.class);
+        for (Filter f : dataDomainFilters(dataDomain)) {
+            q.filter(f);
+        }
+        q.filter(Filters.eq("p", p)).filter(Filters.in("src", srcIds));
+        FindOptions options = new FindOptions().sort(Sort.ascending("src"), Sort.ascending("dst"));
+        if (limit > 0) options.limit(limit);
+        return q.iterator(options).toList();
+    }
+
     public List<OntologyEdge> findBySrcAndP(DataDomain dataDomain, String src, String p, Filter... edgeFilters) {
         return findBySrcAndP(resolveRealmId(dataDomain), dataDomain, src, p, edgeFilters);
     }

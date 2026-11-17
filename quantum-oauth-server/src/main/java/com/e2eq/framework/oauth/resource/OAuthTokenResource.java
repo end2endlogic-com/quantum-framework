@@ -2,6 +2,7 @@ package com.e2eq.framework.oauth.resource;
 
 import com.e2eq.framework.model.auth.AuthProvider;
 import com.e2eq.framework.model.auth.provider.jwtToken.CustomTokenAuthProvider;
+import com.e2eq.framework.model.auth.provider.jwtToken.TokenUtils;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.oauth.model.AuthorizationCode;
@@ -108,9 +109,13 @@ public class OAuthTokenResource {
             return errorResponse("invalid_request", "grant_type is required");
         }
 
-        if (!client.getAllowedGrantTypes().contains(grantType)) {
+        if (client.getAllowedGrantTypes() == null || !client.getAllowedGrantTypes().contains(grantType)) {
             return errorResponse("unauthorized_client",
                     "This client is not authorized for grant_type: " + grantType);
+        }
+
+        if (client.isPublicClient() && "client_credentials".equals(grantType)) {
+            return errorResponse("unauthorized_client", "client_credentials requires a confidential client");
         }
 
         return switch (grantType) {
@@ -145,9 +150,14 @@ public class OAuthTokenResource {
             return errorResponse("invalid_grant", "redirect_uri mismatch");
         }
 
+        // Reject invalid/legacy public codes as well as newly malformed requests.
+        String pkceError = OAuthRequestValidation.pkceError(client.isPublicClient(),
+                authCode.getCodeChallenge(), authCode.getCodeChallengeMethod());
+        if (pkceError != null) return errorResponse("invalid_grant", pkceError);
+
         // Verify PKCE code_verifier
-        if (authCode.getCodeChallenge() != null) {
-            if (codeVerifier == null || codeVerifier.isBlank()) {
+        if (authCode.getCodeChallenge() != null && !authCode.getCodeChallenge().isBlank()) {
+            if (!OAuthRequestValidation.validVerifier(codeVerifier)) {
                 return errorResponse("invalid_request", "code_verifier is required for PKCE");
             }
             if (!verifyPkce(codeVerifier, authCode.getCodeChallenge())) {
@@ -167,7 +177,7 @@ public class OAuthTokenResource {
             return errorResponse("server_error", "User credential not found");
         }
 
-        return issueTokens(client, credOpt.get());
+        return issueTokens(client, credOpt.get(), authCode.getPasswordRevision());
     }
 
     private Response handleClientCredentials(OAuthClient client) {
@@ -191,8 +201,12 @@ public class OAuthTokenResource {
             AuthProvider.LoginResponse loginResponse = tokenProvider.refreshTokens(refreshToken, client.getClientId(), applicationFor(client), client.getRealm());
             if (loginResponse.authenticated() && loginResponse.positiveResponse() != null) {
                 var pos = loginResponse.positiveResponse();
+                // A refresh near the session's maximum length returns a shorter-lived token.
+                long expiresIn = pos.expirationTime() > 0
+                        ? Math.max(0, pos.expirationTime() - TokenUtils.currentTimeInSecs())
+                        : tokenDuration;
                 return tokenResponse(pos.accessToken(), pos.refreshToken(),
-                        tokenDuration, "Bearer");
+                        expiresIn, "Bearer");
             }
             return errorResponse("invalid_grant", "Refresh token is invalid or expired");
         } catch (Exception e) {
@@ -207,10 +221,15 @@ public class OAuthTokenResource {
     }
 
     private Response issueTokens(OAuthClient client, CredentialUserIdPassword cred) {
+        return issueTokens(client, cred, null);
+    }
+
+    /** {@code passwordRevision}: the revision the user authenticated at, for a code exchange. */
+    private Response issueTokens(OAuthClient client, CredentialUserIdPassword cred, Long passwordRevision) {
         String application = applicationFor(client);
         try {
             var result = tokenProvider.loginWithVerifiedSubject(
-                    cred.getSubject(), application, client.getRealm(), client.getClientId());
+                    cred.getSubject(), application, client.getRealm(), client.getClientId(), passwordRevision);
             if (!result.authenticated() || result.positiveResponse() == null) {
                 return errorResponse("invalid_grant", "Credential is not authorized for the requested realm/application");
             }

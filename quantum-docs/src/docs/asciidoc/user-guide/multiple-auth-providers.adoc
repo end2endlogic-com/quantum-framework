@@ -5,8 +5,10 @@ endif::[]
 [[multiple-auth-providers]]
 = Multiple Authentication Providers
 
-Quantum supports running multiple authentication providers simultaneously, enabling scenarios such as an internal JWT provider alongside an external OIDC provider (for example Cognito, Keycloak, or Auth0).
-Providers are registered via a single configuration property, and the framework automatically routes token validation to the correct provider based on the JWT `iss` (issuer) claim.
+Quantum supports running multiple authentication providers simultaneously, enabling scenarios such as an internal JWT provider alongside an external OIDC provider.
+Providers are registered via a single configuration property. Sign-in tries them in order, and a refresh token is routed to the provider whose issuer matches its `iss` (issuer) claim.
+
+A provider authenticates: it proves who the caller is. It does not decide what the caller may do. Roles, realm and tenant are resolved afterwards from the application's own records (see xref:{doc-root}/user-guide/auth.adoc#authn-authz-separation[Authentication and Authorization Are Separate]).
 
 == How It Works
 
@@ -24,19 +26,36 @@ auth.provider=custom,oidc
 
 === Provider Resolution
 
-When a request arrives with a JWT, the framework resolves which provider should validate it:
+`AuthProviderFactory` offers three lookups:
 
-1. **By issuer** -- `AuthProviderFactory.getProviderForIssuer(String issuer)` iterates through all configured providers and calls `getIssuer()` on each.
-The first provider whose issuer matches the JWT `iss` claim wins.
+1. **By issuer** -- `AuthProviderFactory.getProviderForIssuer(String issuer)` iterates through the configured providers and calls `getIssuer()` on each.
+The first provider whose issuer equals the given issuer wins. A missing issuer, or one no configured provider matches, throws: routing by issuer fails closed and never falls back to the default provider.
 2. **By name** -- `AuthProviderFactory.getProviderByName(String name)` performs a case-insensitive lookup (for example `"custom"` or `"oidc"`).
 3. **Default** -- `AuthProviderFactory.getAuthProvider()` returns the first configured provider.
-Unknown or missing issuer routing fails closed; callers that intentionally want the default provider must request it explicitly.
+Callers that intentionally want the default provider must request it explicitly.
 
-For user-facing login, an explicit `provider` request may contain a comma-separated ordered list. When omitted, the ordered `auth.provider` configuration is used. Every provider named by either list must be available; configuration errors are not silently skipped.
+Where each lookup is used:
+
+[cols="2,3", options="header"]
+|===
+| Operation | Provider used
+
+| Sign-in (`POST /security/login`)
+| The ordered chain from `AuthProviderFactory.getLoginProviders`: the request's `provider` query parameter (a comma-separated ordered list) when present, otherwise the `auth.provider` configuration. Every named provider must be available; configuration errors are not silently skipped. The chain stops at the first provider that authenticates, and also at a definitive application or realm answer (selection required, not authorized, authorization missing), which is not retried against the next provider.
+
+| Refresh (`POST /security/refresh`)
+| The provider whose `getIssuer()` equals the refresh token's `iss`.
+
+| Password and user management
+| The provider named in the request; otherwise the provider matching the credential's `issuer`; otherwise the default provider. The credential type is checked first (see the authentication guide), so a provider override cannot give a service credential a password.
+
+| Incoming API requests
+| Quarkus security verifies the bearer token (signature, issuer, audience, expiry) from the configured `mp.jwt.*` or `quarkus.oidc.*` settings. `SecurityFilter` then builds the principal. With `quantum.auth.trust-token-claims=true` it asks the default provider, which must implement `ClaimsAuthProvider`, for the token's claims.
+|===
 
 === Canonical Identity Service
 
-`CanonicalIdentityService` is the single entry point for token validation across all providers.
+`CanonicalIdentityService` (`quantum-framework`) is an injectable helper for application code that must validate a token itself and wants one identity shape whichever provider issued it. `SecurityFilter` does not call it; request-time verification is described in the table above.
 It has two signatures:
 
 [source,java]
@@ -51,7 +70,7 @@ SecurityIdentity validateAccessTokenCanonical(String token, String issuer);
 Internally, the service supports two provider interfaces:
 
 * **`ClaimsAuthProvider`** -- a modern SPI where the provider returns a `ProviderClaims` object (subject, roles, attributes).
-The service then passes those claims to `IdentityAssembler`, which resolves the userId from the credential store, merges roles from the token, credential, and user groups, and builds a canonical `QuarkusSecurityIdentity`.
+The service then passes those claims to `IdentityAssembler`, which resolves the userId from the credential store (by subject, then by userId), merges roles from the token, the credential and the user's groups, and builds a canonical `QuarkusSecurityIdentity`. It does not apply realm assignments or application bindings; the principal a request runs as is always the one `SecurityFilter` builds.
 * **Legacy `AuthProvider`** -- the provider returns a `SecurityIdentity` directly, and the service normalizes it via `SecurityIdentityNormalizer` (ensuring the principal is always the userId, not the IdP subject).
 
 This means you can mix modern claims-based providers with legacy ones in the same application.
@@ -77,17 +96,20 @@ mp.jwt.verify.issuer=https://myapp.example.com/issuer
 # Audiences the token must target
 mp.jwt.verify.audiences=my-api-client,my-api-client-refresh
 
-# Signing secret for the custom provider (used for HMAC-based flows)
-auth.jwt.secret=${JWT_SECRET:change-me-in-production}
+# Access-token lifetime in seconds (required by the custom provider)
+com.b2bi.jwt.duration=3600
 
-# Token lifetimes (minutes)
-auth.jwt.expiration=15
-auth.jwt.refresh-expiration=30
+# Optional: refresh-token lifetime and the longest refreshable session, in seconds
+# (defaults: 7 days and 30 days)
+quantum.auth.refresh-token.duration=604800
+quantum.auth.session.max-duration=2592000
 ----
 
-=== Adding an OIDC Provider (e.g., AWS Cognito)
+Tokens are RS256-signed with the key pair described under <<per-tenant-key-pairs,Key Pair Management>>. The `auth.jwt.secret`, `auth.jwt.expiration` and `auth.jwt.refresh-expiration` properties found in older sample configurations are not read by any module in this repository.
 
-To add an external OIDC provider alongside the custom provider:
+=== Adding an OIDC Provider
+
+To add an external OIDC provider alongside the custom provider you need an `AuthProvider` bean for it (named `oidc` in the example) on the classpath. This repository ships the custom JWT provider only; an OIDC provider comes from your application or another module. The `auth.oidc.*` and `aws.cognito.*` keys below belong to that provider and are shown as an example of its configuration, using a hosted OIDC user pool:
 
 [source,properties]
 ----
@@ -99,9 +121,7 @@ quarkus.smallrye-jwt.enabled=true
 mp.jwt.verify.publickey.location=publicKey.pem
 mp.jwt.verify.issuer=https://myapp.example.com/issuer
 mp.jwt.verify.audiences=my-api-client
-auth.jwt.secret=${JWT_SECRET}
-auth.jwt.expiration=15
-auth.jwt.refresh-expiration=30
+com.b2bi.jwt.duration=3600
 
 # --- OIDC provider ---
 quarkus.oidc.enabled=true
@@ -120,64 +140,39 @@ aws.cognito.region=us-east-1
 aws.cognito.jwks.url=https://cognito-idp.${aws.cognito.region}.amazonaws.com/${aws.cognito.user-pool-id}/.well-known/jwks.json
 ----
 
-=== Using Keycloak or Auth0
+=== Using Another OIDC Provider
 
-The pattern is the same -- configure `quarkus.oidc.*` to point at the provider's OIDC discovery endpoint:
+The pattern is the same for any provider that publishes OIDC discovery -- configure `quarkus.oidc.*` to point at its discovery endpoint:
 
 [source,properties]
 ----
-# Keycloak
-quarkus.oidc.auth-server-url=https://keycloak.example.com/realms/my-realm
+quarkus.oidc.auth-server-url=https://idp.example.com/realms/my-realm
 quarkus.oidc.client-id=my-client
-quarkus.oidc.credentials.secret=${KEYCLOAK_CLIENT_SECRET}
+quarkus.oidc.credentials.secret=${OIDC_CLIENT_SECRET}
 quarkus.oidc.roles.role-claim-path=realm_access/roles
-
-# Auth0
-quarkus.oidc.auth-server-url=https://my-tenant.auth0.com
-quarkus.oidc.client-id=my-client-id
-quarkus.oidc.credentials.secret=${AUTH0_CLIENT_SECRET}
-quarkus.oidc.roles.role-claim-path=https://my-app.example.com/roles
 ----
 
 Quarkus OIDC automatically discovers the `.well-known/openid-configuration` endpoint from the `auth-server-url`, so you do not need to specify individual endpoints for token validation, JWKS, or user info.
 
 == Issuer Resolution in Detail
 
-When a JWT arrives at the `SecurityFilter`, the following resolution path executes:
+This is the path `CanonicalIdentityService.validateAccessTokenCanonical(token, issuer)` and the refresh flow take when they route by issuer:
 
 ....
-Incoming request with Authorization: Bearer <token>
-    |
-    v
-SecurityFilter extracts JWT
-    |
-    v
-Parse the "iss" claim from the token
-    |
-    v
-CanonicalIdentityService.validateAccessTokenCanonical(token, issuer)
+Token with an "iss" claim
     |
     v
 AuthProviderFactory.getProviderForIssuer(issuer)
     |
     +-- Iterate configured providers:
-    |     provider.getIssuer().equals(issuer) ?
+    |     issuer.equals(provider.getIssuer()) ?
     |       -> yes: use this provider
     |       -> no: try next
     |
-    +-- No match: fail provider resolution
+    +-- No match, or no issuer: fail (IllegalArgumentException); no default is used
     |
     v
-Provider validates token and returns ProviderClaims or SecurityIdentity
-    |
-    v
-IdentityAssembler merges roles from:
-    - TOKEN (from JWT claims)
-    - CREDENTIAL (from credential store)
-    - USERGROUP (from UserProfile -> UserGroup membership)
-    |
-    v
-Canonical SecurityIdentity with userId as principal
+Provider validates the token (CanonicalIdentityService) or refreshes it (refresh flow)
 ....
 
 Each provider's `getIssuer()` method returns its expected issuer string.
@@ -186,24 +181,27 @@ For an OIDC provider, it is typically the `auth-server-url` (for example, `https
 
 === Role Provenance Tracking
 
-After token validation, the framework tracks the source of every role via `RoleAssignment`:
+The framework tracks the source of every role via `RoleAssignment` (a role plus a set of `RoleSource` values):
 
 [cols="1,3", options="header"]
 |===
 | Source | Meaning
 
 | `TOKEN`
-| Role came from the JWT claims (e.g., Cognito `cognito:groups` or Keycloak `realm_access/roles`)
+| Role came from the verified token's claims. Honored only in the realm the token was issued for.
 
 | `CREDENTIAL`
-| Role stored in the credential record in MongoDB
+| Flat role stored on the credential record. Applies in every realm the credential can enter.
+
+| `REALM`
+| Role granted by the user's `UserRealmRole` assignment for the realm.
 
 | `USERGROUP`
 | Role inherited from `UserGroup` membership via the user's `UserProfile`
 |===
 
-The final `SecurityIdentity` contains the union of all three sources.
-Login and token-refresh responses include a `List<RoleAssignment>` so clients and audit logs can trace exactly where each role originated.
+The effective roles are the union of the sources that apply.
+`LoginPositiveResponse` carries a `List<RoleAssignment>` for sign-in and refresh, and `POST /system/permissions/role-provenance` reports the breakdown for a user, so audit tooling can trace where each role originated.
 
 == Creating a New Auth Provider
 
@@ -213,7 +211,7 @@ To add a new authentication provider:
 2. Return a stable name from `getName()` (e.g., `"saml"`, `"apikey"`, `"azure-ad"`).
 3. Implement `getIssuer()` to return the issuer string that your tokens will carry.
 4. Implement `validateAccessToken(token)` to parse, verify, and build a `SecurityIdentity`.
-5. Optionally implement `ClaimsAuthProvider.validateTokenToClaims(token)` for the modern claims-based flow.
+5. Optionally implement `ClaimsAuthProvider.validateTokenToClaims(token)` for the claims-based flow. It is required when the provider is the default one and the service runs with `quantum.auth.trust-token-claims=true`.
 6. Add your provider name to `auth.provider` in `application.properties`.
 
 [source,java]
@@ -275,10 +273,7 @@ To use the default keys in your application during development or testing, add t
 </dependency>
 ----
 
-In production, either:
-
-* **Remove** the `quantum-default-keys` dependency from your POM and supply your own keys externally, or
-* **Override** the key locations via `application.properties` (see below) — the configured paths take precedence over any classpath defaults.
+In production, remove the `quantum-default-keys` dependency from your POM and set the key locations explicitly (see below). The configured paths take precedence over any classpath defaults, and a production start without them fails.
 
 WARNING: The default keys are published in the open-source framework repository and are intended only for development and testing.
 Never use the default keys in production.
@@ -315,6 +310,14 @@ Supported path prefixes:
 |===
 
 When these properties are set, `TokenUtilsConfigurer` applies them at application startup and invalidates any previously cached keys.
+
+`TokenUtilsConfigurer` also enforces three rules at startup:
+
+* Outside the `dev` and `test` profiles both properties must be set explicitly. If either is missing, startup fails with "Production JWT startup requires ... to be explicitly configured; default JWT key fallback is not allowed".
+* `quantum.jwt.signing-enabled=false` (default `true`) is for a service that only verifies tokens. It loads no signing key, and the two location properties are not required.
+* `auth.jwt.key-id`, when set, is stamped on every signed token as the `kid` header. Set it to the same value the JWKS endpoint advertises so other services can resolve the signing key.
+
+Key material is opened through the `JwtKeyResolver` SPI. The default bean, `DefaultJwtKeyResolver`, handles the `file:` and `classpath:` prefixes above; provide your own `JwtKeyResolver` bean to read keys from another source.
 
 ==== Typical Production Setup
 

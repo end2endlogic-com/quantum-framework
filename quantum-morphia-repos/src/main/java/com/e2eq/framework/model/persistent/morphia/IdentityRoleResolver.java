@@ -6,6 +6,7 @@ import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.UserGroup;
 import com.e2eq.framework.model.security.UserProfile;
 import com.e2eq.framework.util.EnvConfigUtils;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import io.quarkus.logging.Log;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -42,6 +43,22 @@ public class IdentityRoleResolver {
 
     @Inject
     EnvConfigUtils envConfigUtils;
+
+    /**
+     * {@code quantum.directory.mode}. When it is {@code remote}, realm assignments live at the
+     * directory owner (quantum-auth-service), so this service's local UserRealmRole copy is not
+     * an authority and is never read: a stale local row could otherwise keep a role that was
+     * revoked at Auth. Realm roles then come from the token Auth issued. Unset keeps the older
+     * behaviour.
+     */
+    @ConfigProperty(name = "quantum.directory.mode")
+    Optional<String> directoryMode = Optional.empty();
+
+    boolean localRealmAssignmentsAuthoritative() {
+        return directoryMode == null || directoryMode
+            .map(value -> !"remote".equalsIgnoreCase(value.trim()))
+            .orElse(true);
+    }
 
     /**
      * Resolve the effective roles for an already resolved credential, also considering the access token roles
@@ -105,9 +122,11 @@ public class IdentityRoleResolver {
 
         if (credential != null) {
             try {
-                userRealmRoleRepo.findActiveAssignmentForRealmWithIgnoreRules(
-                                credential.getUserId(), targetRealm, envConfigUtils.getSystemRealm())
-                        .ifPresent(assignment -> addRoles(provenance, assignment.getRoles(), RoleSource.REALM));
+                if (localRealmAssignmentsAuthoritative()) {
+                    userRealmRoleRepo.findActiveAssignmentForRealmWithIgnoreRules(
+                                    credential.getUserId(), targetRealm, envConfigUtils.getSystemRealm())
+                            .ifPresent(assignment -> addRoles(provenance, assignment.getRoles(), RoleSource.REALM));
+                }
 
                 addUserGroupRoles(provenance, credential, envConfigUtils.getSystemRealm(), applicationId);
                 if (!sameRealm(targetRealm, envConfigUtils.getSystemRealm())) {
@@ -129,10 +148,20 @@ public class IdentityRoleResolver {
      * If identity resolves to a credential (userId), include the user's implied roles; otherwise, treat it as a role.
      */
     public Set<String> resolveRolesForIdentity(String identity, String realm, SecurityIdentity securityIdentity) {
+        return resolveRolesForIdentity(identity, realm, null, securityIdentity);
+    }
+
+    /**
+     * As {@link #resolveRolesForIdentity(String, String, SecurityIdentity)}, counting only the user groups
+     * that apply to {@code applicationId} (its own groups and {@code *} groups), the way a request to that
+     * application resolves them. A blank {@code applicationId} counts every group.
+     */
+    public Set<String> resolveRolesForIdentity(String identity, String realm, String applicationId,
+                                               SecurityIdentity securityIdentity) {
         LinkedHashSet<String> out = new LinkedHashSet<>();
         if (identity == null || identity.isBlank()) return out;
         out.add(identity);
-        Map<String, EnumSet<RoleSource>> provenance = resolveRoleSources(identity, realm, securityIdentity);
+        Map<String, EnumSet<RoleSource>> provenance = resolveRoleSources(identity, realm, applicationId, securityIdentity);
         if (!provenance.isEmpty()) {
             out.addAll(provenance.keySet());
         }
@@ -160,10 +189,11 @@ public class IdentityRoleResolver {
         String targetRealm = requireRealm(realm);
         String systemRealm = envConfigUtils.getSystemRealm();
         Optional<CredentialUserIdPassword> credential = credentialRepo.findByUserId(identity, systemRealm, true);
+        // The realm the identity's roles were resolved for, as its principal source recorded it.
+        // Unknown provenance is never guessed (e.g. from the credential's home realm): the
+        // identity's roles then do not count where a credential exists, which still contributes
+        // its own, realm-assignment and group roles below.
         String authorityRealm = identityRealm(securityIdentity);
-        if (authorityRealm == null && credential.isPresent()) {
-            authorityRealm = credentialHomeRealm(credential.get());
-        }
 
         // Token roles are honored only in the realm the token was issued for (see resolveEffectiveRoles).
         if (currentIdentityMatches(identity, securityIdentity)
@@ -174,9 +204,11 @@ public class IdentityRoleResolver {
         if (credential.isPresent()) {
             CredentialUserIdPassword cred = credential.get();
             addRoles(out, cred.getRoles(), RoleSource.CREDENTIAL);
-            userRealmRoleRepo.findActiveAssignmentForRealmWithIgnoreRules(
-                            cred.getUserId(), targetRealm, systemRealm)
-                    .ifPresent(assignment -> addRoles(out, assignment.getRoles(), RoleSource.REALM));
+            if (localRealmAssignmentsAuthoritative()) {
+                userRealmRoleRepo.findActiveAssignmentForRealmWithIgnoreRules(
+                                cred.getUserId(), targetRealm, systemRealm)
+                        .ifPresent(assignment -> addRoles(out, assignment.getRoles(), RoleSource.REALM));
+            }
 
             addUserGroupRoles(out, cred, systemRealm, applicationId);
             if (!sameRealm(targetRealm, systemRealm)) {
@@ -224,10 +256,9 @@ public class IdentityRoleResolver {
         return credential.getDomainContext().getDefaultRealm();
     }
 
+    /** The realm the identity's roles were resolved for, as its principal source recorded it. */
     private String identityRealm(SecurityIdentity identity) {
-        if (identity == null) return null;
-        Object value = identity.getAttribute("realm");
-        return value instanceof String s && !s.isBlank() ? s : null;
+        return com.e2eq.framework.model.securityrules.PrincipalIdentityAttributes.rolesRealm(identity);
     }
 
     private boolean currentIdentityMatches(String identity, SecurityIdentity securityIdentity) {

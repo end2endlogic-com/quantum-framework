@@ -90,4 +90,61 @@ class TokenUtilsTenantClaimsTest {
         assertTrue(claims.contains("scheduler"), claims);
         assertTrue(claims.contains("reporting"), claims);
     }
+
+    @Test
+    void authTimeTravelsOnAccessAndRefreshTokensAndIsOmittedWhenUnknown() throws Exception {
+        TokenUtils.configure("privateKey.pem", "publicKey.pem");
+
+        String access = TokenUtils.generateUserToken(
+                "user-1", "user-1", Set.of("user"), "acme-com", "acme.com", "acme", "0010000101",
+                Set.of("app"), "app", null, 1_700_000_000L,
+                TokenUtils.expiresAt(3600), "https://auth.example.com");
+        String refresh = TokenUtils.generateRefreshToken(
+                "user-1", "user-1", "acme-com", "app", 3600, "https://auth.example.com", null,
+                1_700_000_000L, 3L);
+        String unknown = TokenUtils.generateUserToken(
+                "user-1", "user-1", Set.of("user"), "acme-com", "acme.com", "acme", "0010000101",
+                Set.of("app"), "app", null, TokenUtils.expiresAt(3600), "https://auth.example.com");
+
+        assertTrue(payloadJson(access).contains("\"auth_time\":1700000000"), payloadJson(access));
+        assertTrue(payloadJson(refresh).contains("\"auth_time\":1700000000"), payloadJson(refresh));
+        assertTrue(payloadJson(refresh).contains("\"pwd_rev\":3"), payloadJson(refresh));
+        assertFalse(payloadJson(access).contains("pwd_rev"), payloadJson(access));
+        assertFalse(payloadJson(unknown).contains("auth_time"), payloadJson(unknown));
+    }
+
+    @Test
+    void boundUserTokenCarriesTheUserAndCredentialIdWithoutAServiceType() throws Exception {
+        TokenUtils.configure("privateKey.pem", "publicKey.pem");
+
+        String jwt = TokenUtils.generateUserToken(
+                "user-subject", "ada@example.com", Set.of("user"),
+                "acme-com", "acme.com", "acme", "0010000101",
+                TokenUtils.expiresAt(3600), "https://auth.example.com", "credential-1");
+
+        String claims = payloadJson(jwt);
+        assertTrue(claims.contains("\"userId\":\"ada@example.com\""), claims);
+        assertTrue(claims.contains("\"sub\":\"user-subject\""), claims);
+        assertTrue(claims.contains("\"jti\":\"credential-1\""), claims);
+        assertTrue(claims.contains("\"realm\":\"acme-com\""), claims);
+        assertFalse(claims.contains("\"token_type\""), claims);
+    }
+
+    @Test
+    void identityServiceTokenNamesOneServiceAndTheUser() throws Exception {
+        TokenUtils.configure("privateKey.pem", "publicKey.pem");
+
+        String jwt = TokenUtils.generateIdentityServiceToken(
+                "user-subject", "ada@example.com", Set.of("user"),
+                "acme-com", "acme.com", "acme", "0010000101",
+                "helixor-solver", "credential-1",
+                TokenUtils.expiresAt(3600), "https://auth.example.com");
+
+        String claims = payloadJson(jwt);
+        assertTrue(claims.contains("\"userId\":\"ada@example.com\""), claims);
+        assertTrue(claims.contains("\"azp\":\"helixor-solver\""), claims);
+        assertTrue(claims.contains("\"aud\":\"helixor-solver\"") || claims.contains("helixor-solver"), claims);
+        assertTrue(claims.contains("\"jti\":\"credential-1\""), claims);
+        assertFalse(claims.contains("\"token_type\""), claims);
+    }
 }
