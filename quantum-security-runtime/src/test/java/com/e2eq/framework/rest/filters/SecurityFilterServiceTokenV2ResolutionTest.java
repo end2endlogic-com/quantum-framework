@@ -11,7 +11,6 @@ import com.e2eq.framework.model.persistent.morphia.ApplicationAccessDirectory;
 import com.e2eq.framework.model.persistent.morphia.ReceivingApplication;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.enterprise.inject.Instance;
-import jakarta.ws.rs.ForbiddenException;
 import jakarta.ws.rs.container.ContainerRequestContext;
 import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.junit.jupiter.api.Test;
@@ -126,19 +125,39 @@ class SecurityFilterServiceTokenV2ResolutionTest {
         assertEquals(receiver.getDefaultRealm(), delegated.getDefaultRealm());
         assertArrayEquals(receiver.getRoles(), delegated.getRoles());
 
-        ForbiddenException unnamed = assertThrows(ForbiddenException.class,
+        RemotePrincipalResolutionException unnamed = assertThrows(RemotePrincipalResolutionException.class,
                 () -> viaFilter("svc-deleg@acme", null, acting));
-        assertTrue(unnamed.getMessage().startsWith("DELEGATION_NOT_ALLOWED"), unnamed.getMessage());
+        assertEquals("DELEGATION_NOT_ALLOWED", unnamed.code());
+        assertEquals(403, unnamed.status());
+    }
+
+    @Test
+    void anApplicationAgnosticReceiverAcceptsDelegationOnlyOnItsDecisionOperation() {
+        // The escalation this closes: a delegating service acting for a realm admin on Auth's own data
+        // operations by naming an application in the query string. Only the allowlisted decision
+        // operation accepts the header; everywhere else it is refused whatever the query says.
+        Map<String, String> acting = Map.of(DelegatedIdentityHeaders.EFFECTIVE_USER_ID, "alice@acme");
+        Map<String, String> named = Map.of(SecurityFilter.APPLICATION_ID_PARAMETER, PrincipalFixture.APP);
+        for (String operation : new String[]{"list", "create", "grant", "currentIdentity", null}) {
+            RemotePrincipalResolutionException refused = assertThrows(RemotePrincipalResolutionException.class,
+                    () -> viaFilter("svc-deleg@acme", null, acting, named, operation), String.valueOf(operation));
+            assertEquals("DELEGATION_NOT_ALLOWED", refused.code(), refused.getMessage());
+            assertEquals(403, refused.status());
+        }
+        assertEquals("alice@acme", viaFilter("svc-deleg@acme", null, acting, named, "decide").getUserId());
+        // Without the header the service still runs as itself on any operation.
+        assertEquals("svc-deleg@acme", viaFilter("svc-deleg@acme", null, Map.of(), named, "list").getUserId());
     }
 
     @Test
     void anApplicationTokenActingOnBehalfOfAnIdentityIsRefused() {
         for (String application : new String[]{PrincipalFixture.APP, null}) {
-            ForbiddenException refused = assertThrows(ForbiddenException.class,
+            RemotePrincipalResolutionException refused = assertThrows(RemotePrincipalResolutionException.class,
                     () -> viaFilter("svc-app@acme", application,
                             Map.of(DelegatedIdentityHeaders.EFFECTIVE_USER_ID, "alice@acme"),
                             Map.of(SecurityFilter.APPLICATION_ID_PARAMETER, PrincipalFixture.APP)), String.valueOf(application));
-            assertTrue(refused.getMessage().startsWith("DELEGATION_NOT_ALLOWED"), refused.getMessage());
+            assertEquals("DELEGATION_NOT_ALLOWED", refused.code(), refused.getMessage());
+            assertEquals(403, refused.status());
         }
     }
 
@@ -231,7 +250,41 @@ class SecurityFilterServiceTokenV2ResolutionTest {
 
     private PrincipalContext viaFilter(String userId, String receivingApplication, Map<String, String> headers,
                                        Map<String, String> query) {
+        return viaFilter(userId, receivingApplication, headers, query, "decide");
+    }
+
+    /** Auth's operations, as the filter matches them: one decision operation, the rest data operations. */
+    static class AuthOperationsStub {
+        @com.e2eq.framework.annotations.DelegatedDecisionOperation
+        public void decide() { }
+
+        public void list() { }
+
+        public void create() { }
+
+        public void grant() { }
+
+        public void currentIdentity() { }
+    }
+
+    private PrincipalContext viaFilter(String userId, String receivingApplication, Map<String, String> headers,
+                                       Map<String, String> query, String operation) {
         SecurityFilter filter = filter(userId, receivingApplication);
+        filter.resourceInfo = operation == null ? null : new jakarta.ws.rs.container.ResourceInfo() {
+            @Override
+            public java.lang.reflect.Method getResourceMethod() {
+                try {
+                    return AuthOperationsStub.class.getMethod(operation);
+                } catch (NoSuchMethodException e) {
+                    throw new IllegalStateException(e);
+                }
+            }
+
+            @Override
+            public Class<?> getResourceClass() {
+                return AuthOperationsStub.class;
+            }
+        };
         Map<String, String> all = new HashMap<>(headers);
         all.put("Authorization", "Bearer v2");
         return filter.determinePrincipalContext(request(all, query));

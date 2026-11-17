@@ -155,9 +155,10 @@ public class ImpersonationScriptEvaluator {
     }
 
     private static ScriptEvaluationException failed(String userId, String realm, String what, Throwable cause) {
-        String message = String.format("impersonateFilterScript of %s in realm %s could not be evaluated: %s (%s)",
-                userId, realm, what, cause);
-        Log.error(message, cause);
-        return new ScriptEvaluationException(message, cause);
+        // The cause is logged with the detail; the message, which a refusal returns, stays generic.
+        Log.errorf(cause, "impersonateFilterScript of %s in realm %s could not be evaluated: %s (%s)",
+                userId, realm, what, cause.getClass().getName());
+        return new ScriptEvaluationException(String.format(
+                "the delegation scope of %s in realm %s could not be evaluated", userId, realm), cause);
     }
 }

@@ -308,6 +308,8 @@ public final class PrincipalFixture {
         forAlice.setUserId("alice@acme");
         deleg.setAuthorizedImpersonateIds(List.of(forAlice));
         deleg.setRealmRegEx("acme-*|pooled");
+        // An explicit grant of the application (the realm owning it is not one for a delegating service).
+        deleg.setApplicationRegEx(APP);
     }
 
     public PrincipalContextResolver resolver() {

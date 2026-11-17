@@ -174,7 +174,10 @@ class MigrationCheckRequestFilterTest {
         Map<String, String> body = (Map<String, String>) response.getEntity();
         assertEquals(MigrationCheckRequestFilter.REALM_NOT_MIGRATED, body.get("code"));
         assertEquals(realm, body.get("realm"));
-        assertEquals("fixture schema requires migration", body.get("migration"));
+        // What the migration check found is logged, never returned.
+        org.junit.jupiter.api.Assertions.assertNull(body.get("migration"));
+        org.junit.jupiter.api.Assertions.assertFalse(body.values().stream()
+                .anyMatch(v -> v != null && v.contains("fixture schema requires migration")));
         org.junit.jupiter.api.Assertions.assertTrue(body.get("message").contains(realm));
         org.junit.jupiter.api.Assertions.assertInstanceOf(DatabaseMigrationException.class, refused.getCause());
     }

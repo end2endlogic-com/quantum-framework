@@ -12,16 +12,12 @@ import jakarta.inject.Inject;
 import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.container.ContainerRequestContext;
 import jakarta.ws.rs.container.ContainerRequestFilter;
-import jakarta.ws.rs.core.MediaType;
-import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.ext.Provider;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.jwt.JsonWebToken;
 
 import java.io.IOException;
 import java.security.Principal;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.Optional;
 
 @Provider
@@ -64,7 +60,7 @@ public class MigrationCheckRequestFilter implements ContainerRequestFilter {
     Optional<String> sessionRealm = Optional.empty();
 
     /** Typed refusal code for a request whose realm this service has not migrated. */
-    public static final String REALM_NOT_MIGRATED = "REALM_NOT_MIGRATED";
+    public static final String REALM_NOT_MIGRATED = RealmNotMigratedProblem.REALM_NOT_MIGRATED;
 
     @Override
     public void filter(ContainerRequestContext requestContext) throws IOException {
@@ -105,25 +101,9 @@ public class MigrationCheckRequestFilter implements ContainerRequestFilter {
         }
     }
 
-    /**
-     * The request's realm has no current database version in this service: a typed 409
-     * {@code REALM_NOT_MIGRATED} naming the realm and what the migration check found, never an
-     * untyped 500. In remote principal mode the realm is the one Auth resolved for the request
-     * (the identity's home realm when the application owns none), so the body says so.
-     */
+    /** The typed 409 for an unmigrated request realm ({@link RealmNotMigratedProblem}). */
     static WebApplicationException realmNotMigrated(String realm, DatabaseMigrationException cause) {
-        Map<String, String> body = new LinkedHashMap<>();
-        body.put("code", REALM_NOT_MIGRATED);
-        body.put("message", "Realm " + realm + " is not migrated in this service; run its migrations, or "
-                + "make the request in a realm this service serves");
-        body.put("realm", realm);
-        body.put("migration", cause.getMessage());
-        Response response = Response.status(Response.Status.CONFLICT)
-                .type(MediaType.APPLICATION_JSON_TYPE)
-                .header("Cache-Control", "no-store")
-                .entity(body)
-                .build();
-        return new WebApplicationException(cause.getMessage(), cause, response);
+        return RealmNotMigratedProblem.of(realm, cause);
     }
 
     /** Remote services validate their application schema, not the control plane's schema. */

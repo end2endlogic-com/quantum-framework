@@ -19,6 +19,7 @@ import java.util.Optional;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -120,10 +121,12 @@ class SecurityFilterServiceTokenV2Test {
         // identity) is resolved afterwards by PrincipalContextResolver in identity mode.
         for (String header : new String[]{DelegatedIdentityHeaders.EFFECTIVE_USER_ID,
                 DelegatedIdentityHeaders.EFFECTIVE_SUBJECT}) {
-            ForbiddenException refused = assertThrows(ForbiddenException.class,
+            com.e2eq.framework.security.principal.RemotePrincipalResolutionException refused = assertThrows(
+                    com.e2eq.framework.security.principal.RemotePrincipalResolutionException.class,
                     () -> filter(v2Token(), credential(ServiceKind.APPLICATION))
                             .admitIdentityOnlyServiceToken(request(Map.of(header, "someone"))), header);
-            assertTrue(refused.getMessage().startsWith("DELEGATION_NOT_ALLOWED"), refused.getMessage());
+            assertEquals("DELEGATION_NOT_ALLOWED", refused.code(), refused.getMessage());
+            assertEquals(403, refused.status());
             assertDoesNotThrow(() -> filter(v2Token(), credential(ServiceKind.DELEGATING))
                     .admitIdentityOnlyServiceToken(request(Map.of(header, "someone"))), header);
         }

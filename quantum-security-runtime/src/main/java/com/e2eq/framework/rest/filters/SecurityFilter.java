@@ -558,11 +558,10 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         }
         validateContextInputs(requestContext);
 
-        // Service-token issue selects the issuer's tenant itself, with the resolver's identity
-        // selection rule (PrincipalContextResolver#applyIdentityTenantSelection), and refuses with a
-        // typed problem; the request's tenant is left to it (the operation is tenant exempt here), so
-        // the filter does not refuse the same selection first, untyped.
-        String tenantId = isServiceTokenMintRequest() ? null : requestContext.getHeaderString("X-Tenant-Id");
+        // An operation marked SelectsIssuerTenant (service-token issue, matched by resource method)
+        // selects the caller's tenant itself with the resolver's identity selection rule and refuses
+        // typed; the request's tenant is left to it, so the filter does not refuse it first, untyped.
+        String tenantId = selectsIssuerTenant() ? null : requestContext.getHeaderString("X-Tenant-Id");
         String authHeader = requestContext.getHeaderString(HttpHeaders.AUTHORIZATION);
         String realm = sessionSelection != null && sessionSelection.enabled()
                 ? sessionSelection.realm(routingContext, securityIdentity, requestContext.getHeaderString("X-Realm"), configured(sessionRealm))
@@ -581,9 +580,18 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
             if (identityOnlyService && receivingApplicationId == null) {
                 warnApplicationAgnosticServiceToken();
             }
-            com.e2eq.framework.security.principal.PrincipalContextResolution resolution = receivingApplicationId != null
-                    ? resolveIdentityOnlyServiceToken(requestContext, realm, tenantId, receivingApplicationId)
-                    : resolver().resolve(localCredentialRequest(requestContext, realm, tenantId, identityOnlyService));
+            com.e2eq.framework.security.principal.PrincipalContextResolution resolution;
+            if (receivingApplicationId != null) {
+                resolution = resolveIdentityOnlyServiceToken(requestContext, realm, tenantId, receivingApplicationId);
+            } else if (!identityOnlyService && delegatedDecisionOperation()) {
+                // A decision this receiver makes for another application (GET /v1/authz/filter) is
+                // made in identity mode: roles, realm and tenant come only from the store
+                // (memberships, assignments, bindings), never from the bearer's claims, so a
+                // re-signed or stale token (forged groups, a demoted admin) carries no authority.
+                resolution = resolveIdentityDecision(requestContext, tenantId);
+            } else {
+                resolution = resolver().resolve(localCredentialRequest(requestContext, realm, tenantId, identityOnlyService));
+            }
             PrincipalContext resolvedContext = resolution.actingService() == null ? resolution.context()
                     : delegatedContext(resolution.context(), resolution.actingService());
             PrincipalContext completed = applyCustomProperties(
@@ -737,9 +745,20 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                 || requestContext.getHeaderString(
                 com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.EFFECTIVE_USER_ID) != null;
         if (acting && credential.getServiceKind() != com.e2eq.framework.model.security.ServiceKind.DELEGATING) {
-            throw new jakarta.ws.rs.ForbiddenException("DELEGATION_NOT_ALLOWED: an application service token never "
+            throw delegationRefused("an application service token never "
                     + "acts on behalf of another identity");
         }
+    }
+
+    /**
+     * A typed 403 {@code DELEGATION_NOT_ALLOWED} with the resolver's {@code {code, message}} body
+     * ({@link RemotePrincipalResolutionExceptionMapper}), so the refusal reads the same at every
+     * receiver and in Auth's own operations.
+     */
+    static com.e2eq.framework.security.principal.RemotePrincipalResolutionException delegationRefused(String message) {
+        return new com.e2eq.framework.security.principal.RemotePrincipalResolutionException(403,
+                com.e2eq.framework.security.principal.PrincipalResolutionError.DELEGATION_NOT_ALLOWED.name(),
+                message, "DELEGATION_NOT_ALLOWED: " + message);
     }
 
     /** The request names an identity to act for ({@code X-Acting-On-Behalf-Of-Subject|UserId}). */
@@ -754,20 +773,28 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
     static final String APPLICATION_ID_PARAMETER = "applicationId";
 
     /**
-     * The application a delegated request is resolved for: the receiving application, else (an
-     * application-agnostic receiver such as Auth, whose operations serve a named application, for
-     * example {@code GET /v1/authz/filter?applicationId=}) the one the request names in its
-     * {@code applicationId} query parameter. Delegation is always checked for one application,
-     * never for none, so a delegated request that names none is refused DELEGATION_NOT_ALLOWED.
+     * The application a delegated request is resolved for: the receiving application, else, at an
+     * application-agnostic receiver such as Auth, the one a decision operation names in its
+     * {@code applicationId} query parameter. Only an operation on the allowlist
+     * ({@link com.e2eq.framework.annotations.DelegatedDecisionOperation}, matched by resource
+     * method: {@code GET /v1/authz/filter}) accepts a delegation there. Any other operation refuses
+     * the acting header DELEGATION_NOT_ALLOWED whatever its query parameters, so a delegating
+     * service can never act for an identity on Auth's own data operations. Delegation is always
+     * checked for one application, never for none, so a delegated decision that names none is
+     * refused DELEGATION_NOT_ALLOWED too.
      */
     String delegatedApplicationId(ContainerRequestContext requestContext, String receivingApplicationId) {
         if (receivingApplicationId != null) {
             return receivingApplicationId;
         }
+        if (!delegatedDecisionOperation()) {
+            throw delegationRefused("at this receiver a delegating "
+                    + "service acts on behalf of an identity only on a decision operation (GET /v1/authz/filter)");
+        }
         jakarta.ws.rs.core.UriInfo uri = requestContext.getUriInfo();
         String named = uri == null ? null : uri.getQueryParameters().getFirst(APPLICATION_ID_PARAMETER);
         if (named == null || named.isBlank()) {
-            throw new jakarta.ws.rs.ForbiddenException("DELEGATION_NOT_ALLOWED: a delegated request at a receiver that "
+            throw delegationRefused("a delegated request at a receiver that "
                     + "configures no application must name the application it acts in (applicationId)");
         }
         return named.trim();
@@ -825,6 +852,45 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                             com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.EFFECTIVE_SUBJECT),
                     requestContext.getHeaderString(
                             com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.EFFECTIVE_USER_ID)));
+        } catch (com.e2eq.framework.security.principal.PrincipalResolutionException refused) {
+            throw com.e2eq.framework.security.principal.RemotePrincipalResolutionException.of(
+                    refused.error(), refused.getMessage());
+        }
+    }
+
+    private static String trimmedOrNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    /**
+     * A decision operation's caller resolved as {@code POST /v1/auth/principal-context/resolve}
+     * resolves it: the verified subject, for the application the operation names (its
+     * {@code applicationId} query parameter, else this session's application), with the request's
+     * realm override, tenant, impersonation and acting-on-behalf-of selections checked by the
+     * resolver. No claim of the bearer beyond {@code sub} and {@code userId} is read. A refusal is
+     * typed, with the code's status.
+     */
+    private com.e2eq.framework.security.principal.PrincipalContextResolution resolveIdentityDecision(
+            ContainerRequestContext requestContext, String tenantId) {
+        jakarta.ws.rs.core.UriInfo uri = requestContext.getUriInfo();
+        String named = uri == null ? null : uri.getQueryParameters().getFirst(APPLICATION_ID_PARAMETER);
+        String applicationId = named == null || named.isBlank() ? currentApplicationId() : named.trim();
+        var request = com.e2eq.framework.security.principal.PrincipalContextRequest
+                .identity(claimString("sub"), claimString("userId"))
+                .applicationId(applicationId)
+                .realm(trimmedOrNull(requestContext.getHeaderString("X-Realm")))
+                .tenantId(tenantId)
+                .tenantSelectionOptional(isPlatformTenantExemptRequest())
+                .impersonate(requestContext.getHeaderString("X-Impersonate-Subject"),
+                        requestContext.getHeaderString("X-Impersonate-UserId"))
+                .actingOnBehalfOf(
+                        requestContext.getHeaderString(
+                                com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.EFFECTIVE_SUBJECT),
+                        requestContext.getHeaderString(
+                                com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.EFFECTIVE_USER_ID))
+                .build();
+        try {
+            return identityResolver().resolve(request);
         } catch (com.e2eq.framework.security.principal.PrincipalResolutionException refused) {
             throw com.e2eq.framework.security.principal.RemotePrincipalResolutionException.of(
                     refused.error(), refused.getMessage());
@@ -1630,6 +1696,20 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                                           String tokenTenantId) {
         return resolver().applyTenantSelection(context, requestedTenantId, tokenTenantId,
                 isPlatformTenantExemptRequest());
+    }
+
+    /** The matched resource method is on the delegated-decision allowlist. */
+    boolean delegatedDecisionOperation() {
+        return resourceInfo != null && resourceInfo.getResourceMethod() != null
+                && resourceInfo.getResourceMethod().isAnnotationPresent(
+                        com.e2eq.framework.annotations.DelegatedDecisionOperation.class);
+    }
+
+    /** The matched resource method selects the caller's tenant itself (service-token issue). */
+    boolean selectsIssuerTenant() {
+        return resourceInfo != null && resourceInfo.getResourceMethod() != null
+                && resourceInfo.getResourceMethod().isAnnotationPresent(
+                        com.e2eq.framework.annotations.SelectsIssuerTenant.class);
     }
 
     private boolean isServiceTokenMintRequest() {

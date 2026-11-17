@@ -154,6 +154,11 @@ public class PrincipalContextResolver {
     public PrincipalContextResolution resolve(PrincipalContextRequest request) {
         Objects.requireNonNull(request, "request");
         boolean identity = request.identityOnly();
+        if (identity && request.delegationRequested() && blank(request.applicationId())) {
+            // Delegation always names the application it acts in.
+            throw refusal(PrincipalResolutionError.DELEGATION_NOT_ALLOWED,
+                    "A delegated resolution must name the application it acts in (applicationId)");
+        }
         if (identity) {
             requireIdentityInputs(request);
         }
@@ -698,17 +703,20 @@ public class PrincipalContextResolver {
 
     /**
      * A delegating service acts on behalf of identities only for an application it is itself
-     * granted: the delegated principal carries the acted-for identity's roles only, so without
-     * this a receiver could not tell an admitted calling service from any other delegating
-     * credential. The grant is read the way the service's own request would be admitted: its
-     * realm for the application (its binding marked {@code defaultRealm}, else the realm the
-     * application owns, else its home realm), then its active binding there, else the realm's
-     * ownership, the realm assignment's application grant or its credential pattern. Refused
-     * {@code APPLICATION_NOT_GRANTED} naming the service, before any acted-for identity is read.
+     * explicitly granted: the delegated principal carries the acted-for identity's roles only, so
+     * without this a receiver could not tell an admitted calling service from any other delegating
+     * credential. Delegation always names the application; a delegated resolution that names none is
+     * refused {@code DELEGATION_NOT_ALLOWED}. The service's realm for the application is its binding
+     * marked {@code defaultRealm}, else the realm the application owns, else its home realm. There
+     * the grant must be explicit and active: its active binding, or its active realm assignment's
+     * application grant, or its credential's application pattern. Ownership of the realm by the
+     * application is not a grant for a delegating service. Refused {@code APPLICATION_NOT_GRANTED}
+     * naming the service, before any acted-for identity is read.
      */
     private void requireServiceGranted(CredentialUserIdPassword service, String applicationId) {
         if (blank(applicationId)) {
-            return;
+            throw refusal(PrincipalResolutionError.DELEGATION_NOT_ALLOWED, String.format(
+                    "Delegating service '%s' must name the application it acts in", service.getUserId()));
         }
         String app = applicationId.trim();
         String realm;
@@ -723,11 +731,35 @@ public class PrincipalContextResolver {
                     "Delegating service '%s' is not granted application '%s': %s",
                     service.getUserId(), app, refused.getMessage()));
         }
-        if (grant == null && !applicationAdmitted(service.getUserId(), realm, app, service)) {
+        if (grant == null && !explicitlyGranted(service, realm, app)) {
             throw refusal(PrincipalResolutionError.APPLICATION_NOT_GRANTED, String.format(
                     "Delegating service '%s' is not granted application '%s' in realm '%s'",
                     service.getUserId(), app, realm));
         }
+    }
+
+    /**
+     * An explicit, active grant of {@code applicationId} to {@code identity} in {@code realm}: its
+     * active realm assignment names the application, or its credential's application pattern admits
+     * it. Unlike {@link #applicationAdmitted}, the realm's own application is not a grant, and an
+     * assignment that is not active (invited, suspended) grants nothing, pattern included.
+     */
+    private boolean explicitlyGranted(CredentialUserIdPassword identity, String realm, String applicationId) {
+        if (blank(realm) || realmMembershipService == null) {
+            return false;
+        }
+        Optional<UserRealmRole> assignment = realmMembershipService.assignmentForUser(identity.getUserId(), realm);
+        if (assignment.isPresent() && assignment.get().getStatus() != null
+                && !UserRealmRole.STATUS_ACTIVE.equalsIgnoreCase(assignment.get().getStatus().trim())) {
+            return false;
+        }
+        List<String> assigned = assignment.map(UserRealmRole::getAuthorizedApplications).orElse(null);
+        if (ApplicationAuthorizationResolver.resolve(assigned, null, null, applicationId).resolved()) {
+            return true;
+        }
+        String pattern = identity.getApplicationRegEx();
+        return !blank(pattern)
+                && ApplicationAuthorizationResolver.resolve(assigned, pattern, null, applicationId).resolved();
     }
 
     /**

@@ -276,13 +276,30 @@ Resolve request field: `actingOnBehalfOf { userId | subject }`. Response field:
   the service's own grant for the application, the acted-for identity's grant), never
   as an unchecked marker. The evaluated principal is the acted-for identity, with the
   service recorded as `impersonatedBy*` and the `actingService` property, as the remote
-  source presents it. The application is the receiving one; at an application-agnostic
-  receiver (Auth) it is the one the operation names in its `applicationId` query
-  parameter (for example `GET /v1/authz/filter`), and a delegated request naming none is
-  refused `DELEGATION_NOT_ALLOWED`. Without `X-Realm` the realm is the delegation's realm
+  source presents it. The application is the receiving one. At an application-agnostic
+  receiver (Auth), delegation is accepted only on an allowlisted decision operation: a resource
+  method annotated `@DelegatedDecisionOperation`, today only `GET /v1/authz/filter`. The match
+  is by resource method, never by path. There the application is the one the operation names
+  in its `applicationId` query parameter, and a delegated request naming none is refused
+  `DELEGATION_NOT_ALLOWED`. On every other Auth operation (lists, creates, grants,
+  `/v1/auth/identity/current`) the acting header is refused `DELEGATION_NOT_ALLOWED`,
+  whatever its query parameters. A delegating service therefore never acts for an identity on
+  Auth's own data. Delegation always names its application: a delegated resolution without
+  one is refused `DELEGATION_NOT_ALLOWED`. The service's own grant must also be explicit and
+  active: an active binding, its active realm assignment's application grant, or its
+  credential's application pattern. The realm being owned by the application is not a grant
+  for a delegating service. Without `X-Realm` the realm is the delegation's realm
   (the acted-for identity's realm for that application), the same realm a remote
   receiver resolved, so a receiver forwarding the decision to Auth sends no sudo header
-  unless its own caller sent one. A receiver that names its application
+  unless its own caller sent one. Every caller of a decision operation, a person's
+  signed-in token included, is resolved in identity mode there: roles, realm and tenant come
+  only from Auth's store (memberships, assignments, bindings), never from the token's
+  `groups`, `realm` or `tenantId` claims. A token re-signed with admin groups, or an admin
+  demoted after sign-in, is decided with the store's roles at once. Without `X-Realm` the
+  decision realm is the identity's realm for the named application, as the resolve operation
+  picks it, not the realm the token was signed in for; without `X-Tenant-Id` the tenant is the
+  identity's default tenant there. A receiver deciding through Auth refuses a decision made in
+  any other realm than the one it evaluates (403 `AUTHZ_REALM_MISMATCH`). A receiver that names its application
   (`quantum.security.session.application-id`, else
   `quantum.application-registration.application-id`) resolves the token with an identity-mode
   request, the one the resolve operation builds: application admission (bindings, then the
