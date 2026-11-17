@@ -153,15 +153,20 @@ public class PrincipalContextResolver {
 
     public PrincipalContextResolution resolve(PrincipalContextRequest request) {
         Objects.requireNonNull(request, "request");
-        boolean identity = request.identityOnly();
-        if (identity && request.delegationRequested() && blank(request.applicationId())) {
+        if (!request.identityOnly()) {
+            return resolveChecked(request);
+        }
+        if (request.delegationRequested() && blank(request.applicationId())) {
             // Delegation always names the application it acts in.
             throw refusal(PrincipalResolutionError.DELEGATION_NOT_ALLOWED,
                     "A delegated resolution must name the application it acts in (applicationId)");
         }
-        if (identity) {
-            requireIdentityInputs(request);
-        }
+        requireIdentityInputs(request);
+        return resolveChecked(withRegisteredRealm(request));
+    }
+
+    private PrincipalContextResolution resolveChecked(PrincipalContextRequest request) {
+        boolean identity = request.identityOnly();
 
         CredentialUserIdPassword caller = findCredential(request);
         if (identity && credentialDisabled(caller)) {
@@ -297,6 +302,25 @@ public class PrincipalContextResolver {
         }
         requireListedImpersonationTarget(caller, target);
         return target;
+    }
+
+    /**
+     * The requested realm as its registered refName, compared ignoring case ({@link RealmRefNames}):
+     * a realm named in another case is the same realm, never a second database name for a lookup
+     * (MongoDB refuses one that differs only in case). A realm that matches none is passed on
+     * unchanged and refused typed by the realm checks that follow ({@code REALM_NOT_AUTHORIZED},
+     * or {@code DELEGATION_NOT_ALLOWED} for a delegation).
+     */
+    private PrincipalContextRequest withRegisteredRealm(PrincipalContextRequest request) {
+        String requested = request.realm();
+        String canonical = RealmRefNames.canonicalOrSame(systemDirectory, requested);
+        if (canonical == null || canonical.equals(requested)) {
+            return request;
+        }
+        return new PrincipalContextRequest(request.mode(), request.subject(), request.userIdCandidates(),
+                request.applicationId(), canonical, request.tenantId(), request.impersonateSubject(),
+                request.impersonateUserId(), request.actingOnBehalfOfSubject(), request.actingOnBehalfOfUserId(),
+                request.signedClaims(), request.tenantSelectionOptional());
     }
 
     private void requireIdentityInputs(PrincipalContextRequest request) {

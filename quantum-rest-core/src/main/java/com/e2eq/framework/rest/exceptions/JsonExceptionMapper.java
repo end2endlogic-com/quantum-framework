@@ -17,7 +17,7 @@ public class JsonExceptionMapper implements ExceptionMapper<Exception> {
         error.setStatusMessage(exception.getMessage());
         error.setStatus(Response.Status.INTERNAL_SERVER_ERROR.getStatusCode());
         error.setReasonMessage("An unexpected / uncaught exception occurred");
-        error.setDebugMessage(ExceptionLoggingUtils.getStackTrace(exception));
+        error.setDebugMessage(ClientErrorDetail.stackTrace(exception));
 
         return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(error).build();
     }

@@ -10,7 +10,7 @@ import jakarta.ws.rs.ext.Provider;
 public class WriteErrorExceptionMapper implements ExceptionMapper<MongoWriteException> {
     @Override
     public Response toResponse(MongoWriteException exception) {
-        String stackTrace = ExceptionLoggingUtils.getStackTrace(exception);
+        String stackTrace = ClientErrorDetail.stackTrace(exception);
         
         // Log at appropriate level based on error code
         if (exception.getCode() == 11000) {

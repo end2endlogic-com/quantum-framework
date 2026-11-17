@@ -309,14 +309,55 @@ Resolve request field: `actingOnBehalfOf { userId | subject }`. Response field:
   applications, as for a user's token there. The credential is read once, by the resolver's
   authentication lookup (`PrincipalContextResolver#credentialForSubject`); no principal exists
   yet, so no caller's rules can govern that read. A receiver without the credential, or
-  one trusting token claims, refuses with 401 (it must run in remote mode).
-  Role-bearing service tokens keep the old path until step 4.
+  one that names its application and trusts token claims, refuses with 401 (it must run in
+  remote mode). Role-bearing service tokens keep the old path until step 4, except at a
+  decision operation (below).
+- **Decisions do not depend on `quantum.auth.trust-token-claims`.** Deployed Auth runs with
+  the flag on. It changes neither the decision operation nor v2 admission at Auth:
+  - Every verified bearer of a `@DelegatedDecisionOperation` method is resolved in identity
+    mode, from the store, with the flag on or off.
+  - An application-agnostic receiver (Auth) admits v2 identity-only tokens (`jti == sub`)
+    whatever the flag says, because its store is the one that resolves them. Other Auth
+    endpoints keep their claims-path behaviour under the flag until step 4.
+  - `ServiceTokenV2TrustedClaimsApiTest` runs the whole `ServiceTokenV2ApiTest` suite with the
+    flag on.
+- **Legacy service tokens at a decision.** A role-bearing `token_type=service` token
+  (no `jti == sub`) at a decision operation is resolved from the store like any caller, so its
+  `groups` grant nothing. A subject the store does not know is refused 401
+  `PRINCIPAL_UNKNOWN`. At a decision operation the acting-on-behalf-of headers are accepted only
+  from a v2 `DELEGATING` credential. Anything else (a person's token, a legacy service token,
+  an `application` credential) is refused 403 `DELEGATION_NOT_ALLOWED`. An unverified acting id
+  is never echoed as `actingOnBehalfOf*`.
+- **Data-domain overrides at a decision.** `GET /v1/authz/filter` accepts `tenantId`,
+  `orgRefName`, `accountNumber` and `ownerId` only when they name the resolved principal's own
+  coordinates:
+  - A different `tenantId` is resolved again for the identity and application. It follows the
+    `X-Tenant-Id` rule, so an unauthorized tenant is 403 `TENANT_NOT_AUTHORIZED`.
+  - Any other mismatch (organization, account or owner) is also 403 `TENANT_NOT_AUTHORIZED`.
+  - An impersonated or delegated decision selects its tenant with `X-Tenant-Id` only.
+- **Realm names are compared ignoring case.** An identity-mode resolution, and the roles
+  augmentor's credential lookup, read a requested realm (`X-Realm`, `realm`) as its registered
+  refName, compared ignoring case (`RealmRefNames`). A differently cased `X-Realm` is that realm.
+  It no longer causes a MongoDB 13297 500. An unknown realm is refused typed
+  (`REALM_NOT_AUTHORIZED`).
+- **Error responses carry no internals.** The framework's exception mappers no longer return
+  stack traces (`debugMessage`) or an unmapped exception's own message. Those are logged server
+  side. The development setting `quantum.rest.errors.include-debug-detail=true` restores them.
 - **Issuer authority is re-resolved.** Issuance re-resolves the caller's roles in the
   issuing realm with `IdentityRoleResolver`, without token roles: credential roles,
   the realm assignment and realm-wide (`*`) groups. It requires `admin` there and an
   active user credential. A sign-in token that still carries `admin` after the grant
   was revoked cannot issue, and an admin group of a single application does not make
   a realm admin.
+- **A delegating token needs a realm-wide admin.** A `delegating` credential acts for any
+  identity of its realm, so its issuer's `admin` must hold across the realm. The role
+  provenance (`IdentityRoleResolver.resolveRoleSources`, no token roles) decides:
+  - Realm wide: a flat credential role, a realm-wide (`*`) user group, or the realm assignment of
+    a dedicated realm, whose one tenant is the realm.
+  - Tenant scoped: `admin` held only through the realm assignment of a shared (multi-tenant)
+    realm. That is how pooled provisioning makes a tenant's administrator.
+  - A tenant-scoped issuer is refused 403 `DELEGATION_ISSUE_REQUIRES_REALM_ADMIN`.
+  - `application` tokens keep the realm-admin rule.
 - **Receivers that read roles from the token** (`trust-token-claims`, the 1.4.2
   claims path) get none from a v2 token and refuse. Give a service a v2 token only
   once the receivers it calls resolve through Auth.

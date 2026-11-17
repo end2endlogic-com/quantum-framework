@@ -89,6 +89,9 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
                 && identity.getPrincipal() instanceof org.eclipse.microprofile.jwt.JsonWebToken token) {
             return remoteIdentity(identity, token, routing);
         }
+        // X-Realm names a realm; a datastore lookup takes its registered refName, never the
+        // header's case (MongoDB refuses a database name differing only in case: a 500).
+        contextRealm = com.e2eq.framework.security.principal.RealmRefNames.canonicalOrSame(systemDirectory, contextRealm);
 
         // In an application session whose application or realm differs from the token's, the
         // session's roles replace the token's, derived exactly as SecurityFilter derives them.

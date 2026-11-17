@@ -588,6 +588,8 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                 // made in identity mode: roles, realm and tenant come only from the store
                 // (memberships, assignments, bindings), never from the bearer's claims, so a
                 // re-signed or stale token (forged groups, a demoted admin) carries no authority.
+                // This holds for a legacy role-bearing service token too (its subject must resolve
+                // from the store, else PRINCIPAL_UNKNOWN), and whatever trust-token-claims says.
                 resolution = resolveIdentityDecision(requestContext, tenantId);
             } else {
                 resolution = resolver().resolve(localCredentialRequest(requestContext, realm, tenantId, identityOnlyService));
@@ -664,8 +666,10 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
 
     /**
      * A user JWT, or an identity-only service token, verified locally against this application's
-     * credential store: resolved by {@link #resolver()}. Legacy service tokens (role-bearing, no
-     * {@code jti}) keep the service-claims path until rollout step 4.
+     * credential store: resolved by {@link #resolver()}. At a decision operation
+     * ({@link com.e2eq.framework.annotations.DelegatedDecisionOperation}) every verified bearer
+     * takes this path, independent of {@code quantum.auth.trust-token-claims}. Elsewhere legacy
+     * service tokens (role-bearing, no {@code jti}) keep the service-claims path until rollout step 4.
      */
     boolean localCredentialPath(String authHeader) {
         if (authHeader == null || currentJwt() == null) {
@@ -674,6 +678,12 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         if (identityOnlyServiceToken()) {
             // Never the claims paths: an identity-only token names no roles, realm or tenant, and
             // the service-claims path would run it in the system realm.
+            return true;
+        }
+        if (delegatedDecisionOperation()) {
+            // A decision operation resolves every bearer in identity mode, from the store, whatever
+            // quantum.auth.trust-token-claims says and whatever kind of token it is: a user token,
+            // or a legacy role-bearing service token, whose groups are then no authority.
             return true;
         }
         return !trustTokenClaims && !serviceToken();
@@ -718,7 +728,12 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
      */
     void admitIdentityOnlyServiceToken(ContainerRequestContext requestContext) {
         String sub = claimString("sub");
-        if (trustTokenClaims || credentialRepo == null || sub == null) {
+        // quantum.auth.trust-token-claims does not decide admission at an application-agnostic
+        // receiver (Auth itself): its credential store is the one that resolves these tokens, so it
+        // admits them whatever the flag says. A receiver that names its application and trusts token
+        // claims holds no such authority: it must resolve them through Auth (remote mode).
+        boolean claimsTrustingApplication = trustTokenClaims && receivingApplicationId() != null;
+        if (claimsTrustingApplication || credentialRepo == null || sub == null) {
             throw new jakarta.ws.rs.NotAuthorizedException(
                     "An identity-only service token is resolved by Auth; this receiver must resolve principals "
                             + "through Auth (remote mode)", "Bearer");
@@ -1477,6 +1492,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                 com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.ORIGINAL_SUBJECT);
         String originalUserId = requestContext.getHeaderString(
                 com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.ORIGINAL_USER_ID);
+        refuseUnverifiedActingAtDecision(requestContext);
         String tokenType = claimString(
                 com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.TOKEN_TYPE_CLAIM);
         validateDelegationHeaders(
@@ -1485,6 +1501,19 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                 delegatedUserId,
                 originalSubject,
                 originalUserId);
+    }
+
+    /**
+     * At a decision operation only a v2 DELEGATING credential acts on behalf of an identity (it is
+     * admitted by {@link #admitIdentityOnlyServiceToken} and resolved in identity mode). A person's
+     * token or a legacy role-bearing service token naming one is refused 403
+     * {@code DELEGATION_NOT_ALLOWED}, so an unverified acting id is never echoed into the decision.
+     */
+    void refuseUnverifiedActingAtDecision(ContainerRequestContext requestContext) {
+        if (delegatedDecisionOperation() && actingRequested(requestContext) && !identityOnlyServiceToken()) {
+            throw delegationRefused("only a delegating service credential (a service token v2) acts on "
+                    + "behalf of an identity");
+        }
     }
 
     static void validateDelegationHeaders(

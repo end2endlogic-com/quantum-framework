@@ -31,18 +31,21 @@ public class RunTimeExceptionMapper implements ExceptionMapper<RuntimeException>
             error.setReasonMessage(originalResponse != null && originalResponse.getStatusInfo() != null
                 ? originalResponse.getStatusInfo().getReasonPhrase()
                 : "Web application exception");
-            error.setDebugMessage(ExceptionLoggingUtils.getStackTrace(exception));
+            error.setDebugMessage(ClientErrorDetail.stackTrace(exception));
 
             return Response.status(status).entity(error).build();
         }
 
         ExceptionLoggingUtils.logError(exception, "An unexpected / uncaught exception occurred");
 
+        // An unmapped exception's message is a driver's or a library's (a MongoDB command error
+        // names hosts and databases): it is logged above, never returned unless debug detail is on.
         RestError error = RestError.builder().build();
-        error.setStatusMessage(exception.getMessage());
+        error.setStatusMessage(ClientErrorDetail.includeDebugDetail()
+                ? exception.getMessage() : ClientErrorDetail.UNEXPECTED_ERROR_MESSAGE);
         error.setStatus(Response.Status.INTERNAL_SERVER_ERROR.getStatusCode());
         error.setReasonMessage("An unexpected / uncaught exception occurred");
-        error.setDebugMessage(ExceptionLoggingUtils.getStackTrace(exception));
+        error.setDebugMessage(ClientErrorDetail.stackTrace(exception));
 
         return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(error).build();
     }
