@@ -329,11 +329,13 @@ Resolve request field: `actingOnBehalfOf { userId | subject }`. Response field:
   an `application` credential) is refused 403 `DELEGATION_NOT_ALLOWED`. An unverified acting id
   is never echoed as `actingOnBehalfOf*`.
 - **Data-domain overrides at a decision.** `GET /v1/authz/filter` accepts `tenantId`,
-  `orgRefName`, `accountNumber` and `ownerId` only when they name the resolved principal's own
+  `orgRefName` and `accountNumber` only when they name the resolved principal's own
   coordinates:
   - A different `tenantId` is resolved again for the identity and application. It follows the
     `X-Tenant-Id` rule, so an unauthorized tenant is 403 `TENANT_NOT_AUTHORIZED`.
-  - Any other mismatch (organization, account or owner) is also 403 `TENANT_NOT_AUTHORIZED`.
+  - An organization or account mismatch is also 403 `TENANT_NOT_AUTHORIZED`.
+  - `ownerId` names the resource's owner. It sets the resource context only and never changes
+    the principal's owner, so it is not checked (receivers send `*` or the resource's owner).
   - An impersonated or delegated decision selects its tenant with `X-Tenant-Id` only.
 - **Realm names are compared ignoring case.** An identity-mode resolution, and the roles
   augmentor's credential lookup, read a requested realm (`X-Realm`, `realm`) as its registered
