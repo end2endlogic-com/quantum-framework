@@ -23,7 +23,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 /**
@@ -128,6 +130,16 @@ class SecurityFilterServiceTokenV2Test {
             assertDoesNotThrow(() -> filter(v2Token(), credential(kind))
                     .admitIdentityOnlyServiceToken(request(Map.of())), kind.name());
         }
+    }
+
+    @Test
+    void admissionUsesTheResolversAuthenticationLookupAndNoneOfItsOwn() {
+        // The credential is read once, by PrincipalContextResolver#credentialForSubject: the
+        // identity-store lookup every bearer gets before a principal exists.
+        SecurityFilter filter = filter(v2Token(), credential(ServiceKind.APPLICATION));
+        assertDoesNotThrow(() -> filter.admitIdentityOnlyServiceToken(request(Map.of())));
+        verify(filter.credentialRepo).findBySubject("svc-subject", SYSTEM_REALM, true);
+        verifyNoMoreInteractions(filter.credentialRepo);
     }
 
     private static Map<String, Object> v2Token() {
