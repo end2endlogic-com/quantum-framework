@@ -4,6 +4,7 @@ import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.security.principal.PrincipalContextRequest;
+import com.e2eq.framework.security.principal.PrincipalContextResolution;
 import com.e2eq.framework.security.principal.PrincipalFixture;
 import com.e2eq.framework.security.principal.RemotePrincipalResolutionException;
 import com.e2eq.framework.model.persistent.morphia.ApplicationAccessDirectory;
@@ -36,7 +37,7 @@ import static org.mockito.Mockito.when;
  * ({@link SecurityFilter#determinePrincipalContext}): at a receiver that names its application the
  * request is an identity-mode request, so application admission, realm and tenant selection and
  * the SERVICE scope are the ones Auth's resolve operation returns for the same identity; a
- * DELEGATING token never acts on behalf of anyone here.
+ * DELEGATING token acts on behalf of an identity only through the same validated resolution.
  */
 class SecurityFilterServiceTokenV2ResolutionTest {
 
@@ -84,23 +85,78 @@ class SecurityFilterServiceTokenV2ResolutionTest {
     }
 
     @Test
-    void aDelegatingTokenActingOnBehalfOfAnIdentityIsRefusedOnTheLocalPath() {
-        // svc-deleg may act for alice at Auth's resolve; the local path refuses before resolution,
-        // with and without a receiving application, rather than annotate its own context.
-        for (String application : new String[]{PrincipalFixture.APP, null}) {
-            for (String header : new String[]{DelegatedIdentityHeaders.EFFECTIVE_USER_ID,
-                    DelegatedIdentityHeaders.EFFECTIVE_SUBJECT}) {
-                String target = DelegatedIdentityHeaders.EFFECTIVE_USER_ID.equals(header) ? "alice@acme" : "sub-alice";
-                ForbiddenException refused = assertThrows(ForbiddenException.class,
-                        () -> viaFilter("svc-deleg@acme", application, Map.of(header, target)), application + " " + header);
-                assertTrue(refused.getMessage().startsWith("DELEGATION_NOT_ALLOWED"), refused.getMessage());
-            }
+    void aDelegatingTokenActsForTheIdentityThroughTheValidatedResolvePath() {
+        // The local path resolves delegation exactly as Auth's resolve operation does
+        // (PrincipalContextResolver#resolveDelegated): same realm, tenant and roles as alice's
+        // own resolution there, with the service recorded as the acting service.
+        PrincipalContextResolution viaAuth = world.resolver().resolve(world.identity("svc-deleg@acme")
+                .applicationId(PrincipalFixture.APP).actingOnBehalfOf(null, "alice@acme").build());
+        for (String header : new String[]{DelegatedIdentityHeaders.EFFECTIVE_USER_ID,
+                DelegatedIdentityHeaders.EFFECTIVE_SUBJECT}) {
+            String target = DelegatedIdentityHeaders.EFFECTIVE_USER_ID.equals(header) ? "alice@acme" : "sub-alice";
+            PrincipalContext delegated = viaFilter("svc-deleg@acme", PrincipalFixture.APP, Map.of(header, target));
+            assertEquals("alice@acme", delegated.getUserId(), header);
+            assertEquals(viaAuth.context().getDefaultRealm(), delegated.getDefaultRealm(), header);
+            assertEquals(viaAuth.context().getDataDomain(), delegated.getDataDomain(), header);
+            assertArrayEquals(viaAuth.context().getRoles(), delegated.getRoles(), header);
+            assertEquals("alice@acme", delegated.getActingOnBehalfOfUserId());
+            assertEquals("svc-deleg@acme", delegated.getImpersonatedByUserId());
+            assertEquals(Map.of("userId", "svc-deleg@acme", "subject", "sub-svc-deleg"),
+                    delegated.getCustomProperties().get(SecurityFilter.ACTING_SERVICE_PROPERTY));
         }
         // Without the header it runs as itself.
         PrincipalContext itself = viaFilter("svc-deleg@acme", PrincipalFixture.APP, Map.of());
         assertEquals("svc-deleg@acme", itself.getUserId());
         assertEquals(PrincipalContext.SCOPE_SERVICE, itself.getScope());
         assertNull(itself.getActingOnBehalfOfUserId());
+    }
+
+    @Test
+    void anApplicationAgnosticReceiverResolvesDelegationForTheApplicationTheRequestNames() {
+        // Auth itself configures no application; its operations name one (applicationId), and the
+        // delegation is checked for that application. Without the sudo header the realm is the
+        // delegation's realm: the one alice resolves to for the application, as at the receiver.
+        Map<String, String> acting = Map.of(DelegatedIdentityHeaders.EFFECTIVE_USER_ID, "alice@acme");
+        PrincipalContext delegated = viaFilter("svc-deleg@acme", null, acting,
+                Map.of(SecurityFilter.APPLICATION_ID_PARAMETER, PrincipalFixture.APP));
+        PrincipalContext receiver = world.resolver().resolve(world.identity("alice@acme")
+                .applicationId(PrincipalFixture.APP).build()).context();
+        assertEquals("alice@acme", delegated.getUserId());
+        assertEquals(PrincipalFixture.APP, delegated.getApplicationId());
+        assertEquals(receiver.getDefaultRealm(), delegated.getDefaultRealm());
+        assertArrayEquals(receiver.getRoles(), delegated.getRoles());
+
+        ForbiddenException unnamed = assertThrows(ForbiddenException.class,
+                () -> viaFilter("svc-deleg@acme", null, acting));
+        assertTrue(unnamed.getMessage().startsWith("DELEGATION_NOT_ALLOWED"), unnamed.getMessage());
+    }
+
+    @Test
+    void anApplicationTokenActingOnBehalfOfAnIdentityIsRefused() {
+        for (String application : new String[]{PrincipalFixture.APP, null}) {
+            ForbiddenException refused = assertThrows(ForbiddenException.class,
+                    () -> viaFilter("svc-app@acme", application,
+                            Map.of(DelegatedIdentityHeaders.EFFECTIVE_USER_ID, "alice@acme"),
+                            Map.of(SecurityFilter.APPLICATION_ID_PARAMETER, PrincipalFixture.APP)), String.valueOf(application));
+            assertTrue(refused.getMessage().startsWith("DELEGATION_NOT_ALLOWED"), refused.getMessage());
+        }
+    }
+
+    @Test
+    void aDelegatingServiceNotGrantedTheApplicationIsRefusedApplicationNotGranted() {
+        RemotePrincipalResolutionException refused = assertThrows(RemotePrincipalResolutionException.class,
+                () -> viaFilter("svc-deleg@acme", null, Map.of(DelegatedIdentityHeaders.EFFECTIVE_USER_ID, "alice@acme"),
+                        Map.of(SecurityFilter.APPLICATION_ID_PARAMETER, "another-application")));
+        assertEquals(403, refused.status());
+        assertEquals("APPLICATION_NOT_GRANTED", refused.code());
+    }
+
+    @Test
+    void anExplicitSudoRealmIsTheDelegationsRealmAndStaysInsideItsScope() {
+        Map<String, String> headers = new HashMap<>(Map.of(DelegatedIdentityHeaders.EFFECTIVE_USER_ID, "alice@acme"));
+        headers.put("X-Realm", "acme-D2");
+        PrincipalContext delegated = viaFilter("svc-deleg@acme", PrincipalFixture.APP, headers);
+        assertEquals("acme-D2", delegated.getDefaultRealm());
     }
 
     @Test
@@ -170,10 +226,15 @@ class SecurityFilterServiceTokenV2ResolutionTest {
     }
 
     private PrincipalContext viaFilter(String userId, String receivingApplication, Map<String, String> headers) {
+        return viaFilter(userId, receivingApplication, headers, Map.of());
+    }
+
+    private PrincipalContext viaFilter(String userId, String receivingApplication, Map<String, String> headers,
+                                       Map<String, String> query) {
         SecurityFilter filter = filter(userId, receivingApplication);
         Map<String, String> all = new HashMap<>(headers);
         all.put("Authorization", "Bearer v2");
-        return filter.determinePrincipalContext(request(all));
+        return filter.determinePrincipalContext(request(all, query));
     }
 
     /** A v2 token of {@code userId}'s credential: {@code token_type=service} and {@code jti == sub}, nothing else. */
@@ -209,12 +270,23 @@ class SecurityFilterServiceTokenV2ResolutionTest {
     }
 
     private static ContainerRequestContext request(Map<String, String> headers) {
+        return request(headers, Map.of());
+    }
+
+    private static ContainerRequestContext request(Map<String, String> headers, Map<String, String> query) {
+        jakarta.ws.rs.core.MultivaluedMap<String, String> parameters = new jakarta.ws.rs.core.MultivaluedHashMap<>();
+        query.forEach(parameters::putSingle);
+        jakarta.ws.rs.core.UriInfo uri = mock(jakarta.ws.rs.core.UriInfo.class);
+        when(uri.getQueryParameters()).thenReturn(parameters);
         return (ContainerRequestContext) Proxy.newProxyInstance(
                 ContainerRequestContext.class.getClassLoader(),
                 new Class<?>[]{ContainerRequestContext.class},
                 (proxy, method, args) -> {
                     if ("getHeaderString".equals(method.getName())) {
                         return headers.get(String.valueOf(args[0]));
+                    }
+                    if ("getUriInfo".equals(method.getName())) {
+                        return uri;
                     }
                     if (method.getReturnType().equals(boolean.class)) {
                         return false;

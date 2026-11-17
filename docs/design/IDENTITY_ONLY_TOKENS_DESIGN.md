@@ -269,10 +269,20 @@ Resolve request field: `actingOnBehalfOf { userId | subject }`. Response field:
   grants), with no roles from the request identity. It is admitted only if its
   credential is present, active, records a `serviceKind` and matches `jti`;
   otherwise 401. Impersonation headers are refused. Acting-on-behalf-of headers are
-  refused on this path for both kinds (403 `DELEGATION_NOT_ALLOWED`): delegation is resolved
-  only by `POST /v1/auth/principal-context/resolve`, which checks the delegation scope and
-  returns the acted-for identity (remote receivers call it). The local path would only run as the
-  service with an unchecked acted-for marker. A receiver that names its application
+  refused for an `application` credential (403 `DELEGATION_NOT_ALLOWED`). For a
+  `delegating` credential the local path resolves the delegation through the same
+  validated path as `POST /v1/auth/principal-context/resolve`
+  (`PrincipalContextResolver.resolveDelegated`: kind, delegation scope, realm in scope,
+  the service's own grant for the application, the acted-for identity's grant), never
+  as an unchecked marker. The evaluated principal is the acted-for identity, with the
+  service recorded as `impersonatedBy*` and the `actingService` property, as the remote
+  source presents it. The application is the receiving one; at an application-agnostic
+  receiver (Auth) it is the one the operation names in its `applicationId` query
+  parameter (for example `GET /v1/authz/filter`), and a delegated request naming none is
+  refused `DELEGATION_NOT_ALLOWED`. Without `X-Realm` the realm is the delegation's realm
+  (the acted-for identity's realm for that application), the same realm a remote
+  receiver resolved, so a receiver forwarding the decision to Auth sends no sudo header
+  unless its own caller sent one. A receiver that names its application
   (`quantum.security.session.application-id`, else
   `quantum.application-registration.application-id`) resolves the token with an identity-mode
   request, the one the resolve operation builds: application admission (bindings, then the

@@ -115,18 +115,19 @@ class SecurityFilterServiceTokenV2Test {
     }
 
     @Test
-    void theLocalCredentialPathNeverActsOnBehalfOfAnIdentity() {
-        // Delegation is resolved (scope checked, acted-for identity returned) only by Auth's
-        // identity-mode resolve; the local path refuses it for both kinds instead of annotating
-        // the service's own context with an unchecked acted-for identity.
+    void onlyADelegatingCredentialIsAdmittedToActOnBehalfOfAnIdentity() {
+        // Admission settles the kind; the delegation itself (scope, realm, grants, the acted-for
+        // identity) is resolved afterwards by PrincipalContextResolver in identity mode.
+        for (String header : new String[]{DelegatedIdentityHeaders.EFFECTIVE_USER_ID,
+                DelegatedIdentityHeaders.EFFECTIVE_SUBJECT}) {
+            ForbiddenException refused = assertThrows(ForbiddenException.class,
+                    () -> filter(v2Token(), credential(ServiceKind.APPLICATION))
+                            .admitIdentityOnlyServiceToken(request(Map.of(header, "someone"))), header);
+            assertTrue(refused.getMessage().startsWith("DELEGATION_NOT_ALLOWED"), refused.getMessage());
+            assertDoesNotThrow(() -> filter(v2Token(), credential(ServiceKind.DELEGATING))
+                    .admitIdentityOnlyServiceToken(request(Map.of(header, "someone"))), header);
+        }
         for (ServiceKind kind : ServiceKind.values()) {
-            for (String header : new String[]{DelegatedIdentityHeaders.EFFECTIVE_USER_ID,
-                    DelegatedIdentityHeaders.EFFECTIVE_SUBJECT}) {
-                ForbiddenException refused = assertThrows(ForbiddenException.class,
-                        () -> filter(v2Token(), credential(kind))
-                                .admitIdentityOnlyServiceToken(request(Map.of(header, "someone"))), kind + " " + header);
-                assertTrue(refused.getMessage().startsWith("DELEGATION_NOT_ALLOWED"), refused.getMessage());
-            }
             assertDoesNotThrow(() -> filter(v2Token(), credential(kind))
                     .admitIdentityOnlyServiceToken(request(Map.of())), kind.name());
         }
