@@ -74,6 +74,33 @@ public final class RealmEntityMappingPolicy {
         return !isTenantExcludedEntity(entityType, tenantExcludedEntityPackagePrefixesCsv, tenantExcludedEntityClassesCsv);
     }
 
+    /**
+     * Whether {@code entityType} belongs to one of the packages Morphia is configured to map, with the
+     * meaning Morphia gives an entry: {@code a.b} is that package only, {@code a.b.*} is that package and
+     * everything below it.
+     */
+    public static boolean isInMappedPackages(Class<?> entityType, java.util.Collection<String> mappedPackages) {
+        if (entityType == null || mappedPackages == null) {
+            return false;
+        }
+        String classPackage = entityType.getPackageName();
+        for (String configured : mappedPackages) {
+            if (configured == null) {
+                continue;
+            }
+            String entry = configured.trim();
+            if (entry.endsWith(".*")) {
+                String base = entry.substring(0, entry.length() - 2);
+                if (base.isEmpty() || classPackage.equals(base) || classPackage.startsWith(base + ".")) {
+                    return true;
+                }
+            } else if (classPackage.equals(entry)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public static boolean isIdentityEntity(Class<?> entityType) {
         return entityType != null && parseCsv(DEFAULT_IDENTITY_ENTITY_CLASSES).contains(entityType.getName());
     }
