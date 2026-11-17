@@ -558,7 +558,11 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         }
         validateContextInputs(requestContext);
 
-        String tenantId = requestContext.getHeaderString("X-Tenant-Id");
+        // Service-token issue selects the issuer's tenant itself, with the resolver's identity
+        // selection rule (PrincipalContextResolver#applyIdentityTenantSelection), and refuses with a
+        // typed problem; the request's tenant is left to it (the operation is tenant exempt here), so
+        // the filter does not refuse the same selection first, untyped.
+        String tenantId = isServiceTokenMintRequest() ? null : requestContext.getHeaderString("X-Tenant-Id");
         String authHeader = requestContext.getHeaderString(HttpHeaders.AUTHORIZATION);
         String realm = sessionSelection != null && sessionSelection.enabled()
                 ? sessionSelection.realm(routingContext, securityIdentity, requestContext.getHeaderString("X-Realm"), configured(sessionRealm))

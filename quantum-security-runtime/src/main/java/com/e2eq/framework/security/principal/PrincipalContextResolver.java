@@ -1481,8 +1481,13 @@ public class PrincipalContextResolver {
      * the identity's default (credential DomainContext tenant, then data-domain policy default)
      * when the assignment authorizes it, else the one tenant the identity can reach; several
      * tenants and no default fail {@code TENANT_SELECTION_REQUIRED}.
+     *
+     * <p>Public so an operation that records a principal's tenant (Auth's service-token issue)
+     * takes it from this one selection rule rather than from the realm's own data coordinate.
+     * Refusals are {@link PrincipalResolutionException}s ({@code TENANT_NOT_AUTHORIZED},
+     * {@code TENANT_SELECTION_REQUIRED}).
      */
-    PrincipalContext applyIdentityTenantSelection(PrincipalContext context, String requestedTenantId,
+    public PrincipalContext applyIdentityTenantSelection(PrincipalContext context, String requestedTenantId,
                                                   CredentialUserIdPassword credential) {
         String effectiveRealm = context.getDefaultRealm();
         String headerTenantId = blank(requestedTenantId) ? null : requestedTenantId.trim();
