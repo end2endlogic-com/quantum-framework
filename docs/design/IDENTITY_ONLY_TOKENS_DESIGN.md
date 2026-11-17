@@ -328,15 +328,19 @@ Resolve request field: `actingOnBehalfOf { userId | subject }`. Response field:
   from a v2 `DELEGATING` credential. Anything else (a person's token, a legacy service token,
   an `application` credential) is refused 403 `DELEGATION_NOT_ALLOWED`. An unverified acting id
   is never echoed as `actingOnBehalfOf*`.
-- **Data-domain overrides at a decision.** `GET /v1/authz/filter` accepts `tenantId`,
-  `orgRefName` and `accountNumber` only when they name the resolved principal's own
-  coordinates:
-  - A different `tenantId` is resolved again for the identity and application. It follows the
-    `X-Tenant-Id` rule, so an unauthorized tenant is 403 `TENANT_NOT_AUTHORIZED`.
-  - An organization or account mismatch is also 403 `TENANT_NOT_AUTHORIZED`.
-  - `ownerId` names the resource's owner. It sets the resource context only and never changes
-    the principal's owner, so it is not checked (receivers send `*` or the resource's owner).
-  - An impersonated or delegated decision selects its tenant with `X-Tenant-Id` only.
+- **Data-domain parameters at a decision describe the resource.** `GET /v1/authz/filter`'s
+  `tenantId`, `orgRefName`, `accountNumber`, `dataSegment`, `ownerId`, `locationId` and
+  `businessTransactionId` are the decided resource's coordinates: receivers send their
+  `ResourceContext` data domain.
+  - They set only the resource context the rules see.
+  - The principal's data domain is always the one resolved from the store; only `X-Tenant-Id`
+    selects its tenant. A delegated decision is therefore the decision the receiver would make
+    locally, where `RuleContext` matches rule bodies against the principal's own data domain.
+  - A decision on a resource in another tenant is decided by the rules as the caller. Another
+    tenant's tenant-scoped policy does not apply; a policy for any tenant (shared, system or
+    support data) does.
+  - Before, the parameters overwrote the principal's data domain, so a caller naming another
+    tenant was evaluated as a member of that tenant.
 - **Realm names are compared ignoring case.** An identity-mode resolution, and the roles
   augmentor's credential lookup, read a requested realm (`X-Realm`, `realm`) as its registered
   refName, compared ignoring case (`RealmRefNames`). A differently cased `X-Realm` is that realm.
