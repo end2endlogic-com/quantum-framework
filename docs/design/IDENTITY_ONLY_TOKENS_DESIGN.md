@@ -232,8 +232,16 @@ Resolve request field: `actingOnBehalfOf { userId | subject }`. Response field:
   refused on this path for both kinds (403 `DELEGATION_NOT_ALLOWED`): delegation is resolved
   only by `POST /v1/auth/principal-context/resolve`, which checks the delegation scope and
   returns the acted-for identity (remote receivers call it). The local path would only run as the
-  service with an unchecked acted-for marker. Auth itself configures no application id, so in
-  Auth a v2 token's roles are its realm grants across applications, as for a user's token there. A receiver without the credential, or
+  service with an unchecked acted-for marker. A receiver that names its application
+  (`quantum.security.session.application-id`, else
+  `quantum.application-registration.application-id`) resolves the token with an identity-mode
+  request, the one the resolve operation builds: application admission (bindings, then the
+  realm assignment's grant), realm and tenant selection and the `SERVICE` scope follow from the
+  credential and its grants, and refusals are typed. Auth itself configures no application id,
+  so no application grant can apply there and a v2 token's roles are its realm grants across
+  applications, as for a user's token there. The credential is read once, by the resolver's
+  authentication lookup (`PrincipalContextResolver#credentialForSubject`); no principal exists
+  yet, so no caller's rules can govern that read. A receiver without the credential, or
   one trusting token claims, refuses with 401 (it must run in remote mode).
   Role-bearing service tokens keep the old path until step 4.
 - **Issuer authority is re-resolved.** Issuance re-resolves the caller's roles in the
