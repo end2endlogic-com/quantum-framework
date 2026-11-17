@@ -9,9 +9,16 @@ import java.util.*;
 
 import com.e2eq.framework.util.EnvConfigUtils;
 import com.e2eq.framework.system.config.SystemRealmOwnership;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 /**
  * Logs a summary of pending seed packs at application startup for key realms.
+ *
+ * <p>The report opens each realm's seed registry, so it creates and maps that realm's
+ * datastore before the service can answer. It runs only when seeding is enabled
+ * ({@code quantum.seed-pack.enabled}) and {@code quantum.seed-pack.pending-report.on-startup}
+ * is {@code true} (the default). With it off, ask on demand:
+ * {@code GET /admin/seeds/pending/{realm}}.</p>
  */
 @ApplicationScoped
 public class PendingSeedsStartupLogger {
@@ -28,7 +35,19 @@ public class PendingSeedsStartupLogger {
     @Inject
     SystemRealmOwnership systemRealmOwnership;
 
+    @ConfigProperty(name = "quantum.seed-pack.enabled", defaultValue = "true")
+    boolean seedsEnabled;
+
+    @ConfigProperty(name = "quantum.seed-pack.pending-report.on-startup", defaultValue = "true")
+    boolean reportOnStartup;
+
     public void onStart() {
+        if (!seedsEnabled || !reportOnStartup) {
+            Log.infof("SeedPacks: startup pending-seed report off (quantum.seed-pack.enabled=%s, "
+                + "quantum.seed-pack.pending-report.on-startup=%s); use GET /admin/seeds/pending/{realm}",
+                seedsEnabled, reportOnStartup);
+            return;
+        }
         List<String> realms = new ArrayList<>();
         // Log for system, default, and test realms if they differ
         realms.add(envConfigUtils.getSystemRealm());

@@ -406,6 +406,10 @@ Further seed settings, all optional:
 |`true`
 |Adds realms whose catalog record has `applySeedsOnStartup=true` to the startup list. A service that holds the environment's realm catalog sets this `false` so it seeds only `quantum.seed-pack.apply.realms`.
 
+|`quantum.seed-pack.pending-report.on-startup`
+|`true`
+|Logs, at startup, how many seed packs are pending in the system, default and test realms. Checking opens each realm's datastore, which slows startup. Set `false` (or turn seeding off with `quantum.seed-pack.enabled=false`) to skip it and ask on demand with `GET /admin/seeds/pending/{realm}`.
+
 |`quantum.seed-pack.lifecycle`
 |`production`
 |CSV of pack lifecycles this runtime admits. A pack whose manifest scope is labelled `demo` is applied only when the list includes `demo`. Unlabelled packs count as `production`.
