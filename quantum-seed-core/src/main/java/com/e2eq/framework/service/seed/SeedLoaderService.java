@@ -59,6 +59,9 @@ public class SeedLoaderService {
     @Inject
     com.e2eq.framework.model.persistent.morphia.FunctionalDomainRepo functionalDomainRepo;
 
+    @Inject
+    com.e2eq.framework.model.persistent.morphia.ApplicationRepo applicationRepo;
+
     /**
      * How an identity pack's vocabulary diagnostics are enforced when it is applied: WARN (default)
      * logs them and loads the pack, REFUSE refuses it. The same setting identity-contribution
@@ -124,6 +127,12 @@ public class SeedLoaderService {
             @Override
             public List<com.e2eq.framework.model.security.FunctionalDomain> domains(String realm) {
                 return functionalDomainRepo.findAllWithIgnoreRules(realm);
+            }
+
+            @Override
+            public List<com.e2eq.framework.model.security.Application> applications(String realm) {
+                // The application registry is global (system realm), whichever realm is seeded.
+                return applicationRepo.findAllWithIgnoreRules();
             }
         }, objectMapper);
     }

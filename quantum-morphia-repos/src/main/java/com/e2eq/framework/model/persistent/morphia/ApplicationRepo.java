@@ -35,6 +35,19 @@ public class ApplicationRepo extends MorphiaRepo<Application> {
     }
 
     /**
+     * Every registered application, rule-free: identity-pack admission compares a new
+     * declaration against all of them (which realms they declare), whatever their lifecycle
+     * state, and runs at startup with no principal.
+     */
+    public java.util.List<Application> findAllWithIgnoreRules() {
+        try (var cursor = morphiaDataStoreWrapper.getDataStore(getSecurityContextRealmId())
+                .find(Application.class)
+                .iterator()) {
+            return cursor.toList();
+        }
+    }
+
+    /**
      * Applications in a lifecycle state the public catalog lists, rule-free: the signed-out
      * catalog has no principal. Callers expose only {@code ApplicationCatalogEntry} fields.
      */

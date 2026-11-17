@@ -47,6 +47,8 @@ public final class ApplicationDeclarationValidator {
       MEMBER_ROLE_UNDECLARED,
       TENANCY_PLACEMENT_INVALID,
       TENANCY_REALMS_INVALID,
+      /** A realm named under placement REALMS is already declared by another application. */
+      TENANCY_REALM_OWNED_ELSEWHERE,
       AREA_OWNED_ELSEWHERE,
       VOCABULARY_APPLICATION_MISMATCH,
       VOCABULARY_APPLICATION_MISSING,
@@ -81,6 +83,15 @@ public final class ApplicationDeclarationValidator {
        * when that application has no such domain.
        */
       Optional<Set<String>> actions(String application, String area, String domain);
+
+      /**
+       * The other application that already declares {@code realm} under tenancy placement
+       * {@link ApplicationTenancy#PLACEMENT_REALMS}, if any. A realm belongs to one application.
+       * A registry that does not know the held applications answers empty.
+       */
+      default Optional<String> realmOwner(String realm) {
+         return Optional.empty();
+      }
    }
 
    /** What a pack carries: its application row, owned areas and domains, and its policies. */
@@ -107,7 +118,20 @@ public final class ApplicationDeclarationValidator {
    public static VocabularyRegistry heldVocabulary(String applicationId,
                                                    List<FunctionalArea> heldAreas,
                                                    List<FunctionalDomain> heldDomains) {
+      return heldVocabulary(applicationId, heldAreas, heldDomains, List.of());
+   }
+
+   /**
+    * {@link #heldVocabulary(String, List, List)} that also knows the applications the issuer
+    * holds, so a realm another application declares is reported
+    * ({@link Code#TENANCY_REALM_OWNED_ELSEWHERE}).
+    */
+   public static VocabularyRegistry heldVocabulary(String applicationId,
+                                                   List<FunctionalArea> heldAreas,
+                                                   List<FunctionalDomain> heldDomains,
+                                                   List<Application> heldApplications) {
       String self = key(applicationId);
+      Map<String, String> realmOwners = realmOwners(self, heldApplications);
       List<FunctionalArea> areas = heldAreas == null ? List.of() : List.copyOf(heldAreas);
       List<FunctionalDomain> domains = heldDomains == null ? List.of() : List.copyOf(heldDomains);
       return new VocabularyRegistry() {
@@ -130,6 +154,12 @@ public final class ApplicationDeclarationValidator {
                }
             }
             return Optional.empty();
+         }
+
+         @Override
+         public Optional<String> realmOwner(String realm) {
+            String wanted = trim(realm);
+            return wanted == null ? Optional.empty() : Optional.ofNullable(realmOwners.get(wanted));
          }
 
          @Override
@@ -174,6 +204,7 @@ public final class ApplicationDeclarationValidator {
 
       Set<String> declaredRoles = checkRoles(application, out);
       checkTenancy(application.getTenancy(), out);
+      checkRealmOwnership(application.getTenancy(), applicationId, registry, vocabulary, out);
 
       // Owned vocabulary: declared areas, plus the areas the pack's domains name (packs from
       // before FunctionalArea records declare areas only through their domains).
@@ -247,6 +278,49 @@ public final class ApplicationDeclarationValidator {
    private static boolean foreign(String tagged, String applicationId) {
       String value = trim(tagged);
       return value != null && !WILDCARD.equals(value) && !value.equalsIgnoreCase(applicationId);
+   }
+
+   /** Realm name to the first other application that declares it under placement REALMS. */
+   private static Map<String, String> realmOwners(String self, List<Application> heldApplications) {
+      Map<String, String> owners = new LinkedHashMap<>();
+      for (Application held : nonNull(heldApplications)) {
+         String owner = held == null ? null : trim(held.getRefName());
+         if (owner == null || key(owner).equals(self)) {
+            continue;
+         }
+         for (String realm : declaredRealms(held.getTenancy())) {
+            owners.putIfAbsent(realm, owner);
+         }
+      }
+      return owners;
+   }
+
+   /** The concrete realms a tenancy names: its realms under placement REALMS, else none. */
+   private static List<String> declaredRealms(ApplicationTenancy tenancy) {
+      String placement = tenancy == null ? null : trim(tenancy.getPlacement());
+      if (placement == null || !ApplicationTenancy.PLACEMENT_REALMS.equalsIgnoreCase(placement)) {
+         return List.of();
+      }
+      return nonNull(tenancy.getRealms()).stream().map(ApplicationDeclarationValidator::trim)
+         .filter(Objects::nonNull).filter(realm -> !realm.contains(WILDCARD)).distinct().toList();
+   }
+
+   /**
+    * A realm belongs to one application: its database, its ontology and its database version are
+    * that application's. Reported like the vocabulary checks (a warning, or a refusal under
+    * {@link VocabularyEnforcement#REFUSE}), because packs admitted before this rule share realms
+    * and must be moved before they can be refused.
+    */
+   private static void checkRealmOwnership(ApplicationTenancy tenancy, String applicationId,
+                                           VocabularyRegistry registry, Severity severity, List<Diagnostic> out) {
+      for (String realm : declaredRealms(tenancy)) {
+         Optional<String> owner = registry.realmOwner(realm);
+         if (owner.isPresent()) {
+            out.add(new Diagnostic(Code.TENANCY_REALM_OWNED_ELSEWHERE, severity, "Realm '" + realm
+               + "' is already declared by application '" + owner.get() + "'; a realm belongs to one application, so "
+               + applicationId + " needs a realm of its own."));
+         }
+      }
    }
 
    private static void checkTenancy(ApplicationTenancy tenancy, List<Diagnostic> out) {
