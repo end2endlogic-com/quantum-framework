@@ -551,8 +551,15 @@ public class PrincipalContextResolver {
                     IllegalArgumentException::new);
         }
         String targetRealm = (realm != null) ? realm : credentialRepo.getDatabaseName();
-        if (!scriptEvaluator.evaluate(originalCreds.getSubject(), originalCreds.getUserId(), targetRealm,
-                originalCreds.getImpersonateFilterScript())) {
+        boolean permitted;
+        try {
+            permitted = scriptEvaluator.evaluate(originalCreds.getSubject(), originalCreds.getUserId(), targetRealm,
+                    originalCreds.getImpersonateFilterScript());
+        } catch (ImpersonationScriptEvaluator.ScriptEvaluationException unevaluated) {
+            throw fail(typed, PrincipalResolutionError.IMPERSONATION_REFUSED, unevaluated.getMessage(),
+                    message -> new WebApplicationException(message, Response.Status.FORBIDDEN));
+        }
+        if (!permitted) {
             throw fail(typed, PrincipalResolutionError.IMPERSONATION_REFUSED,
                     String.format("User %s with userId %s is not authorized to impersonate in realm:%s",
                             originalCreds.getSubject(), originalCreds.getUserId(), targetRealm),
@@ -701,8 +708,17 @@ public class PrincipalContextResolver {
                     "Realm " + realm + " is outside the delegation scope of '" + service.getUserId() + "': "
                             + outside.getMessage());
         }
-        if (scripted && !scriptEvaluator.evaluate(service.getSubject(), service.getUserId(), realm,
-                service.getImpersonateFilterScript())) {
+        boolean permitted = true;
+        if (scripted) {
+            try {
+                permitted = scriptEvaluator.evaluate(service.getSubject(), service.getUserId(), realm,
+                        service.getImpersonateFilterScript());
+            } catch (ImpersonationScriptEvaluator.ScriptEvaluationException unevaluated) {
+                // Logged at ERROR by the evaluator: a deployment fault, not the credential's policy.
+                throw refusal(PrincipalResolutionError.DELEGATION_NOT_ALLOWED, unevaluated.getMessage());
+            }
+        }
+        if (!permitted) {
             throw refusal(PrincipalResolutionError.DELEGATION_NOT_ALLOWED,
                     "Service credential '" + service.getUserId() + "' may not delegate in realm " + realm);
         }

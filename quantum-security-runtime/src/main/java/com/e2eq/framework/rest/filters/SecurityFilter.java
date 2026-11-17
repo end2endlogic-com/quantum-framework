@@ -1704,9 +1704,14 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                 }
             }
         } catch (Exception e) {
+            com.e2eq.framework.security.principal.RemotePrincipalResolutionException remote = remoteRefusal(e);
             if (e instanceof com.e2eq.framework.model.security.ApplicationAccessException refusal) {
                 Log.warnf("Pre-authorization refused for user=%s, path=%s: %s",
                     principalContext.getUserId(), requestContext.getUriInfo().getPath(), refusal.code());
+            } else if (remote != null) {
+                Log.warnf("Pre-authorization refused for user=%s, path=%s: %d %s (%s)",
+                    principalContext.getUserId(), requestContext.getUriInfo().getPath(),
+                    remote.status(), remote.code(), remote.getMessage());
             } else {
                 Log.errorf(e, "Pre-authorization check failed for user=%s, path=%s",
                     principalContext.getUserId(), requestContext.getUriInfo().getPath());
@@ -1717,13 +1722,24 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
 
     /**
      * A typed application-scope refusal (no application, or principal and resource disagree)
-     * keeps its declared status and code; any other failure stays a generic 500 whose detail
-     * lives only in the server log.
+     * keeps its declared status and code. A delegated decision that Auth refused or could not
+     * give ({@link com.e2eq.framework.security.principal.RemotePrincipalResolutionException},
+     * raised by the authorization provider: 401/403 with Auth's code, or 503
+     * {@code PRINCIPAL_RESOLUTION_UNAVAILABLE} when Auth is unreachable) keeps its status and
+     * {@code {"code","message"}} body. Any other failure stays a generic 500 whose detail lives
+     * only in the server log.
      */
     static Response preAuthorizationFailure(Exception e) {
         if (e instanceof com.e2eq.framework.model.security.ApplicationAccessException refusal) {
             return Response.status(refusal.code().httpStatus())
                 .entity(apiError(refusal.code().name(), refusal.publicMessage()))
+                .build();
+        }
+        com.e2eq.framework.security.principal.RemotePrincipalResolutionException remote = remoteRefusal(e);
+        if (remote != null) {
+            return Response.status(remote.status())
+                .header("Cache-Control", "no-store")
+                .entity(apiError(remote.code(), remote.publicMessage()))
                 .build();
         }
         return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
@@ -1732,6 +1748,16 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                 "Authorization check failed. See server diagnostics for details."
             ))
             .build();
+    }
+
+    /** The typed remote refusal in {@code e} or its causes (an evaluator may wrap it), else null. */
+    static com.e2eq.framework.security.principal.RemotePrincipalResolutionException remoteRefusal(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause() == t ? null : t.getCause()) {
+            if (t instanceof com.e2eq.framework.security.principal.RemotePrincipalResolutionException typed) {
+                return typed;
+            }
+        }
+        return null;
     }
 
     /**

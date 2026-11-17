@@ -160,6 +160,32 @@ quantum.auth.principal-source=remote
 `quantum.auth.audience-required` and `mp.jwt.verify.audiences` are no longer
 used.
 
+The principal source is independent of `auth.provider`.
+`quantum.auth.principal-source=remote` needs only a `RemotePrincipalSource`
+bean (`quantum-auth-client-provider` on the classpath) and
+`quantum.auth-service.base-url`. `auth.provider` decides only where
+authorization decisions run: `quantum-auth-service` sends them to Auth's
+`/v1/authz/filter`, and `custom` keeps them in the application's own policies.
+Billing runs `principal-source=remote` with `auth.provider=custom`, because
+Auth's policy store holds no Billing policies. A blank
+`quantum.auth-service.base-url` refuses startup with `PRINCIPAL_SOURCE_UNAVAILABLE`.
+
+The resolved realm is the realm the request runs in. With no `X-Realm` it is
+the identity's application binding marked `defaultRealm`, else the one realm
+the application owns (`Realm.applicationRef`) in which the identity holds an
+active assignment, else the identity's home realm. An application that owns
+no realm, such as Billing, therefore sees every caller in its home realm. If
+the receiver has not migrated that realm, `MigrationCheckRequestFilter`
+answers 409 `REALM_NOT_MIGRATED`, with `realm` and `migration` (what the check
+found) in the body. It never answers an untyped 500.
+
+When the decision is delegated (`auth.provider=quantum-auth-service`), a
+failed `/v1/authz/filter` call is typed. A 401 or 403 from Auth, for example a
+revoked grant while the receiver still holds a cached principal, keeps Auth's
+status and code (`AUTHORIZATION_REFUSED` when Auth's body has none). Auth
+unreachable, or answering 5xx, gives 503 `PRINCIPAL_RESOLUTION_UNAVAILABLE`.
+Other statuses are contract faults and stay 500 `AUTHORIZATION_CHECK_FAILED`.
+
 Helixor Python receivers (`helixor_core.auth` `require_principal`) do the same:
 verify the signature, then resolve through the generated Python auth SDK with
 their application id (`helixor-solver`, `helixor-decision`, ...).
@@ -182,7 +208,12 @@ A service is a credential like any other, and its token is identity only
   those policies as that identity. Without the header the service runs as
   itself, like an application token.
 - Delegation scope reuses the credential's impersonation authorization
-  (`authorizedImpersonateIds`, `impersonateFilterScript`, `realmRegEx`).
+  (`authorizedImpersonateIds`, `impersonateFilterScript`, `realmRegEx`). A
+  script that cannot run is logged at ERROR and refused with the code for
+  the call (`DELEGATION_NOT_ALLOWED` or `IMPERSONATION_REFUSED`). It is never
+  read as the script answering `false`. One cause is a GraalJS engine that
+  cannot write its resource cache: the Auth image sets `HOME=/tmp` and
+  `-Dpolyglot.engine.userResourceCache`.
 - Roles for an acted-for user are resolved for the receiving service's
   application id, from the user's grants; realm-wide default grants keep that
   invisible to users.

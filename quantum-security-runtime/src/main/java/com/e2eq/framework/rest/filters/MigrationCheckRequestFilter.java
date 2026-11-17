@@ -9,14 +9,19 @@ import com.e2eq.framework.system.config.SystemRealmOwnership;
 import io.quarkus.logging.Log;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.inject.Inject;
+import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.container.ContainerRequestContext;
 import jakarta.ws.rs.container.ContainerRequestFilter;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.ext.Provider;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.jwt.JsonWebToken;
 
 import java.io.IOException;
 import java.security.Principal;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Optional;
 
 @Provider
@@ -58,11 +63,11 @@ public class MigrationCheckRequestFilter implements ContainerRequestFilter {
     @ConfigProperty(name = "quantum.security.session.realm")
     Optional<String> sessionRealm = Optional.empty();
 
+    /** Typed refusal code for a request whose realm this service has not migrated. */
+    public static final String REALM_NOT_MIGRATED = "REALM_NOT_MIGRATED";
+
     @Override
     public void filter(ContainerRequestContext requestContext) throws IOException {
-        boolean failRequest=false;
-        DatabaseMigrationException ex = null;
-
         if (!migrationCheckEnabled) {
             return;
         }
@@ -71,19 +76,20 @@ public class MigrationCheckRequestFilter implements ContainerRequestFilter {
             return;
         }
 
+        String checkedRealm = null;
+        DatabaseMigrationException ex = null;
         try {
-            String effectiveRealm = resolveMigrationRealm(requestContext);
-            checkOwnedRealm(effectiveRealm);
-           checkOwnedRealm(envConfigUtils.getSystemRealm());
-
+            checkedRealm = resolveMigrationRealm(requestContext);
+            checkOwnedRealm(checkedRealm);
+            checkedRealm = envConfigUtils.getSystemRealm();
+            checkOwnedRealm(checkedRealm);
         } catch (DatabaseMigrationException e) {
-            Log.warn("!! Migration check failed: " + e.getMessage());
+            Log.warnf("!! Migration check failed for realm %s: %s", checkedRealm, e.getMessage());
             Log.warnf(" Execution of Request:%s caused this error", requestContext.getUriInfo().getPath());
-            failRequest=true;
             ex = e;
         }
 
-        if (failRequest && (requestContext.getUriInfo().getPath().contains("login") ||
+        if (ex != null && (requestContext.getUriInfo().getPath().contains("login") ||
                   requestContext.getUriInfo().getPath().contains("migration"))) {
             try {
                 checkOwnedRealm(envConfigUtils.getSystemRealm());
@@ -91,12 +97,33 @@ public class MigrationCheckRequestFilter implements ContainerRequestFilter {
                 Log.warn("!! System Migration check failed: " + e.getMessage());
                 Log.warnf(" Execution of Request:%s caused this error", requestContext.getUriInfo().getPath());
             }
-            failRequest=false;
+            ex = null;
         }
 
-        if (failRequest) {
-           throw ex;
+        if (ex != null) {
+            throw realmNotMigrated(checkedRealm, ex);
         }
+    }
+
+    /**
+     * The request's realm has no current database version in this service: a typed 409
+     * {@code REALM_NOT_MIGRATED} naming the realm and what the migration check found, never an
+     * untyped 500. In remote principal mode the realm is the one Auth resolved for the request
+     * (the identity's home realm when the application owns none), so the body says so.
+     */
+    static WebApplicationException realmNotMigrated(String realm, DatabaseMigrationException cause) {
+        Map<String, String> body = new LinkedHashMap<>();
+        body.put("code", REALM_NOT_MIGRATED);
+        body.put("message", "Realm " + realm + " is not migrated in this service; run its migrations, or "
+                + "make the request in a realm this service serves");
+        body.put("realm", realm);
+        body.put("migration", cause.getMessage());
+        Response response = Response.status(Response.Status.CONFLICT)
+                .type(MediaType.APPLICATION_JSON_TYPE)
+                .header("Cache-Control", "no-store")
+                .entity(body)
+                .build();
+        return new WebApplicationException(cause.getMessage(), cause, response);
     }
 
     /** Remote services validate their application schema, not the control plane's schema. */
