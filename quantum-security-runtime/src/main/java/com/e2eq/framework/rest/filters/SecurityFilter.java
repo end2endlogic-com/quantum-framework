@@ -157,6 +157,14 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
     @Inject
     com.e2eq.framework.security.runtime.RuleContext ruleContext;
 
+    // Identity-mode resolution of service tokens v2 on the local credential path: the receiving
+    // application's id and the binding store the resolver admits it through (as Auth's resolve does).
+    @Inject
+    jakarta.enterprise.inject.Instance<com.e2eq.framework.model.persistent.morphia.ReceivingApplication> receivingApplication;
+
+    @Inject
+    jakarta.enterprise.inject.Instance<com.e2eq.framework.model.persistent.morphia.ApplicationAccessDirectory> accessDirectory;
+
     @Inject
     jakarta.enterprise.inject.Instance<com.e2eq.framework.model.securityrules.PrincipalContextPropertiesResolver> propertyResolvers;
 
@@ -488,6 +496,57 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                         scriptingEnabled, scriptingAllowAllAccess, scriptingTimeoutMillis, scriptingMaxStatements));
     }
 
+    /**
+     * The identity-mode resolver for service tokens v2: {@link #resolver()} plus this application's
+     * binding store, so admission, realm and tenant selection run exactly as Auth's
+     * {@code POST /v1/auth/principal-context/resolve} runs them.
+     */
+    com.e2eq.framework.security.principal.PrincipalContextResolver identityResolver() {
+        com.e2eq.framework.model.persistent.morphia.ApplicationAccessDirectory directory =
+                accessDirectory != null && accessDirectory.isResolvable() ? accessDirectory.get() : null;
+        return new com.e2eq.framework.security.principal.PrincipalContextResolver(
+                systemDirectory, realmMembershipService, credentialRepo, identityRoleResolver,
+                securityUtils, envConfigUtils,
+                new com.e2eq.framework.security.principal.ImpersonationScriptEvaluator(
+                        scriptingEnabled, scriptingAllowAllAccess, scriptingTimeoutMillis, scriptingMaxStatements),
+                directory);
+    }
+
+    /**
+     * This application's id ({@code quantum.security.session.application-id}, else
+     * {@code quantum.application-registration.application-id}), never a token claim; null when the
+     * receiver names none (an application-agnostic service such as Auth itself).
+     */
+    String receivingApplicationId() {
+        if (receivingApplication != null && receivingApplication.isResolvable()) {
+            String configuredApplication = receivingApplication.get().applicationId();
+            if (configuredApplication != null) {
+                return configuredApplication;
+            }
+        }
+        return configured(sessionApplicationId);
+    }
+
+    private static final java.util.concurrent.atomic.AtomicBoolean APPLICATION_AGNOSTIC_WARNED =
+            new java.util.concurrent.atomic.AtomicBoolean();
+
+    /**
+     * Once per process: a v2 service token reached a receiver that names no application, so no
+     * application admission applies to it (correct for Auth itself; anywhere else, configure the
+     * receiving application). Not refused: Auth's own endpoints rely on this path.
+     */
+    static boolean warnApplicationAgnosticServiceToken() {
+        if (!APPLICATION_AGNOSTIC_WARNED.compareAndSet(false, true)) {
+            return false;
+        }
+        Log.warnf("A service token v2 reached a receiver that configures no application (%s or %s): it resolves "
+                        + "from its credential and realm grants without application admission. Configure the "
+                        + "receiving application unless this is an application-agnostic service such as Auth.",
+                com.e2eq.framework.model.persistent.morphia.ReceivingApplication.SESSION_APPLICATION_ID,
+                com.e2eq.framework.model.persistent.morphia.ReceivingApplication.REGISTRATION_APPLICATION_ID);
+        return true;
+    }
+
     protected PrincipalContext determinePrincipalContext(ContainerRequestContext requestContext) {
         RequestAuthorizationState requestState = RequestAuthorizationState.from(routingContext);
         if (requestState != null) requestState.beginAdmission();
@@ -506,8 +565,17 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                 : sessionRealmSelection(requestContext.getHeaderString("X-Realm"), configured(sessionRealm), isUserPrincipal());
 
         if (localCredentialPath(authHeader)) {
-            com.e2eq.framework.security.principal.PrincipalContextResolution resolution =
-                    resolver().resolve(localCredentialRequest(requestContext, realm, tenantId));
+            boolean identityOnlyService = identityOnlyServiceToken();
+            if (identityOnlyService) {
+                admitIdentityOnlyServiceToken(requestContext);
+            }
+            String receivingApplicationId = identityOnlyService ? receivingApplicationId() : null;
+            if (identityOnlyService && receivingApplicationId == null) {
+                warnApplicationAgnosticServiceToken();
+            }
+            com.e2eq.framework.security.principal.PrincipalContextResolution resolution = receivingApplicationId != null
+                    ? resolveIdentityOnlyServiceToken(requestContext, realm, tenantId, receivingApplicationId)
+                    : resolver().resolve(localCredentialRequest(requestContext, realm, tenantId, identityOnlyService));
             PrincipalContext completed = applyCustomProperties(
                     requestContext, resolution.context(), resolution.callerCredential());
             if (requestState != null) requestState.complete(
@@ -577,24 +645,135 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
     }
 
     /**
-     * A user JWT verified locally against this application's credential store (not a service
-     * token, not delegated token claims): resolved by {@link #resolver()}.
+     * A user JWT, or an identity-only service token, verified locally against this application's
+     * credential store: resolved by {@link #resolver()}. Legacy service tokens (role-bearing, no
+     * {@code jti}) keep the service-claims path until rollout step 4.
      */
-    private boolean localCredentialPath(String authHeader) {
-        return authHeader != null && currentJwt() != null && !trustTokenClaims
-                && !com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.SERVICE_TOKEN_TYPE
-                        .equalsIgnoreCase(claimString(
-                                com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.TOKEN_TYPE_CLAIM));
+    boolean localCredentialPath(String authHeader) {
+        if (authHeader == null || currentJwt() == null) {
+            return false;
+        }
+        if (identityOnlyServiceToken()) {
+            // Never the claims paths: an identity-only token names no roles, realm or tenant, and
+            // the service-claims path would run it in the system realm.
+            return true;
+        }
+        return !trustTokenClaims && !serviceToken();
+    }
+
+    private boolean serviceToken() {
+        return com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.SERVICE_TOKEN_TYPE
+                .equalsIgnoreCase(claimString(
+                        com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.TOKEN_TYPE_CLAIM));
+    }
+
+    /**
+     * A service token v2 ({@code IDENTITY_ONLY_TOKENS_DESIGN.md} section 4), recognised from the
+     * token alone: {@code token_type=service} whose {@code jti} is its subject (the credential id
+     * is the credential's subject). A role-bearing service token's {@code jti}, when the signer
+     * adds one, is a random token id, never the subject. Such a token is identity only, so it
+     * resolves like a user, from its credential, home realm, tenant and grants.
+     */
+    boolean identityOnlyServiceToken() {
+        String jti = claimString("jti");
+        return serviceToken() && jti != null && jti.equals(claimString("sub"));
+    }
+
+    /**
+     * Admits an identity-only service token before resolution, fail closed: this application must
+     * hold its credential (otherwise only Auth can resolve it: run the receiver in remote mode), the
+     * credential must be the active service credential the token names and record a kind, and the
+     * request may not impersonate or act on behalf of an identity. Delegation (a {@code DELEGATING}
+     * credential acting for an identity) is resolved only by Auth's identity-mode resolution
+     * ({@code POST /v1/auth/principal-context/resolve}, which remote receivers call): it checks the
+     * delegation scope and returns the acted-for identity. The local credential path cannot, so it
+     * refuses the headers rather than run as the service with an unchecked acted-for marker. Its
+     * roles come from the credential and its grants alone: at a receiver that names its application
+     * through an identity-mode request ({@link #resolveIdentityOnlyServiceToken}); at an
+     * application-agnostic receiver (no application configured, such as Auth itself, where no
+     * application grant can apply) through {@link #localCredentialRequest} with every token claim
+     * beyond the identity dropped. The credential is read by the resolver's own authentication
+     * lookup ({@link com.e2eq.framework.security.principal.PrincipalContextResolver#credentialForSubject}),
+     * the one read every bearer gets before a principal exists; this filter has no lookup of its own.
+     */
+    void admitIdentityOnlyServiceToken(ContainerRequestContext requestContext) {
+        String sub = claimString("sub");
+        if (trustTokenClaims || credentialRepo == null || sub == null) {
+            throw new jakarta.ws.rs.NotAuthorizedException(
+                    "An identity-only service token is resolved by Auth; this receiver must resolve principals "
+                            + "through Auth (remote mode)", "Bearer");
+        }
+        CredentialUserIdPassword credential = resolver().credentialForSubject(sub)
+                .orElseThrow(() -> new jakarta.ws.rs.NotAuthorizedException(
+                        "No service credential for this token in this application's credential store; resolve "
+                                + "it through Auth (remote mode)", "Bearer"));
+        com.e2eq.framework.model.persistent.base.ActiveStatus status = credential.getActiveStatus();
+        if (credential.getServiceKind() == null
+                || !sub.equals(credential.getSubject())
+                || !claimString("jti").equals(credential.getSubject())
+                || status == com.e2eq.framework.model.persistent.base.ActiveStatus.INACTIVE
+                || status == com.e2eq.framework.model.persistent.base.ActiveStatus.DELETED) {
+            throw new jakarta.ws.rs.NotAuthorizedException(
+                    "The service credential for this token is not an active identity-only service credential", "Bearer");
+        }
+        if (impersonationRequested(requestContext)) {
+            throw new jakarta.ws.rs.ForbiddenException("A service token never impersonates; a delegating service "
+                    + "acts on behalf of an identity instead");
+        }
+        boolean acting = requestContext.getHeaderString(
+                com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.EFFECTIVE_SUBJECT) != null
+                || requestContext.getHeaderString(
+                com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.EFFECTIVE_USER_ID) != null;
+        if (acting && credential.getServiceKind() != com.e2eq.framework.model.security.ServiceKind.DELEGATING) {
+            throw new jakarta.ws.rs.ForbiddenException("DELEGATION_NOT_ALLOWED: an application service token never "
+                    + "acts on behalf of another identity");
+        }
+        if (acting) {
+            throw new jakarta.ws.rs.ForbiddenException("DELEGATION_NOT_ALLOWED: a delegating service token acts on "
+                    + "behalf of an identity only at receivers that resolve through Auth (remote mode); the local "
+                    + "credential path does not resolve delegation");
+        }
+    }
+
+    /**
+     * A service token v2 at a receiver that names its application resolves in identity mode, the
+     * same request Auth's resolve operation builds for a remote receiver: only the identity
+     * ({@code sub}) is taken from the token; application admission (bindings, then the realm
+     * assignment's grant), the identity's realm and tenant selection and the SERVICE scope follow
+     * from the credential and its grants. Impersonation and acting-on-behalf-of were refused by
+     * {@link #admitIdentityOnlyServiceToken}. A refusal is typed, with the code's status.
+     */
+    private com.e2eq.framework.security.principal.PrincipalContextResolution resolveIdentityOnlyServiceToken(
+            ContainerRequestContext requestContext, String realm, String tenantId, String applicationId) {
+        try {
+            return identityResolver().resolve(identityOnlyServiceRequest(realm, tenantId, applicationId));
+        } catch (com.e2eq.framework.security.principal.PrincipalResolutionException refused) {
+            throw com.e2eq.framework.security.principal.RemotePrincipalResolutionException.of(
+                    refused.error(), refused.getMessage());
+        }
+    }
+
+    com.e2eq.framework.security.principal.PrincipalContextRequest identityOnlyServiceRequest(
+            String realm, String tenantId, String applicationId) {
+        return com.e2eq.framework.security.principal.PrincipalContextRequest
+                .identity(claimString("sub"), null)
+                .applicationId(applicationId)
+                .realm(realm)
+                .tenantId(tenantId)
+                .tenantSelectionOptional(isPlatformTenantExemptRequest())
+                .build();
     }
 
     private com.e2eq.framework.security.principal.PrincipalContextRequest localCredentialRequest(
-            ContainerRequestContext requestContext, String realm, String tenantId) {
+            ContainerRequestContext requestContext, String realm, String tenantId, boolean identityOnlyService) {
         String sub = jwt.getClaim("sub");
+        // An identity-only service token contributes no roles, realm or tenant of its own: none of
+        // them is in the token, and the request identity's default roles must not stand in for grants.
         var claims = new com.e2eq.framework.security.principal.PrincipalContextRequest.SignedClaims(
-                claimString("realm"),
-                claimString("tenantId"),
-                foreignApplicationToken(tokenApplicationId()) ? null : securityIdentity,
-                foreignApplicationToken(tokenApplicationId()),
+                identityOnlyService ? null : claimString("realm"),
+                identityOnlyService ? null : claimString("tenantId"),
+                identityOnlyService || foreignApplicationToken(tokenApplicationId()) ? null : securityIdentity,
+                !identityOnlyService && foreignApplicationToken(tokenApplicationId()),
                 requestContext.getHeaderString("X-Realm"),
                 requestContext.getHeaderString(
                         com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.ORIGINAL_SUBJECT),
@@ -603,7 +782,9 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                 isPlatformTenantExemptRequest());
         var request = com.e2eq.framework.security.principal.PrincipalContextRequest
                 .signedTokenClaims(sub, claims)
-                .applicationId(currentApplicationId())
+                // A v2 service token names no application: never its azp. Here (no receiving
+                // application configured) it resolves for no application.
+                .applicationId(identityOnlyService ? null : currentApplicationId())
                 .realm(baseRealmOverride(realm, trustTokenClaims, impersonationRequested(requestContext),
                         envConfigUtils.getSystemRealm()))
                 .tenantId(tenantId)

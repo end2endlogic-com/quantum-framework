@@ -196,8 +196,63 @@ A service is a credential like any other, and its token is identity only
 - Who may issue: an `admin` of the realm the service is created in.
 
 Resolve request field: `actingOnBehalfOf { userId | subject }`. Response field:
-`actingService { userId, subject }`. Refusals: `DELEGATION_NOT_ALLOWED` (403),
-`DELEGATION_TARGET_UNKNOWN` (403).
+`actingService { userId, subject }`. Refusal: `DELEGATION_NOT_ALLOWED` (403).
+
+#### As built (step 3, auth contract 4.11.0)
+
+- **One delegation refusal.** An unknown target and a target outside the
+  delegation scope both answer `DELEGATION_NOT_ALLOWED`. `DELEGATION_TARGET_UNKNOWN`
+  was folded into it so a delegating token cannot probe which identities exist.
+  Resolver delegation was already in place from step 1 (`resolveDelegated`), so
+  step 3 added no resolver code.
+- **`exp` is fixed, not absent.** The JWT parser requires `exp`, so a service
+  token carries `exp` = issue time + 100 years
+  (`TokenUtils.SERVICE_IDENTITY_LIFETIME_SECONDS`). No caller chooses it, and
+  revocation is by deactivating the credential. The claims are `iss`, `sub`,
+  `userId`, `iat`, `exp`, `jti`, `scope` and `token_type: service`. `scope` stays
+  `authToken` because the token validator requires it.
+- **Issuer check.** The caller is the resolved principal: a realm admin acting as
+  themselves, holding a user credential. Services, impersonated or delegated callers
+  and external members are refused. The token is issued in the caller's resolved
+  realm (select another with `X-Realm`). A delegating credential's scope is the
+  whole of its one realm (`impersonateFilterScript` `true`, bounded by
+  `authorizedRealms`).
+- **Retired fields refused by name.** The 4.x request fields `roles`,
+  `expirationSeconds`, `audiences`, `authorizedTenantIds`, `userId` and
+  `applicationRef` answer 400 `SERVICE_TOKEN_FIELD_RETIRED`. They are not ignored,
+  because an old caller would otherwise receive a token with less than it asked for.
+- **Embedded path.** `SecurityFilter` recognises a v2 token from the token itself:
+  `token_type: service` with a `jti` (role-bearing service tokens never carry one).
+  It never takes a claims path. The service-claims path would run it in the system
+  realm with the system data domain. In the application that holds the credential
+  store (Auth) it resolves on the local credential path (home realm, tenant,
+  grants), with no roles from the request identity. It is admitted only if its
+  credential is present, active, records a `serviceKind` and matches `jti`;
+  otherwise 401. Impersonation headers are refused. Acting-on-behalf-of headers are
+  refused on this path for both kinds (403 `DELEGATION_NOT_ALLOWED`): delegation is resolved
+  only by `POST /v1/auth/principal-context/resolve`, which checks the delegation scope and
+  returns the acted-for identity (remote receivers call it). The local path would only run as the
+  service with an unchecked acted-for marker. A receiver that names its application
+  (`quantum.security.session.application-id`, else
+  `quantum.application-registration.application-id`) resolves the token with an identity-mode
+  request, the one the resolve operation builds: application admission (bindings, then the
+  realm assignment's grant), realm and tenant selection and the `SERVICE` scope follow from the
+  credential and its grants, and refusals are typed. Auth itself configures no application id,
+  so no application grant can apply there and a v2 token's roles are its realm grants across
+  applications, as for a user's token there. The credential is read once, by the resolver's
+  authentication lookup (`PrincipalContextResolver#credentialForSubject`); no principal exists
+  yet, so no caller's rules can govern that read. A receiver without the credential, or
+  one trusting token claims, refuses with 401 (it must run in remote mode).
+  Role-bearing service tokens keep the old path until step 4.
+- **Issuer authority is re-resolved.** Issuance re-resolves the caller's roles in the
+  issuing realm with `IdentityRoleResolver`, without token roles: credential roles,
+  the realm assignment and realm-wide (`*`) groups. It requires `admin` there and an
+  active user credential. A sign-in token that still carries `admin` after the grant
+  was revoked cannot issue, and an admin group of a single application does not make
+  a realm admin.
+- **Receivers that read roles from the token** (`trust-token-claims`, the 1.4.2
+  claims path) get none from a v2 token and refuse. Give a service a v2 token only
+  once the receivers it calls resolve through Auth.
 
 ## Rollout
 
@@ -211,6 +266,7 @@ Resolve request field: `actingOnBehalfOf { userId | subject }`. Response field:
    Compare, scheduler, Doc Audit, Solver, Decision, Agent Framework).
 3. **Service tokens v2**: issue without roles, grant service identities on the
    Access page, reissue existing service tokens (Solver for big-box first).
+   See "Step 3d: reissue runbook" below.
 4. **Slim tokens**: stop minting the removed claims once no deployed receiver
    reads them; then delete the delegated-claims path,
    `ApplicationTokenAdmissionFilter`, foreign-application role re-derivation
@@ -280,6 +336,85 @@ remote mode), and code that needs the application reads the resolved
 `quantum.security.session.application-id`). Only an application that configures no
 id still falls back to the identity's `azp` there, until step 4; set the id when
 flipping.
+
+### Step 3d: reissue runbook (owner runs the token calls)
+
+Prerequisites: framework 1.4.3 with the service-tokens-v2 change and Auth contract
+4.11.0 are deployed to the environment. Do dev first, then prod.
+
+**What keeps working.** Tokens already issued keep working after the deploy: a
+role-bearing 4.x service token (its `jti`, when the signer adds one, is a random token
+id, never its subject) stays on the
+service-claims path, and an identity-bound 4.x token is a user token, until step 4
+(`SecurityFilterServiceTokenV2Test`, quantum-enterprise `ServiceTokenV2ApiTest`).
+**What stops.** Every runtime role mint: 4.11.0 answers it 400
+`SERVICE_TOKEN_FIELD_RETIRED`, and a v2 token can only be issued once 4.11.0 runs.
+
+**Before deploying Auth 4.11.0 (bridge, no downtime).** Move each runtime minter to a
+static token while 4.10.0 (or 4.9.0) still mints:
+
+- `helixor-core` `ServiceTokenClient` users (login + mint with roles): Helixor Code API
+  and its state stores, employee-api, employee-workflow, influencer-api,
+  helixor-reasoning-backend's API-key store, the solver-server billing reporter in prod.
+  Each takes `HELIXOR_AUTH_SERVICE_TOKEN` from helixor-core 1.6.0 (callers on an older
+  helixor-core move to 1.6.0 first). Mint one role token per service under 4.10.0 with the
+  roles it mints today and an expiry that outlasts the reissue below (a static
+  token is never refreshed), set it as that secret, remove the login variables, roll the service.
+  The token stays valid after 4.11.0 and is replaced by a v2 token in the steps below.
+- The Reasoning UX "mint API key" proxy and the tenant-admin-ui issue dialog send
+  roles and an expiry: switch them to `{kind, description}` with 4.11.0.
+- Scripts that mint role tokens (`rotate-local-service-token.mjs`,
+  `mint-local-intake-token.mjs`, `prod-decision-identity.sh`,
+  `reconcile_digitalworker_development.py`, the live-billing stack, employee
+  `acceptance_scoped_auth.py`) and framework `ServiceTokenCLI` from before this change
+  fail on their next run; update them to `{kind}` before rotating.
+
+**Jobrunner** cannot bridge: its per-run mint is gone, and its v2 worker token is
+refused by a receiver that trusts token claims. `quantum-system-service`
+(`trust-token-claims=true` by default) must run the remote principal source first, by
+the App flip checklist above (application id, no claims trust, proactive authentication
+rebuilt, identities granted, one resolve verified). Then deploy Auth 4.11.0 and the jobrunner together, issue the delegating token
+and grant it, and resume deployment runs; pause runs during that window.
+
+Order: **Solver big-box, decision-service, DI, Agent Framework.** For each service:
+
+1. Confirm every receiver the service calls resolves through Auth (resolver or
+   remote mode). A receiver that still trusts token claims grants a v2 token
+   nothing. Move that receiver first.
+2. As the realm admin of the service's realm, issue the token:
+   `POST /security/service-token` with `X-Realm: <realm>` and body
+   `{"kind": "application", "description": "<service>"}`. Use
+   `"kind": "delegating"` for services that act for users (DI, Agent Framework).
+   Record the returned `userId` and `credentialId`. The response is shown once.
+3. Grant that `userId` what the service needs on the realm's Access page, or with
+   an application binding. Until then the resolver answers
+   `APPLICATION_NOT_GRANTED`.
+4. Store the token in the service's secret and roll the service.
+5. Verify: `POST /v1/auth/principal-context/resolve` with the token and
+   `{"applicationId": "<receiving app>"}` returns 200, the expected realm and tenant
+   and `scope: SERVICE`. For a delegating token, also verify one `actingOnBehalfOf`
+   call for a known user.
+6. Deactivate the service's old 4.x credentials (`svc-*` credentials with no
+   `serviceKind`).
+
+**Decision-service and the reasoning API-key store.** reasoning-backend's key
+store logs in and calls `POST /security/service-token` with roles at runtime.
+In prod that answers 403 because decision-service lacks the mint role, which
+causes the Reasoning 503. After v2 it uses its own issued application token
+instead: no login and no mint. `helixor-core` 1.6.0 `ServiceTokenClient` takes it
+as `HELIXOR_AUTH_SERVICE_TOKEN` (HelixorAI/helixor-core#77), and the store switches in
+HelixorAI/helixor-reasoning-backend#136. The vault roles the store uses are granted to
+the token's `userId`. The 503 is then fixed without granting decision-service any
+mint permission.
+
+**Jobrunner.** `quantum-jobrunner-service` deploy workers present the jobrunner's
+one delegating token (`QUANTUM_DEPLOY_SERVICE_TOKEN`, issued with
+`{"kind":"delegating"}`) and act for the run's `runAs` user with
+`X-Acting-On-Behalf-Of-UserId` (quantum-enterprise#237). Nothing is minted per run.
+The 4.8.0 SDK pin is gone.
+
+Rollback: redeploy Auth 4.10.0. Tokens issued under 4.11.0 remain valid
+identities with no roles. They grant only what was granted to their `userId`.
 
 ### Guard: no new claim readers
 

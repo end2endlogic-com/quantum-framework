@@ -327,7 +327,7 @@ public class PrincipalContextResolver {
         }
         Optional<CredentialUserIdPassword> found = sub == null
                 ? Optional.empty()
-                : credentialRepo.findBySubject(sub, systemRealm, true);
+                : credentialForSubject(sub);
         if (found.isEmpty()) {
             for (String candidate : request.userIdCandidates()) {
                 Optional<CredentialUserIdPassword> byUserId = credentialRepo.findByUserId(candidate, systemRealm, true);
@@ -359,6 +359,23 @@ public class PrincipalContextResolver {
                     "Subject %s not found in credentialUserIdPassword collection in realm:%s", sub, systemRealm));
         }
         return found.get();
+    }
+
+    /**
+     * The authentication lookup: the credential a verified token subject names, in the identity
+     * store (the system realm). It runs before any principal exists, because its answer is what the
+     * principal is built from, so there is no caller whose repository rules could govern it; every
+     * bearer resolved here is read this way, once per resolution. Authorization (realm access,
+     * application admission, tenant selection, roles) is decided afterwards from this credential and
+     * its grants. Callers that must check the credential before resolving (for example
+     * {@code SecurityFilter}'s service-token admission) use this method rather than a lookup of
+     * their own.
+     */
+    public Optional<CredentialUserIdPassword> credentialForSubject(String subject) {
+        if (subject == null || subject.isBlank()) {
+            return Optional.empty();
+        }
+        return credentialRepo.findBySubject(subject, envConfigUtils.getSystemRealm(), true);
     }
 
     static boolean credentialDisabled(CredentialUserIdPassword credential) {
