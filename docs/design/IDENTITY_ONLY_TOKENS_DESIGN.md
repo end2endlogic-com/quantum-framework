@@ -214,6 +214,15 @@ A service is a credential like any other, and its token is identity only
   read as the script answering `false`. One cause is a GraalJS engine that
   cannot write its resource cache: the Auth image sets `HOME=/tmp` and
   `-Dpolyglot.engine.userResourceCache`.
+- The delegating service must itself be granted the receiving application.
+  Its grant is read the way its own request would be admitted: its realm for
+  the application, then its binding there, else the realm's ownership, the
+  realm assignment's application grant or its credential pattern. Without that
+  grant the answer is 403 `APPLICATION_NOT_GRANTED`, naming the service. The
+  check runs before any acted-for identity is read. The delegated principal
+  carries only the acted-for identity's roles, so without this check a
+  receiver could not tell an admitted calling application from any other
+  delegating credential.
 - Roles for an acted-for user are resolved for the receiving service's
   application id, from the user's grants; realm-wide default grants keep that
   invisible to users.

@@ -33,6 +33,8 @@ class PrincipalContextApplicationRealmTest {
         UserRealmRole assignment = world.assign("alice@acme", "di-shared", List.of("di-user"));
         assignment.setAuthorizedTenantIds(List.of("airfreight"));
         authorize("alice@acme", "di-shared");
+        // The delegating service is itself granted di-app in its home realm.
+        world.assign("svc-deleg@acme", "acme-D1", List.of()).setAuthorizedApplications(List.of(DI));
     }
 
     @Test
@@ -128,6 +130,30 @@ class PrincipalContextApplicationRealmTest {
         assertEquals("di-shared", resolved.context().getDefaultRealm());
         assertEquals("alice@acme", resolved.context().getUserId());
         assertEquals("airfreight", resolved.context().getDataDomain().getTenantId());
+    }
+
+    @Test
+    void aDelegatingServiceNotGrantedTheApplicationIsRefusedNamingTheService() {
+        world.credential("svc-deleg@acme").setRealmRegEx("acme-*|pooled|di-shared");
+        world.assignments.get("svc-deleg@acme|acme-D1").setAuthorizedApplications(List.of("another-app"));
+        PrincipalResolutionException refusal = refused(PrincipalResolutionError.APPLICATION_NOT_GRANTED,
+                () -> world.resolver().resolve(world.identity("svc-deleg@acme").applicationId(DI)
+                        .actingOnBehalfOf(null, "alice@acme").build()));
+        assertTrue(refusal.getMessage().contains("svc-deleg@acme"), refusal.getMessage());
+        assertTrue(refusal.getMessage().contains(DI), refusal.getMessage());
+        // Settled before the acted-for identity is read: an unknown target refuses the same way.
+        refused(PrincipalResolutionError.APPLICATION_NOT_GRANTED,
+                () -> world.resolver().resolve(world.identity("svc-deleg@acme").applicationId(DI)
+                        .actingOnBehalfOf(null, "nobody@acme").build()));
+    }
+
+    @Test
+    void aDelegatingServiceWithoutAnyGrantInItsRealmIsRefused() {
+        world.credential("svc-deleg@acme").setRealmRegEx("acme-*|pooled|di-shared");
+        world.assignments.remove("svc-deleg@acme|acme-D1");
+        refused(PrincipalResolutionError.APPLICATION_NOT_GRANTED,
+                () -> world.resolver().resolve(world.identity("svc-deleg@acme").applicationId(DI)
+                        .actingOnBehalfOf(null, "alice@acme").build()));
     }
 
     @Test

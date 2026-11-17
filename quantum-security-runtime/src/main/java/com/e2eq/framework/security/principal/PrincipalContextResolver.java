@@ -649,6 +649,7 @@ public class PrincipalContextResolver {
         }
         // The service's own permission is settled before any acted-for identity is looked up, so
         // a requested realm outside its reach refuses the same way whoever is named.
+        requireServiceGranted(service, request.applicationId());
         if (request.realm() != null) {
             authorizeDelegationRealm(service, request.realm(), scripted);
         }
@@ -693,6 +694,40 @@ public class PrincipalContextResolver {
         PrincipalContextResolution resolved = resolve(asTarget);
         return new PrincipalContextResolution(resolved.context(), resolved.credential(), service, null,
                 new PrincipalRef(service.getUserId(), service.getSubject()));
+    }
+
+    /**
+     * A delegating service acts on behalf of identities only for an application it is itself
+     * granted: the delegated principal carries the acted-for identity's roles only, so without
+     * this a receiver could not tell an admitted calling service from any other delegating
+     * credential. The grant is read the way the service's own request would be admitted: its
+     * realm for the application (its binding marked {@code defaultRealm}, else the realm the
+     * application owns, else its home realm), then its active binding there, else the realm's
+     * ownership, the realm assignment's application grant or its credential pattern. Refused
+     * {@code APPLICATION_NOT_GRANTED} naming the service, before any acted-for identity is read.
+     */
+    private void requireServiceGranted(CredentialUserIdPassword service, String applicationId) {
+        if (blank(applicationId)) {
+            return;
+        }
+        String app = applicationId.trim();
+        String realm;
+        ApplicationGrant grant;
+        try {
+            String serviceRealm = identityRealm(service, app);
+            realm = serviceRealm != null ? serviceRealm
+                    : service.getDomainContext() == null ? null : service.getDomainContext().getDefaultRealm();
+            grant = blank(realm) ? null : bindingGrant(service, app, realm);
+        } catch (PrincipalResolutionException refused) {
+            throw refusal(PrincipalResolutionError.APPLICATION_NOT_GRANTED, String.format(
+                    "Delegating service '%s' is not granted application '%s': %s",
+                    service.getUserId(), app, refused.getMessage()));
+        }
+        if (grant == null && !applicationAdmitted(service.getUserId(), realm, app, service)) {
+            throw refusal(PrincipalResolutionError.APPLICATION_NOT_GRANTED, String.format(
+                    "Delegating service '%s' is not granted application '%s' in realm '%s'",
+                    service.getUserId(), app, realm));
+        }
     }
 
     /**
