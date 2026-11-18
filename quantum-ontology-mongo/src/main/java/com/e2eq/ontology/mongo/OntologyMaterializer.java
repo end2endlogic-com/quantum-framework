@@ -597,8 +597,19 @@ public class OntologyMaterializer {
             kept.add(e);
             justified.add(key);
         }
-        for (Map.Entry<Reasoner.Edge, List<String>> en : viaOwnImage.entrySet()) {
-            if (justified.contains(en.getValue())) kept.add(en.getKey());
+        // An edge kept this way may itself be what another own image mirrors, so repeat until none is added
+        boolean added = true;
+        while (added && !viaOwnImage.isEmpty()) {
+            added = false;
+            for (var it = viaOwnImage.entrySet().iterator(); it.hasNext(); ) {
+                Map.Entry<Reasoner.Edge, List<String>> en = it.next();
+                if (!justified.contains(en.getValue())) continue;
+                Reasoner.Edge e = en.getKey();
+                kept.add(e);
+                justified.add(List.of(e.srcId(), e.p(), e.dstId()));
+                it.remove();
+                added = true;
+            }
         }
         return new Reasoner.InferenceResult(out.addTypes(), out.addLabels(), kept, out.removeEdges());
     }

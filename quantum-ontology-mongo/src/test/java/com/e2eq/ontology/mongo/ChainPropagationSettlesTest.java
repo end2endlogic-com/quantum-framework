@@ -274,6 +274,24 @@ public class ChainPropagationSettlesTest {
         assertEquals(Set.of(), dsts("broker1", "affiliatedBy"), "affiliatedBy outlived the affiliateOf it came from");
     }
 
+    /**
+     * An edge kept because the edge behind its image still stands is in turn a reason for the next
+     * one: {@code tieOf} is symmetric with inverse {@code tiedBy}, itself symmetric with inverse
+     * {@code tieBack}, so each is reached through the image of the one before.
+     */
+    @Test
+    void edgesImpliedThroughSuccessiveOwnImagesAreAllDerived() {
+        Reasoner.Edge tie = edge("broker1", "Broker", "tieOf", "broker2", "Broker");
+        for (int i = 0; i < 5; i++) {
+            assertSettled(write("broker1", "Broker", tie));
+        }
+        assertEquals(Set.of("broker2"), dsts("broker1", "tiedBy"));
+        assertEquals(Set.of("broker2"), dsts("broker1", "tieBack"));
+
+        assertSettled(write("broker1", "Broker", tie));
+        assertEquals(Set.of("broker2"), dsts("broker1", "tieBack"), "tieBack was dropped while tieOf still stands");
+    }
+
     private static final Map<String, String> NODES = Map.of("decl1", "Declaration", "intake1", "Intake",
             "intake2", "Intake", "finding1", "Finding", "broker1", "Broker", "project1", "Project");
 
@@ -381,6 +399,12 @@ public class ChainPropagationSettlesTest {
                 false, Optional.of("affiliatedBy"), false, true, false, Set.of(), false));
         props.put("affiliatedBy", new PropertyDef("affiliatedBy", Optional.of("Broker"), Optional.of("Broker"),
                 false, Optional.of("affiliateOf"), false, false, false, Set.of(), true));
+        props.put("tieOf", new PropertyDef("tieOf", Optional.of("Broker"), Optional.of("Broker"),
+                false, Optional.of("tiedBy"), false, true, false, Set.of(), false));
+        props.put("tiedBy", new PropertyDef("tiedBy", Optional.of("Broker"), Optional.of("Broker"),
+                false, Optional.of("tieBack"), false, true, false, Set.of(), true));
+        props.put("tieBack", new PropertyDef("tieBack", Optional.of("Broker"), Optional.of("Broker"),
+                false, Optional.of("tiedBy"), false, false, false, Set.of(), true));
         props.put("intakeSeenByBroker", new PropertyDef("intakeSeenByBroker", Optional.of("Intake"), Optional.of("Broker"),
                 false, Optional.empty(), false, false, false, Set.of(), false));
         props.put("findingForBroker", new PropertyDef("findingForBroker", Optional.of("Finding"), Optional.of("Broker"),
