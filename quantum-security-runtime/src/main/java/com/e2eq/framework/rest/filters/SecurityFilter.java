@@ -618,7 +618,8 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
 
         // Apply custom property resolvers
         PrincipalContext completed = applyCustomProperties(requestContext,
-                isUserPrincipal() ? resolver().finalizeUserPrincipal(contextWithTenant) : contextWithTenant, credentials);
+                isUserPrincipal() ? resolver().finalizeUserPrincipal(contextWithTenant, credentials) : contextWithTenant,
+                credentials);
         if (requestState != null) requestState.complete(
                 ResolvedAuthorizationContext.from(claimString("iss"), claimString("sub"), completed));
         return completed;

@@ -7,7 +7,6 @@ import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
-import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 
@@ -21,7 +20,8 @@ import java.util.Set;
  * ({@link RealmRefNames#registered}, cached). That a database of the name already exists is not
  * enough. Refused 403 {@code REALM_NOT_AUTHORIZED}: a name that is not a refName's shape, a
  * reserved database name ({@code admin}, {@code local}, {@code config}, the coordination
- * database), or an unregistered name. A directory that cannot answer is 503
+ * database), a name with surrounding whitespace or control characters (the value checked is the
+ * value the resource receives, never a trimmed copy), or an unregistered name. A directory that cannot answer is 503
  * {@code PRINCIPAL_RESOLUTION_UNAVAILABLE}.</p>
  *
  * <p>Only request input is gated here. Startup migrations, seeders and provisioning open the
@@ -31,7 +31,8 @@ import java.util.Set;
 public class RequestRealmAdmission {
 
     /** MongoDB's own databases: never a realm. */
-    static final Set<String> RESERVED_DATABASES = Set.of("admin", "local", "config");
+    static final Set<String> RESERVED_DATABASES =
+            com.e2eq.framework.model.persistent.morphia.RealmDatabaseNames.MONGO_RESERVED;
 
     @Inject
     EnvConfigUtils envConfigUtils;
@@ -44,12 +45,7 @@ public class RequestRealmAdmission {
 
     /** True when {@code name} (trimmed, ignoring case) is a database that is never a realm. */
     public boolean reserved(String name) {
-        if (name == null) {
-            return false;
-        }
-        String lower = name.trim().toLowerCase(Locale.ROOT);
-        return RESERVED_DATABASES.contains(lower)
-                || (coordinationDatabase != null && lower.equals(coordinationDatabase.trim().toLowerCase(Locale.ROOT)));
+        return com.e2eq.framework.model.persistent.morphia.RealmDatabaseNames.reserved(name, coordinationDatabase);
     }
 
     /**
@@ -59,8 +55,26 @@ public class RequestRealmAdmission {
      *         admitted realm; 503 {@code PRINCIPAL_RESOLUTION_UNAVAILABLE} when the directory cannot answer
      */
     public String admit(String requested) {
-        return admitted(requested).orElseThrow(() -> RemotePrincipalResolutionException.of(
-                PrincipalResolutionError.REALM_NOT_AUTHORIZED, "The requested realm is not a registered realm"));
+        return admitted(requested).orElseThrow(RequestRealmAdmission::notAuthorized);
+    }
+
+    /**
+     * {@code requested} when it has a realm refName's exact shape and is not reserved, registered or
+     * not: for an input that names a realm about to be registered (a directory registration).
+     *
+     * @throws RemotePrincipalResolutionException 403 {@code REALM_NOT_AUTHORIZED} otherwise
+     */
+    public String admitShape(String requested) {
+        if (!com.e2eq.framework.model.persistent.morphia.RealmDatabaseNames.wellShaped(requested)
+                || reserved(requested)) {
+            throw notAuthorized();
+        }
+        return requested;
+    }
+
+    private static RemotePrincipalResolutionException notAuthorized() {
+        return RemotePrincipalResolutionException.of(
+                PrincipalResolutionError.REALM_NOT_AUTHORIZED, "The requested realm is not a registered realm");
     }
 
     /**
@@ -69,10 +83,12 @@ public class RequestRealmAdmission {
      * @throws RemotePrincipalResolutionException 503 when the directory cannot answer
      */
     public Optional<String> admitted(String requested) {
-        if (requested == null || !RealmRefNames.isRefNameShape(requested)) {
+        if (!com.e2eq.framework.model.persistent.morphia.RealmDatabaseNames.wellShaped(requested)) {
+            // Exactly as given: a value with surrounding whitespace or control characters is refused,
+            // never admitted as its trimmed form while the resource reads the raw one.
             return Optional.empty();
         }
-        String trimmed = requested.trim();
+        String trimmed = requested;
         if (reserved(trimmed)) {
             return Optional.empty();
         }

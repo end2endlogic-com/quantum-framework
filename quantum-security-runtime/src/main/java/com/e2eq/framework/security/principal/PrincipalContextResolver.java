@@ -250,7 +250,8 @@ public class PrincipalContextResolver {
                     request.signedClaims().tenantSelectionExempt());
         }
         if (!serviceCredential(effective)) {
-            context = identity ? finalizeUserPrincipal(context, grant) : finalizeUserPrincipal(context);
+            context = identity ? finalizeUserPrincipal(context, grant, effective)
+                    : finalizeUserPrincipal(context, effective);
         }
         return new PrincipalContextResolution(context, effective, caller, impersonatedBy, null);
     }
@@ -1397,14 +1398,25 @@ public class PrincipalContextResolver {
 
     /** Receiver-side role boundary, shared by credential and trusted-claims requests. */
     public PrincipalContext finalizeUserPrincipal(PrincipalContext context) {
+        return finalizeUserPrincipal(context, (CredentialUserIdPassword) null);
+    }
+
+    /**
+     * As {@link #finalizeUserPrincipal(PrincipalContext)}, with the identity's already-loaded local
+     * credential, so the roles of tenant-owned groups follow the tenant the session selected
+     * ({@link IdentityRoleResolver#withSessionTenantGroups}). Without one the roles came from a claims
+     * provider or a remote directory, which decided them, and are not regrouped.
+     */
+    public PrincipalContext finalizeUserPrincipal(PrincipalContext context, CredentialUserIdPassword credential) {
         try {
-            return finalizeUserPrincipal(context, null);
+            return finalizeUserPrincipal(context, null, credential);
         } catch (PrincipalResolutionException refused) {
             throw RemotePrincipalResolutionException.of(refused.error(), refused.getMessage());
         }
     }
 
-    private PrincipalContext finalizeUserPrincipal(PrincipalContext context, ApplicationGrant grant) {
+    private PrincipalContext finalizeUserPrincipal(PrincipalContext context, ApplicationGrant grant,
+                                                   CredentialUserIdPassword credential) {
         DomainContext selectedDomain = context.getDomainContext();
         Realm selectedRealm = systemDirectory.findRealmByRefName(context.getDefaultRealm()).orElse(null);
         if (selectedRealm != null && selectedRealm.getTenancyMode() != RealmTenancyMode.MULTI_TENANT
@@ -1415,6 +1427,12 @@ public class PrincipalContextResolver {
         if (blank(context.getUserId())) {
             return context;
         }
+        PrincipalContext regrouped = withSessionTenantGroups(context, credential, tenant);
+        return finalizeTenantRoles(regrouped, grant, selectedDomain, tenant);
+    }
+
+    private PrincipalContext finalizeTenantRoles(PrincipalContext context, ApplicationGrant grant,
+                                                 DomainContext selectedDomain, String tenant) {
         // Read the complete assignment: the active-only lookup hides suspended outsiders.
         UserRealmRole assignment = realmMembershipService.realmsForUser(context.getUserId()).stream()
                 .filter(row -> Objects.equals(context.getDefaultRealm(), row.getRealmRefName()))
@@ -1462,6 +1480,24 @@ public class PrincipalContextResolver {
             finalized.withDomainContext(selectedDomain).withDataDomain(selectedDomain.toDataDomain(context.getUserId()));
         }
         return finalized.build();
+    }
+
+    /**
+     * The context's roles for the tenant the session selected: groups another tenant owns never
+     * grant here, and groups the selected tenant owns do ({@link IdentityRoleResolver#withSessionTenantGroups}).
+     */
+    private PrincipalContext withSessionTenantGroups(PrincipalContext context, CredentialUserIdPassword credential,
+                                                     String tenant) {
+        if (identityRoleResolver == null || credential == null || blank(tenant) || context.getRoles() == null
+                || !Objects.equals(credential.getUserId(), context.getUserId())) {
+            return context;
+        }
+        String[] adjusted = identityRoleResolver.withSessionTenantGroups(context.getRoles(), credential,
+                context.getDefaultRealm(), context.getApplicationId(), tenant);
+        if (java.util.Arrays.equals(adjusted, context.getRoles())) {
+            return context;
+        }
+        return copy(context).withRoles(adjusted).build();
     }
 
     // ------------------------------------------------------------------ tenant selection

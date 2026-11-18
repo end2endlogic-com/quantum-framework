@@ -106,4 +106,36 @@ class RequestRealmBoundaryHttpTest extends BaseRepoTest {
                     .filter(Filters.eq("refName", refName)).delete(new DeleteOptions().multi(true));
         }
     }
+
+    @Test
+    @TestSecurity(user = "system@system.com", roles = {"admin", "system"})
+    void aPathRealmWithATrailingTabIsRefusedAndCreatesNoDatabase() {
+        // Round-7 item 4: the boundary admitted the trimmed value while the resource read the raw one.
+        Set<String> before = databases();
+        String realm = envConfigUtils.getDefaultRealm();
+        Response r = given().queryParam("collectionName", "userProfile")
+                .post("/user/userProfile/indexes/ensureIndexes/" + realm + "%09");
+        assertEquals(403, r.statusCode(), r.asString());
+        assertEquals("REALM_NOT_AUTHORIZED", r.jsonPath().getString("code"));
+        Set<String> created = databases();
+        created.removeAll(before);
+        assertTrue(created.isEmpty(), "databases created: " + created);
+    }
+
+    @Test
+    void theDatastoreLayerRefusesReservedAndMisshapenNamesWhoeverAsks() {
+        // Round-7 item 3: a cheap check where a datastore is opened, whatever path reached it.
+        Set<String> before = databases();
+        String coordination = org.eclipse.microprofile.config.ConfigProvider.getConfig()
+                .getOptionalValue("quantum.database.coordination-database", String.class)
+                .orElse("quantum-coordination-shared");
+        for (String name : new String[] {"admin", "local", "config", coordination,
+                "zz-tab\t", " zz-space", "zz/../admin", "zz.dot"}) {
+            org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                    () -> stores.getDataStore(name), "'" + name + "'");
+        }
+        Set<String> created = databases();
+        created.removeAll(before);
+        assertTrue(created.isEmpty(), "databases created: " + created);
+    }
 }

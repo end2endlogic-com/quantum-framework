@@ -103,16 +103,43 @@ class IdentityRoleResolverPlatformGroupTest {
     @Test
     void aTenantOwnedGroupStillGrantsItsMembersInItsOwnRealm() {
         // Round-6 review: platform ownership decides realm-wide authority only, never ordinary role resolution.
-        IdentityRoleResolver resolver = resolver(List.of(), List.of(group(null, "tenant-a", "editor")));
+        IdentityRoleResolver resolver = resolver(List.of(), List.of(group(null, "t", "editor")));
         java.util.Map<String, ?> sources = resolver.resolveRoleSources("issuer", POOLED, null, null);
         assertTrue(sources.containsKey("editor"), "tenant-owned group in its own realm dropped: " + sources);
     }
 
     @Test
     void aTenantOwnedSystemRealmGroupStillGrantsOnSignInButIsNotPlatformAuthority() {
-        IdentityRoleResolver resolver = resolver(List.of(group(null, "tenant-a", "org-admin")), List.of());
+        IdentityRoleResolver resolver = resolver(List.of(group(null, "t", "org-admin")), List.of());
         java.util.Map<String, ?> sources = resolver.resolveRoleSources("issuer", SYSTEM, null, null);
         assertTrue(sources.containsKey("org-admin"), "tenant-owned system-realm group dropped: " + sources);
         assertTrue(resolver.platformGroupRoles("issuer", SYSTEM, null).isEmpty());
+    }
+
+    @Test
+    void aGroupAnotherTenantOwnsGrantsNothingToAMemberOfAnotherTenant() {
+        // Round-7 review, item 1: tenant-a's admin writes a roles:[admin] group naming a member of tenant "t".
+        IdentityRoleResolver resolver = resolver(List.of(group("*", "tenant-a", "admin")),
+                List.of(group("*", "tenant-a", "admin")));
+        java.util.Map<String, ?> sources = resolver.resolveRoleSources("issuer", POOLED, null, null);
+        assertTrue(!sources.containsKey("admin"), "another tenant's group granted: " + sources);
+        CredentialUserIdPassword credential = resolver.credentialRepo.findByUserId("issuer", SYSTEM, true).orElseThrow();
+        assertTrue(!List.of(resolver.resolveEffectiveRoles(null, credential, POOLED, POOLED, null)).contains("admin"));
+    }
+
+    @Test
+    void aSessionOfTheOwnerTenantCountsItsGroupAndDropsWhatOnlyTheHomeTenantsGroupsGave() {
+        IdentityRoleResolver resolver = resolver(
+                List.of(group("*", "tenant-a", "billing-admin"), group("*", "t", "editor"), group("*", null, "user")),
+                List.of());
+        CredentialUserIdPassword issuer = resolver.credentialRepo.findByUserId("issuer", SYSTEM, true).orElseThrow();
+        String[] home = resolver.resolveEffectiveRoles(null, issuer, POOLED, POOLED, null);
+        assertEquals(Set.of("editor", "user"), Set.of(home), "home tenant t: its own group and the platform group");
+        assertEquals(Set.of("billing-admin", "user"),
+                Set.of(resolver.withSessionTenantGroups(home, issuer, POOLED, null, "tenant-a")),
+                "session tenant tenant-a: its group counts, the home tenant's no longer does");
+        assertEquals(Set.of(home), Set.of(resolver.withSessionTenantGroups(home, issuer, POOLED, null, "t")));
+        assertEquals(Set.of(home), Set.of(resolver.withSessionTenantGroups(home, null, POOLED, null, "tenant-a")),
+                "without a local credential the provider's roles stand");
     }
 }

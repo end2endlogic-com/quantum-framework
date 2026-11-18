@@ -30,8 +30,21 @@ import static org.mockito.Mockito.when;
  */
 class RealmParameterAdmissionFilterTest {
 
+    /** JAX-RS annotations declared on an interface, implemented without them (round-7 item 3). */
+    interface Api {
+        void inherited(@PathParam("realm") String realm);
+    }
+
     @SuppressWarnings("unused")
-    static class Resource {
+    static class Bean {
+        @QueryParam("realm") String realm;
+    }
+
+    @SuppressWarnings("unused")
+    static class Resource implements Api {
+        @Override
+        public void inherited(String realm) { }
+        public void beaned(@jakarta.ws.rs.BeanParam Bean bean) { }
         public void path(@PathParam("realm") String realm, @QueryParam("collectionName") String c) { }
         public void query(@QueryParam("realmRefName") String realm) { }
         public void pattern(@QueryParam("realmRegEx") String pattern) { }
@@ -49,7 +62,7 @@ class RealmParameterAdmissionFilterTest {
         admission = mock(RequestRealmAdmission.class);
         when(admission.admit(anyString())).thenAnswer(call -> {
             String name = call.getArgument(0);
-            if (name.equalsIgnoreCase("acme-P1")) return "acme-P1";
+            if (name.equals("acme-P1") || name.equals("acme-p1")) return "acme-P1";
             throw RemotePrincipalResolutionException.of(
                     com.e2eq.framework.security.principal.PrincipalResolutionError.REALM_NOT_AUTHORIZED, "x");
         });
@@ -65,9 +78,10 @@ class RealmParameterAdmissionFilterTest {
 
     private void matched(String method) throws Exception {
         ResourceInfo info = mock(ResourceInfo.class);
-        for (var m : Resource.class.getMethods()) {
+        for (var m : Resource.class.getDeclaredMethods()) {
             if (m.getName().equals(method)) when(info.getResourceMethod()).thenReturn(m);
         }
+        when(info.getResourceClass()).thenAnswer(call -> Resource.class);
         filter.resourceInfo = info;
     }
 
@@ -99,5 +113,29 @@ class RealmParameterAdmissionFilterTest {
         verify(admission, never()).admit(anyString());
         assertTrue(RealmParameterAdmissionFilter.namesRealm("realmId"));
         assertFalse(RealmParameterAdmissionFilter.namesRealm("collectionName"));
+    }
+
+    @Test
+    void aRealmPathParamDeclaredOnAnInterfaceIsAdmitted() throws Exception {
+        matched("inherited");
+        path.add("realm", "zz-unreg-2");
+        assertThrows(RemotePrincipalResolutionException.class, () -> filter.filter(request));
+    }
+
+    @Test
+    void aRealmQueryParamInABeanParamIsAdmitted() throws Exception {
+        matched("beaned");
+        query.add("realm", "zz-unreg-3");
+        assertThrows(RemotePrincipalResolutionException.class, () -> filter.filter(request));
+    }
+
+    @Test
+    void aValueWithSurroundingWhitespaceIsRefusedNotTrimmed() throws Exception {
+        // Round-7 item 4: the trimmed value was admitted while the resource read the raw one.
+        matched("query");
+        for (String raw : new String[] {" acme-P1", "acme-P1\t", "\tacme-P1", "acme-P1 "}) {
+            query.putSingle("realmRefName", raw);
+            assertThrows(RemotePrincipalResolutionException.class, () -> filter.filter(request), "'" + raw + "'");
+        }
     }
 }

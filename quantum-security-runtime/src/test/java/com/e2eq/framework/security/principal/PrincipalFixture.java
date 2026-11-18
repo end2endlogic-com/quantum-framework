@@ -181,6 +181,13 @@ public final class PrincipalFixture {
             }
             return roles.isEmpty() ? new String[]{"ANONYMOUS"} : roles.toArray(String[]::new);
         }
+
+        /** The fixture models no tenant-owned groups, so no session tenant changes the roles. */
+        @Override
+        public String[] withSessionTenantGroups(String[] roles, CredentialUserIdPassword credential, String realm,
+                                                String applicationId, String sessionTenantId) {
+            return roles;
+        }
     }
 
     public final ApplicationAccessDirectory access = new FixtureAccess(this);

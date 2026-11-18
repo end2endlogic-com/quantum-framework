@@ -50,10 +50,10 @@ public final class RealmRefNames {
     /** Bound of each answer map (found, unknown). */
     static final int MAX_ENTRIES = 1024;
     /** MongoDB limits a database name to 63 characters. */
-    static final int MAX_REF_NAME_LENGTH = 63;
+    static final int MAX_REF_NAME_LENGTH = com.e2eq.framework.model.persistent.morphia.RealmDatabaseNames.MAX_LENGTH;
 
     private static final java.util.regex.Pattern REF_NAME_SHAPE =
-            java.util.regex.Pattern.compile("[A-Za-z0-9][A-Za-z0-9_-]{0," + (MAX_REF_NAME_LENGTH - 1) + "}");
+            com.e2eq.framework.model.persistent.morphia.RealmDatabaseNames.SHAPE;
 
     private record Answer(Optional<String> refName, long expiresAtNanos) {
         boolean fresh(long now) {

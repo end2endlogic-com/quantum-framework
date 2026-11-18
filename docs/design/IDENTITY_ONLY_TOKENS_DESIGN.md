@@ -398,9 +398,26 @@ Resolve request field: `actingOnBehalfOf { userId | subject }`. Response field:
     - every `@PathParam`/`@QueryParam` whose name says realm (`realm`, `realmRefName`, `{realm}`;
       not `...Regex`/`...Pattern`) on every JAX-RS resource (`RealmParameterAdmissionFilter`,
       after `SecurityFilter`): `BaseResource.ensureIndexes/{realm}`, seed admin and
-      identity-pack `?realm=`, the migration endpoints, the user-realm-role paths. A value equal to
-      the caller's resolved realm passes without a lookup; a value that is not the canonical
-      refName is refused.
+      identity-pack `?realm=`, the migration endpoints, the user-realm-role paths. The annotations
+      are read from the resource method and every method it overrides or implements (JAX-RS
+      annotations on an interface), and from the fields and setters of a `@BeanParam`. A realm
+      under another name is marked `@RealmName` (the realm directory's `{refName}`;
+      `registered = false` checks only shape and reserved names, for a registration or a lookup
+      that must answer 404). A value equal to the caller's resolved realm passes without a lookup;
+      a value that is not the canonical refName is refused.
+    - The value checked is the raw value the resource receives: one with surrounding whitespace or
+      control characters is refused (round 7: the boundary admitted the trimmed value while the
+      resource read `realm\t`).
+  - A cheap check stays at the datastore layer (round 7): `getDataStore` refuses a name that is
+    reserved or not of a refName's exact shape (`RealmDatabaseNames`, typed 403
+    `REALM_NOT_AUTHORIZED` through `InvalidRealmDatabaseExceptionMapper`). Configured and
+    registered realms always have that shape, so no legitimate flow is refused. Registration is
+    not checked there.
+  - Follow-up: realm names in JSON bodies (`AuthRequest.realm`, `AccessInviteRequest.realm`,
+    `AccessInviteAcceptRequest.realm`, `EnableImpersonationRequest.realmToEnableIn`,
+    `ScopedActionEnablementRequest.realm`, `ServiceTokenRequest.realm`,
+    `TenantProvisionRequest.placementRealmId`) are not admitted by the filter; the datastore check
+    covers their shape and reserved names.
   - Startup, seeding and provisioning open datastores as before: they name realms from
     configuration or from rows they just wrote, never from request input.
   - A registration takes effect at once: every save of a `Realm` row (any repository, the control
@@ -433,6 +450,14 @@ Resolve request field: `actingOnBehalfOf { userId | subject }`. Response field:
     group. Or `admin` from the credential or the realm assignment, in a dedicated realm, or in a
     shared realm when the active assignment authorizes every tenant
     (`authorizedTenantRegEx = "*"`, trimmed; `.*` and other patterns do not count).
+  - Ordinary role resolution (round 7): a tenant-owned group grants its roles only in a session of
+    its owner tenant. Without a selected tenant that is the identity's home tenant
+    (`domainContext.tenantId`); once a tenant is selected, `PrincipalContextResolver` drops what
+    only the home tenant's groups gave and adds the selected tenant's
+    (`IdentityRoleResolver.withSessionTenantGroups`). A group no tenant owns counts as before. So
+    tenant A's administrator naming tenant B's member in a `roles:[admin]` group raises nothing in
+    B; Auth also refuses such a save (every listed member must belong to the caller's tenant, by
+    the store).
   - A tenant-owned group never counts, nor does a group in any other realm, whatever its
     application scope or its `ownerTenantId`. A null owner outside the system realm is not realm
     wide, so a tenant admin cannot make themselves realm-wide by creating an

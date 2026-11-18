@@ -94,4 +94,12 @@ class RequestRealmAdmissionTest {
         // token-claim scan reads a computed getAttribute name as a claim read).
         assertEquals("quantum-realm-refused", RealmRefNames.REFUSED_REALM_ATTRIBUTE);
     }
+
+    @Test
+    void aNameWithSurroundingWhitespaceOrControlCharactersIsRefusedNotTrimmed() {
+        // Round-7 item 4.
+        for (String raw : new String[] {" system-com", "system-com ", "system-com\t", "\nacme-P1", "acme\u0000P1"}) {
+            assertTrue(admission.admitted(raw).isEmpty(), "'" + raw + "'");
+        }
+    }
 }
