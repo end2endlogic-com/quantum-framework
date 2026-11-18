@@ -250,6 +250,30 @@ public class ChainPropagationSettlesTest {
         assertEquals(Set.of(false), inferredFlags("broker1", "partnerOf", "broker2"));
     }
 
+    /**
+     * An edge derived from an own image goes with the edge that image mirrors. {@code affiliateOf} is
+     * implied by a chain, symmetric, and the inverse of {@code affiliatedBy}: its symmetric image at
+     * the other broker implies {@code affiliatedBy} here. When the chain breaks, the stored image is
+     * still in the snapshot on the pass that removes it, and must not leave that edge behind.
+     */
+    @Test
+    void anEdgeImpliedByAnOwnImageGoesWithTheEdgeTheImageMirrors() {
+        Reasoner.Edge ally = edge("broker2", "Broker", "allyOf", "broker3", "Broker");
+        Reasoner.Edge[] own = {edge("broker1", "Broker", "agentOf", "broker2", "Broker"),
+                edge("broker1", "Broker", "knows", "broker3", "Broker")};
+        assertSettled(write("broker2", "Broker", ally));
+        assertSettled(write("broker1", "Broker", own));
+        assertSettled(write("broker1", "Broker", own));
+        assertEquals(Set.of("broker3"), dsts("broker1", "affiliateOf"));
+        assertEquals(Set.of("broker3"), dsts("broker1", "affiliatedBy"));
+
+        assertSettled(write("broker2", "Broker"));
+
+        assertEquals(Set.of(), dsts("broker1", "affiliateOf"), "the chain's second hop is gone");
+        assertEquals(Set.of(), dsts("broker3", "affiliateOf"));
+        assertEquals(Set.of(), dsts("broker1", "affiliatedBy"), "affiliatedBy outlived the affiliateOf it came from");
+    }
+
     private static final Map<String, String> NODES = Map.of("decl1", "Declaration", "intake1", "Intake",
             "intake2", "Intake", "finding1", "Finding", "broker1", "Broker", "project1", "Project");
 
@@ -349,6 +373,14 @@ public class ChainPropagationSettlesTest {
                 false, Optional.of("partneredBy"), false, true, false, Set.of(), false));
         props.put("partneredBy", new PropertyDef("partneredBy", Optional.of("Broker"), Optional.of("Broker"),
                 false, Optional.of("partnerOf"), false, false, false, Set.of(), true));
+        for (String plain : List.of("agentOf", "allyOf", "knows")) {
+            props.put(plain, new PropertyDef(plain, Optional.of("Broker"), Optional.of("Broker"),
+                    false, Optional.empty(), false, false, false, Set.of(), false));
+        }
+        props.put("affiliateOf", new PropertyDef("affiliateOf", Optional.of("Broker"), Optional.of("Broker"),
+                false, Optional.of("affiliatedBy"), false, true, false, Set.of(), false));
+        props.put("affiliatedBy", new PropertyDef("affiliatedBy", Optional.of("Broker"), Optional.of("Broker"),
+                false, Optional.of("affiliateOf"), false, false, false, Set.of(), true));
         props.put("intakeSeenByBroker", new PropertyDef("intakeSeenByBroker", Optional.of("Intake"), Optional.of("Broker"),
                 false, Optional.empty(), false, false, false, Set.of(), false));
         props.put("findingForBroker", new PropertyDef("findingForBroker", Optional.of("Finding"), Optional.of("Broker"),
@@ -356,6 +388,7 @@ public class ChainPropagationSettlesTest {
         return new TBox(classes, props, List.of(
                 new PropertyChainDef(List.of("intakeForDeclaration", "filedByBroker"), "intakeForBroker"),
                 new PropertyChainDef(List.of("intakeForDeclaration", "belongsToProject"), "intakeForProject"),
-                new PropertyChainDef(List.of("findingForDeclaration", "filedByBroker"), "findingForBroker")));
+                new PropertyChainDef(List.of("findingForDeclaration", "filedByBroker"), "findingForBroker"),
+                new PropertyChainDef(List.of("agentOf", "allyOf"), "affiliateOf")));
     }
 }
