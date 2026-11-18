@@ -234,6 +234,22 @@ public class ChainPropagationSettlesTest {
                 .collect(Collectors.toSet()));
     }
 
+    /**
+     * Only the edge an image mirrors is refused as that image's consequence. A different edge the
+     * image implies is still derived: {@code partnerOf} is symmetric and the inverse of
+     * {@code partneredBy}, so the symmetric image at the other broker implies {@code partneredBy} here.
+     */
+    @Test
+    void anotherEdgeImpliedByAnOwnImageIsStillDerived() {
+        Reasoner.Edge partner = edge("broker1", "Broker", "partnerOf", "broker2", "Broker");
+        assertSettled(write("broker1", "Broker", partner));
+        assertSettled(write("broker1", "Broker", partner));
+        assertSettled(write("broker1", "Broker", partner));
+
+        assertEquals(Set.of("broker2"), dsts("broker1", "partneredBy"));
+        assertEquals(Set.of(false), inferredFlags("broker1", "partnerOf", "broker2"));
+    }
+
     private static final Map<String, String> NODES = Map.of("decl1", "Declaration", "intake1", "Intake",
             "intake2", "Intake", "finding1", "Finding", "broker1", "Broker", "project1", "Project");
 
@@ -329,6 +345,10 @@ public class ChainPropagationSettlesTest {
         pair(props, "intakeForBroker", "Intake", "Broker", "brokerHasIntake", false);
         pair(props, "intakeForProject", "Intake", "Project", "projectHasIntake", false);
         pair(props, "findingForDeclaration", "Finding", "Declaration", "declarationHasFinding", false);
+        props.put("partnerOf", new PropertyDef("partnerOf", Optional.of("Broker"), Optional.of("Broker"),
+                false, Optional.of("partneredBy"), false, true, false, Set.of(), false));
+        props.put("partneredBy", new PropertyDef("partneredBy", Optional.of("Broker"), Optional.of("Broker"),
+                false, Optional.of("partnerOf"), false, false, false, Set.of(), true));
         props.put("intakeSeenByBroker", new PropertyDef("intakeSeenByBroker", Optional.of("Intake"), Optional.of("Broker"),
                 false, Optional.empty(), false, false, false, Set.of(), false));
         props.put("findingForBroker", new PropertyDef("findingForBroker", Optional.of("Finding"), Optional.of("Broker"),
