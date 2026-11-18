@@ -220,10 +220,12 @@ public class IdentityRoleResolver {
 
     /**
      * The roles {@code identity} holds through platform user groups: groups stored in the system
-     * realm that apply to {@code applicationId}. Only platform principals write the system realm, so
-     * these are the groups no tenant administrator can create or edit. A group in any other realm,
-     * whatever its {@code ownerTenantId} says (a client-writable field), is left out: it is never
-     * realm-wide authority. {@code realm} is the realm the authority is asked for; it is validated
+     * realm, with no {@code ownerTenantId}, that apply to {@code applicationId}. Both conditions are
+     * needed. The system realm also holds tenant-owned groups (a tenant administrator's group saved
+     * without {@code X-Realm} lands there, and Launchpad organization administrators are homed
+     * there); Auth sets such a group's {@code ownerTenantId} to its writer's tenant, so a blank owner
+     * there means a platform principal wrote it. A group in any other realm is left out whatever
+     * its owner field says. {@code realm} is the realm the authority is asked for; it is validated
      * but does not widen the lookup. The same group lookup as {@link #resolveRoleSources}.
      */
     public java.util.Set<String> platformGroupRoles(String identity, String realm, String applicationId) {
@@ -241,11 +243,19 @@ public class IdentityRoleResolver {
     private void collectGroupRoles(java.util.Set<String> roles, CredentialUserIdPassword credential, String groupRealm,
                                    String applicationId) {
         for (UserGroup group : groupsOf(credential, groupRealm)) {
-            if (group != null && groupAppliesToApplication(group, applicationId)
+            if (group != null && platformOwned(group) && groupAppliesToApplication(group, applicationId)
                     && group.getRoles() != null) {
                 group.getRoles().stream().filter(role -> role != null && !role.isBlank()).forEach(roles::add);
             }
         }
+    }
+
+    /**
+     * A group no tenant owns: its {@code ownerTenantId} is unset or empty after {@link String#trim()}
+     * (the blank Auth's writers use). Any other value, a Unicode space included, is an owner.
+     */
+    static boolean platformOwned(UserGroup group) {
+        return group.getOwnerTenantId() == null || group.getOwnerTenantId().trim().isEmpty();
     }
 
     private List<UserGroup> groupsOf(CredentialUserIdPassword credential, String groupRealm) {
@@ -278,7 +288,7 @@ public class IdentityRoleResolver {
             return;
         }
         for (UserGroup group : groups) {
-            if (group != null && groupAppliesToApplication(group, applicationId)) {
+            if (group != null && platformOwned(group) && groupAppliesToApplication(group, applicationId)) {
                 addRoles(target, group.getRoles(), RoleSource.USERGROUP);
             }
         }

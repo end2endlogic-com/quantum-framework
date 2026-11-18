@@ -81,6 +81,25 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
         return context == null ? Uni.createFrom().item(work) : context.runBlocking(work);
     }
 
+    /**
+     * True when {@code realm} may reach this service's stores: the system realm, or a refName the
+     * catalog registers. Without a catalog (unit tests, no directory) only the shape is checked.
+     */
+    boolean admittedRealm(String realm) {
+        String trimmed = realm.trim();
+        if (!com.e2eq.framework.security.principal.RealmRefNames.isRefNameShape(trimmed)) {
+            return false;
+        }
+        if (systemDirectory == null || trimmed.equals(envConfigUtils.getSystemRealm())) {
+            return true;
+        }
+        try {
+            return com.e2eq.framework.security.principal.RealmRefNames.registered(systemDirectory, trimmed).isPresent();
+        } catch (com.e2eq.framework.security.principal.RemotePrincipalResolutionException unavailable) {
+            return false;
+        }
+    }
+
     private SecurityIdentity build(SecurityIdentity identity, String contextRealm,
                                    io.vertx.ext.web.RoutingContext routing) {
         String originalPrincipal = identity.getPrincipal().getName();
@@ -98,6 +117,16 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
             // answers the request with the typed 503 from the same lookup.
             Log.debugf("RolesAugmentor: realm catalog unavailable for %s: %s", originalPrincipal, unavailable.getMessage());
             return withoutTokenRoles(identity).build();
+        }
+        // A requested realm that is not a refName's shape, or that the catalog does not register,
+        // names no realm: nothing is looked up in a store for it (a store lookup would open, and
+        // index, a database of that name). The identity keeps no roles and is marked, so
+        // SecurityFilter refuses the request 403 REALM_NOT_AUTHORIZED.
+        if (contextRealm != null && !contextRealm.isBlank() && !admittedRealm(contextRealm)) {
+            Log.debugf("RolesAugmentor: requested realm refused for %s (unregistered or not a refName)", originalPrincipal);
+            return withoutTokenRoles(identity)
+                    .addAttribute(com.e2eq.framework.security.principal.RealmRefNames.REFUSED_REALM_ATTRIBUTE, contextRealm)
+                    .build();
         }
 
         // In an application session whose application or realm differs from the token's, the

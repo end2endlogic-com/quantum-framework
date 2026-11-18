@@ -1501,14 +1501,16 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
      * <p>An unauthenticated request costs no catalog lookup: it is left as sent (its realm is not
      * a principal's realm, and the endpoints it may reach check what they read). An authenticated
      * request whose {@code X-Realm} is not a realm refName's shape names no realm and is refused
-     * before any lookup, 403 {@code REALM_NOT_AUTHORIZED}.</p>
+     * before any lookup, 403 {@code REALM_NOT_AUTHORIZED}; so is one the roles augmentor found
+     * unregistered ({@link com.e2eq.framework.security.principal.RealmRefNames#REFUSED_REALM_ATTRIBUTE}).</p>
      */
     void canonicalizeRealmHeader(ContainerRequestContext requestContext) {
         String requested = requestContext.getHeaderString("X-Realm");
         if (requested == null || requested.isBlank() || !authenticatedRequest()) {
             return;
         }
-        if (!com.e2eq.framework.security.principal.RealmRefNames.isRefNameShape(requested)) {
+        if (!com.e2eq.framework.security.principal.RealmRefNames.isRefNameShape(requested)
+                || securityIdentity.getAttribute("quantum-realm-refused") != null) {
             throw com.e2eq.framework.security.principal.RemotePrincipalResolutionException.of(
                     com.e2eq.framework.security.principal.PrincipalResolutionError.REALM_NOT_AUTHORIZED,
                     "X-Realm is not a realm refName");

@@ -98,7 +98,90 @@ public class MorphiaDataStoreWrapper {
          throw new IllegalArgumentException("parameter realm needs to be non null and non-empty");
       }
 
+      MorphiaDatastore open = datastoreMap.get(realm);
+      if (open != null) {
+         return open;
+      }
+      requireAdmitted(realm);
       return datastoreMap.computeIfAbsent(realm, r -> createMorphiaDatastore(r));
+   }
+
+   /**
+    * Realms a datastore may be opened for although they are neither registered nor existing:
+    * a regular expression (default none), for test realms only. Production leaves it unset.
+    */
+   @ConfigProperty(name = "quantum.morphia.unregistered-realm-pattern")
+   Optional<String> unregisteredRealmPattern = Optional.empty();
+
+   @Inject
+   jakarta.enterprise.inject.Instance<RealmDatastoreAdmission> realmAdmission;
+
+   private final java.util.Set<String> existingDatabases = ConcurrentHashMap.newKeySet();
+
+   private static final ThreadLocal<java.util.Set<String>> PROVISIONING = ThreadLocal.withInitial(java.util.HashSet::new);
+
+   /**
+    * Opens a scope in which {@code realm}'s datastore may be created before the realm is
+    * registered: realm registration and provisioning, which create the realm, use it. Close it
+    * when done.
+    */
+   public static AutoCloseable provisioning(String realm) {
+      java.util.Set<String> realms = PROVISIONING.get();
+      boolean added = realms.add(realm);
+      return () -> {
+         if (added) {
+            realms.remove(realm);
+         }
+      };
+   }
+
+   /**
+    * A datastore opens (and its indexes are built, which creates the database) only for a realm
+    * that exists or is registered: a configured realm (system, default, test), a realm whose
+    * database exists, a realm the
+    * catalog registers (this service's own system realm catalog, then {@link RealmDatastoreAdmission}),
+    * a realm being provisioned ({@link #provisioning}), or a test realm matching
+    * {@code quantum.morphia.unregistered-realm-pattern}. Anything else, such as a requested realm
+    * name no one registered, is refused with {@link UnregisteredRealmException}, so a caller-supplied
+    * name can never create a database.
+    */
+   void requireAdmitted(String realm) {
+      if (configuredRealm(realm) || PROVISIONING.get().contains(realm)
+              || unregisteredRealmPattern.filter(p -> !p.isBlank()).map(p -> realm.matches(p)).orElse(false)
+              || databaseExists(realm) || registeredLocally(realm) || registeredInCatalog(realm)) {
+         return;
+      }
+      Log.warnf("Refused a datastore for realm '%s': it is not registered and has no database", realm);
+      throw new UnregisteredRealmException(realm);
+   }
+
+   /** The realms this deployment configures (system, default, test): deployment settings, not caller input. */
+   private boolean configuredRealm(String realm) {
+      return realm.equals(envConfigUtils.getSystemRealm()) || realm.equals(envConfigUtils.getDefaultRealm())
+              || realm.equals(envConfigUtils.getTestRealm());
+   }
+
+   private boolean databaseExists(String realm) {
+      if (existingDatabases.contains(realm)) {
+         return true;
+      }
+      for (String name : mongoClient.listDatabaseNames()) {
+         existingDatabases.add(name);
+      }
+      return existingDatabases.contains(realm);
+   }
+
+   private boolean registeredLocally(String realm) {
+      String collection = collectionNameOf(com.e2eq.framework.model.security.Realm.class);
+      return mongoClient.getDatabase(envConfigUtils.getSystemRealm()).getCollection(collection)
+              .find(com.mongodb.client.model.Filters.eq("refName", realm)).limit(1).first() != null;
+   }
+
+   private boolean registeredInCatalog(String realm) {
+      if (realmAdmission == null || !realmAdmission.isResolvable()) {
+         return false;
+      }
+      return realmAdmission.get().registered(realm);
    }
 
    /** Shared database used only for short-lived coordination locks; mirrors MigrationService. */

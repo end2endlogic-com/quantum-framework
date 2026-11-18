@@ -24,8 +24,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Realm-wide authority from groups comes only from groups stored in the system realm. A group in a
- * tenant realm is never realm-wide, whatever its client-writable {@code ownerTenantId} says.
+ * Realm-wide authority from groups comes only from groups stored in the system realm with no
+ * {@code ownerTenantId}. A tenant-owned group, or a group in a tenant realm, is never realm wide.
  */
 class IdentityRoleResolverPlatformGroupTest {
 
@@ -79,10 +79,19 @@ class IdentityRoleResolverPlatformGroupTest {
     }
 
     @Test
-    void aSystemRealmGroupIsRealmWideWhateverItsOwnerField() {
+    void anOwnerlessSystemRealmGroupIsRealmWide() {
         IdentityRoleResolver resolver = resolver(
-                List.of(group("*", null, "admin"), group("helixor-code", "some-tenant", "issuer")), List.of());
+                List.of(group("*", null, "admin"), group("helixor-code", " ", "issuer")), List.of());
         assertEquals(Set.of("admin", "issuer"), resolver.platformGroupRoles("issuer", POOLED, "helixor-code"));
+    }
+
+    @Test
+    void aTenantOwnedGroupInTheSystemRealmIsNotRealmWide() {
+        // Round-5 review: a tenant admin's group saved without X-Realm is stored in the system realm,
+        // owned by its tenant (Auth sets ownerTenantId). It grants within that tenant only.
+        IdentityRoleResolver resolver = resolver(
+                List.of(group("*", "tenant-a", "admin"), group("*", "null", "admin")), List.of());
+        assertTrue(resolver.platformGroupRoles("issuer", POOLED, "helixor-code").isEmpty());
     }
 
     @Test

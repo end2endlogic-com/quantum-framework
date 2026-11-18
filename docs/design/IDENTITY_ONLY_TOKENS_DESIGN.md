@@ -375,6 +375,24 @@ Resolve request field: `actingOnBehalfOf { userId | subject }`. Response field:
     realm Auth registers) takes the case from the principal Auth resolved for the request.
   - A directory outage is refused 503 `PRINCIPAL_RESOLUTION_UNAVAILABLE`, never a 500. The
     roles augmentor then drops token roles (fails closed).
+- **No datastore for an unregistered realm.** An authenticated `X-Realm` that is well shaped but
+  names no registered realm is refused 403 `REALM_NOT_AUTHORIZED` before any store lookup: the
+  roles augmentor checks shape and registration before its credential lookup, drops token roles
+  and marks the identity, and `SecurityFilter` answers the refusal (on a role-gated endpoint,
+  whose role check runs first, `RefusedRealmForbiddenExceptionMapper` answers the same typed
+  code; any other role refusal stays a plain 403). Before, a misshapen name
+  was a 500 and each unknown name created a MongoDB database (one probe created 271 and crashed
+  `mongod`).
+  - `MorphiaDataStoreWrapper.getDataStore` refuses (`UnregisteredRealmException`, mapped to 403
+    `REALM_NOT_AUTHORIZED`) to open a datastore for a realm that is not a configured realm (system, default, test), an
+    existing database, a `Realm` row in the system realm, or a realm the directory registers
+    (`RealmDatastoreAdmission`). This covers every path that hands caller input to
+    `getDataStore`, `MigrationCheckRequestFilter` included, so `REALM_NOT_MIGRATED` still
+    answers for a registered realm that is not migrated.
+  - Realm creation writes the `Realm` row before it opens the new realm's datastore, so it is
+    admitted. Code that must open a datastore before the row exists does so inside
+    `MorphiaDataStoreWrapper.provisioning(realm)`. Tests whose realms are never registered set
+    `quantum.morphia.unregistered-realm-pattern` (unset in production).
 - **Error responses carry no internals.** The framework's exception mappers no longer return
   stack traces (`debugMessage`), an unmapped exception's own message, or a 5xx
   `WebApplicationException`'s message (`ClientErrorDetail.serverErrorMessage`; a 4xx keeps the
@@ -395,19 +413,23 @@ Resolve request field: `actingOnBehalfOf { userId | subject }`. Response field:
   - The rule is invite management's rule for a realm administrator: every tenant of a dedicated
     realm, and in a shared realm only the tenants its own assignment authorizes.
   - Realm wide: a realm-wide (`*`) platform user group, which is a group stored in the system
-    realm (`IdentityRoleResolver.platformGroupRoles`); only platform principals write the system
-    realm. Or `admin` from the credential or the realm assignment, in a dedicated realm, or in a
+    realm with no `ownerTenantId` (`IdentityRoleResolver.platformGroupRoles`). The system realm
+    also holds tenant-owned groups: a pooled tenant admin's plain `POST /user/usergroup` (no
+    `X-Realm`) lands there, and Auth stamps it with the writer's tenant, so it is not a platform
+    group. Or `admin` from the credential or the realm assignment, in a dedicated realm, or in a
     shared realm when the active assignment authorizes every tenant
     (`authorizedTenantRegEx = "*"`, trimmed; `.*` and other patterns do not count).
-  - A group in any other realm never counts, whatever its application scope or its
-    `ownerTenantId` (a client-writable field, never authority). A null owner outside the system
-    realm is not realm wide, so a tenant admin cannot make themselves realm-wide by creating an
+  - A tenant-owned group never counts, nor does a group in any other realm, whatever its
+    application scope or its `ownerTenantId`. A null owner outside the system realm is not realm
+    wide, so a tenant admin cannot make themselves realm-wide by creating an
     ownerless group, and a legacy group that predates `ownerTenantId` grants nothing realm wide.
   - Defence in depth at Auth (`RoleGrantReaderInterceptor`, `PrivilegedFields`): a non-system
     caller's group is always owned by the caller's tenant (the server sets `ownerTenantId`); field
     updates of `ownerTenantId` and `authorizedTenantRegEx` need a system principal; a non-system
-    caller may not set `authorizedTenantRegEx` in a typed assignment or tenant grant, and may name
-    only its own tenant in `authorizedTenantIds`.
+    caller may not change the stored `authorizedTenantRegEx` in a typed assignment or tenant grant,
+    and may add only its own tenant to `authorizedTenantIds` (echoing the stored values, a
+    read-modify-write, passes). Identity-pack operators, whose packs are applied with rules
+    ignored into any realm, are system principals; `admin` alone is not one.
   - Tenant scoped: any other `admin` in a shared (multi-tenant) realm. Pooled provisioning gives
     a tenant's administrator flat credential roles (`admin`, `user`) and an assignment naming its
     one tenant, so a flat credential role alone is not realm wide there.

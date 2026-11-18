@@ -33,6 +33,12 @@ import java.util.Optional;
  */
 public final class RealmRefNames {
 
+    /**
+     * Identity attribute {@code RolesAugmentor} sets when the requested realm names no registered
+     * realm; {@code SecurityFilter} then refuses the request 403 {@code REALM_NOT_AUTHORIZED}.
+     */
+    public static final String REFUSED_REALM_ATTRIBUTE = "quantum-realm-refused";
+
     static final long FOUND_TTL_NANOS = 60_000_000_000L;
     static final long MISSING_TTL_NANOS = 30_000_000_000L;
     /** Bound of each answer map (found, unknown). */
