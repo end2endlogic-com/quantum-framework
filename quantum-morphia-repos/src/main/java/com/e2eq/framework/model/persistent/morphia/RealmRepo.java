@@ -153,6 +153,20 @@ public class RealmRepo extends MorphiaRepo<Realm> {
    }
 
    /**
+    * The realm whose refName equals {@code refName} ignoring case, in a specific realm database,
+    * ignoring security rules (lowest {@code _id} first). Realm refNames are database names, which
+    * MongoDB keeps unique ignoring case, so at most one realm can match.
+    */
+   public Optional<Realm> findByRefNameIgnoringCase(String refName, String realmId) {
+      if (refName == null || refName.isBlank()) {
+         return Optional.empty();
+      }
+      Query<Realm> query = morphiaDataStoreWrapper.getDataStore(realmId).find(getPersistentClass())
+         .filter(Filters.regex("refName", "^" + java.util.regex.Pattern.quote(refName) + "$").caseInsensitive());
+      return Optional.ofNullable(query.first(lowestIdFirst()));
+   }
+
+   /**
     * Every realm document recorded under {@code refName} in a specific realm
     * database, lowest {@code _id} first, ignoring security rules.
     *

@@ -50,6 +50,8 @@ public class MorphiaDataStoreWrapper {
    ReferenceInterceptor referenceInterceptor;
    @Inject
    PersistenceAuditEventInterceptor persistenceAuditEventInterceptor;
+   @Inject
+   com.e2eq.framework.model.persistent.morphia.interceptors.RealmRecordSavedInterceptor realmRecordSavedInterceptor;
 
    @Inject
    EnvConfigUtils envConfigUtils;
@@ -97,6 +99,16 @@ public class MorphiaDataStoreWrapper {
       if (realm == null || realm.isEmpty()) {
          throw new IllegalArgumentException("parameter realm needs to be non null and non-empty");
       }
+      // Shape and reserved names only (never registration): a name that cannot be a realm never
+      // becomes a database, whichever caller passed it.
+      if (!RealmDatabaseNames.wellShaped(realm)) {
+         throw new RealmDatabaseNames.InvalidRealmDatabaseException(
+                 "realm name is not a realm refName's shape; no datastore was opened");
+      }
+      if (RealmDatabaseNames.reserved(realm, coordinationDatabase)) {
+         throw new RealmDatabaseNames.InvalidRealmDatabaseException(
+                 "realm name is a reserved database; no datastore was opened");
+      }
 
       return datastoreMap.computeIfAbsent(realm, r -> createMorphiaDatastore(r));
    }
@@ -138,6 +150,9 @@ public class MorphiaDataStoreWrapper {
       mdatastore.getMapper().addInterceptor(auditInterceptor);
       mdatastore.getMapper().addInterceptor(referenceInterceptor);
       mdatastore.getMapper().addInterceptor(persistenceAuditEventInterceptor);
+      if (realmRecordSavedInterceptor != null) {
+         mdatastore.getMapper().addInterceptor(realmRecordSavedInterceptor);
+      }
 
       // Reuse already-mapped entity types from the base datastore (no classpath scanning per realm),
       // but do not project system-plane security/identity entities into tenant realms.

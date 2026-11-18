@@ -18,10 +18,27 @@ class FixedWorkspaceHttpTest extends AuthorizationLifecycleHttpTest {
     }
     @Test
     void fixedPolicyIgnoresRequestedWorkspaceAndRunsOnceAcrossAllFilters() throws Exception {
+        // A registered realm other than the fixed one: the policy ignores the request.
+        var other = new com.e2eq.framework.model.security.Realm();
+        other.setRefName("tenant-b");
+        org.mockito.Mockito.when(directory.findRealmByRefName("tenant-b")).thenReturn(java.util.Optional.of(other));
         int before = SelectionPolicyExamples.FixedWorkspace.calls.get();
-        var result = call("alice", null, "unregistered");
+        var result = call("alice", null, "tenant-b");
         assertEquals(200, result.statusCode(), result.body());
         assertEquals("alice:tenant-a:app-a:editor", result.body());
         assertEquals(before + 1, SelectionPolicyExamples.FixedWorkspace.calls.get());
+    }
+
+    @Test
+    void anUnregisteredRequestedRealmIsRefusedBeforeThePolicyRuns() throws Exception {
+        // The header names no realm: refused typed before any store lookup, whatever the policy.
+        int before = SelectionPolicyExamples.FixedWorkspace.calls.get();
+        var result = call("alice", null, "unregistered");
+        assertEquals(403, result.statusCode(), result.body());
+        assertEquals(before, SelectionPolicyExamples.FixedWorkspace.calls.get());
+        assertTrue(result.body().contains("REALM_NOT_AUTHORIZED"), result.body());
+        var typed = call("alice", null, "unregistered", "lifecycle/self");
+        assertEquals(403, typed.statusCode(), typed.body());
+        assertTrue(typed.body().contains("REALM_NOT_AUTHORIZED"), typed.body());
     }
 }

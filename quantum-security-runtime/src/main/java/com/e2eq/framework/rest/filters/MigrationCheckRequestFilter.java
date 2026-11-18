@@ -9,6 +9,7 @@ import com.e2eq.framework.system.config.SystemRealmOwnership;
 import io.quarkus.logging.Log;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.inject.Inject;
+import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.container.ContainerRequestContext;
 import jakarta.ws.rs.container.ContainerRequestFilter;
 import jakarta.ws.rs.ext.Provider;
@@ -49,6 +50,9 @@ public class MigrationCheckRequestFilter implements ContainerRequestFilter {
     @Inject
     com.e2eq.framework.security.principal.RemotePrincipalSettings remotePrincipalSettings;
 
+    @Inject
+    com.e2eq.framework.security.principal.RequestRealmAdmission realmAdmission;
+
     @ConfigProperty(name = "quantum.database.migration.enabled", defaultValue = "true")
     boolean migrationCheckEnabled;
 
@@ -58,11 +62,11 @@ public class MigrationCheckRequestFilter implements ContainerRequestFilter {
     @ConfigProperty(name = "quantum.security.session.realm")
     Optional<String> sessionRealm = Optional.empty();
 
+    /** Typed refusal code for a request whose realm this service has not migrated. */
+    public static final String REALM_NOT_MIGRATED = RealmNotMigratedProblem.REALM_NOT_MIGRATED;
+
     @Override
     public void filter(ContainerRequestContext requestContext) throws IOException {
-        boolean failRequest=false;
-        DatabaseMigrationException ex = null;
-
         if (!migrationCheckEnabled) {
             return;
         }
@@ -71,19 +75,20 @@ public class MigrationCheckRequestFilter implements ContainerRequestFilter {
             return;
         }
 
+        String checkedRealm = null;
+        DatabaseMigrationException ex = null;
         try {
-            String effectiveRealm = resolveMigrationRealm(requestContext);
-            checkOwnedRealm(effectiveRealm);
-           checkOwnedRealm(envConfigUtils.getSystemRealm());
-
+            checkedRealm = resolveMigrationRealm(requestContext);
+            checkOwnedRealm(checkedRealm);
+            checkedRealm = envConfigUtils.getSystemRealm();
+            checkOwnedRealm(checkedRealm);
         } catch (DatabaseMigrationException e) {
-            Log.warn("!! Migration check failed: " + e.getMessage());
+            Log.warnf("!! Migration check failed for realm %s: %s", checkedRealm, e.getMessage());
             Log.warnf(" Execution of Request:%s caused this error", requestContext.getUriInfo().getPath());
-            failRequest=true;
             ex = e;
         }
 
-        if (failRequest && (requestContext.getUriInfo().getPath().contains("login") ||
+        if (ex != null && (requestContext.getUriInfo().getPath().contains("login") ||
                   requestContext.getUriInfo().getPath().contains("migration"))) {
             try {
                 checkOwnedRealm(envConfigUtils.getSystemRealm());
@@ -91,12 +96,17 @@ public class MigrationCheckRequestFilter implements ContainerRequestFilter {
                 Log.warn("!! System Migration check failed: " + e.getMessage());
                 Log.warnf(" Execution of Request:%s caused this error", requestContext.getUriInfo().getPath());
             }
-            failRequest=false;
+            ex = null;
         }
 
-        if (failRequest) {
-           throw ex;
+        if (ex != null) {
+            throw realmNotMigrated(checkedRealm, ex);
         }
+    }
+
+    /** The typed 409 for an unmigrated request realm ({@link RealmNotMigratedProblem}). */
+    static WebApplicationException realmNotMigrated(String realm, DatabaseMigrationException cause) {
+        return RealmNotMigratedProblem.of(realm, cause);
     }
 
     /** Remote services validate their application schema, not the control plane's schema. */
@@ -123,7 +133,9 @@ public class MigrationCheckRequestFilter implements ContainerRequestFilter {
                 : requestContext.getHeaderString("X-Realm");
         if (realmOverride != null && !realmOverride.isBlank()) {
             Log.debug("Realm override found: " + realmOverride);
-            return realmOverride;
+            // Caller input (on any request, signed in or not): checking it opens its datastore,
+            // which creates the database, so an unregistered or reserved name is refused first.
+            return realmAdmission == null ? realmOverride : realmAdmission.admit(realmOverride);
         }
 
         if (trustTokenClaims && identity != null && !identity.isAnonymous()
