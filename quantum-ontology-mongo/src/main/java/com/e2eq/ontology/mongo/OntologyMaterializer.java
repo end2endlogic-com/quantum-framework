@@ -91,9 +91,10 @@ public class OntologyMaterializer {
         List<Reasoner.Edge> base = new ArrayList<>(explicitEdges != null ? explicitEdges : List.of());
         base.addAll(foreign);
 
-        List<Reasoner.Edge> extendedEdges = chainSnapshotEdges(realmId, dataDomain, entityId, base, registry);
+        Set<List<String>> ownImages = new HashSet<>();
+        List<Reasoner.Edge> extendedEdges = chainSnapshotEdges(realmId, dataDomain, entityId, base, registry, ownImages);
         var snap = new Reasoner.EntitySnapshot(tenantId, entityId, entityType, extendedEdges);
-        var out = withoutImagesOf(reasoner.infer(snap, registry), foreign);
+        var out = withoutImagesOf(reasoner.infer(snap, registry), foreign, ownImages);
 
         // 1) Upsert EXPLICIT edges as-is for traversal and cascade logic
         // Separate computed edges (from ComputedEdgeProvider) from regular explicit edges
@@ -259,7 +260,8 @@ public class OntologyMaterializer {
      * chain can take, the outgoing edges of the nodes they reach.
      */
     private List<Reasoner.Edge> chainSnapshotEdges(String realmId, DataDomain dataDomain, String entityId,
-                                                   List<Reasoner.Edge> baseEdges, OntologyRegistry registry) {
+                                                   List<Reasoner.Edge> baseEdges, OntologyRegistry registry,
+                                                   Set<List<String>> ownImages) {
         // Build an extended snapshot that includes neighbor edges for chain inference.
         // For each explicit edge A->B, fetch B's outgoing edges so chains like [refersToB, refersToC]
         // can be evaluated to produce A->C inferred edges.
@@ -297,6 +299,9 @@ public class OntologyMaterializer {
                     // Fetch neighbor's outgoing edges from the edge repo
                     List<OntologyEdge> neighborEdges = edgeRepo.findBySrc(realmId, dataDomain, neighborId);
                     for (OntologyEdge ne : neighborEdges) {
+                        if (ne.isInferred() && entityId.equals(ownerOf(ne))) {
+                            ownImages.add(List.of(ne.getSrc(), ne.getP(), ne.getDst()));
+                        }
                         // Convert OntologyEdge to Reasoner.Edge
                         extendedEdges.add(new Reasoner.Edge(
                                 ne.getSrc(), ne.getSrcType(), ne.getP(),
@@ -535,10 +540,16 @@ public class OntologyMaterializer {
     /**
      * Drop the reasoner's inverse and symmetric images of {@code foreign} edges: those images are the
      * owning node's own edges, which this entity must not rewrite as inferred.
+     *
+     * <p>Also drop the images of {@code ownImages}, the entity's own images that the snapshot read
+     * back from its neighbours. An image is a consequence of the entity's edge and never a reason
+     * for it: mirrored back, it would keep the edge (and so itself) alive after the edge's real
+     * justification is gone, and would replace the edge's own derivation with an inverse.</p>
      */
-    private static Reasoner.InferenceResult withoutImagesOf(Reasoner.InferenceResult out, List<Reasoner.Edge> foreign) {
-        if (foreign.isEmpty()) return out;
-        Set<List<String>> mirrored = new HashSet<>();
+    private static Reasoner.InferenceResult withoutImagesOf(Reasoner.InferenceResult out, List<Reasoner.Edge> foreign,
+                                                            Set<List<String>> ownImages) {
+        if (foreign.isEmpty() && ownImages.isEmpty()) return out;
+        Set<List<String>> mirrored = new HashSet<>(ownImages);
         for (Reasoner.Edge f : foreign) {
             mirrored.add(List.of(f.srcId(), f.p(), f.dstId()));
         }
@@ -578,10 +589,11 @@ public class OntologyMaterializer {
         }
         List<Reasoner.Edge> foreign = ownedElsewhere(existingAll, entityId, base);
         base.addAll(foreign);
-        List<Reasoner.Edge> extendedEdges = chainSnapshotEdges(realmId, dataDomain, entityId, base, registry);
+        Set<List<String>> ownImages = new HashSet<>();
+        List<Reasoner.Edge> extendedEdges = chainSnapshotEdges(realmId, dataDomain, entityId, base, registry, ownImages);
         var out = withoutImagesOf(
                 reasoner.infer(new Reasoner.EntitySnapshot(dataDomain.getTenantId(), entityId, entityType, extendedEdges), registry),
-                foreign);
+                foreign, ownImages);
         upsertAndPruneInferred(realmId, dataDomain, entityId, out, existingAll, assertedKeys(existingAll, base), changes);
         return changes;
     }
@@ -807,6 +819,7 @@ public class OntologyMaterializer {
             // Build extended edges for chain inference (same logic as single apply)
             List<Reasoner.Edge> extendedEdges = new ArrayList<>(explicitEdges != null ? explicitEdges : List.of());
             extendedEdges.addAll(foreign);
+            Set<List<String>> ownImages = new HashSet<>();
             if (explicitEdges != null && !registry.propertyChains().isEmpty()) {
                 Set<String> visitedNodes = new HashSet<>();
                 visitedNodes.add(entityId);
@@ -826,6 +839,9 @@ public class OntologyMaterializer {
                         if (!visitedNodes.add(neighborId)) continue;
                         List<OntologyEdge> neighborEdges = edgeRepo.findBySrc(realmId, dataDomain, neighborId);
                         for (OntologyEdge ne : neighborEdges) {
+                            if (ne.isInferred() && entityId.equals(ownerOf(ne))) {
+                                ownImages.add(List.of(ne.getSrc(), ne.getP(), ne.getDst()));
+                            }
                             extendedEdges.add(new Reasoner.Edge(
                                     ne.getSrc(), ne.getSrcType(), ne.getP(),
                                     ne.getDst(), ne.getDstType(), ne.isInferred(),
@@ -842,7 +858,7 @@ public class OntologyMaterializer {
 
             // Run reasoner to get inferred edges
             var snap = new Reasoner.EntitySnapshot(dataDomain.getTenantId(), entityId, entityType, extendedEdges);
-            var out = withoutImagesOf(reasoner.infer(snap, registry), foreign);
+            var out = withoutImagesOf(reasoner.infer(snap, registry), foreign, ownImages);
 
             // Collect explicit and computed edges - only if new or changed
             Map<String, Set<String>> explicitByP = new HashMap<>();

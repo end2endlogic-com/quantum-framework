@@ -199,6 +199,41 @@ public class ChainPropagationSettlesTest {
         assertEquals(Set.of(), dsts("broker1", "brokerFilesDeclaration"), "the image outlived the assertion it mirrors");
     }
 
+    /**
+     * An entity's own image, read back from a neighbour, is not a reason for the edge it mirrors. The
+     * intake still reaches the broker over a property no rule reads, so its snapshot holds the
+     * broker's {@code brokerHasIntake} image; once the chain's first hop is gone that image must not
+     * keep {@code intakeForBroker} alive, nor the edge keep the image.
+     */
+    @Test
+    void anImageReadBackFromANeighbourDoesNotKeepItsEdgeAlive() {
+        assertSettled(write("decl1", "Declaration", edge("decl1", "Declaration", "filedByBroker", "broker1", "Broker")));
+        assertSettled(write("intake1", "Intake", edge("intake1", "Intake", "intakeForDeclaration", "decl1", "Declaration"),
+                edge("intake1", "Intake", "intakeSeenByBroker", "broker1", "Broker")));
+        assertEquals(Set.of("broker1"), dsts("intake1", "intakeForBroker"));
+        assertEquals(Set.of("intake1"), dsts("broker1", "brokerHasIntake"));
+
+        assertSettled(write("intake1", "Intake", edge("intake1", "Intake", "intakeSeenByBroker", "broker1", "Broker")));
+
+        assertEquals(Set.of(), dsts("intake1", "intakeForBroker"), "the chain's first hop is gone");
+        assertEquals(Set.of(), dsts("broker1", "brokerHasIntake"), "the image outlived the edge it mirrors");
+    }
+
+    /** A chain edge keeps its chain derivation when its own image is in the snapshot. */
+    @Test
+    void aChainEdgeIsNotRewrittenAsTheInverseOfItsOwnImage() {
+        assertSettled(write("decl1", "Declaration", edge("decl1", "Declaration", "filedByBroker", "broker1", "Broker")));
+        Reasoner.Edge[] edges = {edge("intake1", "Intake", "intakeForDeclaration", "decl1", "Declaration"),
+                edge("intake1", "Intake", "intakeSeenByBroker", "broker1", "Broker")};
+        assertSettled(write("intake1", "Intake", edges));
+        assertSettled(write("intake1", "Intake", edges));
+
+        assertEquals(Set.of("chain"), edgeRepo.findBySrc((String) null, tenant, "intake1").stream()
+                .filter(e -> "intakeForBroker".equals(e.getP()))
+                .map(e -> String.valueOf(e.getProv().get("rule")))
+                .collect(Collectors.toSet()));
+    }
+
     private static final Map<String, String> NODES = Map.of("decl1", "Declaration", "intake1", "Intake",
             "intake2", "Intake", "finding1", "Finding", "broker1", "Broker", "project1", "Project");
 
@@ -294,6 +329,8 @@ public class ChainPropagationSettlesTest {
         pair(props, "intakeForBroker", "Intake", "Broker", "brokerHasIntake", false);
         pair(props, "intakeForProject", "Intake", "Project", "projectHasIntake", false);
         pair(props, "findingForDeclaration", "Finding", "Declaration", "declarationHasFinding", false);
+        props.put("intakeSeenByBroker", new PropertyDef("intakeSeenByBroker", Optional.of("Intake"), Optional.of("Broker"),
+                false, Optional.empty(), false, false, false, Set.of(), false));
         props.put("findingForBroker", new PropertyDef("findingForBroker", Optional.of("Finding"), Optional.of("Broker"),
                 false, Optional.empty(), false, false, false, Set.of(), true));
         return new TBox(classes, props, List.of(
