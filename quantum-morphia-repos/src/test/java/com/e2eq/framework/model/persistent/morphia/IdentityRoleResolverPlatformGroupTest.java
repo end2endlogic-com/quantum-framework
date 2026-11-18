@@ -99,4 +99,20 @@ class IdentityRoleResolverPlatformGroupTest {
         IdentityRoleResolver resolver = resolver(List.of(group("other-app", null, "admin")), List.of());
         assertTrue(resolver.platformGroupRoles("issuer", POOLED, "helixor-code").isEmpty());
     }
+
+    @Test
+    void aTenantOwnedGroupStillGrantsItsMembersInItsOwnRealm() {
+        // Round-6 review: platform ownership decides realm-wide authority only, never ordinary role resolution.
+        IdentityRoleResolver resolver = resolver(List.of(), List.of(group(null, "tenant-a", "editor")));
+        java.util.Map<String, ?> sources = resolver.resolveRoleSources("issuer", POOLED, null, null);
+        assertTrue(sources.containsKey("editor"), "tenant-owned group in its own realm dropped: " + sources);
+    }
+
+    @Test
+    void aTenantOwnedSystemRealmGroupStillGrantsOnSignInButIsNotPlatformAuthority() {
+        IdentityRoleResolver resolver = resolver(List.of(group(null, "tenant-a", "org-admin")), List.of());
+        java.util.Map<String, ?> sources = resolver.resolveRoleSources("issuer", SYSTEM, null, null);
+        assertTrue(sources.containsKey("org-admin"), "tenant-owned system-realm group dropped: " + sources);
+        assertTrue(resolver.platformGroupRoles("issuer", SYSTEM, null).isEmpty());
+    }
 }

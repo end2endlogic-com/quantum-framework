@@ -288,7 +288,10 @@ public class IdentityRoleResolver {
             return;
         }
         for (UserGroup group : groups) {
-            if (group != null && platformOwned(group) && groupAppliesToApplication(group, applicationId)) {
+            // Every group of the identity grants its roles here, tenant-owned ones included (a tenant's
+            // group grants its members in its tenant). Platform (realm-wide) authority is decided
+            // separately, by platformGroupRoles, which counts only ownerless system-realm groups.
+            if (group != null && groupAppliesToApplication(group, applicationId)) {
                 addRoles(target, group.getRoles(), RoleSource.USERGROUP);
             }
         }

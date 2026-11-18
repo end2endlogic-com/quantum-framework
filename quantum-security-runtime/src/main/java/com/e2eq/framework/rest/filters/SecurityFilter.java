@@ -1502,18 +1502,23 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
      * a principal's realm, and the endpoints it may reach check what they read). An authenticated
      * request whose {@code X-Realm} is not a realm refName's shape names no realm and is refused
      * before any lookup, 403 {@code REALM_NOT_AUTHORIZED}; so is one the roles augmentor found
-     * unregistered ({@link com.e2eq.framework.security.principal.RealmRefNames#REFUSED_REALM_ATTRIBUTE}).</p>
+     * unregistered or reserved (503 when it found the catalog unavailable) ({@link com.e2eq.framework.security.principal.RealmRefNames#REFUSED_REALM_ATTRIBUTE}).</p>
      */
     void canonicalizeRealmHeader(ContainerRequestContext requestContext) {
         String requested = requestContext.getHeaderString("X-Realm");
         if (requested == null || requested.isBlank() || !authenticatedRequest()) {
             return;
         }
-        if (!com.e2eq.framework.security.principal.RealmRefNames.isRefNameShape(requested)
-                || securityIdentity.getAttribute("quantum-realm-refused") != null) {
+        // RealmRefNames.REFUSED_REALM_ATTRIBUTE, set by RolesAugmentor (a server-set identity attribute).
+        Object refused = securityIdentity.getAttribute("quantum-realm-refused");
+        if (com.e2eq.framework.security.principal.RealmRefNames.CATALOG_UNAVAILABLE.equals(refused)) {
+            throw com.e2eq.framework.security.principal.RemotePrincipalResolutionException.unavailable(
+                    "The realm catalog could not be read for X-Realm");
+        }
+        if (!com.e2eq.framework.security.principal.RealmRefNames.isRefNameShape(requested) || refused != null) {
             throw com.e2eq.framework.security.principal.RemotePrincipalResolutionException.of(
                     com.e2eq.framework.security.principal.PrincipalResolutionError.REALM_NOT_AUTHORIZED,
-                    "X-Realm is not a realm refName");
+                    "X-Realm is not a registered realm");
         }
         String canonical = com.e2eq.framework.security.principal.RealmRefNames.canonicalOrSame(systemDirectory, requested);
         if (canonical != null && !canonical.equals(requested)) {

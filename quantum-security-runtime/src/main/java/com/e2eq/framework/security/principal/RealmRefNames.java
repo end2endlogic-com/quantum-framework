@@ -24,7 +24,7 @@ import java.util.Optional;
  * characters) is never looked up: it names no realm.</p>
  *
  * <p>Answers are cached per requested name in bounded least-recently-used maps with a time to
- * live: a found realm for {@link #FOUND_TTL_NANOS}, an unknown one for {@link #MISSING_TTL_NANOS}.
+ * live: a found realm for {@link #FOUND_TTL_NANOS}, an unknown one for {@link #MISSING_TTL_NANOS} (5 s, so a realm registered by another service resolves quickly).
  * Found and unknown answers are kept apart, so a flood of unknown names evicts only other unknown
  * names, never a registered realm's answer; a name that is exactly a registered refName answered
  * before is returned without any lookup. A registration drops the cache ({@link #forget()}, from
@@ -39,8 +39,14 @@ public final class RealmRefNames {
      */
     public static final String REFUSED_REALM_ATTRIBUTE = "quantum-realm-refused";
 
+    /**
+     * {@link #REFUSED_REALM_ATTRIBUTE}'s value when the catalog could not answer: the request is
+     * answered 503 {@code PRINCIPAL_RESOLUTION_UNAVAILABLE}, not 403.
+     */
+    public static final String CATALOG_UNAVAILABLE = "catalog-unavailable";
+
     static final long FOUND_TTL_NANOS = 60_000_000_000L;
-    static final long MISSING_TTL_NANOS = 30_000_000_000L;
+    static final long MISSING_TTL_NANOS = 5_000_000_000L;
     /** Bound of each answer map (found, unknown). */
     static final int MAX_ENTRIES = 1024;
     /** MongoDB limits a database name to 63 characters. */

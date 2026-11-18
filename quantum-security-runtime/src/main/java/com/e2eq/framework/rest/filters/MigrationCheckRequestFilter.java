@@ -50,6 +50,9 @@ public class MigrationCheckRequestFilter implements ContainerRequestFilter {
     @Inject
     com.e2eq.framework.security.principal.RemotePrincipalSettings remotePrincipalSettings;
 
+    @Inject
+    com.e2eq.framework.security.principal.RequestRealmAdmission realmAdmission;
+
     @ConfigProperty(name = "quantum.database.migration.enabled", defaultValue = "true")
     boolean migrationCheckEnabled;
 
@@ -130,7 +133,9 @@ public class MigrationCheckRequestFilter implements ContainerRequestFilter {
                 : requestContext.getHeaderString("X-Realm");
         if (realmOverride != null && !realmOverride.isBlank()) {
             Log.debug("Realm override found: " + realmOverride);
-            return realmOverride;
+            // Caller input (on any request, signed in or not): checking it opens its datastore,
+            // which creates the database, so an unregistered or reserved name is refused first.
+            return realmAdmission == null ? realmOverride : realmAdmission.admit(realmOverride);
         }
 
         if (trustTokenClaims && identity != null && !identity.isAnonymous()

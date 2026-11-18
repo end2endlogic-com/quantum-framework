@@ -81,23 +81,32 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
         return context == null ? Uni.createFrom().item(work) : context.runBlocking(work);
     }
 
+    @Inject
+    com.e2eq.framework.security.principal.RequestRealmAdmission realmAdmission;
+
     /**
-     * True when {@code realm} may reach this service's stores: the system realm, or a refName the
-     * catalog registers. Without a catalog (unit tests, no directory) only the shape is checked.
+     * True when {@code realm} may reach this service's stores ({@link
+     * com.e2eq.framework.security.principal.RequestRealmAdmission}: the configured system or default
+     * realm, or a registered refName; never a reserved database name). Without an admission bean
+     * (unit tests) only the shape and the reserved names are checked.
+     *
+     * @throws com.e2eq.framework.security.principal.RemotePrincipalResolutionException 503 when the
+     *         directory cannot answer
      */
     boolean admittedRealm(String realm) {
-        String trimmed = realm.trim();
-        if (!com.e2eq.framework.security.principal.RealmRefNames.isRefNameShape(trimmed)) {
-            return false;
+        if (realmAdmission == null) {
+            return com.e2eq.framework.security.principal.RealmRefNames.isRefNameShape(realm)
+                    && !java.util.Set.of("admin", "local", "config").contains(realm.trim().toLowerCase(java.util.Locale.ROOT));
         }
-        if (systemDirectory == null || trimmed.equals(envConfigUtils.getSystemRealm())) {
-            return true;
-        }
-        try {
-            return com.e2eq.framework.security.principal.RealmRefNames.registered(systemDirectory, trimmed).isPresent();
-        } catch (com.e2eq.framework.security.principal.RemotePrincipalResolutionException unavailable) {
-            return false;
-        }
+        return realmAdmission.admitted(realm).isPresent();
+    }
+
+    /** Fails closed when the catalog cannot answer: no roles, marked so the request is answered 503. */
+    private SecurityIdentity unavailable(SecurityIdentity identity) {
+        return withoutTokenRoles(identity)
+                .addAttribute(com.e2eq.framework.security.principal.RealmRefNames.REFUSED_REALM_ATTRIBUTE,
+                        com.e2eq.framework.security.principal.RealmRefNames.CATALOG_UNAVAILABLE)
+                .build();
     }
 
     private SecurityIdentity build(SecurityIdentity identity, String contextRealm,
@@ -116,13 +125,19 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
             // The catalog cannot answer: the identity keeps no roles (fail closed), and SecurityFilter
             // answers the request with the typed 503 from the same lookup.
             Log.debugf("RolesAugmentor: realm catalog unavailable for %s: %s", originalPrincipal, unavailable.getMessage());
-            return withoutTokenRoles(identity).build();
+            return unavailable(identity);
         }
         // A requested realm that is not a refName's shape, or that the catalog does not register,
         // names no realm: nothing is looked up in a store for it (a store lookup would open, and
         // index, a database of that name). The identity keeps no roles and is marked, so
         // SecurityFilter refuses the request 403 REALM_NOT_AUTHORIZED.
-        if (contextRealm != null && !contextRealm.isBlank() && !admittedRealm(contextRealm)) {
+        boolean admitted;
+        try {
+            admitted = contextRealm == null || contextRealm.isBlank() || admittedRealm(contextRealm);
+        } catch (com.e2eq.framework.security.principal.RemotePrincipalResolutionException unavailable) {
+            return unavailable(identity);
+        }
+        if (!admitted) {
             Log.debugf("RolesAugmentor: requested realm refused for %s (unregistered or not a refName)", originalPrincipal);
             return withoutTokenRoles(identity)
                     .addAttribute(com.e2eq.framework.security.principal.RealmRefNames.REFUSED_REALM_ATTRIBUTE, contextRealm)

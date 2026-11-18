@@ -383,16 +383,30 @@ Resolve request field: `actingOnBehalfOf { userId | subject }`. Response field:
   code; any other role refusal stays a plain 403). Before, a misshapen name
   was a 500 and each unknown name created a MongoDB database (one probe created 271 and crashed
   `mongod`).
-  - `MorphiaDataStoreWrapper.getDataStore` refuses (`UnregisteredRealmException`, mapped to 403
-    `REALM_NOT_AUTHORIZED`) to open a datastore for a realm that is not a configured realm (system, default, test), an
-    existing database, a `Realm` row in the system realm, or a realm the directory registers
-    (`RealmDatastoreAdmission`). This covers every path that hands caller input to
-    `getDataStore`, `MigrationCheckRequestFilter` included, so `REALM_NOT_MIGRATED` still
-    answers for a registered realm that is not migrated.
-  - Realm creation writes the `Realm` row before it opens the new realm's datastore, so it is
-    admitted. Code that must open a datastore before the row exists does so inside
-    `MorphiaDataStoreWrapper.provisioning(realm)`. Tests whose realms are never registered set
-    `quantum.morphia.unregistered-realm-pattern` (unset in production).
+  - The gate is at the request boundary, not in `getDataStore` (round 6: a refusal inside the
+    datastore wrapper also refused startup, provisioning and test realms, and "already has a
+    database" admitted any name a probe had created once). `RequestRealmAdmission` admits a
+    caller-named realm when it is well shaped, not reserved, and is the configured system realm,
+    the default realm, or a realm the directory registers; anything else is 403
+    `REALM_NOT_AUTHORIZED`, and a directory outage is 503 `PRINCIPAL_RESOLUTION_UNAVAILABLE`.
+    Reserved names are never realms: `admin`, `local`, `config` and the coordination database
+    (`quantum.database.coordination-database`). It is applied where caller input names a realm:
+    - `X-Realm` on an authenticated request (`RolesAugmentor`, then `SecurityFilter`), the default
+      realm exempt;
+    - `X-Realm` or a session realm on any request, unauthenticated ones included
+      (`MigrationCheckRequestFilter`, which opens the realm's datastore to read its version);
+    - every `@PathParam`/`@QueryParam` whose name says realm (`realm`, `realmRefName`, `{realm}`;
+      not `...Regex`/`...Pattern`) on every JAX-RS resource (`RealmParameterAdmissionFilter`,
+      after `SecurityFilter`): `BaseResource.ensureIndexes/{realm}`, seed admin and
+      identity-pack `?realm=`, the migration endpoints, the user-realm-role paths. A value equal to
+      the caller's resolved realm passes without a lookup; a value that is not the canonical
+      refName is refused.
+  - Startup, seeding and provisioning open datastores as before: they name realms from
+    configuration or from rows they just wrote, never from request input.
+  - A registration takes effect at once: every save of a `Realm` row (any repository, the control
+    plane directory resources, local bootstrap, registration approval) fires `RealmRecordSaved`
+    from a Morphia entity listener, which `RealmRecordSavedAnnouncer` turns into `RealmRegistered`,
+    dropping the cached "unknown" answer. A cached miss otherwise lives 5 s (was 30 s).
 - **Error responses carry no internals.** The framework's exception mappers no longer return
   stack traces (`debugMessage`), an unmapped exception's own message, or a 5xx
   `WebApplicationException`'s message (`ClientErrorDetail.serverErrorMessage`; a 4xx keeps the
