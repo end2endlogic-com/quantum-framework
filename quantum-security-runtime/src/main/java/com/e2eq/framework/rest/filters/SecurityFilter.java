@@ -997,6 +997,11 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         return value.map(String::trim).filter(v -> !v.isEmpty()).orElse(null);
     }
 
+    /** An authenticated, non-anonymous identity (a verified token or another mechanism). */
+    private boolean authenticatedRequest() {
+        return securityIdentity != null && !securityIdentity.isAnonymous();
+    }
+
     /** A verified, non-service JWT or another authenticated, non-anonymous identity. */
     private boolean isUserPrincipal() {
         if (currentJwt() != null) {
@@ -1492,11 +1497,21 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
      * differs only in case (13297, a 500). An unregistered name is left as sent and refused later
      * typed ({@code REALM_NOT_AUTHORIZED}); a catalog that cannot answer fails the request typed
      * (503 {@code PRINCIPAL_RESOLUTION_UNAVAILABLE}).
+     *
+     * <p>An unauthenticated request costs no catalog lookup: it is left as sent (its realm is not
+     * a principal's realm, and the endpoints it may reach check what they read). An authenticated
+     * request whose {@code X-Realm} is not a realm refName's shape names no realm and is refused
+     * before any lookup, 403 {@code REALM_NOT_AUTHORIZED}.</p>
      */
     void canonicalizeRealmHeader(ContainerRequestContext requestContext) {
         String requested = requestContext.getHeaderString("X-Realm");
-        if (requested == null || requested.isBlank()) {
+        if (requested == null || requested.isBlank() || !authenticatedRequest()) {
             return;
+        }
+        if (!com.e2eq.framework.security.principal.RealmRefNames.isRefNameShape(requested)) {
+            throw com.e2eq.framework.security.principal.RemotePrincipalResolutionException.of(
+                    com.e2eq.framework.security.principal.PrincipalResolutionError.REALM_NOT_AUTHORIZED,
+                    "X-Realm is not a realm refName");
         }
         String canonical = com.e2eq.framework.security.principal.RealmRefNames.canonicalOrSame(systemDirectory, requested);
         if (canonical != null && !canonical.equals(requested)) {

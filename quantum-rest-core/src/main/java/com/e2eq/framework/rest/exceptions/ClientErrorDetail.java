@@ -30,6 +30,15 @@ public final class ClientErrorDetail {
         }
     }
 
+    /**
+     * The statusMessage of a server error (5xx): the exception's own message only when debug
+     * detail is on, else {@link #UNEXPECTED_ERROR_MESSAGE}. A 5xx message is whatever a library or
+     * a wrapped cause said (hosts, databases, classes), so it is logged, never returned by default.
+     */
+    public static String serverErrorMessage(Throwable exception) {
+        return includeDebugDetail() && exception != null ? exception.getMessage() : UNEXPECTED_ERROR_MESSAGE;
+    }
+
     /** The exception's stack trace for the response's debugMessage, or null (the default). */
     public static String stackTrace(Throwable exception) {
         return includeDebugDetail() ? ExceptionLoggingUtils.getStackTrace(exception) : null;

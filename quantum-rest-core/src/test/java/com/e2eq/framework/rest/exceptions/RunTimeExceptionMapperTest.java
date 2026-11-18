@@ -29,4 +29,18 @@ class RunTimeExceptionMapperTest {
         assertEquals("not yours", error.getStatusMessage());
         assertNull(error.getDebugMessage());
     }
+
+    @Test
+    void aServerErrorWebApplicationExceptionNamesNoInternals() {
+        // Round-4 review: a 5xx WebApplicationException returned its message as is.
+        for (jakarta.ws.rs.WebApplicationException failed : new jakarta.ws.rs.WebApplicationException[] {
+                new jakarta.ws.rs.InternalServerErrorException("Timed out connecting to mongo-prod.internal:27017"),
+                new jakarta.ws.rs.ServiceUnavailableException("billing at 10.0.0.9:8080 refused db=quantum-billing")}) {
+            Response response = new RunTimeExceptionMapper().toResponse(failed);
+            RestError error = (RestError) response.getEntity();
+            assertEquals(failed.getResponse().getStatus(), response.getStatus());
+            assertEquals(ClientErrorDetail.UNEXPECTED_ERROR_MESSAGE, error.getStatusMessage());
+            assertNull(error.getDebugMessage());
+        }
+    }
 }

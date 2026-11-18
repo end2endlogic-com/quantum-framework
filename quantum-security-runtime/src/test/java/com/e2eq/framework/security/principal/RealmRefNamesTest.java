@@ -90,4 +90,42 @@ class RealmRefNamesTest {
         assertEquals(503, refused.status());
         assertEquals(RemotePrincipalResolutionException.UNAVAILABLE, refused.code());
     }
+
+    @Test
+    void aFloodOfUnknownNamesDoesNotEvictARegisteredRealm() {
+        // Round-4 review probe: unique X-Realm values used to clear the whole cache at the bound.
+        SystemDirectory directory = catalogWith("acme-P1");
+        assertEquals("acme-P1", RealmRefNames.canonicalOrSame(directory, "ACME-P1"));
+        verify(directory, times(1)).findRealmByRefName("ACME-P1");
+        for (int i = 0; i < 3 * RealmRefNames.MAX_ENTRIES; i++) {
+            RealmRefNames.canonicalOrSame(directory, "flood-" + i);
+        }
+        assertEquals("acme-P1", RealmRefNames.canonicalOrSame(directory, "ACME-P1"));
+        assertEquals("acme-P1", RealmRefNames.canonicalOrSame(directory, "acme-P1"));
+        verify(directory, times(1)).findRealmByRefName("ACME-P1");
+        verify(directory, times(0)).findRealmByRefName("acme-P1");
+    }
+
+    @Test
+    void theExactRegisteredNameNeedsNoLookupOnceKnown() {
+        SystemDirectory directory = catalogWith("acme-P1");
+        for (int i = 0; i < 5; i++) {
+            assertEquals("acme-P1", RealmRefNames.canonicalOrSame(directory, "acme-P1"));
+        }
+        verify(directory, times(1)).findRealmByRefName("acme-P1");
+    }
+
+    @Test
+    void aNameThatIsNotARefNameShapeIsNeverLookedUp() {
+        SystemDirectory directory = catalogWith("acme-shared");
+        String tooLong = "a".repeat(RealmRefNames.MAX_REF_NAME_LENGTH + 1);
+        for (String bad : new String[] {"acme/shared", "acme.shared", "$where", "-acme", "acme shared", tooLong, "\u00e9t\u00e9"}) {
+            assertTrue(!RealmRefNames.isRefNameShape(bad), bad);
+            assertTrue(RealmRefNames.registered(directory, bad).isEmpty(), bad);
+            assertEquals(bad.trim(), RealmRefNames.canonicalOrSame(directory, bad));
+        }
+        verify(directory, times(0)).findRealmByRefName(anyString());
+        assertTrue(RealmRefNames.isRefNameShape("helixor-code-P1"));
+        assertTrue(RealmRefNames.isRefNameShape("system_com"));
+    }
 }

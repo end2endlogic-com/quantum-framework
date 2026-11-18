@@ -33,6 +33,14 @@ class SecurityFilterRealmHeaderTest {
     private static SecurityFilter filterWith(SystemDirectory directory) {
         SecurityFilter filter = new SecurityFilter();
         filter.systemDirectory = directory;
+        filter.securityIdentity = mock(io.quarkus.security.identity.SecurityIdentity.class);
+        when(filter.securityIdentity.isAnonymous()).thenReturn(false);
+        return filter;
+    }
+
+    private static SecurityFilter anonymousFilterWith(SystemDirectory directory) {
+        SecurityFilter filter = filterWith(directory);
+        when(filter.securityIdentity.isAnonymous()).thenReturn(true);
         return filter;
     }
 
@@ -98,5 +106,27 @@ class SecurityFilterRealmHeaderTest {
                 () -> filterWith(directory).canonicalizeRealmHeader(request(headers)));
         assertEquals(503, refused.status());
         assertEquals("PRINCIPAL_RESOLUTION_UNAVAILABLE", refused.code());
+    }
+
+    @Test
+    void anUnauthenticatedRequestCostsNoCatalogLookup() {
+        SystemDirectory directory = mock(SystemDirectory.class);
+        MultivaluedMap<String, String> headers = new MultivaluedHashMap<>();
+        headers.putSingle("X-Realm", "flood-1");
+        anonymousFilterWith(directory).canonicalizeRealmHeader(request(headers));
+        assertEquals("flood-1", headers.getFirst("X-Realm"));
+        org.mockito.Mockito.verifyNoInteractions(directory);
+    }
+
+    @Test
+    void aRealmThatIsNotARefNameShapeIsRefusedBeforeAnyLookup() {
+        SystemDirectory directory = mock(SystemDirectory.class);
+        MultivaluedMap<String, String> headers = new MultivaluedHashMap<>();
+        headers.putSingle("X-Realm", "acme/../admin");
+        RemotePrincipalResolutionException refused = assertThrows(RemotePrincipalResolutionException.class,
+                () -> filterWith(directory).canonicalizeRealmHeader(request(headers)));
+        assertEquals(403, refused.status());
+        assertEquals("REALM_NOT_AUTHORIZED", refused.code());
+        org.mockito.Mockito.verifyNoInteractions(directory);
     }
 }

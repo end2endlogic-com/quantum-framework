@@ -322,7 +322,10 @@ Resolve request field: `actingOnBehalfOf { userId | subject }`. Response field:
   - Only the identity authority admits a v2 identity-only token (`jti == sub`) that names no
     receiving application, whatever the flag says, because its store is the one that resolves
     them. It is marked by the explicit setting `quantum.auth.identity-authority=true`, which only
-    quantum-auth-service sets (fixed, not environment-driven). Any other receiver admits a v2
+    quantum-auth-service sets. Like any Quarkus property it is deployment-controlled (a profile,
+    `QUANTUM_AUTH_IDENTITY_AUTHORITY` or `-D` overrides it); no tenant or API caller can reach it.
+    Every service logs its value and source at INFO on startup (`IdentityAuthoritySettingLog`).
+    Any other receiver admits a v2
     token only when it names its application and does not trust token claims; a receiver that
     names no application is refused 401, never taken for Auth by that absence. Other Auth
     endpoints keep their claims-path behaviour under the flag until step 4.
@@ -356,9 +359,15 @@ Resolve request field: `actingOnBehalfOf { userId | subject }`. Response field:
   - The catalog matches ignoring case (`LocalSystemDirectory.findRealmByRefName`: exact, then
     `RealmRepo.findByRefNameIgnoringCase`), so a mixed-case refName (`helixor-code-P1`) and
     a remote directory, which asks the same endpoint, are covered. Registration stays exact.
-  - Lookups are cached, bounded (1024 names): a found name for 60 s, a missing one for 30 s, so
-    an unknown `X-Realm` does not reach the directory on every request. `RealmRegistered`
-    clears the cache.
+  - Lookups are cached in two bounded LRU maps (1024 names each) with a time to live: a found
+    name for 60 s, a missing one for 30 s. Found and missing answers are kept apart, so a flood
+    of unknown names evicts only other unknown names, never a registered realm. A header that is
+    exactly a registered refName answered before needs no lookup. `RealmRegistered` clears the
+    cache.
+  - A name that is not a refName's shape (letters, digits, `-`, `_`, at most 63 characters, the
+    MongoDB database-name limit) is never looked up. On an authenticated request
+    `SecurityFilter` refuses it 403 `REALM_NOT_AUTHORIZED` before any lookup. An
+    unauthenticated request costs no lookup at all: its `X-Realm` is left as sent.
   - `SecurityFilter` rewrites `X-Realm` to the registered refName before anything reads it, on
     every principal source (embedded and remote). Resources and repositories read the header
     as a database name, so a receiver in remote mode no longer answers 500 for another case.
@@ -367,7 +376,9 @@ Resolve request field: `actingOnBehalfOf { userId | subject }`. Response field:
   - A directory outage is refused 503 `PRINCIPAL_RESOLUTION_UNAVAILABLE`, never a 500. The
     roles augmentor then drops token roles (fails closed).
 - **Error responses carry no internals.** The framework's exception mappers no longer return
-  stack traces (`debugMessage`) or an unmapped exception's own message. Those are logged server
+  stack traces (`debugMessage`), an unmapped exception's own message, or a 5xx
+  `WebApplicationException`'s message (`ClientErrorDetail.serverErrorMessage`; a 4xx keeps the
+  message its resource wrote). Those are logged server
   side. The development setting `quantum.rest.errors.include-debug-detail=true` restores them.
   This covers MongoDB write errors (a duplicate key is a fixed 400 conflict message, with no
   host, database, collection, index or key value, so it does not enumerate accounts), JSON
@@ -383,12 +394,20 @@ Resolve request field: `actingOnBehalfOf { userId | subject }`. Response field:
   provenance (`IdentityRoleResolver.resolveRoleSources`, no token roles) decides:
   - The rule is invite management's rule for a realm administrator: every tenant of a dedicated
     realm, and in a shared realm only the tenants its own assignment authorizes.
-  - Realm wide: a realm-wide (`*`) platform user group (no `ownerTenantId`;
-    `IdentityRoleResolver.platformGroupRoles`) in any realm. Or `admin` from the credential or
-    the realm assignment, in a dedicated realm, or in a shared realm when the active assignment
-    authorizes every tenant (`authorizedTenantRegEx = "*"`).
-  - A tenant-owned group never counts, whatever its application scope, so a tenant admin cannot
-    make themselves realm-wide by creating one.
+  - Realm wide: a realm-wide (`*`) platform user group, which is a group stored in the system
+    realm (`IdentityRoleResolver.platformGroupRoles`); only platform principals write the system
+    realm. Or `admin` from the credential or the realm assignment, in a dedicated realm, or in a
+    shared realm when the active assignment authorizes every tenant
+    (`authorizedTenantRegEx = "*"`, trimmed; `.*` and other patterns do not count).
+  - A group in any other realm never counts, whatever its application scope or its
+    `ownerTenantId` (a client-writable field, never authority). A null owner outside the system
+    realm is not realm wide, so a tenant admin cannot make themselves realm-wide by creating an
+    ownerless group, and a legacy group that predates `ownerTenantId` grants nothing realm wide.
+  - Defence in depth at Auth (`RoleGrantReaderInterceptor`, `PrivilegedFields`): a non-system
+    caller's group is always owned by the caller's tenant (the server sets `ownerTenantId`); field
+    updates of `ownerTenantId` and `authorizedTenantRegEx` need a system principal; a non-system
+    caller may not set `authorizedTenantRegEx` in a typed assignment or tenant grant, and may name
+    only its own tenant in `authorizedTenantIds`.
   - Tenant scoped: any other `admin` in a shared (multi-tenant) realm. Pooled provisioning gives
     a tenant's administrator flat credential roles (`admin`, `user`) and an assignment naming its
     one tenant, so a flat credential role alone is not realm wide there.

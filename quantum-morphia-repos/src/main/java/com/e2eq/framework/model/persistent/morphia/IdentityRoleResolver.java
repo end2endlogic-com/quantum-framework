@@ -219,33 +219,29 @@ public class IdentityRoleResolver {
     }
 
     /**
-     * The roles {@code identity} holds through platform user groups only: groups with no
-     * {@code ownerTenantId}, in the system realm and in {@code realm}, that apply to
-     * {@code applicationId}. A tenant-owned group (one a tenant's administrator manages) grants
-     * within its tenant, so its roles are not realm-wide authority and are left out. The same group
-     * lookup as {@link #resolveRoleSources}.
+     * The roles {@code identity} holds through platform user groups: groups stored in the system
+     * realm that apply to {@code applicationId}. Only platform principals write the system realm, so
+     * these are the groups no tenant administrator can create or edit. A group in any other realm,
+     * whatever its {@code ownerTenantId} says (a client-writable field), is left out: it is never
+     * realm-wide authority. {@code realm} is the realm the authority is asked for; it is validated
+     * but does not widen the lookup. The same group lookup as {@link #resolveRoleSources}.
      */
     public java.util.Set<String> platformGroupRoles(String identity, String realm, String applicationId) {
-        String targetRealm = requireRealm(realm);
+        requireRealm(realm);
         String systemRealm = envConfigUtils.getSystemRealm();
         Optional<CredentialUserIdPassword> credential = credentialRepo.findByUserId(identity, systemRealm, true);
         java.util.LinkedHashSet<String> roles = new java.util.LinkedHashSet<>();
         if (credential.isEmpty()) {
             return roles;
         }
-        java.util.function.Predicate<UserGroup> platform =
-                group -> group.getOwnerTenantId() == null || group.getOwnerTenantId().isBlank();
-        collectGroupRoles(roles, credential.get(), systemRealm, applicationId, platform);
-        if (!sameRealm(targetRealm, systemRealm)) {
-            collectGroupRoles(roles, credential.get(), targetRealm, applicationId, platform);
-        }
+        collectGroupRoles(roles, credential.get(), systemRealm, applicationId);
         return roles;
     }
 
     private void collectGroupRoles(java.util.Set<String> roles, CredentialUserIdPassword credential, String groupRealm,
-                                   String applicationId, java.util.function.Predicate<UserGroup> included) {
+                                   String applicationId) {
         for (UserGroup group : groupsOf(credential, groupRealm)) {
-            if (group != null && included.test(group) && groupAppliesToApplication(group, applicationId)
+            if (group != null && groupAppliesToApplication(group, applicationId)
                     && group.getRoles() != null) {
                 group.getRoles().stream().filter(role -> role != null && !role.isBlank()).forEach(roles::add);
             }
