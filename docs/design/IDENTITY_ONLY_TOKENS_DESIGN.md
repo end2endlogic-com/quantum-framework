@@ -362,6 +362,8 @@ Resolve request field: `actingOnBehalfOf { userId | subject }`. Response field:
   - `SecurityFilter` rewrites `X-Realm` to the registered refName before anything reads it, on
     every principal source (embedded and remote). Resources and repositories read the header
     as a database name, so a receiver in remote mode no longer answers 500 for another case.
+    A receiver whose own catalog does not list the realm (a remote-mode receiver serving a
+    realm Auth registers) takes the case from the principal Auth resolved for the request.
   - A directory outage is refused 503 `PRINCIPAL_RESOLUTION_UNAVAILABLE`, never a 500. The
     roles augmentor then drops token roles (fails closed).
 - **Error responses carry no internals.** The framework's exception mappers no longer return

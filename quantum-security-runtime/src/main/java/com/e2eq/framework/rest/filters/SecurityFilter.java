@@ -544,6 +544,7 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         if (remotePrincipalSource()) {
             PrincipalContext remote = remotePrincipalContext(requestContext, requestState);
             if (remote != null) {
+                alignRealmHeader(requestContext, remote);
                 return remote;
             }
         }
@@ -1500,6 +1501,24 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         String canonical = com.e2eq.framework.security.principal.RealmRefNames.canonicalOrSame(systemDirectory, requested);
         if (canonical != null && !canonical.equals(requested)) {
             requestContext.getHeaders().putSingle("X-Realm", canonical);
+        }
+    }
+
+    /**
+     * A receiver whose own catalog does not list the realm (a remote principal source serving a
+     * realm Auth registers) takes the realm's case from the principal Auth resolved for this
+     * request: an {@code X-Realm} that names that realm in another case is rewritten to it, so
+     * downstream reads use the registered refName. A header naming any other realm is left as is.
+     */
+    static void alignRealmHeader(ContainerRequestContext requestContext, PrincipalContext resolved) {
+        String requested = requestContext.getHeaderString("X-Realm");
+        String realm = resolved == null ? null : resolved.getDefaultRealm();
+        if (requested == null || realm == null) {
+            return;
+        }
+        String trimmed = requested.trim();
+        if (trimmed.equalsIgnoreCase(realm) && !requested.equals(realm)) {
+            requestContext.getHeaders().putSingle("X-Realm", realm);
         }
     }
 

@@ -73,6 +73,22 @@ class SecurityFilterRealmHeaderTest {
     }
 
     @Test
+    void aRemoteReceiverTakesTheRealmsCaseFromThePrincipalAuthResolved() {
+        com.e2eq.framework.model.securityrules.PrincipalContext resolved =
+                mock(com.e2eq.framework.model.securityrules.PrincipalContext.class);
+        when(resolved.getDefaultRealm()).thenReturn("helixor-code-P1");
+        MultivaluedMap<String, String> headers = new MultivaluedHashMap<>();
+        headers.putSingle("X-Realm", "HELIXOR-CODE-p1");
+        SecurityFilter.alignRealmHeader(request(headers), resolved);
+        assertEquals("helixor-code-P1", headers.getFirst("X-Realm"));
+
+        MultivaluedMap<String, String> other = new MultivaluedHashMap<>();
+        other.putSingle("X-Realm", "quantum-system");
+        SecurityFilter.alignRealmHeader(request(other), resolved);
+        assertEquals("quantum-system", other.getFirst("X-Realm"), "a header naming another realm is left as is");
+    }
+
+    @Test
     void aCatalogOutageIsRefusedTypedUnavailable() {
         SystemDirectory directory = mock(SystemDirectory.class);
         when(directory.findRealmByRefName(anyString())).thenThrow(new IllegalStateException("control plane down"));
