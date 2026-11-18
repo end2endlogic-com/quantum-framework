@@ -153,10 +153,20 @@ public class PrincipalContextResolver {
 
     public PrincipalContextResolution resolve(PrincipalContextRequest request) {
         Objects.requireNonNull(request, "request");
-        boolean identity = request.identityOnly();
-        if (identity) {
-            requireIdentityInputs(request);
+        if (!request.identityOnly()) {
+            return resolveChecked(request);
         }
+        if (request.delegationRequested() && blank(request.applicationId())) {
+            // Delegation always names the application it acts in.
+            throw refusal(PrincipalResolutionError.DELEGATION_NOT_ALLOWED,
+                    "A delegated resolution must name the application it acts in (applicationId)");
+        }
+        requireIdentityInputs(request);
+        return resolveChecked(withRegisteredRealm(request));
+    }
+
+    private PrincipalContextResolution resolveChecked(PrincipalContextRequest request) {
+        boolean identity = request.identityOnly();
 
         CredentialUserIdPassword caller = findCredential(request);
         if (identity && credentialDisabled(caller)) {
@@ -240,7 +250,8 @@ public class PrincipalContextResolver {
                     request.signedClaims().tenantSelectionExempt());
         }
         if (!serviceCredential(effective)) {
-            context = identity ? finalizeUserPrincipal(context, grant) : finalizeUserPrincipal(context);
+            context = identity ? finalizeUserPrincipal(context, grant, effective)
+                    : finalizeUserPrincipal(context, effective);
         }
         return new PrincipalContextResolution(context, effective, caller, impersonatedBy, null);
     }
@@ -292,6 +303,25 @@ public class PrincipalContextResolver {
         }
         requireListedImpersonationTarget(caller, target);
         return target;
+    }
+
+    /**
+     * The requested realm as its registered refName, compared ignoring case ({@link RealmRefNames}):
+     * a realm named in another case is the same realm, never a second database name for a lookup
+     * (MongoDB refuses one that differs only in case). A realm that matches none is passed on
+     * unchanged and refused typed by the realm checks that follow ({@code REALM_NOT_AUTHORIZED},
+     * or {@code DELEGATION_NOT_ALLOWED} for a delegation).
+     */
+    private PrincipalContextRequest withRegisteredRealm(PrincipalContextRequest request) {
+        String requested = request.realm();
+        String canonical = RealmRefNames.canonicalOrSame(systemDirectory, requested);
+        if (canonical == null || canonical.equals(requested)) {
+            return request;
+        }
+        return new PrincipalContextRequest(request.mode(), request.subject(), request.userIdCandidates(),
+                request.applicationId(), canonical, request.tenantId(), request.impersonateSubject(),
+                request.impersonateUserId(), request.actingOnBehalfOfSubject(), request.actingOnBehalfOfUserId(),
+                request.signedClaims(), request.tenantSelectionOptional());
     }
 
     private void requireIdentityInputs(PrincipalContextRequest request) {
@@ -551,8 +581,15 @@ public class PrincipalContextResolver {
                     IllegalArgumentException::new);
         }
         String targetRealm = (realm != null) ? realm : credentialRepo.getDatabaseName();
-        if (!scriptEvaluator.evaluate(originalCreds.getSubject(), originalCreds.getUserId(), targetRealm,
-                originalCreds.getImpersonateFilterScript())) {
+        boolean permitted;
+        try {
+            permitted = scriptEvaluator.evaluate(originalCreds.getSubject(), originalCreds.getUserId(), targetRealm,
+                    originalCreds.getImpersonateFilterScript());
+        } catch (ImpersonationScriptEvaluator.ScriptEvaluationException unevaluated) {
+            throw fail(typed, PrincipalResolutionError.IMPERSONATION_REFUSED, unevaluated.getMessage(),
+                    message -> new WebApplicationException(message, Response.Status.FORBIDDEN));
+        }
+        if (!permitted) {
             throw fail(typed, PrincipalResolutionError.IMPERSONATION_REFUSED,
                     String.format("User %s with userId %s is not authorized to impersonate in realm:%s",
                             originalCreds.getSubject(), originalCreds.getUserId(), targetRealm),
@@ -642,6 +679,7 @@ public class PrincipalContextResolver {
         }
         // The service's own permission is settled before any acted-for identity is looked up, so
         // a requested realm outside its reach refuses the same way whoever is named.
+        requireServiceGranted(service, request.applicationId());
         if (request.realm() != null) {
             authorizeDelegationRealm(service, request.realm(), scripted);
         }
@@ -689,6 +727,67 @@ public class PrincipalContextResolver {
     }
 
     /**
+     * A delegating service acts on behalf of identities only for an application it is itself
+     * explicitly granted: the delegated principal carries the acted-for identity's roles only, so
+     * without this a receiver could not tell an admitted calling service from any other delegating
+     * credential. Delegation always names the application; a delegated resolution that names none is
+     * refused {@code DELEGATION_NOT_ALLOWED}. The service's realm for the application is its binding
+     * marked {@code defaultRealm}, else the realm the application owns, else its home realm. There
+     * the grant must be explicit and active: its active binding, or its active realm assignment's
+     * application grant, or its credential's application pattern. Ownership of the realm by the
+     * application is not a grant for a delegating service. Refused {@code APPLICATION_NOT_GRANTED}
+     * naming the service, before any acted-for identity is read.
+     */
+    private void requireServiceGranted(CredentialUserIdPassword service, String applicationId) {
+        if (blank(applicationId)) {
+            throw refusal(PrincipalResolutionError.DELEGATION_NOT_ALLOWED, String.format(
+                    "Delegating service '%s' must name the application it acts in", service.getUserId()));
+        }
+        String app = applicationId.trim();
+        String realm;
+        ApplicationGrant grant;
+        try {
+            String serviceRealm = identityRealm(service, app);
+            realm = serviceRealm != null ? serviceRealm
+                    : service.getDomainContext() == null ? null : service.getDomainContext().getDefaultRealm();
+            grant = blank(realm) ? null : bindingGrant(service, app, realm);
+        } catch (PrincipalResolutionException refused) {
+            throw refusal(PrincipalResolutionError.APPLICATION_NOT_GRANTED, String.format(
+                    "Delegating service '%s' is not granted application '%s': %s",
+                    service.getUserId(), app, refused.getMessage()));
+        }
+        if (grant == null && !explicitlyGranted(service, realm, app)) {
+            throw refusal(PrincipalResolutionError.APPLICATION_NOT_GRANTED, String.format(
+                    "Delegating service '%s' is not granted application '%s' in realm '%s'",
+                    service.getUserId(), app, realm));
+        }
+    }
+
+    /**
+     * An explicit, active grant of {@code applicationId} to {@code identity} in {@code realm}: its
+     * active realm assignment names the application, or its credential's application pattern admits
+     * it. Unlike {@link #applicationAdmitted}, the realm's own application is not a grant, and an
+     * assignment that is not active (invited, suspended) grants nothing, pattern included.
+     */
+    private boolean explicitlyGranted(CredentialUserIdPassword identity, String realm, String applicationId) {
+        if (blank(realm) || realmMembershipService == null) {
+            return false;
+        }
+        Optional<UserRealmRole> assignment = realmMembershipService.assignmentForUser(identity.getUserId(), realm);
+        if (assignment.isPresent() && assignment.get().getStatus() != null
+                && !UserRealmRole.STATUS_ACTIVE.equalsIgnoreCase(assignment.get().getStatus().trim())) {
+            return false;
+        }
+        List<String> assigned = assignment.map(UserRealmRole::getAuthorizedApplications).orElse(null);
+        if (ApplicationAuthorizationResolver.resolve(assigned, null, null, applicationId).resolved()) {
+            return true;
+        }
+        String pattern = identity.getApplicationRegEx();
+        return !blank(pattern)
+                && ApplicationAuthorizationResolver.resolve(assigned, pattern, null, applicationId).resolved();
+    }
+
+    /**
      * The service's own realm authorization bounds delegation, with the usual reading (no
      * authorizedRealms and no realmRegEx means its home realm only), and its script, if any, must
      * admit the realm.
@@ -701,8 +800,17 @@ public class PrincipalContextResolver {
                     "Realm " + realm + " is outside the delegation scope of '" + service.getUserId() + "': "
                             + outside.getMessage());
         }
-        if (scripted && !scriptEvaluator.evaluate(service.getSubject(), service.getUserId(), realm,
-                service.getImpersonateFilterScript())) {
+        boolean permitted = true;
+        if (scripted) {
+            try {
+                permitted = scriptEvaluator.evaluate(service.getSubject(), service.getUserId(), realm,
+                        service.getImpersonateFilterScript());
+            } catch (ImpersonationScriptEvaluator.ScriptEvaluationException unevaluated) {
+                // Logged at ERROR by the evaluator: a deployment fault, not the credential's policy.
+                throw refusal(PrincipalResolutionError.DELEGATION_NOT_ALLOWED, unevaluated.getMessage());
+            }
+        }
+        if (!permitted) {
             throw refusal(PrincipalResolutionError.DELEGATION_NOT_ALLOWED,
                     "Service credential '" + service.getUserId() + "' may not delegate in realm " + realm);
         }
@@ -1290,14 +1398,25 @@ public class PrincipalContextResolver {
 
     /** Receiver-side role boundary, shared by credential and trusted-claims requests. */
     public PrincipalContext finalizeUserPrincipal(PrincipalContext context) {
+        return finalizeUserPrincipal(context, (CredentialUserIdPassword) null);
+    }
+
+    /**
+     * As {@link #finalizeUserPrincipal(PrincipalContext)}, with the identity's already-loaded local
+     * credential, so the roles of tenant-owned groups follow the tenant the session selected
+     * ({@link IdentityRoleResolver#withSessionTenantGroups}). Without one the roles came from a claims
+     * provider or a remote directory, which decided them, and are not regrouped.
+     */
+    public PrincipalContext finalizeUserPrincipal(PrincipalContext context, CredentialUserIdPassword credential) {
         try {
-            return finalizeUserPrincipal(context, null);
+            return finalizeUserPrincipal(context, null, credential);
         } catch (PrincipalResolutionException refused) {
             throw RemotePrincipalResolutionException.of(refused.error(), refused.getMessage());
         }
     }
 
-    private PrincipalContext finalizeUserPrincipal(PrincipalContext context, ApplicationGrant grant) {
+    private PrincipalContext finalizeUserPrincipal(PrincipalContext context, ApplicationGrant grant,
+                                                   CredentialUserIdPassword credential) {
         DomainContext selectedDomain = context.getDomainContext();
         Realm selectedRealm = systemDirectory.findRealmByRefName(context.getDefaultRealm()).orElse(null);
         if (selectedRealm != null && selectedRealm.getTenancyMode() != RealmTenancyMode.MULTI_TENANT
@@ -1308,6 +1427,12 @@ public class PrincipalContextResolver {
         if (blank(context.getUserId())) {
             return context;
         }
+        PrincipalContext regrouped = withSessionTenantGroups(context, credential, tenant);
+        return finalizeTenantRoles(regrouped, grant, selectedDomain, tenant);
+    }
+
+    private PrincipalContext finalizeTenantRoles(PrincipalContext context, ApplicationGrant grant,
+                                                 DomainContext selectedDomain, String tenant) {
         // Read the complete assignment: the active-only lookup hides suspended outsiders.
         UserRealmRole assignment = realmMembershipService.realmsForUser(context.getUserId()).stream()
                 .filter(row -> Objects.equals(context.getDefaultRealm(), row.getRealmRefName()))
@@ -1355,6 +1480,24 @@ public class PrincipalContextResolver {
             finalized.withDomainContext(selectedDomain).withDataDomain(selectedDomain.toDataDomain(context.getUserId()));
         }
         return finalized.build();
+    }
+
+    /**
+     * The context's roles for the tenant the session selected: groups another tenant owns never
+     * grant here, and groups the selected tenant owns do ({@link IdentityRoleResolver#withSessionTenantGroups}).
+     */
+    private PrincipalContext withSessionTenantGroups(PrincipalContext context, CredentialUserIdPassword credential,
+                                                     String tenant) {
+        if (identityRoleResolver == null || credential == null || blank(tenant) || context.getRoles() == null
+                || !Objects.equals(credential.getUserId(), context.getUserId())) {
+            return context;
+        }
+        String[] adjusted = identityRoleResolver.withSessionTenantGroups(context.getRoles(), credential,
+                context.getDefaultRealm(), context.getApplicationId(), tenant);
+        if (java.util.Arrays.equals(adjusted, context.getRoles())) {
+            return context;
+        }
+        return copy(context).withRoles(adjusted).build();
     }
 
     // ------------------------------------------------------------------ tenant selection
@@ -1430,8 +1573,13 @@ public class PrincipalContextResolver {
      * the identity's default (credential DomainContext tenant, then data-domain policy default)
      * when the assignment authorizes it, else the one tenant the identity can reach; several
      * tenants and no default fail {@code TENANT_SELECTION_REQUIRED}.
+     *
+     * <p>Public so an operation that records a principal's tenant (Auth's service-token issue)
+     * takes it from this one selection rule rather than from the realm's own data coordinate.
+     * Refusals are {@link PrincipalResolutionException}s ({@code TENANT_NOT_AUTHORIZED},
+     * {@code TENANT_SELECTION_REQUIRED}).
      */
-    PrincipalContext applyIdentityTenantSelection(PrincipalContext context, String requestedTenantId,
+    public PrincipalContext applyIdentityTenantSelection(PrincipalContext context, String requestedTenantId,
                                                   CredentialUserIdPassword credential) {
         String effectiveRealm = context.getDefaultRealm();
         String headerTenantId = blank(requestedTenantId) ? null : requestedTenantId.trim();

@@ -160,6 +160,32 @@ quantum.auth.principal-source=remote
 `quantum.auth.audience-required` and `mp.jwt.verify.audiences` are no longer
 used.
 
+The principal source is independent of `auth.provider`.
+`quantum.auth.principal-source=remote` needs only a `RemotePrincipalSource`
+bean (`quantum-auth-client-provider` on the classpath) and
+`quantum.auth-service.base-url`. `auth.provider` decides only where
+authorization decisions run: `quantum-auth-service` sends them to Auth's
+`/v1/authz/filter`, and `custom` keeps them in the application's own policies.
+Billing runs `principal-source=remote` with `auth.provider=custom`, because
+Auth's policy store holds no Billing policies. A blank
+`quantum.auth-service.base-url` refuses startup with `PRINCIPAL_SOURCE_UNAVAILABLE`.
+
+The resolved realm is the realm the request runs in. With no `X-Realm` it is
+the identity's application binding marked `defaultRealm`, else the one realm
+the application owns (`Realm.applicationRef`) in which the identity holds an
+active assignment, else the identity's home realm. An application that owns
+no realm, such as Billing, therefore sees every caller in its home realm. If
+the receiver has not migrated that realm, `MigrationCheckRequestFilter`
+answers 409 `REALM_NOT_MIGRATED`, with `realm` and `migration` (what the check
+found) in the body. It never answers an untyped 500.
+
+When the decision is delegated (`auth.provider=quantum-auth-service`), a
+failed `/v1/authz/filter` call is typed. A 401 or 403 from Auth, for example a
+revoked grant while the receiver still holds a cached principal, keeps Auth's
+status and code (`AUTHORIZATION_REFUSED` when Auth's body has none). Auth
+unreachable, or answering 5xx, gives 503 `PRINCIPAL_RESOLUTION_UNAVAILABLE`.
+Other statuses are contract faults and stay 500 `AUTHORIZATION_CHECK_FAILED`.
+
 Helixor Python receivers (`helixor_core.auth` `require_principal`) do the same:
 verify the signature, then resolve through the generated Python auth SDK with
 their application id (`helixor-solver`, `helixor-decision`, ...).
@@ -182,7 +208,21 @@ A service is a credential like any other, and its token is identity only
   those policies as that identity. Without the header the service runs as
   itself, like an application token.
 - Delegation scope reuses the credential's impersonation authorization
-  (`authorizedImpersonateIds`, `impersonateFilterScript`, `realmRegEx`).
+  (`authorizedImpersonateIds`, `impersonateFilterScript`, `realmRegEx`). A
+  script that cannot run is logged at ERROR and refused with the code for
+  the call (`DELEGATION_NOT_ALLOWED` or `IMPERSONATION_REFUSED`). It is never
+  read as the script answering `false`. One cause is a GraalJS engine that
+  cannot write its resource cache: the Auth image sets `HOME=/tmp` and
+  `-Dpolyglot.engine.userResourceCache`.
+- The delegating service must itself be granted the receiving application.
+  Its grant is read the way its own request would be admitted: its realm for
+  the application, then its binding there, else the realm's ownership, the
+  realm assignment's application grant or its credential pattern. Without that
+  grant the answer is 403 `APPLICATION_NOT_GRANTED`, naming the service. The
+  check runs before any acted-for identity is read. The delegated principal
+  carries only the acted-for identity's roles, so without this check a
+  receiver could not tell an admitted calling application from any other
+  delegating credential.
 - Roles for an acted-for user are resolved for the receiving service's
   application id, from the user's grants; realm-wide default grants keep that
   invisible to users.
@@ -229,27 +269,211 @@ Resolve request field: `actingOnBehalfOf { userId | subject }`. Response field:
   grants), with no roles from the request identity. It is admitted only if its
   credential is present, active, records a `serviceKind` and matches `jti`;
   otherwise 401. Impersonation headers are refused. Acting-on-behalf-of headers are
-  refused on this path for both kinds (403 `DELEGATION_NOT_ALLOWED`): delegation is resolved
-  only by `POST /v1/auth/principal-context/resolve`, which checks the delegation scope and
-  returns the acted-for identity (remote receivers call it). The local path would only run as the
-  service with an unchecked acted-for marker. A receiver that names its application
+  refused for an `application` credential (403 `DELEGATION_NOT_ALLOWED`). For a
+  `delegating` credential the local path resolves the delegation through the same
+  validated path as `POST /v1/auth/principal-context/resolve`
+  (`PrincipalContextResolver.resolveDelegated`: kind, delegation scope, realm in scope,
+  the service's own grant for the application, the acted-for identity's grant), never
+  as an unchecked marker. The evaluated principal is the acted-for identity, with the
+  service recorded as `impersonatedBy*` and the `actingService` property, as the remote
+  source presents it. The application is the receiving one. At an application-agnostic
+  receiver (Auth), delegation is accepted only on an allowlisted decision operation: a resource
+  method annotated `@DelegatedDecisionOperation`, today only `GET /v1/authz/filter`. The match
+  is by resource method, never by path. There the application is the one the operation names
+  in its `applicationId` query parameter, and a delegated request naming none is refused
+  `DELEGATION_NOT_ALLOWED`. On every other Auth operation (lists, creates, grants,
+  `/v1/auth/identity/current`) the acting header is refused `DELEGATION_NOT_ALLOWED`,
+  whatever its query parameters. A delegating service therefore never acts for an identity on
+  Auth's own data. Delegation always names its application: a delegated resolution without
+  one is refused `DELEGATION_NOT_ALLOWED`. The service's own grant must also be explicit and
+  active: an active binding, its active realm assignment's application grant, or its
+  credential's application pattern. The realm being owned by the application is not a grant
+  for a delegating service. Without `X-Realm` the realm is the delegation's realm
+  (the acted-for identity's realm for that application), the same realm a remote
+  receiver resolved, so a receiver forwarding the decision to Auth sends no sudo header
+  unless its own caller sent one. Every caller of a decision operation, a person's
+  signed-in token included, is resolved in identity mode there: roles, realm and tenant come
+  only from Auth's store (memberships, assignments, bindings), never from the token's
+  `groups`, `realm` or `tenantId` claims. A token re-signed with admin groups, or an admin
+  demoted after sign-in, is decided with the store's roles at once. Without `X-Realm` the
+  decision realm is the identity's realm for the named application, as the resolve operation
+  picks it, not the realm the token was signed in for; without `X-Tenant-Id` the tenant is the
+  identity's default tenant there. A receiver deciding through Auth refuses a decision made in
+  any other realm than the one it evaluates (403 `AUTHZ_REALM_MISMATCH`). A receiver that names its application
   (`quantum.security.session.application-id`, else
   `quantum.application-registration.application-id`) resolves the token with an identity-mode
   request, the one the resolve operation builds: application admission (bindings, then the
   realm assignment's grant), realm and tenant selection and the `SERVICE` scope follow from the
-  credential and its grants, and refusals are typed. Auth itself configures no application id,
-  so no application grant can apply there and a v2 token's roles are its realm grants across
-  applications, as for a user's token there. The credential is read once, by the resolver's
+  credential and its grants, and refusals are typed. Auth itself configures no application id.
+  On Auth's own operations no application grant can apply, so a v2 token's roles there are its
+  realm grants, as for a user's token. At Auth's decision operation a v2 token is always resolved
+  in identity mode for the application the decision names (`applicationId`), acting header or
+  not: an ungranted or unknown application, or none named, is 403 `APPLICATION_NOT_GRANTED`. It
+  is never decided application-agnostic, which would carry every application's roles. The credential is read once, by the resolver's
   authentication lookup (`PrincipalContextResolver#credentialForSubject`); no principal exists
   yet, so no caller's rules can govern that read. A receiver without the credential, or
-  one trusting token claims, refuses with 401 (it must run in remote mode).
-  Role-bearing service tokens keep the old path until step 4.
+  one that names its application and trusts token claims, refuses with 401 (it must run in
+  remote mode). Role-bearing service tokens keep the old path until step 4, except at a
+  decision operation (below).
+- **Decisions do not depend on `quantum.auth.trust-token-claims`.** Deployed Auth runs with
+  the flag on. It changes neither the decision operation nor v2 admission at Auth:
+  - Every verified bearer of a `@DelegatedDecisionOperation` method is resolved in identity
+    mode, from the store, with the flag on or off.
+  - Only the identity authority admits a v2 identity-only token (`jti == sub`) that names no
+    receiving application, whatever the flag says, because its store is the one that resolves
+    them. It is marked by the explicit setting `quantum.auth.identity-authority=true`, which only
+    quantum-auth-service sets. Like any Quarkus property it is deployment-controlled (a profile,
+    `QUANTUM_AUTH_IDENTITY_AUTHORITY` or `-D` overrides it); no tenant or API caller can reach it.
+    Every service logs its value and source at INFO on startup (`IdentityAuthoritySettingLog`).
+    Any other receiver admits a v2
+    token only when it names its application and does not trust token claims; a receiver that
+    names no application is refused 401, never taken for Auth by that absence. Other Auth
+    endpoints keep their claims-path behaviour under the flag until step 4.
+  - `ServiceTokenV2TrustedClaimsApiTest` runs the whole `ServiceTokenV2ApiTest` suite with the
+    flag on.
+- **Legacy service tokens at a decision.** A role-bearing `token_type=service` token
+  (no `jti == sub`) at a decision operation is resolved from the store like any caller, so its
+  `groups` grant nothing. A subject the store does not know is refused 401
+  `PRINCIPAL_UNKNOWN`. At a decision operation the acting-on-behalf-of headers are accepted only
+  from a v2 `DELEGATING` credential. Anything else (a person's token, a legacy service token,
+  an `application` credential) is refused 403 `DELEGATION_NOT_ALLOWED`. An unverified acting id
+  is never echoed as `actingOnBehalfOf*`.
+- **Data-domain parameters at a decision describe the resource.** `GET /v1/authz/filter`'s
+  `tenantId`, `orgRefName`, `accountNumber`, `dataSegment`, `ownerId`, `locationId` and
+  `businessTransactionId` are the decided resource's coordinates: receivers send their
+  `ResourceContext` data domain.
+  - They set only the resource context the rules see.
+  - The principal's data domain is always the one resolved from the store; only `X-Tenant-Id`
+    selects its tenant. A delegated decision is therefore the decision the receiver would make
+    locally, where `RuleContext` matches rule bodies against the principal's own data domain.
+  - A decision on a resource in another tenant is decided by the rules as the caller. Another
+    tenant's tenant-scoped policy does not apply; a policy for any tenant (shared, system or
+    support data) does.
+  - Before, the parameters overwrote the principal's data domain, so a caller naming another
+    tenant was evaluated as a member of that tenant.
+- **Realm names are compared ignoring case.** An identity-mode resolution, and the roles
+  augmentor's credential lookup, read a requested realm (`X-Realm`, `realm`) as its registered
+  refName, compared ignoring case (`RealmRefNames`). A differently cased `X-Realm` is that realm.
+  It no longer causes a MongoDB 13297 500. An unknown realm is refused typed
+  (`REALM_NOT_AUTHORIZED`).
+  - The catalog matches ignoring case (`LocalSystemDirectory.findRealmByRefName`: exact, then
+    `RealmRepo.findByRefNameIgnoringCase`), so a mixed-case refName (`helixor-code-P1`) and
+    a remote directory, which asks the same endpoint, are covered. Registration stays exact.
+  - Lookups are cached in two bounded LRU maps (1024 names each) with a time to live: a found
+    name for 60 s, a missing one for 30 s. Found and missing answers are kept apart, so a flood
+    of unknown names evicts only other unknown names, never a registered realm. A header that is
+    exactly a registered refName answered before needs no lookup. `RealmRegistered` clears the
+    cache.
+  - A name that is not a refName's shape (letters, digits, `-`, `_`, at most 63 characters, the
+    MongoDB database-name limit) is never looked up. On an authenticated request
+    `SecurityFilter` refuses it 403 `REALM_NOT_AUTHORIZED` before any lookup. An
+    unauthenticated request costs no lookup at all: its `X-Realm` is left as sent.
+  - `SecurityFilter` rewrites `X-Realm` to the registered refName before anything reads it, on
+    every principal source (embedded and remote). Resources and repositories read the header
+    as a database name, so a receiver in remote mode no longer answers 500 for another case.
+    A receiver whose own catalog does not list the realm (a remote-mode receiver serving a
+    realm Auth registers) takes the case from the principal Auth resolved for the request.
+  - A directory outage is refused 503 `PRINCIPAL_RESOLUTION_UNAVAILABLE`, never a 500. The
+    roles augmentor then drops token roles (fails closed).
+- **No datastore for an unregistered realm.** An authenticated `X-Realm` that is well shaped but
+  names no registered realm is refused 403 `REALM_NOT_AUTHORIZED` before any store lookup: the
+  roles augmentor checks shape and registration before its credential lookup, drops token roles
+  and marks the identity, and `SecurityFilter` answers the refusal (on a role-gated endpoint,
+  whose role check runs first, `RefusedRealmForbiddenExceptionMapper` answers the same typed
+  code; any other role refusal stays a plain 403). Before, a misshapen name
+  was a 500 and each unknown name created a MongoDB database (one probe created 271 and crashed
+  `mongod`).
+  - The gate is at the request boundary, not in `getDataStore` (round 6: a refusal inside the
+    datastore wrapper also refused startup, provisioning and test realms, and "already has a
+    database" admitted any name a probe had created once). `RequestRealmAdmission` admits a
+    caller-named realm when it is well shaped, not reserved, and is the configured system realm,
+    the default realm, or a realm the directory registers; anything else is 403
+    `REALM_NOT_AUTHORIZED`, and a directory outage is 503 `PRINCIPAL_RESOLUTION_UNAVAILABLE`.
+    Reserved names are never realms: `admin`, `local`, `config` and the coordination database
+    (`quantum.database.coordination-database`). It is applied where caller input names a realm:
+    - `X-Realm` on an authenticated request (`RolesAugmentor`, then `SecurityFilter`), the default
+      realm exempt;
+    - `X-Realm` or a session realm on any request, unauthenticated ones included
+      (`MigrationCheckRequestFilter`, which opens the realm's datastore to read its version);
+    - every `@PathParam`/`@QueryParam` whose name says realm (`realm`, `realmRefName`, `{realm}`;
+      not `...Regex`/`...Pattern`) on every JAX-RS resource (`RealmParameterAdmissionFilter`,
+      after `SecurityFilter`): `BaseResource.ensureIndexes/{realm}`, seed admin and
+      identity-pack `?realm=`, the migration endpoints, the user-realm-role paths. The annotations
+      are read from the resource method and every method it overrides or implements (JAX-RS
+      annotations on an interface), and from the fields and setters of a `@BeanParam`. A realm
+      under another name is marked `@RealmName` (the realm directory's `{refName}`;
+      `registered = false` checks only shape and reserved names, for a registration or a lookup
+      that must answer 404). A value equal to the caller's resolved realm passes without a lookup;
+      a value that is not the canonical refName is refused.
+    - The value checked is the raw value the resource receives: one with surrounding whitespace or
+      control characters is refused (round 7: the boundary admitted the trimmed value while the
+      resource read `realm\t`).
+  - A cheap check stays at the datastore layer (round 7): `getDataStore` refuses a name that is
+    reserved or not of a refName's exact shape (`RealmDatabaseNames`, typed 403
+    `REALM_NOT_AUTHORIZED` through `InvalidRealmDatabaseExceptionMapper`). Configured and
+    registered realms always have that shape, so no legitimate flow is refused. Registration is
+    not checked there.
+  - Follow-up: realm names in JSON bodies (`AuthRequest.realm`, `AccessInviteRequest.realm`,
+    `AccessInviteAcceptRequest.realm`, `EnableImpersonationRequest.realmToEnableIn`,
+    `ScopedActionEnablementRequest.realm`, `ServiceTokenRequest.realm`,
+    `TenantProvisionRequest.placementRealmId`) are not admitted by the filter; the datastore check
+    covers their shape and reserved names.
+  - Startup, seeding and provisioning open datastores as before: they name realms from
+    configuration or from rows they just wrote, never from request input.
+  - A registration takes effect at once: every save of a `Realm` row (any repository, the control
+    plane directory resources, local bootstrap, registration approval) fires `RealmRecordSaved`
+    from a Morphia entity listener, which `RealmRecordSavedAnnouncer` turns into `RealmRegistered`,
+    dropping the cached "unknown" answer. A cached miss otherwise lives 5 s (was 30 s).
+- **Error responses carry no internals.** The framework's exception mappers no longer return
+  stack traces (`debugMessage`), an unmapped exception's own message, or a 5xx
+  `WebApplicationException`'s message (`ClientErrorDetail.serverErrorMessage`; a 4xx keeps the
+  message its resource wrote). Those are logged server
+  side. The development setting `quantum.rest.errors.include-debug-detail=true` restores them.
+  This covers MongoDB write errors (a duplicate key is a fixed 400 conflict message, with no
+  host, database, collection, index or key value, so it does not enumerate accounts), JSON
+  processing errors and `QuotaExceededException`'s stack trace.
 - **Issuer authority is re-resolved.** Issuance re-resolves the caller's roles in the
   issuing realm with `IdentityRoleResolver`, without token roles: credential roles,
   the realm assignment and realm-wide (`*`) groups. It requires `admin` there and an
   active user credential. A sign-in token that still carries `admin` after the grant
   was revoked cannot issue, and an admin group of a single application does not make
   a realm admin.
+- **A delegating token needs a realm-wide admin.** A `delegating` credential acts for any
+  identity of its realm, so its issuer's `admin` must hold across the realm. The role
+  provenance (`IdentityRoleResolver.resolveRoleSources`, no token roles) decides:
+  - The rule is invite management's rule for a realm administrator: every tenant of a dedicated
+    realm, and in a shared realm only the tenants its own assignment authorizes.
+  - Realm wide: a realm-wide (`*`) platform user group, which is a group stored in the system
+    realm with no `ownerTenantId` (`IdentityRoleResolver.platformGroupRoles`). The system realm
+    also holds tenant-owned groups: a pooled tenant admin's plain `POST /user/usergroup` (no
+    `X-Realm`) lands there, and Auth stamps it with the writer's tenant, so it is not a platform
+    group. Or `admin` from the credential or the realm assignment, in a dedicated realm, or in a
+    shared realm when the active assignment authorizes every tenant
+    (`authorizedTenantRegEx = "*"`, trimmed; `.*` and other patterns do not count).
+  - Ordinary role resolution (round 7): a tenant-owned group grants its roles only in a session of
+    its owner tenant. Without a selected tenant that is the identity's home tenant
+    (`domainContext.tenantId`); once a tenant is selected, `PrincipalContextResolver` drops what
+    only the home tenant's groups gave and adds the selected tenant's
+    (`IdentityRoleResolver.withSessionTenantGroups`). A group no tenant owns counts as before. So
+    tenant A's administrator naming tenant B's member in a `roles:[admin]` group raises nothing in
+    B; Auth also refuses such a save (every listed member must belong to the caller's tenant, by
+    the store).
+  - A tenant-owned group never counts, nor does a group in any other realm, whatever its
+    application scope or its `ownerTenantId`. A null owner outside the system realm is not realm
+    wide, so a tenant admin cannot make themselves realm-wide by creating an
+    ownerless group, and a legacy group that predates `ownerTenantId` grants nothing realm wide.
+  - Defence in depth at Auth (`RoleGrantReaderInterceptor`, `PrivilegedFields`): a non-system
+    caller's group is always owned by the caller's tenant (the server sets `ownerTenantId`); field
+    updates of `ownerTenantId` and `authorizedTenantRegEx` need a system principal; a non-system
+    caller may not change the stored `authorizedTenantRegEx` in a typed assignment or tenant grant,
+    and may add only its own tenant to `authorizedTenantIds` (echoing the stored values, a
+    read-modify-write, passes). Identity-pack operators, whose packs are applied with rules
+    ignored into any realm, are system principals; `admin` alone is not one.
+  - Tenant scoped: any other `admin` in a shared (multi-tenant) realm. Pooled provisioning gives
+    a tenant's administrator flat credential roles (`admin`, `user`) and an assignment naming its
+    one tenant, so a flat credential role alone is not realm wide there.
+  - A tenant-scoped issuer is refused 403 `DELEGATION_ISSUE_REQUIRES_REALM_ADMIN`.
+  - `application` tokens keep the realm-admin rule.
 - **Receivers that read roles from the token** (`trust-token-claims`, the 1.4.2
   claims path) get none from a v2 token and refuse. Give a service a v2 token only
   once the receivers it calls resolve through Auth.

@@ -25,24 +25,28 @@ public class RunTimeExceptionMapper implements ExceptionMapper<RuntimeException>
                 ExceptionLoggingUtils.logDebug(exception, "Web application exception");
             }
 
+            // A 4xx is an expected outcome whose message the resource wrote for the client; a 5xx
+            // message is a failure's own (a wrapped cause's), returned only with debug detail on.
             RestError error = RestError.builder().build();
-            error.setStatusMessage(exception.getMessage());
+            error.setStatusMessage(status >= 500 ? ClientErrorDetail.serverErrorMessage(exception) : exception.getMessage());
             error.setStatus(status);
             error.setReasonMessage(originalResponse != null && originalResponse.getStatusInfo() != null
                 ? originalResponse.getStatusInfo().getReasonPhrase()
                 : "Web application exception");
-            error.setDebugMessage(ExceptionLoggingUtils.getStackTrace(exception));
+            error.setDebugMessage(ClientErrorDetail.stackTrace(exception));
 
             return Response.status(status).entity(error).build();
         }
 
         ExceptionLoggingUtils.logError(exception, "An unexpected / uncaught exception occurred");
 
+        // An unmapped exception's message is a driver's or a library's (a MongoDB command error
+        // names hosts and databases): it is logged above, never returned unless debug detail is on.
         RestError error = RestError.builder().build();
-        error.setStatusMessage(exception.getMessage());
+        error.setStatusMessage(ClientErrorDetail.serverErrorMessage(exception));
         error.setStatus(Response.Status.INTERNAL_SERVER_ERROR.getStatusCode());
         error.setReasonMessage("An unexpected / uncaught exception occurred");
-        error.setDebugMessage(ExceptionLoggingUtils.getStackTrace(exception));
+        error.setDebugMessage(ClientErrorDetail.stackTrace(exception));
 
         return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(error).build();
     }

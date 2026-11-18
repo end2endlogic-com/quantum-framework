@@ -104,6 +104,21 @@ public class IdentityRoleResolver {
                                           String authorityRealm,
                                           String effectiveRealm,
                                           String applicationId) {
+        return resolveEffectiveRoles(identity, credential, authorityRealm, effectiveRealm, applicationId,
+                homeTenant(credential));
+    }
+
+    /**
+     * As {@link #resolveEffectiveRoles(SecurityIdentity, CredentialUserIdPassword, String, String, String)},
+     * counting a tenant-owned group only when {@code sessionTenantId} owns it (the other overloads use the
+     * identity's home tenant). A group no tenant owns counts as before.
+     */
+    public String[] resolveEffectiveRoles(SecurityIdentity identity,
+                                          CredentialUserIdPassword credential,
+                                          String authorityRealm,
+                                          String effectiveRealm,
+                                          String applicationId,
+                                          String sessionTenantId) {
         String targetRealm = requireRealm(effectiveRealm);
         LinkedHashMap<String, EnumSet<RoleSource>> provenance = new LinkedHashMap<>();
         // A token's role claims include the UserRealmRole roles of the realm it was issued for.
@@ -128,9 +143,9 @@ public class IdentityRoleResolver {
                             .ifPresent(assignment -> addRoles(provenance, assignment.getRoles(), RoleSource.REALM));
                 }
 
-                addUserGroupRoles(provenance, credential, envConfigUtils.getSystemRealm(), applicationId);
+                addUserGroupRoles(provenance, credential, envConfigUtils.getSystemRealm(), applicationId, sessionTenantId);
                 if (!sameRealm(targetRealm, envConfigUtils.getSystemRealm())) {
-                    addUserGroupRoles(provenance, credential, targetRealm, applicationId);
+                    addUserGroupRoles(provenance, credential, targetRealm, applicationId, sessionTenantId);
                 }
             } catch (RuntimeException e) {
                 throw new IllegalStateException(String.format(
@@ -210,18 +225,72 @@ public class IdentityRoleResolver {
                         .ifPresent(assignment -> addRoles(out, assignment.getRoles(), RoleSource.REALM));
             }
 
-            addUserGroupRoles(out, cred, systemRealm, applicationId);
+            addUserGroupRoles(out, cred, systemRealm, applicationId, homeTenant(cred));
             if (!sameRealm(targetRealm, systemRealm)) {
-                addUserGroupRoles(out, cred, targetRealm, applicationId);
+                addUserGroupRoles(out, cred, targetRealm, applicationId, homeTenant(cred));
             }
         }
         return out;
     }
 
+    /**
+     * The roles {@code identity} holds through platform user groups: groups stored in the system
+     * realm, with no {@code ownerTenantId}, that apply to {@code applicationId}. Both conditions are
+     * needed. The system realm also holds tenant-owned groups (a tenant administrator's group saved
+     * without {@code X-Realm} lands there, and Launchpad organization administrators are homed
+     * there); Auth sets such a group's {@code ownerTenantId} to its writer's tenant, so a blank owner
+     * there means a platform principal wrote it. A group in any other realm is left out whatever
+     * its owner field says. {@code realm} is the realm the authority is asked for; it is validated
+     * but does not widen the lookup. The same group lookup as {@link #resolveRoleSources}.
+     */
+    public java.util.Set<String> platformGroupRoles(String identity, String realm, String applicationId) {
+        requireRealm(realm);
+        String systemRealm = envConfigUtils.getSystemRealm();
+        Optional<CredentialUserIdPassword> credential = credentialRepo.findByUserId(identity, systemRealm, true);
+        java.util.LinkedHashSet<String> roles = new java.util.LinkedHashSet<>();
+        if (credential.isEmpty()) {
+            return roles;
+        }
+        collectGroupRoles(roles, credential.get(), systemRealm, applicationId);
+        return roles;
+    }
+
+    private void collectGroupRoles(java.util.Set<String> roles, CredentialUserIdPassword credential, String groupRealm,
+                                   String applicationId) {
+        for (UserGroup group : groupsOf(credential, groupRealm)) {
+            if (group != null && platformOwned(group) && groupAppliesToApplication(group, applicationId)
+                    && group.getRoles() != null) {
+                group.getRoles().stream().filter(role -> role != null && !role.isBlank()).forEach(roles::add);
+            }
+        }
+    }
+
+    /**
+     * A group no tenant owns: its {@code ownerTenantId} is unset or empty after {@link String#trim()}
+     * (the blank Auth's writers use). Any other value, a Unicode space included, is an owner.
+     */
+    static boolean platformOwned(UserGroup group) {
+        return group.getOwnerTenantId() == null || group.getOwnerTenantId().trim().isEmpty();
+    }
+
+    private List<UserGroup> groupsOf(CredentialUserIdPassword credential, String groupRealm) {
+        if (credential == null || credential.getSubject() == null || groupRealm == null || groupRealm.isBlank()) {
+            return List.of();
+        }
+        Optional<UserProfile> profile = userProfileRepo.getBySubject(groupRealm, credential.getSubject());
+        if (profile.isEmpty()) {
+            return List.of();
+        }
+        List<UserGroup> groups = userGroupRepo.findByUserProfileRefWithIgnoreRules(
+                groupRealm, profile.get().createEntityReference());
+        return groups == null ? List.of() : groups;
+    }
+
     private void addUserGroupRoles(Map<String, EnumSet<RoleSource>> target,
                                    CredentialUserIdPassword credential,
                                    String groupRealm,
-                                   String applicationId) {
+                                   String applicationId,
+                                   String sessionTenantId) {
         if (credential == null || credential.getSubject() == null || groupRealm == null || groupRealm.isBlank()) {
             return;
         }
@@ -235,9 +304,96 @@ public class IdentityRoleResolver {
             return;
         }
         for (UserGroup group : groups) {
-            if (group != null && groupAppliesToApplication(group, applicationId)) {
+            // A group no tenant owns grants its members as before. A tenant-owned group grants only in a
+            // session of its owner tenant: another tenant's administrator naming this identity in a group
+            // must not raise its roles where it acts. Platform (realm-wide) authority is decided
+            // separately, by platformGroupRoles, which counts only ownerless system-realm groups.
+            if (group != null && groupAppliesToApplication(group, applicationId)
+                    && grantsInSessionTenant(group, sessionTenantId)) {
                 addRoles(target, group.getRoles(), RoleSource.USERGROUP);
             }
+        }
+    }
+
+    /** A group no tenant owns, or one {@code sessionTenantId} owns. */
+    static boolean grantsInSessionTenant(UserGroup group, String sessionTenantId) {
+        if (platformOwned(group)) {
+            return true;
+        }
+        return sessionTenantId != null && group.getOwnerTenantId().trim().equals(sessionTenantId.trim());
+    }
+
+    /** The tenant the identity is homed in: its credential's {@code domainContext.tenantId}. */
+    static String homeTenant(CredentialUserIdPassword credential) {
+        if (credential == null || credential.getDomainContext() == null) {
+            return null;
+        }
+        String tenant = credential.getDomainContext().getTenantId();
+        return tenant == null || tenant.isBlank() ? null : tenant.trim();
+    }
+
+    /**
+     * {@code roles}, resolved for the identity's home tenant, adjusted to the tenant the session
+     * selected: the roles only groups its home tenant owns gave are dropped, and the roles of groups
+     * {@code sessionTenantId} owns are added. Unchanged when no tenant was selected or the home tenant
+     * was. A role another source also gives (the credential, the realm assignment, a group no tenant
+     * owns, a group the selected tenant owns) is kept. Under a remote directory the roles came from Auth,
+     * which applied this rule for the selected tenant, so they are returned unchanged and no local store is read;
+     * likewise without a local credential (roles supplied by a claims provider).
+     */
+    public String[] withSessionTenantGroups(String[] roles, CredentialUserIdPassword credential, String realm,
+                                            String applicationId, String sessionTenantId) {
+        if (roles == null || credential == null || credential.getSubject() == null || sessionTenantId == null
+                || sessionTenantId.isBlank() || realm == null || realm.isBlank()
+                || !localRealmAssignmentsAuthoritative()) {
+            return roles;
+        }
+        String systemRealm = envConfigUtils.getSystemRealm();
+        String home = homeTenant(credential);
+        String session = sessionTenantId.trim();
+        if (session.equals(home)) {
+            return roles;
+        }
+        java.util.Set<String> homeOnly = new java.util.LinkedHashSet<>();
+        java.util.Set<String> kept = new java.util.LinkedHashSet<>();
+        java.util.Set<String> added = new java.util.LinkedHashSet<>();
+        addAll(kept, credential.getRoles() == null ? null : java.util.Arrays.asList(credential.getRoles()));
+        userRealmRoleRepo.findActiveAssignmentForRealmWithIgnoreRules(credential.getUserId(), realm, systemRealm)
+                .ifPresent(assignment -> addAll(kept, assignment.getRoles()));
+        List<UserGroup> groups = new java.util.ArrayList<>(groupsOf(credential, systemRealm));
+        if (!sameRealm(realm, systemRealm)) {
+            groups.addAll(groupsOf(credential, realm));
+        }
+        for (UserGroup group : groups) {
+            if (group == null || !groupAppliesToApplication(group, applicationId)) {
+                continue;
+            }
+            if (platformOwned(group)) {
+                addAll(kept, group.getRoles());
+            } else if (group.getOwnerTenantId().trim().equals(session)) {
+                addAll(added, group.getRoles());
+            } else if (home != null && group.getOwnerTenantId().trim().equals(home)) {
+                addAll(homeOnly, group.getRoles());
+            }
+        }
+        homeOnly.removeAll(kept);
+        homeOnly.removeAll(added);
+        java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>();
+        for (String role : roles) {
+            if (role != null && !homeOnly.contains(role)) {
+                out.add(role);
+            }
+        }
+        out.addAll(added);
+        if (out.size() > 1) {
+            out.remove("ANONYMOUS");
+        }
+        return out.isEmpty() ? new String[]{"ANONYMOUS"} : out.toArray(new String[0]);
+    }
+
+    private static void addAll(java.util.Set<String> target, java.util.Collection<String> roles) {
+        if (roles != null) {
+            roles.stream().filter(role -> role != null && !role.isBlank()).forEach(target::add);
         }
     }
 

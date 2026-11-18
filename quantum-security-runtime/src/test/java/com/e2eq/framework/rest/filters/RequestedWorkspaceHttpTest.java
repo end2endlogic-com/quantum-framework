@@ -23,8 +23,13 @@ class RequestedWorkspaceHttpTest extends AuthorizationLifecycleHttpTest {
         assignment.setRoles(java.util.List.of("editor"));
         org.mockito.Mockito.when(memberships.assignmentForUser("alice", "unregistered"))
                 .thenReturn(java.util.Optional.of(assignment));
-        assertEquals(403, call("alice", null, "unregistered").statusCode());
-        // The request reached provider validation, then the signed realm boundary denied it.
-        org.mockito.Mockito.verify(providers, org.mockito.Mockito.atLeastOnce()).getAuthProvider();
+        var result = call("alice", null, "unregistered");
+        assertEquals(403, result.statusCode(), result.body());
+        // Refused typed before any lookup: the unregistered realm's role is never read.
+        assertTrue(result.body().contains("REALM_NOT_AUTHORIZED"), result.body());
+        var typed = call("alice", null, "unregistered", "lifecycle/self");
+        assertEquals(403, typed.statusCode(), typed.body());
+        assertTrue(typed.body().contains("REALM_NOT_AUTHORIZED"), typed.body());
+        org.mockito.Mockito.verify(memberships, org.mockito.Mockito.never()).assignmentForUser("alice", "unregistered");
     }
 }

@@ -14,10 +14,13 @@ public class JsonExceptionMapper implements ExceptionMapper<Exception> {
         ExceptionLoggingUtils.logError(exception, "An unexpected / uncaught exception occurred");
         
         RestError error = RestError.builder().build();
-        error.setStatusMessage(exception.getMessage());
+        // A checked exception's message is a library's or a driver's (hosts, addresses, databases):
+        // logged above, returned only with debug detail.
+        error.setStatusMessage(ClientErrorDetail.includeDebugDetail()
+                ? exception.getMessage() : ClientErrorDetail.UNEXPECTED_ERROR_MESSAGE);
         error.setStatus(Response.Status.INTERNAL_SERVER_ERROR.getStatusCode());
         error.setReasonMessage("An unexpected / uncaught exception occurred");
-        error.setDebugMessage(ExceptionLoggingUtils.getStackTrace(exception));
+        error.setDebugMessage(ClientErrorDetail.stackTrace(exception));
 
         return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(error).build();
     }

@@ -139,8 +139,9 @@ class MigrationCheckRequestFilterTest {
         TestMigrationService service = new TestMigrationService();
         service.failedRealm = "tenant-home-realm";
         MigrationCheckRequestFilter filter = remoteFilter(service);
-        assertThrows(DatabaseMigrationException.class,
+        var refused = assertThrows(jakarta.ws.rs.WebApplicationException.class,
             () -> filter.filter(new StubRequestContext("/api/orders", "GET")));
+        assertRealmNotMigrated(refused, "tenant-home-realm");
         assertEquals(List.of("tenant-home-realm"), service.checkedRealms);
     }
 
@@ -150,9 +151,35 @@ class MigrationCheckRequestFilterTest {
         service.failedRealm = "system-com";
         MigrationCheckRequestFilter filter = buildFilter(identity("user"), testEnvConfig(),
             new TestCredentialRepo("user", "tenant-home-realm"), service, null);
-        assertThrows(DatabaseMigrationException.class,
+        var refused = assertThrows(jakarta.ws.rs.WebApplicationException.class,
             () -> filter.filter(new StubRequestContext("/api/orders", "GET")));
+        assertRealmNotMigrated(refused, "system-com");
         assertEquals(List.of("tenant-home-realm", "system-com"), service.checkedRealms);
+    }
+
+    @Test
+    void loginAndMigrationPathsAreNotRefusedForTheRequestRealm() throws Exception {
+        TestMigrationService service = new TestMigrationService();
+        service.failedRealm = "tenant-home-realm";
+        MigrationCheckRequestFilter filter = remoteFilter(service);
+        filter.filter(new StubRequestContext("/system/migration/initialize/tenant-home-realm", "POST"));
+        assertEquals(List.of("tenant-home-realm"), service.checkedRealms);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void assertRealmNotMigrated(jakarta.ws.rs.WebApplicationException refused, String realm) {
+        Response response = refused.getResponse();
+        assertEquals(409, response.getStatus());
+        assertEquals("no-store", response.getHeaderString("Cache-Control"));
+        Map<String, String> body = (Map<String, String>) response.getEntity();
+        assertEquals(MigrationCheckRequestFilter.REALM_NOT_MIGRATED, body.get("code"));
+        assertEquals(realm, body.get("realm"));
+        // What the migration check found is logged, never returned.
+        org.junit.jupiter.api.Assertions.assertNull(body.get("migration"));
+        org.junit.jupiter.api.Assertions.assertFalse(body.values().stream()
+                .anyMatch(v -> v != null && v.contains("fixture schema requires migration")));
+        org.junit.jupiter.api.Assertions.assertTrue(body.get("message").contains(realm));
+        org.junit.jupiter.api.Assertions.assertInstanceOf(DatabaseMigrationException.class, refused.getCause());
     }
 
     private static MigrationCheckRequestFilter remoteFilter(TestMigrationService service) {

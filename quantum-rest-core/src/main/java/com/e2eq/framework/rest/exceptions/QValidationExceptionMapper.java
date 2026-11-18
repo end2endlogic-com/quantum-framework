@@ -17,7 +17,7 @@ public class QValidationExceptionMapper implements ExceptionMapper<E2eqValidatio
         // Log validation errors at WARN level (not ERROR, as these are expected client errors)
         ExceptionLoggingUtils.logWarn(exception, "Validation exception occurred");
         
-        String stackTrace = ExceptionLoggingUtils.getStackTrace(exception);
+        String stackTrace = ClientErrorDetail.stackTrace(exception);
 
         Set<String> violations = exception.getViolationSet().stream()
                 .map(violation -> violation.getPropertyPath().toString() + " " + violation.getMessage())

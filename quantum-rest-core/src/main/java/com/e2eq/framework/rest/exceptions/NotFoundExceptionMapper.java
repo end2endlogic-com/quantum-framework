@@ -18,7 +18,7 @@ public class NotFoundExceptionMapper implements ExceptionMapper<NotFoundExceptio
         error.setStatusMessage(exception.getMessage());
         error.setStatus(Response.Status.NOT_FOUND.getStatusCode());
         error.setReasonMessage(String.format("The URL was not found: %s", exception.getMessage()));
-        error.setDebugMessage(ExceptionLoggingUtils.getStackTrace(exception));
+        error.setDebugMessage(ClientErrorDetail.stackTrace(exception));
 
         return Response.status(Response.Status.NOT_FOUND).entity(error).build();
     }

@@ -23,7 +23,7 @@ public class QuotaExceededExceptionMapper implements ExceptionMapper<UsageMeteri
         error.setStatusMessage(exception.getMessage());
         error.setStatus(402);
         error.setReasonMessage(exception.getMessage());
-        error.setDebugMessage(ExceptionLoggingUtils.getStackTrace(exception));
+        error.setDebugMessage(ClientErrorDetail.stackTrace(exception));
 
         return Response.status(402).entity(error).build();
     }
