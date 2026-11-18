@@ -218,6 +218,53 @@ public class IdentityRoleResolver {
         return out;
     }
 
+    /**
+     * The roles {@code identity} holds through platform user groups only: groups with no
+     * {@code ownerTenantId}, in the system realm and in {@code realm}, that apply to
+     * {@code applicationId}. A tenant-owned group (one a tenant's administrator manages) grants
+     * within its tenant, so its roles are not realm-wide authority and are left out. The same group
+     * lookup as {@link #resolveRoleSources}.
+     */
+    public java.util.Set<String> platformGroupRoles(String identity, String realm, String applicationId) {
+        String targetRealm = requireRealm(realm);
+        String systemRealm = envConfigUtils.getSystemRealm();
+        Optional<CredentialUserIdPassword> credential = credentialRepo.findByUserId(identity, systemRealm, true);
+        java.util.LinkedHashSet<String> roles = new java.util.LinkedHashSet<>();
+        if (credential.isEmpty()) {
+            return roles;
+        }
+        java.util.function.Predicate<UserGroup> platform =
+                group -> group.getOwnerTenantId() == null || group.getOwnerTenantId().isBlank();
+        collectGroupRoles(roles, credential.get(), systemRealm, applicationId, platform);
+        if (!sameRealm(targetRealm, systemRealm)) {
+            collectGroupRoles(roles, credential.get(), targetRealm, applicationId, platform);
+        }
+        return roles;
+    }
+
+    private void collectGroupRoles(java.util.Set<String> roles, CredentialUserIdPassword credential, String groupRealm,
+                                   String applicationId, java.util.function.Predicate<UserGroup> included) {
+        for (UserGroup group : groupsOf(credential, groupRealm)) {
+            if (group != null && included.test(group) && groupAppliesToApplication(group, applicationId)
+                    && group.getRoles() != null) {
+                group.getRoles().stream().filter(role -> role != null && !role.isBlank()).forEach(roles::add);
+            }
+        }
+    }
+
+    private List<UserGroup> groupsOf(CredentialUserIdPassword credential, String groupRealm) {
+        if (credential == null || credential.getSubject() == null || groupRealm == null || groupRealm.isBlank()) {
+            return List.of();
+        }
+        Optional<UserProfile> profile = userProfileRepo.getBySubject(groupRealm, credential.getSubject());
+        if (profile.isEmpty()) {
+            return List.of();
+        }
+        List<UserGroup> groups = userGroupRepo.findByUserProfileRefWithIgnoreRules(
+                groupRealm, profile.get().createEntityReference());
+        return groups == null ? List.of() : groups;
+    }
+
     private void addUserGroupRoles(Map<String, EnumSet<RoleSource>> target,
                                    CredentialUserIdPassword credential,
                                    String groupRealm,

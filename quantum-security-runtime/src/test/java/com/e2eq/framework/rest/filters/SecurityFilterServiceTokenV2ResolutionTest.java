@@ -193,9 +193,10 @@ class SecurityFilterServiceTokenV2ResolutionTest {
 
     @Test
     void anApplicationAgnosticReceiverKeepsTheIdentityOnlyCredentialPath() {
-        // No receiving application (Auth itself): no application grant can apply; the token's
-        // claims beyond the identity are still not read and the credential's home realm applies.
-        PrincipalContext viaFilter = viaFilter("svc-app@acme", null, Map.of());
+        // No receiving application (Auth itself), on one of Auth's own operations: no application
+        // grant can apply; the token's claims beyond the identity are still not read and the
+        // credential's home realm applies.
+        PrincipalContext viaFilter = viaFilter("svc-app@acme", null, Map.of(), Map.of(), "list");
         assertEquals("acme-D1", viaFilter.getDefaultRealm());
         assertEquals("svc-app@acme", viaFilter.getUserId());
         // The token's azp ("another-application") is never taken as the application.
@@ -238,10 +239,36 @@ class SecurityFilterServiceTokenV2ResolutionTest {
     }
 
     @Test
-    void theApplicationAgnosticWarningIsLoggedOncePerProcess() {
-        viaFilter("svc-app@acme", null, Map.of());
-        // The first v2 token at an application-agnostic receiver has warned; later ones do not.
-        assertFalse(SecurityFilter.warnApplicationAgnosticServiceToken());
+    void anApplicationAgnosticDecisionIsMadeForTheApplicationItNamesNeverForNone() {
+        // Review F1: at Auth's decision operation a v2 token without an acting header is resolved
+        // in identity mode for the application the decision names, with that application's
+        // admission; never application-agnostic, which would carry every application's roles.
+        PrincipalContext granted = viaFilter("svc-app@acme", null, Map.of(),
+                Map.of(SecurityFilter.APPLICATION_ID_PARAMETER, PrincipalFixture.APP));
+        assertEquals(PrincipalFixture.APP, granted.getApplicationId());
+        assertEquals(PrincipalContext.SCOPE_SERVICE, granted.getScope());
+
+        for (String application : new String[]{"another-application", "never-registered"}) {
+            RemotePrincipalResolutionException refused = assertThrows(RemotePrincipalResolutionException.class,
+                    () -> viaFilter("svc-app@acme", null, Map.of(),
+                            Map.of(SecurityFilter.APPLICATION_ID_PARAMETER, application)), application);
+            assertEquals(403, refused.status());
+            assertEquals("APPLICATION_NOT_GRANTED", refused.code());
+        }
+        RemotePrincipalResolutionException unnamed = assertThrows(RemotePrincipalResolutionException.class,
+                () -> viaFilter("svc-app@acme", null, Map.of()));
+        assertEquals(403, unnamed.status());
+        assertEquals("APPLICATION_NOT_GRANTED", unnamed.code());
+    }
+
+    @Test
+    void aReceiverThatIsNotTheIdentityAuthorityNeverAdmitsAnApplicationAgnosticToken() {
+        // Review F2: naming no application does not make a receiver Auth.
+        SecurityFilter filter = filter("svc-app@acme", null);
+        filter.identityAuthority = false;
+        Map<String, String> headers = new HashMap<>(Map.of("Authorization", "Bearer v2"));
+        assertThrows(jakarta.ws.rs.NotAuthorizedException.class,
+                () -> filter.determinePrincipalContext(request(headers)));
     }
 
     private PrincipalContext viaFilter(String userId, String receivingApplication, Map<String, String> headers) {
@@ -314,6 +341,8 @@ class SecurityFilterServiceTokenV2ResolutionTest {
         filter.securityUtils = world.securityUtils;
         filter.envConfigUtils = world.env;
         filter.sessionApplicationId = Optional.ofNullable(receivingApplication);
+        // A receiver that names no application stands for Auth, the identity authority.
+        filter.identityAuthority = receivingApplication == null;
         @SuppressWarnings("unchecked")
         Instance<ApplicationAccessDirectory> directory = mock(Instance.class);
         when(directory.isResolvable()).thenReturn(true);

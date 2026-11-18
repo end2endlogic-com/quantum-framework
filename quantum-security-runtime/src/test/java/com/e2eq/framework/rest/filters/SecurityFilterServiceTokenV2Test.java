@@ -54,6 +54,7 @@ class SecurityFilterServiceTokenV2Test {
         CredentialRepo repo = mock(CredentialRepo.class);
         SecurityFilter filter = filter(v2Token(), credential(ServiceKind.APPLICATION));
         filter.credentialRepo = repo;
+        filter.identityAuthority = false;
         filter.trustTokenClaims = true;
         filter.sessionApplicationId = Optional.of("helixor-code");
         assertTrue(filter.localCredentialPath(BEARER));
@@ -62,15 +63,52 @@ class SecurityFilterServiceTokenV2Test {
     }
 
     @Test
-    void anApplicationAgnosticReceiverAdmitsAnIdentityOnlyServiceTokenWhateverTheTrustFlag() {
-        // Auth itself (no receiving application): its store resolves these tokens, so
-        // quantum.auth.trust-token-claims does not decide admission.
+    void onlyTheIdentityAuthorityAdmitsAnIdentityOnlyServiceTokenWhateverTheTrustFlag() {
+        // Auth sets quantum.auth.identity-authority=true: its store resolves these tokens, so
+        // quantum.auth.trust-token-claims does not decide admission there.
         for (boolean trusted : new boolean[]{false, true}) {
             SecurityFilter filter = filter(v2Token(), credential(ServiceKind.APPLICATION));
             filter.trustTokenClaims = trusted;
             assertTrue(filter.localCredentialPath(BEARER));
             assertDoesNotThrow(() -> filter.admitIdentityOnlyServiceToken(request(Map.of())), "trusted=" + trusted);
         }
+        // A receiver that configures no application is never taken for Auth by that absence: without
+        // the explicit setting it refuses them (fail closed), before any lookup, whatever the flag.
+        for (boolean trusted : new boolean[]{false, true}) {
+            SecurityFilter filter = filter(v2Token(), credential(ServiceKind.APPLICATION));
+            filter.identityAuthority = false;
+            filter.trustTokenClaims = trusted;
+            CredentialRepo repo = mock(CredentialRepo.class);
+            filter.credentialRepo = repo;
+            assertThrows(NotAuthorizedException.class,
+                    () -> filter.admitIdentityOnlyServiceToken(request(Map.of())), "trusted=" + trusted);
+            verifyNoInteractions(repo);
+        }
+        // A receiver that names its application and does not trust claims keeps admitting them.
+        SecurityFilter named = filter(v2Token(), credential(ServiceKind.APPLICATION));
+        named.identityAuthority = false;
+        named.sessionApplicationId = Optional.of("helixor-code");
+        assertDoesNotThrow(() -> named.admitIdentityOnlyServiceToken(request(Map.of())));
+    }
+
+    @Test
+    void aV2DecisionIsMadeForTheApplicationItNamesNeverForNone() {
+        SecurityFilter filter = filter(v2Token(), credential(ServiceKind.APPLICATION));
+        assertEquals("helixor-code", filter.decisionApplicationId(requestFor(Map.of("applicationId", " helixor-code "))));
+        var refused = assertThrows(com.e2eq.framework.security.principal.RemotePrincipalResolutionException.class,
+                () -> filter.decisionApplicationId(requestFor(Map.of())));
+        assertEquals("APPLICATION_NOT_GRANTED", refused.code());
+        assertEquals(403, refused.status());
+    }
+
+    private static ContainerRequestContext requestFor(Map<String, String> query) {
+        ContainerRequestContext request = mock(ContainerRequestContext.class);
+        jakarta.ws.rs.core.UriInfo uri = mock(jakarta.ws.rs.core.UriInfo.class);
+        jakarta.ws.rs.core.MultivaluedHashMap<String, String> params = new jakarta.ws.rs.core.MultivaluedHashMap<>();
+        query.forEach(params::add);
+        when(uri.getQueryParameters()).thenReturn(params);
+        when(request.getUriInfo()).thenReturn(uri);
+        return request;
     }
 
     /** A resource method on the decision allowlist, as GET /v1/authz/filter is. */
@@ -260,6 +298,8 @@ class SecurityFilterServiceTokenV2Test {
         CredentialRepo repo = mock(CredentialRepo.class);
         when(repo.findBySubject("svc-subject", SYSTEM_REALM, true)).thenReturn(Optional.ofNullable(stored));
         filter.credentialRepo = repo;
+        // Admission is modelled at Auth (the identity authority) unless a test says otherwise.
+        filter.identityAuthority = true;
         return filter;
     }
 

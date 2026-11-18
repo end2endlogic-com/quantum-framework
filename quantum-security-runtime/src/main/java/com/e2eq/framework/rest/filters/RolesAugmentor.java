@@ -91,7 +91,14 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
         }
         // X-Realm names a realm; a datastore lookup takes its registered refName, never the
         // header's case (MongoDB refuses a database name differing only in case: a 500).
-        contextRealm = com.e2eq.framework.security.principal.RealmRefNames.canonicalOrSame(systemDirectory, contextRealm);
+        try {
+            contextRealm = com.e2eq.framework.security.principal.RealmRefNames.canonicalOrSame(systemDirectory, contextRealm);
+        } catch (com.e2eq.framework.security.principal.RemotePrincipalResolutionException unavailable) {
+            // The catalog cannot answer: the identity keeps no roles (fail closed), and SecurityFilter
+            // answers the request with the typed 503 from the same lookup.
+            Log.debugf("RolesAugmentor: realm catalog unavailable for %s: %s", originalPrincipal, unavailable.getMessage());
+            return withoutTokenRoles(identity).build();
+        }
 
         // In an application session whose application or realm differs from the token's, the
         // session's roles replace the token's, derived exactly as SecurityFilter derives them.

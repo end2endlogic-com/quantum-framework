@@ -304,9 +304,12 @@ Resolve request field: `actingOnBehalfOf { userId | subject }`. Response field:
   `quantum.application-registration.application-id`) resolves the token with an identity-mode
   request, the one the resolve operation builds: application admission (bindings, then the
   realm assignment's grant), realm and tenant selection and the `SERVICE` scope follow from the
-  credential and its grants, and refusals are typed. Auth itself configures no application id,
-  so no application grant can apply there and a v2 token's roles are its realm grants across
-  applications, as for a user's token there. The credential is read once, by the resolver's
+  credential and its grants, and refusals are typed. Auth itself configures no application id.
+  On Auth's own operations no application grant can apply, so a v2 token's roles there are its
+  realm grants, as for a user's token. At Auth's decision operation a v2 token is always resolved
+  in identity mode for the application the decision names (`applicationId`), acting header or
+  not: an ungranted or unknown application, or none named, is 403 `APPLICATION_NOT_GRANTED`. It
+  is never decided application-agnostic, which would carry every application's roles. The credential is read once, by the resolver's
   authentication lookup (`PrincipalContextResolver#credentialForSubject`); no principal exists
   yet, so no caller's rules can govern that read. A receiver without the credential, or
   one that names its application and trusts token claims, refuses with 401 (it must run in
@@ -316,8 +319,12 @@ Resolve request field: `actingOnBehalfOf { userId | subject }`. Response field:
   the flag on. It changes neither the decision operation nor v2 admission at Auth:
   - Every verified bearer of a `@DelegatedDecisionOperation` method is resolved in identity
     mode, from the store, with the flag on or off.
-  - An application-agnostic receiver (Auth) admits v2 identity-only tokens (`jti == sub`)
-    whatever the flag says, because its store is the one that resolves them. Other Auth
+  - Only the identity authority admits a v2 identity-only token (`jti == sub`) that names no
+    receiving application, whatever the flag says, because its store is the one that resolves
+    them. It is marked by the explicit setting `quantum.auth.identity-authority=true`, which only
+    quantum-auth-service sets (fixed, not environment-driven). Any other receiver admits a v2
+    token only when it names its application and does not trust token claims; a receiver that
+    names no application is refused 401, never taken for Auth by that absence. Other Auth
     endpoints keep their claims-path behaviour under the flag until step 4.
   - `ServiceTokenV2TrustedClaimsApiTest` runs the whole `ServiceTokenV2ApiTest` suite with the
     flag on.
@@ -346,9 +353,23 @@ Resolve request field: `actingOnBehalfOf { userId | subject }`. Response field:
   refName, compared ignoring case (`RealmRefNames`). A differently cased `X-Realm` is that realm.
   It no longer causes a MongoDB 13297 500. An unknown realm is refused typed
   (`REALM_NOT_AUTHORIZED`).
+  - The catalog matches ignoring case (`LocalSystemDirectory.findRealmByRefName`: exact, then
+    `RealmRepo.findByRefNameIgnoringCase`), so a mixed-case refName (`helixor-code-P1`) and
+    a remote directory, which asks the same endpoint, are covered. Registration stays exact.
+  - Lookups are cached, bounded (1024 names): a found name for 60 s, a missing one for 30 s, so
+    an unknown `X-Realm` does not reach the directory on every request. `RealmRegistered`
+    clears the cache.
+  - `SecurityFilter` rewrites `X-Realm` to the registered refName before anything reads it, on
+    every principal source (embedded and remote). Resources and repositories read the header
+    as a database name, so a receiver in remote mode no longer answers 500 for another case.
+  - A directory outage is refused 503 `PRINCIPAL_RESOLUTION_UNAVAILABLE`, never a 500. The
+    roles augmentor then drops token roles (fails closed).
 - **Error responses carry no internals.** The framework's exception mappers no longer return
   stack traces (`debugMessage`) or an unmapped exception's own message. Those are logged server
   side. The development setting `quantum.rest.errors.include-debug-detail=true` restores them.
+  This covers MongoDB write errors (a duplicate key is a fixed 400 conflict message, with no
+  host, database, collection, index or key value, so it does not enumerate accounts), JSON
+  processing errors and `QuotaExceededException`'s stack trace.
 - **Issuer authority is re-resolved.** Issuance re-resolves the caller's roles in the
   issuing realm with `IdentityRoleResolver`, without token roles: credential roles,
   the realm assignment and realm-wide (`*`) groups. It requires `admin` there and an
@@ -358,10 +379,17 @@ Resolve request field: `actingOnBehalfOf { userId | subject }`. Response field:
 - **A delegating token needs a realm-wide admin.** A `delegating` credential acts for any
   identity of its realm, so its issuer's `admin` must hold across the realm. The role
   provenance (`IdentityRoleResolver.resolveRoleSources`, no token roles) decides:
-  - Realm wide: a flat credential role, a realm-wide (`*`) user group, or the realm assignment of
-    a dedicated realm, whose one tenant is the realm.
-  - Tenant scoped: `admin` held only through the realm assignment of a shared (multi-tenant)
-    realm. That is how pooled provisioning makes a tenant's administrator.
+  - The rule is invite management's rule for a realm administrator: every tenant of a dedicated
+    realm, and in a shared realm only the tenants its own assignment authorizes.
+  - Realm wide: a realm-wide (`*`) platform user group (no `ownerTenantId`;
+    `IdentityRoleResolver.platformGroupRoles`) in any realm. Or `admin` from the credential or
+    the realm assignment, in a dedicated realm, or in a shared realm when the active assignment
+    authorizes every tenant (`authorizedTenantRegEx = "*"`).
+  - A tenant-owned group never counts, whatever its application scope, so a tenant admin cannot
+    make themselves realm-wide by creating one.
+  - Tenant scoped: any other `admin` in a shared (multi-tenant) realm. Pooled provisioning gives
+    a tenant's administrator flat credential roles (`admin`, `user`) and an assignment naming its
+    one tenant, so a flat credential role alone is not realm wide there.
   - A tenant-scoped issuer is refused 403 `DELEGATION_ISSUE_REQUIRES_REALM_ADMIN`.
   - `application` tokens keep the realm-admin rule.
 - **Receivers that read roles from the token** (`trust-token-claims`, the 1.4.2

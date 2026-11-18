@@ -129,6 +129,16 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
     @ConfigProperty(name = "quantum.auth.trust-token-claims", defaultValue = "false")
     boolean trustTokenClaims;
 
+    /**
+     * True only in the identity authority (quantum-auth-service): the service whose credential
+     * store resolves every service token v2 for any application. A receiver that configures no
+     * application is never taken for it by the setting's absence; without this explicit setting a
+     * v2 token is admitted only by a receiver that names its application and does not trust token
+     * claims. Default false (fail closed).
+     */
+    @ConfigProperty(name = "quantum.auth.identity-authority", defaultValue = "false")
+    boolean identityAuthority;
+
     // Application session (opt-in). The verified token only says who the user is; when these are
     // set, a user's session runs as this application in this realm, whichever application or realm
     // the token was minted for (for example a launch pad handoff). Roles resolve through
@@ -527,29 +537,10 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         return configured(sessionApplicationId);
     }
 
-    private static final java.util.concurrent.atomic.AtomicBoolean APPLICATION_AGNOSTIC_WARNED =
-            new java.util.concurrent.atomic.AtomicBoolean();
-
-    /**
-     * Once per process: a v2 service token reached a receiver that names no application, so no
-     * application admission applies to it (correct for Auth itself; anywhere else, configure the
-     * receiving application). Not refused: Auth's own endpoints rely on this path.
-     */
-    static boolean warnApplicationAgnosticServiceToken() {
-        if (!APPLICATION_AGNOSTIC_WARNED.compareAndSet(false, true)) {
-            return false;
-        }
-        Log.warnf("A service token v2 reached a receiver that configures no application (%s or %s): it resolves "
-                        + "from its credential and realm grants without application admission. Configure the "
-                        + "receiving application unless this is an application-agnostic service such as Auth.",
-                com.e2eq.framework.model.persistent.morphia.ReceivingApplication.SESSION_APPLICATION_ID,
-                com.e2eq.framework.model.persistent.morphia.ReceivingApplication.REGISTRATION_APPLICATION_ID);
-        return true;
-    }
-
     protected PrincipalContext determinePrincipalContext(ContainerRequestContext requestContext) {
         RequestAuthorizationState requestState = RequestAuthorizationState.from(routingContext);
         if (requestState != null) requestState.beginAdmission();
+        canonicalizeRealmHeader(requestContext);
         if (remotePrincipalSource()) {
             PrincipalContext remote = remotePrincipalContext(requestContext, requestState);
             if (remote != null) {
@@ -576,9 +567,11 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
             if (identityOnlyService && actingRequested(requestContext)) {
                 // Delegation resolves in identity mode for one application, never unchecked.
                 receivingApplicationId = delegatedApplicationId(requestContext, receivingApplicationId);
-            }
-            if (identityOnlyService && receivingApplicationId == null) {
-                warnApplicationAgnosticServiceToken();
+            } else if (identityOnlyService && receivingApplicationId == null && delegatedDecisionOperation()) {
+                // A decision is always made for the application it names, with that application's
+                // admission and grants, never for no application (which would carry every
+                // application's roles): an ungranted service is APPLICATION_NOT_GRANTED.
+                receivingApplicationId = decisionApplicationId(requestContext);
             }
             com.e2eq.framework.security.principal.PrincipalContextResolution resolution;
             if (receivingApplicationId != null) {
@@ -728,12 +721,12 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
      */
     void admitIdentityOnlyServiceToken(ContainerRequestContext requestContext) {
         String sub = claimString("sub");
-        // quantum.auth.trust-token-claims does not decide admission at an application-agnostic
-        // receiver (Auth itself): its credential store is the one that resolves these tokens, so it
-        // admits them whatever the flag says. A receiver that names its application and trusts token
-        // claims holds no such authority: it must resolve them through Auth (remote mode).
-        boolean claimsTrustingApplication = trustTokenClaims && receivingApplicationId() != null;
-        if (claimsTrustingApplication || credentialRepo == null || sub == null) {
+        // Only the identity authority (Auth, quantum.auth.identity-authority=true) admits these tokens
+        // whatever quantum.auth.trust-token-claims says: its credential store is the one that resolves
+        // them. Any other receiver admits them only when it names its application and does not trust
+        // token claims; a receiver configuring no application is never taken for Auth by that absence.
+        boolean admits = identityAuthority || (receivingApplicationId() != null && !trustTokenClaims);
+        if (!admits || credentialRepo == null || sub == null) {
             throw new jakarta.ws.rs.NotAuthorizedException(
                     "An identity-only service token is resolved by Auth; this receiver must resolve principals "
                             + "through Auth (remote mode)", "Bearer");
@@ -811,6 +804,22 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         if (named == null || named.isBlank()) {
             throw delegationRefused("a delegated request at a receiver that "
                     + "configures no application must name the application it acts in (applicationId)");
+        }
+        return named.trim();
+    }
+
+    /**
+     * The application a service token v2's decision is made for at an application-agnostic
+     * receiver: the one the decision operation names ({@code applicationId}). A decision that names
+     * none is refused APPLICATION_NOT_GRANTED, never resolved for no application.
+     */
+    String decisionApplicationId(ContainerRequestContext requestContext) {
+        jakarta.ws.rs.core.UriInfo uri = requestContext.getUriInfo();
+        String named = uri == null ? null : uri.getQueryParameters().getFirst(APPLICATION_ID_PARAMETER);
+        if (named == null || named.isBlank()) {
+            throw com.e2eq.framework.security.principal.RemotePrincipalResolutionException.of(
+                    com.e2eq.framework.security.principal.PrincipalResolutionError.APPLICATION_NOT_GRANTED,
+                    "A service token's decision names the application it is made for (applicationId)");
         }
         return named.trim();
     }
@@ -1472,6 +1481,26 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                 .withOriginalDataDomain(context.getOriginalDataDomain())
                 .withCustomProperties(allProperties)
                 .build();
+    }
+
+    /**
+     * Rewrites a requested realm ({@code X-Realm}) to its registered refName, read from the catalog
+     * ignoring case (cached, {@link com.e2eq.framework.security.principal.RealmRefNames}), on every
+     * principal source, before anything downstream reads the header: resources and repositories
+     * take {@code X-Realm} as a database name, and MongoDB refuses a second database whose name
+     * differs only in case (13297, a 500). An unregistered name is left as sent and refused later
+     * typed ({@code REALM_NOT_AUTHORIZED}); a catalog that cannot answer fails the request typed
+     * (503 {@code PRINCIPAL_RESOLUTION_UNAVAILABLE}).
+     */
+    void canonicalizeRealmHeader(ContainerRequestContext requestContext) {
+        String requested = requestContext.getHeaderString("X-Realm");
+        if (requested == null || requested.isBlank()) {
+            return;
+        }
+        String canonical = com.e2eq.framework.security.principal.RealmRefNames.canonicalOrSame(systemDirectory, requested);
+        if (canonical != null && !canonical.equals(requested)) {
+            requestContext.getHeaders().putSingle("X-Realm", canonical);
+        }
     }
 
     private void validateContextInputs(ContainerRequestContext requestContext) {
