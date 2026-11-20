@@ -381,8 +381,8 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
                     configured(sessionApplicationId), identityAuthorityApplicationId(), principalContextResolver);
             String realm = selectedRealm(sessionSelection, routing, identity, requestedRealm, configured(sessionRealm));
             // The resource (whose tenant rule SecurityFilter applies) is not known yet: tenant optional.
-            principal = IdentityOnlyAccessTokens.resolve(principalContextResolver, IdentityOnlyAccessTokens.request(
-                    token, target, realm, name -> header(routing, name), true)).context();
+            principal = IdentityOnlyAccessTokens.resolve(principalContextResolver, token, target, realm,
+                    name -> header(routing, name), true).context();
         } catch (RuntimeException refused) {
             Log.debugf("RolesAugmentor: identity-only token for %s not resolved: %s",
                     identity.getPrincipal().getName(), refused.getMessage());

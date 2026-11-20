@@ -975,9 +975,8 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                 ? baseRealmOverride(realm, trustTokenClaims, impersonationRequested(requestContext),
                         envConfigUtils.getSystemRealm())
                 : realm;
-        return IdentityOnlyAccessTokens.resolve(target.authority() ? resolver() : identityResolver(),
-                IdentityOnlyAccessTokens.request(currentJwt(), target, selected, requestContext::getHeaderString,
-                        isPlatformTenantExemptRequest()));
+        return IdentityOnlyAccessTokens.resolve(identityResolver(), currentJwt(), target, selected,
+                requestContext::getHeaderString, isPlatformTenantExemptRequest());
     }
 
     /**

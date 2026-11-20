@@ -200,6 +200,19 @@ class SecurityFilterTokenContractV2Test {
     }
 
     @Test
+    void atTheIdentityAuthorityWithoutXRealmTheIdentitysDefaultRealmForAuthsApplicationApplies() {
+        // As a v1 token signed in to Auth's application named that realm; the resolve operation's rule.
+        world.bind("alice@acme", PrincipalFixture.APP, "acme-D2", List.of("acme-two"), "acme-two", "editor")
+                .setDefaultRealm(Boolean.TRUE);
+        PrincipalContext context = authority(V2, PrincipalFixture.APP)
+                .resolveIdentityOnlyAccessToken(request(Map.of()), null, null).context();
+        assertEquals("acme-D2", context.getDefaultRealm());
+        assertEquals("acme-D1", authority(V2, PrincipalFixture.APP)
+                .resolveIdentityOnlyAccessToken(request(Map.of()), "acme-D1", null).context().getDefaultRealm(),
+                "X-Realm still selects");
+    }
+
+    @Test
     void atTheIdentityAuthorityTrustTokenClaimsDoesNotOpenTheClaimsPath() throws Exception {
         SecurityFilter filter = authority(V2, "quantum-system");
         filter.trustTokenClaims = true;

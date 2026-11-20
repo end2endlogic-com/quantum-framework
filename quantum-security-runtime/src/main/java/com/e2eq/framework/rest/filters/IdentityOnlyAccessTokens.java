@@ -113,7 +113,8 @@ final class IdentityOnlyAccessTokens {
      * At the identity authority: the request Auth's own operations resolve any bearer with (the local
      * credential path a v1 token takes there), with no token claim beyond the identity. The realm,
      * tenant and roles a v1 token carried are not in a v2 token, so the realm is the request's
-     * selection (X-Realm) else the credential's home realm, the tenant the request's selection else
+     * selection (X-Realm), else the identity's realm for Auth's application, else the credential's
+     * home realm ({@link #resolve(PrincipalContextResolver, JsonWebToken, Target, String, UnaryOperator, boolean)}), the tenant the request's selection else
      * the credential's, and the roles the credential's grants in that realm for {@code application};
      * application admission does not apply, exactly as it does not for a v1 token there (Auth names
      * no session application). The application is Auth's own, where a v1 token supplied its
@@ -153,9 +154,35 @@ final class IdentityOnlyAccessTokens {
      * credential store or directory is a sanitized 503 {@code PRINCIPAL_RESOLUTION_UNAVAILABLE},
      * never a generic error carrying the exception's message.
      */
+    /**
+     * Resolves a v2 access token for {@code target}. At the identity authority a request that names
+     * no realm (and impersonates no one) runs in the realm the identity's bindings choose for Auth's
+     * application ({@link PrincipalContextResolver#identityRealmFor}, the rule Auth's resolve
+     * operation applies), else the credential's home realm: a v1 token named the realm it was signed
+     * in to, a v2 token names none.
+     */
+    static PrincipalContextResolution resolve(PrincipalContextResolver resolver, JsonWebToken token, Target target,
+                                              String realm, UnaryOperator<String> header,
+                                              boolean tenantSelectionOptional) {
+        return resolve(resolver, () -> {
+            String selected = trimToNull(realm);
+            if (target.authority() && selected == null
+                    && trimToNull(header.apply("X-Impersonate-Subject")) == null
+                    && trimToNull(header.apply("X-Impersonate-UserId")) == null) {
+                selected = resolver.identityRealmFor(text(token.getClaim("sub")), target.application());
+            }
+            return request(token, target, selected, header, tenantSelectionOptional);
+        });
+    }
+
     static PrincipalContextResolution resolve(PrincipalContextResolver resolver, PrincipalContextRequest request) {
+        return resolve(resolver, () -> request);
+    }
+
+    private static PrincipalContextResolution resolve(PrincipalContextResolver resolver,
+                                                      java.util.function.Supplier<PrincipalContextRequest> request) {
         try {
-            return resolver.resolve(request);
+            return resolver.resolve(request.get());
         } catch (PrincipalResolutionException refused) {
             throw RemotePrincipalResolutionException.of(refused.error(), refused.getMessage());
         } catch (jakarta.ws.rs.WebApplicationException typed) {

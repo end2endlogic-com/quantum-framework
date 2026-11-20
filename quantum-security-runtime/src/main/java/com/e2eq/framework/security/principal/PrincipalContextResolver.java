@@ -824,6 +824,16 @@ public class PrincipalContextResolver {
      * several marked refuse with {@code REALM_NOT_AUTHORIZED}. A binding without the mark never
      * chooses a realm, nor does a group binding: {@link #applicationRealm} decides.
      */
+    /**
+     * {@link #identityRealm} for a verified subject: the realm an identity-only request for
+     * {@code applicationId} runs in when it names none; null when the subject has no credential or
+     * no realm is chosen (the credential's home realm then applies). Refuses typed as
+     * {@link #identityRealm} does (several default realms).
+     */
+    public String identityRealmFor(String subject, String applicationId) {
+        return credentialForSubject(subject).map(credential -> identityRealm(credential, applicationId)).orElse(null);
+    }
+
     String identityRealm(CredentialUserIdPassword credential, String applicationId) {
         String bound = bindingRealm(credential, applicationId);
         return bound != null ? bound : applicationRealm(credential, applicationId);
