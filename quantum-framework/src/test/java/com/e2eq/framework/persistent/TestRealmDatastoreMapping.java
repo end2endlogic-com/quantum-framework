@@ -173,7 +173,8 @@ public class TestRealmDatastoreMapping extends BaseRepoTest {
         String realm = "test-realm-mapping-interceptors";
         MorphiaDatastore tenant = wrapper.getDataStore(realm);
         try (final SecuritySession ignored = new SecuritySession(pContext, rContext)) {
-            Assertions.assertEquals(5, tenant.getMapper().getListeners().size(), "validation, permission, audit, reference and audit-event interceptors");
+            Assertions.assertEquals(6, tenant.getMapper().getListeners().size(),
+                "validation, permission, audit, reference, audit-event and realm-record-saved interceptors");
 
             ParentModel parent = new ParentModel();
             parent.setRefName("realm-mapping-parent");
