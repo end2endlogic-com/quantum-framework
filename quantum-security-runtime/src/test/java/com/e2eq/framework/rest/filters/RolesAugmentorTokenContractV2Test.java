@@ -110,6 +110,31 @@ class RolesAugmentorTokenContractV2Test {
         assertEquals(Set.of("system", "user"), augmented.getRoles());
     }
 
+    @Test
+    void atTheIdentityAuthorityRolesAreTheStoreGrantsForAuthsOwnApplication() {
+        RolesAugmentor augmentor = augmentor();
+        augmentor.sessionApplicationId = Optional.empty();
+        augmentor.trustTokenClaims = true; // deployed Auth runs with it on; v2 never reads claims
+        var receiving = org.mockito.Mockito.mock(com.e2eq.framework.model.persistent.morphia.ReceivingApplication.class);
+        org.mockito.Mockito.when(receiving.identityAuthorityApplicationId()).thenReturn("quantum-system");
+        @SuppressWarnings("unchecked")
+        jakarta.enterprise.inject.Instance<com.e2eq.framework.model.persistent.morphia.ReceivingApplication> bean =
+                org.mockito.Mockito.mock(jakarta.enterprise.inject.Instance.class);
+        org.mockito.Mockito.when(bean.isResolvable()).thenReturn(true);
+        org.mockito.Mockito.when(bean.get()).thenReturn(receiving);
+        augmentor.receivingApplication = bean;
+        SecurityIdentity augmented = augment(augmentor, V2);
+        var claims = new com.e2eq.framework.security.principal.PrincipalContextRequest.SignedClaims(
+                null, null, null, false, null, null, null, true);
+        var request = com.e2eq.framework.security.principal.PrincipalContextRequest.signedTokenClaims("sub-alice", claims)
+                .applicationId("quantum-system").userIdCandidate("alice@acme").build();
+        Set<String> expected = new java.util.HashSet<>(Set.of(world.resolver().resolve(request).context().getRoles()));
+        expected.add("user");
+        assertEquals(expected, augmented.getRoles());
+        assertEquals("acme-D1", PrincipalIdentityAttributes.rolesRealm(augmented));
+        assertEquals(0, legacyResolverCalls[0]);
+    }
+
     private Set<String> expectedRoles(String realm) {
         var request = com.e2eq.framework.security.principal.PrincipalContextRequest.identity("sub-alice", "alice@acme")
                 .applicationId(com.e2eq.framework.security.principal.PrincipalFixture.APP)

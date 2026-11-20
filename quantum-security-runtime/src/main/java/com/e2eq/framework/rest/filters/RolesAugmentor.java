@@ -377,12 +377,12 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
         QuarkusSecurityIdentity.Builder builder = withoutTokenRoles(identity);
         com.e2eq.framework.model.securityrules.PrincipalContext principal;
         try {
-            String application = configured(sessionApplicationId);
-            IdentityOnlyAccessTokens.requireResolvable(trustTokenClaims, application, principalContextResolver);
+            IdentityOnlyAccessTokens.Target target = IdentityOnlyAccessTokens.requireResolvable(trustTokenClaims,
+                    configured(sessionApplicationId), identityAuthorityApplicationId(), principalContextResolver);
             String realm = selectedRealm(sessionSelection, routing, identity, requestedRealm, configured(sessionRealm));
             // The resource (whose tenant rule SecurityFilter applies) is not known yet: tenant optional.
             principal = IdentityOnlyAccessTokens.resolve(principalContextResolver, IdentityOnlyAccessTokens.request(
-                    token, application, realm, name -> header(routing, name), true)).context();
+                    token, target, realm, name -> header(routing, name), true)).context();
         } catch (RuntimeException refused) {
             Log.debugf("RolesAugmentor: identity-only token for %s not resolved: %s",
                     identity.getPrincipal().getName(), refused.getMessage());
@@ -425,6 +425,18 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
 
     static String configuredValue(Optional<String> value) {
         return configured(value);
+    }
+
+    @Inject
+    jakarta.enterprise.inject.Instance<com.e2eq.framework.model.persistent.morphia.ReceivingApplication> receivingApplication;
+
+    /** As {@code SecurityFilter#identityAuthorityApplicationId()}: Auth's own application, else null. */
+    String identityAuthorityApplicationId() {
+        if (configured(sessionApplicationId) != null || receivingApplication == null || !receivingApplication.isResolvable()) {
+            return null;
+        }
+        var receiving = receivingApplication.get();
+        return receiving.applicationId() != null ? null : receiving.identityAuthorityApplicationId();
     }
 
     // The CDI resolver (with this application's access directory), for token contract v2 tokens.

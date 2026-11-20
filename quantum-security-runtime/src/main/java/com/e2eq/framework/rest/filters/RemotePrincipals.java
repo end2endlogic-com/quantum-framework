@@ -32,13 +32,13 @@ final class RemotePrincipals {
             throw RemotePrincipalResolutionException.of(PrincipalResolutionError.PRINCIPAL_UNKNOWN,
                     "The verified token has no raw encoding to present to Auth");
         }
-        RemotePrincipalRequest request = RemotePrincipalRequest.fromHeaders(bearer, claim(token, "iss"),
-                claim(token, "sub"), settings.applicationId(), header, tenantSelectionOptional);
+        RemotePrincipalRequest request = RemotePrincipalRequest.fromHeaders(bearer, text(token.getClaim("iss")),
+                text(token.getClaim("sub")), settings.applicationId(), header, tenantSelectionOptional);
         return RequestAuthorizationState.remotePrincipal(routing, request, settings.source());
     }
 
-    private static String claim(JsonWebToken token, String name) {
-        Object value = token.getClaim(name);
+    /** Only the identity claims iss and sub are read, by their literal names. */
+    private static String text(Object value) {
         return value == null || value.toString().isBlank() ? null : value.toString().trim();
     }
 }

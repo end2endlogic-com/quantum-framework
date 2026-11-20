@@ -674,7 +674,8 @@ How each kind of receiver treats a v2 token:
 | Receiver | v2 token |
 |---|---|
 | `principal-source=remote` (Quarkus) or Python `RemotePrincipalSource` | resolved by Auth. Only `iss` and `sub` are read |
-| local credential store, `trust-token-claims=false` (Auth itself, embedded apps) | resolved in `IDENTITY` mode for `quantum.security.session.application-id`, exactly as Auth's resolve endpoint (`SecurityFilter` and `RolesAugmentor`): credential status, bindings, realm access, tenant selection and impersonation rules apply. No application id: **401 `TOKEN_CONTRACT_V2_UNRESOLVED`** |
+| local credential store, `trust-token-claims=false` (embedded apps) | resolved in `IDENTITY` mode for `quantum.security.session.application-id`, exactly as Auth's resolve endpoint (`SecurityFilter` and `RolesAugmentor`): credential status, bindings, realm access, tenant selection and impersonation rules apply. No application id: **401 `TOKEN_CONTRACT_V2_UNRESOLVED`** |
+| the identity authority (`quantum.auth.identity-authority=true`, no receiving application: Auth itself) | resolved on Auth's own operations for Auth's own application, `quantum.auth.identity-authority.application-id` (quantum-auth-service: `quantum-system`), whatever `trust-token-claims` says. It is the local credential request a v1 token takes there, with no token claim beyond the identity: realm = `X-Realm`, else the credential's home realm; tenant = `X-Tenant-Id`, else the credential's; roles = the store's grants in that realm for that application. No application admission, exactly as for a v1 token there (Auth names no session application, so the resolve operation answers any authenticated identity). An `X-Realm` switch needs Auth's application admitted in the target realm, the rule a v1 token signed in to Auth meets. Where a v1 token's `azp` named the request's application (policy scope, `ResourceContext`, the repository's rebuilt context, action enablement), Auth's own application does; `azp` is never read for a v2 token. Unset: **401 `TOKEN_CONTRACT_V2_UNRESOLVED`** |
 | `trust-token-claims=true` (delegated-claims path) | **401 `TOKEN_CONTRACT_V2_UNRESOLVED`**, fail closed |
 | `ApplicationTokenAdmissionFilter` / `quantum.auth.expected-audience` | refused: no `aud`/`azp` |
 | `mp.jwt.verify.audiences` set, Python `HELIXOR_AUTH_AUDIENCE` set | refused at signature verification: no `aud` |
@@ -711,12 +712,13 @@ with all of the following:
 4. Clients send `X-Realm` (and `X-Tenant-Id` where needed) for any realm that
    is not the identity's default.
 5. Auth itself receives its own tokens: every remote receiver calls
-   `/v1/auth/principal-context/resolve` with the caller's bearer. Auth runs the
-   local path, so it needs a `quantum.security.session.application-id` that
-   every identity is granted, for example by a realm-wide default grant.
-   Otherwise every resolve call, and so every remote receiver, refuses v2
-   tokens. **Owner decision:** use a granted Auth application id, or resolve
-   Auth's own self-service endpoints without application admission.
+   `/v1/auth/principal-context/resolve` with the caller's bearer. Auth sets
+   `quantum.auth.identity-authority.application-id` (its own application,
+   `quantum-system`) and resolves a v2 bearer on its own operations without
+   application admission, as it does a v1 bearer (row above), so the resolve
+   operation keeps answering every authenticated identity. It does not set
+   `quantum.security.session.application-id`: that would also change how Auth
+   treats v1 tokens minted for other applications and v2 service tokens.
 
 Verify after the flip, per receiver: a v2 token gets 200 where granted and 403
 `APPLICATION_NOT_GRANTED` where not. Roll back by unsetting the property. The

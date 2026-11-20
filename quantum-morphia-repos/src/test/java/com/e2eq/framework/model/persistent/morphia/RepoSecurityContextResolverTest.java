@@ -60,4 +60,20 @@ class RepoSecurityContextResolverTest {
         assertTrue(SecurityContext.getResourceContext().isPresent());
         assertSame(ResourceContext.DEFAULT_ANONYMOUS_CONTEXT, SecurityContext.getResourceContext().get());
     }
+
+    @Test
+    void theRebuiltApplicationIsTheConfiguredOneThenAV1AzpThenTheAuthoritysOwn() {
+        io.quarkus.security.identity.SecurityIdentity v1 = io.quarkus.security.runtime.QuarkusSecurityIdentity.builder()
+                .setPrincipal(() -> "alice").addAttribute("azp", "signed-in-app").build();
+        io.quarkus.security.identity.SecurityIdentity v2 = io.quarkus.security.runtime.QuarkusSecurityIdentity.builder()
+                .setPrincipal(() -> "alice").build();
+        assertEquals("configured", new RepoSecurityContextResolver(v1, null, null, new RuleContext(), "r",
+                "configured", "quantum-system").rebuiltApplication());
+        assertEquals("signed-in-app", new RepoSecurityContextResolver(v1, null, null, new RuleContext(), "r",
+                null, "quantum-system").rebuiltApplication(), "a v1 identity keeps its azp where none is configured");
+        assertEquals("quantum-system", new RepoSecurityContextResolver(v2, null, null, new RuleContext(), "r",
+                null, "quantum-system").rebuiltApplication(), "a v2 identity names none: the authority's own");
+        assertEquals(null, new RepoSecurityContextResolver(v2, null, null, new RuleContext(), "r",
+                null, null).rebuiltApplication());
+    }
 }

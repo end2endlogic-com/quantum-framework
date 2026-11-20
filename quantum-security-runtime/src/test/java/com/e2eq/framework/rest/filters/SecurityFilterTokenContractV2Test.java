@@ -156,6 +156,87 @@ class SecurityFilterTokenContractV2Test {
         assertEquals("acme-t", request.signedClaims().tenantId());
     }
 
+    // ------------------------------------------------------------------ the identity authority (Auth)
+
+    /** Auth: identity authority, no receiving application, its own application configured. */
+    private SecurityFilter authority(Map<String, Object> claims, String ownApplication) {
+        SecurityFilter filter = filter(claims);
+        filter.sessionApplicationId = Optional.empty();
+        filter.identityAuthority = true;
+        com.e2eq.framework.model.persistent.morphia.ReceivingApplication receiving =
+                org.mockito.Mockito.mock(com.e2eq.framework.model.persistent.morphia.ReceivingApplication.class);
+        org.mockito.Mockito.when(receiving.applicationId()).thenReturn(null);
+        org.mockito.Mockito.when(receiving.identityAuthorityApplicationId()).thenReturn(ownApplication);
+        @SuppressWarnings("unchecked")
+        jakarta.enterprise.inject.Instance<com.e2eq.framework.model.persistent.morphia.ReceivingApplication> bean =
+                org.mockito.Mockito.mock(jakarta.enterprise.inject.Instance.class);
+        org.mockito.Mockito.when(bean.isResolvable()).thenReturn(true);
+        org.mockito.Mockito.when(bean.get()).thenReturn(receiving);
+        filter.receivingApplication = bean;
+        return filter;
+    }
+
+    @Test
+    void atTheIdentityAuthorityAV2TokenResolvesForAuthsOwnApplicationWithoutAdmission() {
+        // alice holds no grant of Auth's own application: Auth's own operations admit any identity,
+        // as they admit a v1 token signed in to another application. Roles come from the store.
+        PrincipalContext context = authority(V2, "quantum-system")
+                .resolveIdentityOnlyAccessToken(request(Map.of()), null, null).context();
+        assertEquals("alice@acme", context.getUserId());
+        assertEquals("quantum-system", context.getApplicationId(), "Auth's own application, never a token claim");
+        assertEquals("acme-D1", context.getDefaultRealm(), "the credential's home realm when no X-Realm");
+        assertEquals("acme", context.getDataDomain().getTenantId());
+    }
+
+    @Test
+    void atTheIdentityAuthorityAnXRealmSwitchNeedsAuthsApplicationAdmittedThere() {
+        // The realm-switch rule a v1 token signed in to Auth meets: the application (here Auth's
+        // own) must be admitted in the target realm. acme-D2 admits only the fixture's application.
+        assertThrows(jakarta.ws.rs.ForbiddenException.class, () -> authority(V2, "quantum-system")
+                .resolveIdentityOnlyAccessToken(request(Map.of()), "acme-D2", null));
+        PrincipalContext admitted = authority(V2, PrincipalFixture.APP)
+                .resolveIdentityOnlyAccessToken(request(Map.of()), "acme-D2", null).context();
+        assertEquals("acme-D2", admitted.getDefaultRealm());
+    }
+
+    @Test
+    void atTheIdentityAuthorityTrustTokenClaimsDoesNotOpenTheClaimsPath() throws Exception {
+        SecurityFilter filter = authority(V2, "quantum-system");
+        filter.trustTokenClaims = true;
+        assertTrue(localCredentialPath(filter));
+        assertEquals("quantum-system",
+                filter.resolveIdentityOnlyAccessToken(request(Map.of()), null, null).context().getApplicationId());
+    }
+
+    @Test
+    void anIdentityAuthorityWithoutItsOwnApplicationRefusesTheV2Token() {
+        RemotePrincipalResolutionException refused = assertThrows(RemotePrincipalResolutionException.class,
+                () -> authority(V2, null).resolveIdentityOnlyAccessToken(request(Map.of()), null, null));
+        assertEquals(401, refused.status());
+        assertEquals("TOKEN_CONTRACT_V2_UNRESOLVED", refused.code());
+    }
+
+    @Test
+    void aReceiverThatIsNotTheAuthorityNeverTakesTheAuthorityApplication() {
+        SecurityFilter filter = authority(V2, "quantum-system");
+        filter.identityAuthority = false;
+        assertEquals(null, filter.identityAuthorityApplicationId());
+        RemotePrincipalResolutionException refused = assertThrows(RemotePrincipalResolutionException.class,
+                () -> filter.resolveIdentityOnlyAccessToken(request(Map.of()), null, null));
+        assertEquals("TOKEN_CONTRACT_V2_UNRESOLVED", refused.code());
+    }
+
+    @Test
+    void theRequestApplicationOfAV2TokenIsNeverItsAzp() {
+        Map<String, Object> forged = new HashMap<>(V2);
+        forged.put("azp", "forged-app");
+        assertEquals("quantum-system", authority(forged, "quantum-system").currentApplicationId());
+        SecurityFilter receiver = filter(forged);
+        assertEquals(PrincipalFixture.APP, receiver.currentApplicationId());
+        receiver.sessionApplicationId = Optional.empty();
+        assertEquals(null, receiver.currentApplicationId(), "no application, not the token's azp");
+    }
+
     // ------------------------------------------------------------------ fixtures
 
     private static boolean localCredentialPath(SecurityFilter filter) throws Exception {

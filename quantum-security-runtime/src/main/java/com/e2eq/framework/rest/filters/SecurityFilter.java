@@ -967,10 +967,30 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
      */
     com.e2eq.framework.security.principal.PrincipalContextResolution resolveIdentityOnlyAccessToken(
             ContainerRequestContext requestContext, String realm, String tenantId) {
-        String application = configured(sessionApplicationId);
-        IdentityOnlyAccessTokens.requireResolvable(trustTokenClaims, application, credentialRepo);
-        return IdentityOnlyAccessTokens.resolve(identityResolver(), IdentityOnlyAccessTokens.request(
-                currentJwt(), application, realm, requestContext::getHeaderString, isPlatformTenantExemptRequest()));
+        IdentityOnlyAccessTokens.Target target = IdentityOnlyAccessTokens.requireResolvable(trustTokenClaims,
+                configured(sessionApplicationId), identityAuthorityApplicationId(), credentialRepo);
+        // At the identity authority the request is the local credential request (no admission);
+        // baseRealmOverride is the same selection rule the v1 local path applies.
+        String selected = target.authority()
+                ? baseRealmOverride(realm, trustTokenClaims, impersonationRequested(requestContext),
+                        envConfigUtils.getSystemRealm())
+                : realm;
+        return IdentityOnlyAccessTokens.resolve(target.authority() ? resolver() : identityResolver(),
+                IdentityOnlyAccessTokens.request(currentJwt(), target, selected, requestContext::getHeaderString,
+                        isPlatformTenantExemptRequest()));
+    }
+
+    /**
+     * The identity authority's own application ({@code quantum.auth.identity-authority.application-id}),
+     * only when this service is the identity authority and names no receiving application: what a v2
+     * access token is resolved for on Auth's own operations, where a v1 token's {@code azp} named it.
+     */
+    String identityAuthorityApplicationId() {
+        if (!identityAuthority || receivingApplicationId() != null
+                || receivingApplication == null || !receivingApplication.isResolvable()) {
+            return null;
+        }
+        return receivingApplication.get().identityAuthorityApplicationId();
     }
 
     private com.e2eq.framework.security.principal.PrincipalContextRequest localCredentialRequest(
@@ -1389,6 +1409,11 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         String configuredApplication = configured(sessionApplicationId);
         if (configuredApplication != null && isUserPrincipal()) {
             return configuredApplication;
+        }
+        if (identityOnlyAccessToken()) {
+            // A v2 access token names no application: never read azp. At the identity authority it
+            // is Auth's own; elsewhere none (such a receiver refuses the token).
+            return identityAuthorityApplicationId();
         }
         return tokenApplicationId();
     }

@@ -112,14 +112,23 @@ public class PermissionActionDependencyResolver implements ActionDependencyResol
 
     /**
      * No resolved principal application: this application's configured id; only when none is
-     * configured, the identity's azp, so application-scoped policies (denies included) still
-     * apply. Step 4 deletes the azp fallback once every app configures its id.
+     * configured, a v1 identity's azp, so application-scoped policies (denies included) still
+     * apply; else, at the identity authority, its own application (a token contract v2 identity
+     * names none). The azp fallback is deleted with the claims path.
      */
     private String configuredApplicationId() {
         String configured = receivingApplication == null ? null : receivingApplication.applicationId();
         if (configured != null) {
             return configured;
         }
+        String recorded = recordedApplicationId();
+        if (recorded != null || receivingApplication == null) {
+            return recorded;
+        }
+        return receivingApplication.identityAuthorityApplicationId();
+    }
+
+    private String recordedApplicationId() {
         if (securityIdentity == null) {
             return null;
         }
