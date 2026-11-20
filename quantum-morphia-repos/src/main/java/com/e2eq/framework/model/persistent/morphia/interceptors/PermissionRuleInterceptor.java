@@ -42,17 +42,7 @@ public class PermissionRuleInterceptor implements EntityListener {
       if (SecurityContext.getResourceContext().isPresent()) {
           ResourceContext rc = SecurityContext.getResourceContext().get();
           String action = rc.getAction();
-           if (action == null || !(action.equalsIgnoreCase("create")
-                   || action.equalsIgnoreCase("save")
-                   || action.equalsIgnoreCase("update")
-                   || action.equalsIgnoreCase("delete")
-                   || action.equalsIgnoreCase("apply")
-                   || action.equalsIgnoreCase("write")
-                   // Imperative execution verb: migrations and runs mutate state
-                   // by definition (DatabaseVersion, ChangeSetRecord). The rule
-                   // check below still decides WHETHER the principal may do it.
-                   || action.equalsIgnoreCase("run")
-                  || action.equals("*"))) {
+           if (!isWriteAction(action)) {
              throw new SecurityException("Persistence callback requires an explicit write action; received: " + action);
           }
           SecurityCheckResponse response = doCheck();
@@ -70,6 +60,24 @@ public class PermissionRuleInterceptor implements EntityListener {
           throw new SecurityException("Persistence callback has no ResourceContext for entity "
                   + entity.getClass().getName() + "; use SecurityCallScope for privileged internal writes");
        }
+   }
+
+   /**
+    * Whether a resource action may reach a persistence write. Code that opens its
+    * own scope for an internal write (a migration, a seed) must use one of these;
+    * the rule check still decides whether the principal may do it.
+    */
+   public static boolean isWriteAction(String action) {
+      return action != null && (action.equalsIgnoreCase("create")
+              || action.equalsIgnoreCase("save")
+              || action.equalsIgnoreCase("update")
+              || action.equalsIgnoreCase("delete")
+              || action.equalsIgnoreCase("apply")
+              || action.equalsIgnoreCase("write")
+              // Imperative execution verb: migrations and runs mutate state
+              // by definition (DatabaseVersion, ChangeSetRecord).
+              || action.equalsIgnoreCase("run")
+              || action.equals("*"));
    }
 
    SecurityCheckResponse doCheck() {

@@ -1,8 +1,10 @@
 package com.e2eq.framework.rest.resources;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.e2eq.framework.model.persistent.base.DataDomain;
+import com.e2eq.framework.model.persistent.morphia.interceptors.PermissionRuleInterceptor;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
 import com.e2eq.framework.model.securityrules.SecurityContext;
 import jakarta.ws.rs.HttpMethod;
@@ -11,6 +13,7 @@ import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
 import java.util.LinkedHashSet;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.Set;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -63,6 +66,20 @@ class MigrationEndpointContractTest {
         resource.migrationApplicationId = Optional.empty();
 
         assertEquals(null, resource.currentMigrationApplicationId());
+    }
+
+    @Test
+    void migrationWritesRunUnderAnActionThePersistenceLayerAccepts() throws Exception {
+        // POST /initialize and /changeSet/execute once opened this scope under their
+        // endpoint action names, which the write check refuses, so neither could persist.
+        MigrationResource resource = new MigrationResource();
+        AtomicReference<String> action = new AtomicReference<>();
+
+        resource.runWithMigrationScope("some-realm", "some-app", () ->
+                action.set(SecurityContext.getResourceContext().orElseThrow().getAction()));
+
+        assertTrue(PermissionRuleInterceptor.isWriteAction(action.get()),
+                "migration scope action is not a write action: " + action.get());
     }
 
     private static Set<String> endpoints(Class<?> resourceClass) {

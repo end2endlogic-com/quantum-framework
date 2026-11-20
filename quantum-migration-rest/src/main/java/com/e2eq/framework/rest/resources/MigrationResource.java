@@ -379,7 +379,7 @@ public class MigrationResource {
             ruleContext.ensureDefaultRules();
             securityUtils.setSecurityContext();
             try {
-               runWithMigrationScope(realm, applicationId, "INITIALIZE", () -> {
+               runWithMigrationScope(realm, applicationId, () -> {
                   Log.infof("----Running migrations for system realm:%s---- ", realm);
                   migrationService.runAllUnRunMigrations(realm, emitter);
                });
@@ -403,7 +403,7 @@ public class MigrationResource {
             ruleContext.ensureDefaultRules();
             securityUtils.setSecurityContext();
             try {
-               runWithMigrationScope(realm, applicationId, "EXECUTE_CHANGE_SET", () -> {
+               runWithMigrationScope(realm, applicationId, () -> {
                   Log.infof("----Running changeSet for bean:%s---- ", beanRefName);
                   migrationService.runChangeSetBean(beanRefName, realm, emitter);
                });
@@ -428,12 +428,12 @@ public class MigrationResource {
             securityUtils.setSecurityContext();
             try {
                Log.info("----Running migrations for test realm:---- " + envConfigUtils.getTestRealm());
-               runWithMigrationScope(envConfigUtils.getTestRealm(), applicationId, "RUN", () -> migrationService.runAllUnRunMigrations(envConfigUtils.getTestRealm(), emitter));
+               runWithMigrationScope(envConfigUtils.getTestRealm(), applicationId, () -> migrationService.runAllUnRunMigrations(envConfigUtils.getTestRealm(), emitter));
                Log.info("----Running migrations for system realm:---- " + envConfigUtils.getSystemRealm());
-               runWithMigrationScope(envConfigUtils.getSystemRealm(), applicationId, "RUN", () -> migrationService.runAllUnRunMigrations(envConfigUtils.getSystemRealm(), emitter));
+               runWithMigrationScope(envConfigUtils.getSystemRealm(), applicationId, () -> migrationService.runAllUnRunMigrations(envConfigUtils.getSystemRealm(), emitter));
                if (!envConfigUtils.getSystemRealm().equals(envConfigUtils.getDefaultRealm())) {
                   Log.info("----Running migrations for Default realm:---- " + envConfigUtils.getDefaultRealm());
-                  runWithMigrationScope(envConfigUtils.getDefaultRealm(), applicationId, "RUN", () -> migrationService.runAllUnRunMigrations(envConfigUtils.getDefaultRealm(), emitter));
+                  runWithMigrationScope(envConfigUtils.getDefaultRealm(), applicationId, () -> migrationService.runAllUnRunMigrations(envConfigUtils.getDefaultRealm(), emitter));
                }
             } finally {
                securityUtils.clearSecurityContext();
@@ -455,7 +455,7 @@ public class MigrationResource {
             ruleContext.ensureDefaultRules();
             securityUtils.setSecurityContext();
             try {
-               runWithMigrationScope(realm, applicationId, "RUN", () -> {
+               runWithMigrationScope(realm, applicationId, () -> {
                   Log.info("----Running migrations for realm:---- " + realm);
                   migrationService.runAllUnRunMigrations(realm, emitter);
                });
@@ -486,13 +486,21 @@ public class MigrationResource {
       return applicationId.trim().toLowerCase();
    }
 
-   private void runWithMigrationScope(String realm, String applicationId, String action, MigrationOperation operation) throws Exception {
+   /**
+    * The action every migration write runs under, whichever endpoint started it.
+    * The endpoint's own action (INITIALIZE, EXECUTE_CHANGE_SET, RUN) authorizes the
+    * caller; the writes that follow are all a migration run, and the persistence
+    * layer accepts only a write action.
+    */
+   static final String MIGRATION_WRITE_ACTION = "RUN";
+
+   void runWithMigrationScope(String realm, String applicationId, MigrationOperation operation) throws Exception {
       ResourceContext migrationResource = new ResourceContext.Builder()
          .withRealm(realm)
          .withApplicationId(applicationId)
          .withArea("MIGRATION")
          .withFunctionalDomain("DATABASE")
-         .withAction(action)
+         .withAction(MIGRATION_WRITE_ACTION)
          .build();
 
       try (SecurityCallScope.Scope ignored = SecurityCallScope.openResourceOnly(migrationResource)) {
@@ -501,7 +509,7 @@ public class MigrationResource {
    }
 
    @FunctionalInterface
-   private interface MigrationOperation {
+   interface MigrationOperation {
       void run() throws Exception;
    }
 	}
