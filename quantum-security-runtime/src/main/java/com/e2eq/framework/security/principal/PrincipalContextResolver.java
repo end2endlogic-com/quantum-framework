@@ -238,6 +238,12 @@ public class PrincipalContextResolver {
                 context = applyBindingTenantSelection(context, request.tenantId(), grant);
                 context = withBindingRoles(context, grant);
             }
+        } else if (request.signedClaims().identityOnlyToken()) {
+            // An identity-only token names no tenant: select one as for an identity, unless this is a
+            // platform operation that needs none and none was requested.
+            if (!(request.signedClaims().tenantSelectionExempt() && blank(request.tenantId()))) {
+                context = applyIdentityTenantSelection(context, request.tenantId(), effective);
+            }
         } else {
             // The signed tenant claim names a tenant of the realm the token was issued for. It
             // applies only while the request stays in that realm; after an X-Realm switch the

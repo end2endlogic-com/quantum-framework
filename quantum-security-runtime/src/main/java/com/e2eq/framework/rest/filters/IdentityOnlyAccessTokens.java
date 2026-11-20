@@ -115,7 +115,7 @@ final class IdentityOnlyAccessTokens {
      * tenant and roles a v1 token carried are not in a v2 token, so the realm is the request's
      * selection (X-Realm), else the identity's realm for Auth's application, else the credential's
      * home realm ({@link #resolve(PrincipalContextResolver, JsonWebToken, Target, String, UnaryOperator, boolean)}), the tenant the request's selection else
-     * the credential's, and the roles the credential's grants in that realm for {@code application};
+     * the identity's default tenant in that realm (as identity mode selects it), and the roles the credential's grants in that realm for {@code application};
      * application admission does not apply, exactly as it does not for a v1 token there (Auth names
      * no session application). The application is Auth's own, where a v1 token supplied its
      * {@code azp}, so application-scoped policies apply as they did.
@@ -126,7 +126,7 @@ final class IdentityOnlyAccessTokens {
                 trimToNull(header.apply("X-Realm")),
                 trimToNull(header.apply(DelegatedIdentityHeaders.ORIGINAL_SUBJECT)),
                 trimToNull(header.apply(DelegatedIdentityHeaders.ORIGINAL_USER_ID)),
-                tenantSelectionOptional);
+                tenantSelectionOptional, true);
         PrincipalContextRequest.Builder builder = PrincipalContextRequest.signedTokenClaims(text(token.getClaim("sub")), claims)
                 .applicationId(application)
                 .realm(trimToNull(realm))
