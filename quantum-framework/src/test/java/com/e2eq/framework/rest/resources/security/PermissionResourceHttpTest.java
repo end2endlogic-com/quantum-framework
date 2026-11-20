@@ -1,5 +1,6 @@
 package com.e2eq.framework.rest.resources.security;
 
+import com.e2eq.framework.model.persistent.morphia.ApplicationRepo;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
@@ -35,12 +36,15 @@ class PermissionResourceHttpTest extends BaseRepoTest {
     @Inject CredentialRepo credentials;
     @Inject MorphiaDataStoreWrapper stores;
     @Inject RealmMembershipService memberships;
+    @Inject ApplicationRepo applications;
     private String realm;
 
     @BeforeEach
     void prepare() {
         realm = testUtils.getTestRealm();
         try (var ignored = asSystem()) {
+            // check-with-index answers only for a registered application.
+            applications.ensureRegistered("quantum-framework-test", testUtils.getSystemDataDomain());
             seed(ALICE, "user");
             seed(BOB, "user");
             seed(ADMIN, "user", "admin");
@@ -78,9 +82,9 @@ class PermissionResourceHttpTest extends BaseRepoTest {
         for (String path : PATHS) {
             Response explicit = post(path, ALICE, realm, null);
             Response implicit = post(path, ALICE, null, null);
-            if (path.equals("fd/evaluate")) {
-                // Unchanged: evaluating the whole catalog reads governed rows, which the rules refuse to an
-                // ordinary user. The inspection guard lets a self query through; it is not what refuses.
+            if (path.equals("fd/evaluate") || path.equals("check-with-index")) {
+                // Both read governed vocabulary rows, which the rules refuse to an ordinary user without a
+                // policy granting them. The inspection guard lets a self query through; it is not what refuses.
                 ruleDenied(explicit);
                 ruleDenied(implicit);
                 continue;
@@ -117,7 +121,7 @@ class PermissionResourceHttpTest extends BaseRepoTest {
         for (String path : List.of("check", "check-with-index", "fd/evaluate")) {
             denied(post(path, ALICE, realm, new String[]{"admin"}));
             Response held = post(path, ALICE, realm, new String[]{"user"});
-            if (path.equals("fd/evaluate")) {
+            if (path.equals("fd/evaluate") || path.equals("check-with-index")) {
                 ruleDenied(held);
                 continue;
             }
@@ -130,6 +134,14 @@ class PermissionResourceHttpTest extends BaseRepoTest {
     void realmAdministratorMayInspectAnotherUserAndSimulateRolesInOwnRealm() {
         for (String path : PATHS) {
             Response allowed = post(path, BOB, realm, path.equals("role-provenance") ? null : new String[]{"simulated-role"});
+            if (path.equals("check-with-index")) {
+                // The guard lets the administrator through; the application row itself is read under the
+                // administrator's rules, which do not reach the system data domain it is registered in.
+                assertNotEquals("PERMISSION_INSPECTION_FORBIDDEN", allowed.jsonPath().getString("errorCode"), allowed.asString());
+                assertEquals("APPLICATION_UNKNOWN", allowed.jsonPath().getString("code"), allowed.asString());
+                denied(post(path, BOB, "not-the-admin-realm", null));
+                continue;
+            }
             assertEquals(200, allowed.statusCode(), allowed.asString());
             denied(post(path, BOB, "not-the-admin-realm", null));
         }

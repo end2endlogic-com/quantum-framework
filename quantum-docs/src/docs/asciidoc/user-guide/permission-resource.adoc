@@ -116,18 +116,36 @@ Notes:
 - Use `/check` when you must account for scripts, context-enriched rules, or when you don’t have the precomputed snapshot.
 
 === POST /system/permissions/check-with-index
-Returns a precomputed permission snapshot for the supplied identity. This snapshot can be cached on the client and used for fast allow/deny decisions without server roundtrips.
+Returns everything one identity may do in one application, in one call, so a client can show or hide
+actions without asking again. The backend still enforces every request; the snapshot only decides what
+to show.
 
-Depending on server version/config, the response can include:
-- A legacy flat list of rules (for backward compatibility)
-- A scoped access matrix (recommended) keyed by data-domain scope → area → domain → action
+Each action the application registers (its FunctionalArea and FunctionalDomain rows, as listed by
+`GET /fd?applicationId=`) is decided by the rule engine exactly as `/check` decides it: the system rules,
+the realm's and the application's policies, rule precedence, wildcard patterns and scripts all count.
+Nothing in the snapshot is a guess, so every cell agrees with `/check` for the same identity, realm,
+application and data domain.
 
-.Request (current servers; send data-domain as top-level fields)
+Only allowed actions are returned. A missing cell means denied.
+
+The application and its vocabulary are read under the caller's own rules, as `GET /fd?applicationId=`
+reads them, so tenant isolation and any deny on those records hold. A caller who may not see the
+application gets the same `404` as for an unregistered one; a caller who may not list its vocabulary is
+refused (`403`). To let people load their own snapshot, grant them, by policy, `VIEW` on
+`SECURITY/APPLICATION` and `LIST` on `SECURITY/FUNCTIONAL_AREA` and `SECURITY/FUNCTIONAL_DOMAIN` for
+the application's rows.
+
+`applicationId` is required (or taken from the caller's principal). An application that is not
+registered, or that the caller may not see, returns `404` with `"code": "APPLICATION_UNKNOWN"`. `area`, `functionalDomain` and `action`
+narrow the evaluation when given. `roles` adds no role to the snapshot.
+
+.Request (send data-domain as top-level fields; omitted fields come from the caller's context, and `ownerId` defaults to `identity`)
 [source,json]
 ----
 {
   "identity": "user-123",
   "realm": "b2bi",
+  "applicationId": "orders-app",
   "orgRefName": "acme",
   "accountNumber": "A1",
   "tenantId": "t-001",
@@ -136,183 +154,52 @@ Depending on server version/config, the response can include:
 }
 ----
 
-[NOTE]
-If your server version supports a nested dataDomain object, you may also send:
-
-[source,json]
-----
-{
-  "identity": "user-123",
-  "realm": "b2bi",
-  "dataDomain": {
-    "orgRefName": "acme",
-    "accountNumber": "A1",
-    "tenantId": "t-001",
-    "dataSegment": 0,
-    "ownerId": "user-123"
-  }
-}
-----
-On servers that do not support nested dataDomain, this shape will produce:
-`400 Bad Request: Unrecognized field "dataDomain"`.
-
-.Response: Scoped access matrix (recommended shape)
+.Response
 [source,json]
 ----
 {
   "enabled": true,
-  "version": 42,
-  "policyVersion": 123,
-  "sources": ["user:user-123", "role:user", "role:admin"],
+  "version": 163044986023000,
+  "policyVersion": 163044986023000,
+  "sources": ["user-123", "user"],
   "requiresServer": false,
-
+  "rules": [],
   "scopes": {
-    "org=acme|acct=A1|tenant=t-001|seg=0|owner=user-123": {
+    "org=acme|acct=a1|tenant=t-001|seg=0|owner=user-123": {
       "requiresServer": false,
       "matrix": {
-        "security": {
-          "userProfile": {
-            "view": { "effect": "ALLOW", "rule": "ViewOwnProfile", "priority": 5, "finalRule": true, "source": "role:user" }
-          },
-          "credential": {
-            "update": { "effect": "DENY", "rule": "NoUpdate", "priority": 10, "finalRule": true, "source": "role:user" }
-          }
-        },
         "orders": {
-          "manage": { "*": { "effect": "DENY", "rule": "NoManage", "priority": 50, "finalRule": true } }
+          "order": {
+            "view": { "effect": "ALLOW", "rule": "view-own-orders", "priority": 10, "finalRule": false }
+          }
         }
       }
-    },
-
-    "org=acme|acct=A1|tenant=t-001|seg=*|owner=*": { "requiresServer": false, "matrix": { "*": { "*": { "*": { "effect": "DENY", "rule": "DefaultDeny", "priority": 999, "finalRule": false } } } } },
-    "org=*|acct=*|tenant=*|seg=*|owner=*": { "requiresServer": false, "matrix": { "security": { "*": { "*": { "effect": "ALLOW", "rule": "SysRoleAnyActionSecurity", "priority": 1, "finalRule": true } } } } }
-  },
-  "requestedScope": "org=acme|acct=A1|tenant=t-001|seg=0|owner=user-123",
-  "requestedFallback": [
-    "org=acme|acct=A1|tenant=t-001|seg=0|owner=*",
-    "org=acme|acct=A1|tenant=t-001|seg=*|owner=*",
-    "org=acme|acct=A1|tenant=*|seg=*|owner=*",
-    "org=acme|acct=*|tenant=*|seg=*|owner=*",
-    "org=*|acct=*|tenant=*|seg=*|owner=*"
-  ],
-  "rules": [
-    { "name": "SysRoleAnyActionSecurity", "uri": "system:security:*:*:*:*:*:*:*", "effect": "ALLOW", "priority": 1, "finalRule": true }
-  ]
-}
-----
-
-Interpretation:
-- The client should prefer the scope that best matches its current data domain and then look up `area → domain → action` in that scope’s matrix, falling back through `requestedFallback`.
-- Within a matrix, exact values beat wildcards; the matrix already encodes the winning outcome per triple.
-- If `requiresServer` is true (globally or for a specific scope), the client should call `/check` for decisions in those affected areas.
-
-=== Response example (legacy rules present and requiresServer=true)
-[source,json]
-----
-{
-  "enabled": false,
-  "version": 0,
-  "policyVersion": 163044986023000,
-  "rules": [
-    {
-      "name": "users can't delete anything in security area",
-      "uri": "user:security:*:delete|*:*:*:*:*:*:*",
-      "effect": "DENY",
-      "priority": 10,
-      "finalRule": true
-    },
-    {
-      "name": "view your own resources",
-      "uri": "user:*:*:*|system-com:*:*:*:*:*:*",
-      "effect": "ALLOW",
-      "priority": 10,
-      "finalRule": true
-    },
-    {
-      "name": "view your own resources, limit to default dataSegment",
-      "uri": "user:*:*:*|*:*:*:*:*:*:*",
-      "effect": "ALLOW",
-      "priority": 10,
-      "finalRule": false
-    },
-    {
-      "name": "ViewSystemResources",
-      "uri": "user:*:*:view|system-com:*:*:*:*:system@system.com:*",
-      "effect": "ALLOW",
-      "priority": 10,
-      "finalRule": true
-    }
-  ],
-  "sources": [
-    "user"
-  ],
-  "requiresServer": true,
-  "scopes": {
-    "org=*|acct=*|tenant=*|seg=*|owner=system@system.com": {
-      "matrix": {
-        "*": {
-          "*": {
-            "view": {
-              "effect": "ALLOW",
-              "rule": "ViewSystemResources",
-              "priority": 10,
-              "finalRule": true,
-              "source": "user"
-            }
-          }
-        }
-      },
-      "requiresServer": false
-    },
-    "org=*|acct=*|tenant=*|seg=*|owner=*": {
-      "matrix": {
-        "security": {
-          "*": {
-            "delete": {
-              "effect": "DENY",
-              "rule": "users can't delete anything in security area",
-              "priority": 10,
-              "finalRule": true,
-              "source": "user"
-            }
-          }
-        },
-        "*": {
-          "*": {
-            "*": {
-              "effect": "ALLOW",
-              "rule": "view your own resources, limit to default dataSegment",
-              "priority": 10,
-              "finalRule": false,
-              "source": "user"
-            }
-          }
-        }
-      },
-      "requiresServer": false
     }
   },
-  "requestedScope": "org=acme|acct=A1|tenant=t-001|seg=0|owner=user-123",
-  "requestedFallback": [
-    "org=acme|acct=A1|tenant=t-001|seg=0|owner=*",
-    "org=acme|acct=A1|tenant=t-001|seg=*|owner=*",
-    "org=acme|acct=A1|tenant=*|seg=*|owner=*",
-    "org=acme|acct=*|tenant=*|seg=*|owner=*",
-    "org=*|acct=*|tenant=*|seg=*|owner=*"
-  ]
+  "requestedScope": "org=acme|acct=a1|tenant=t-001|seg=0|owner=user-123",
+  "requestedFallback": ["org=acme|acct=a1|tenant=t-001|seg=0|owner=user-123"]
 }
 ----
 
 Field semantics
 
-- enabled: false indicates the compiled index is disabled or unavailable. Clients should treat the snapshot as non-authoritative and prefer calling /system/permissions/check for critical decisions; the matrix may still be present for some scopes but is not guaranteed complete.
-- version: 0 accompanies enabled=false. When enabled is true, version corresponds to the compiled index version and can be used for caching together with policyVersion.
-- policyVersion: the ruleset/policy timestamp or version for cache invalidation.
-- rules: legacy flat list preserved for backward compatibility. Clients should prefer the scoped matrix when available.
-- sources: identities included when the snapshot was materialized (e.g., user id and/or roles).
-- requiresServer (top-level): true means at least one rule could not be safely materialized (e.g., uses scripts/postconditions or dynamic filters). Clients should be prepared to call /system/permissions/check for affected scopes/decisions.
-- scopes[<key>].requiresServer: per-scope flag. If true, client should not rely on that scope’s matrix for final decisions and should call /system/permissions/check when evaluating in that scope.
-- requestedScope / requestedFallback: convenience keys provided when the request included data-domain values. Clients should attempt lookup starting at requestedScope, then walk requestedFallback in order.
+- enabled: always true; requiresServer: always false. Every registered action has been decided.
+- version / policyVersion: the rule set's version on the server that answered. It is per server and does not
+  change when a person's roles or group membership change, so also refresh on a timer and on sign-in.
+- sources: the identity and the roles Auth resolved for it in this realm and application. Use these
+  instead of reading roles from the token: tokens carry identity only.
+- scopes: exactly one scope, the request's data domain, keyed by `requestedScope`. Keys and
+  `area → domain → action` names are lower case; look them up lower-cased. Each cell names the winning
+  rule, its priority and whether it was final.
+- rules: empty. The flat rule list of earlier versions is no longer returned.
+- A decision that depends on the record (a rule with a filter or script) is `ALLOW` here when some
+  record could be allowed, as `/check` reports it without a resource; the backend decides each record.
+
+[NOTE]
+Earlier versions built this snapshot from the system rules alone, so it missed realm and application
+policies, and flagged rules it could not represent with `requiresServer`. Clients must now look names up in lower case and use `requestedScope`
+rather than widening to other scopes; `acl-client.js` does both. A client that looked names up in their
+registered case finds nothing and denies everything, which is safe but hides every action.
 
 == Data-Domain Scope and Fallback
 
@@ -338,9 +225,11 @@ The JavaScript client provides helpers to evaluate the snapshot on the client.
 [source,js]
 ----
 ACLClient.scopeKeyFromDataDomain(dataDomain) // => scope key string
-ACLClient.buildFallbackChain(scopeKey)       // => [less-specific scope keys]
+ACLClient.buildFallbackChain(scopeKey)       // => [scopeKey] (kept for compatibility; one scope is returned)
 ACLClient.lookupAreaDomainAction(matrix, area, domain, action) // => Outcome | null
-ACLClient.decide(snapshot, dataDomain, area, domain, action)   // => 'ALLOW' | 'DENY'
+ACLClient.decide(snapshot, dataDomain, area, domain, action)   // => 'ALLOW' | 'DENY'; names match without case
+// dataDomain may be null (the snapshot's own data domain). For any other data domain decide is 'DENY'
+// and decideOutcome is null: ask /check instead.
 ACLClient.decideOutcome(snapshot, dataDomain, area, domain, action) // => Outcome | null
 ACLClient.interpretCheckResponse(check)  // => { decision, scope, constraints, filterConstraintsPresent, filterConstraints }
 ACLClient.interpretEvaluateResponse(res) // => { allow, deny, decisions, evalModeUsed, getDecision(area, domain, action) }
@@ -449,10 +338,13 @@ areas/domains/actions and now supports the same `evalMode` and optional `modelCl
 When the server cannot fully evaluate constraints for a given action (e.g., no resource supplied), it returns a
 `SCOPED` decision for that action along with the enumerated constraints.
 
+Every decision comes from the rule engine (`/check`'s evaluation). `useIndex` is accepted for compatibility
+and ignored: it used to answer from a precomputed matrix that could disagree with the engine.
+
 Request (additive parity with `/check`):
 
 ```
-POST /system/permissions/fd/evaluate?useIndex=true
+POST /system/permissions/fd/evaluate
 {
   "identity": "alice@end2endlogic.com",
   "realm": "b2bi",
@@ -499,7 +391,7 @@ Response (additive):
 Client usage:
 
 ```
-const res = await fetch('/system/permissions/fd/evaluate?useIndex=true', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(req) });
+const res = await fetch('/system/permissions/fd/evaluate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(req) });
 const body = await res.json();
 const ev = ACLClient.interpretEvaluateResponse(body);
 const decision = ev.getDecision('sales', 'order', 'view');
@@ -513,10 +405,8 @@ if (decision && decision.decisionScope === 'EXACT' && decision.effect === 'ALLOW
 
 === Which rule produced the decision?
 
-For actions resolved by the optimized index, `decisions[area][domain][action]` includes `rule`, `priority`,
-`finalRule`, and `source` from the index outcome. For server-evaluated fallbacks (when index is disabled or does not
-cover the specific combination), the server maps the winning rule metadata from the underlying check result, so
-`rule/priority/finalRule` are also present for parity.
+`decisions[area][domain][action]` includes `rule`, `priority` and `finalRule` from the winning rule of the
+engine's evaluation, as `/check` reports them.
 
 == Behavior matrix (summary)
 
@@ -561,12 +451,12 @@ Q: How do I know which rule produced the result?
     // 1) Get a snapshot for the user
     const res = await fetch('/system/permissions/check-with-index', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ identity: 'user-123', realm: 'b2bi', orgRefName: 'acme', accountNumber: 'A1', tenantId: 't-001', dataSegment: 0, ownerId: 'user-123' })
+      body: JSON.stringify({ identity: 'user-123', realm: 'b2bi', applicationId: 'orders-app', orgRefName: 'acme', accountNumber: 'A1', tenantId: 't-001', dataSegment: 0, ownerId: 'user-123' })
     });
     const snapshot = await res.json();
 
     // 2) Evaluate locally
-    const decision = ACLClient.decide(snapshot, { orgRefName: 'acme', accountNumber: 'A1', tenantId: 't-001', dataSegment: 0, ownerId: 'user-123' }, 'security', 'userProfile', 'view');
+    const decision = ACLClient.decide(snapshot, null, 'security', 'userProfile', 'view');
     if (decision === 'ALLOW') {
       // show UI
     } else {
@@ -675,11 +565,11 @@ curl -sS -X POST \
 
 == Caching Guidance
 
-- Clients should cache the `/check-with-index` response keyed by `(identity, realm, version, policyVersion)`.
-- Refresh the snapshot when either `version` or `policyVersion` changes.
+- Clients should cache the `/check-with-index` response keyed by `(identity, realm, applicationId, data domain)`
+  for a few minutes, and drop it on sign-out. `policyVersion` is per server and does not track role or
+  membership changes, so it is not enough on its own.
 
 == Troubleshooting
 
-- If `requiresServer` is `true` (globally or per-scope), call `/check` for affected decisions.
-- If no matrix entry is found in any scope fallback, default to `DENY` for safety.
+- A missing matrix entry is a `DENY`.
 - Ensure `effect` comparisons are case-insensitive on the client (`String(effect).toUpperCase()`).

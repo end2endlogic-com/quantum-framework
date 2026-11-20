@@ -31,83 +31,49 @@ public class AclClientTest {
         return Context.newBuilder("js").allowAllAccess(true).build();
     }
 
+    private Value eval(String js) throws Exception {
+        Context ctx = newJsContext();
+        ctx.eval("js", loadClientJs());
+        return ctx.eval("js", SNAPSHOT + js);
+    }
+
+    /** The shape the server returns: one scope (requestedScope), lower-case keys, allowed cells only. */
+    private static final String SNAPSHOT = "" +
+            "var key = 'org=acme|acct=a1|tenant=t-1|seg=0|owner=u1';\n" +
+            "var snapshot = { enabled: true, requiresServer: false, requestedScope: key, requestedFallback: [key],\n" +
+            "  scopes: {} };\n" +
+            "snapshot.scopes[key] = { requiresServer: false, matrix: {\n" +
+            "  security: { userprofile: { view: { effect: 'ALLOW', priority: 0, finalRule: true, rule: 'test' } } } } };\n";
+
     @Test
-    public void testDecideAllowExactMatch() throws Exception {
-        String lib = loadClientJs();
-        try (Context ctx = newJsContext()) {
-            ctx.eval("js", lib);
-
-            // Construct a minimal snapshot with a single global scope and an ALLOW rule
-            String js = "" +
-                    "var snapshot = {\n" +
-                    "  enabled: true,\n" +
-                    "  scopes: {\n" +
-                    "    'org=*|acct=*|tenant=*|seg=*|owner=*': {\n" +
-                    "      requiresServer: false,\n" +
-                    "      matrix: {\n" +
-                    "        security: { userProfile: { view: { effect: 'ALLOW', priority: 0, finalRule: true, rule: 'test' } } }\n" +
-                    "      }\n" +
-                    "    }\n" +
-                    "  },\n" +
-                    "  requestedScope: 'org=*|acct=*|tenant=*|seg=*|owner=*',\n" +
-                    "  requestedFallback: ['org=*|acct=*|tenant=*|seg=*|owner=*']\n" +
-                    "};\n" +
-                    "ACLClient.decide(snapshot, null, 'security', 'userProfile', 'view');";
-
-            Value result = ctx.eval("js", js);
-            String decision = result.asString();
-            assertEquals("ALLOW", decision, "Expected ALLOW from client library decide()");
-        }
+    public void testDecideAllowsACellWhateverTheCaseAsked() throws Exception {
+        assertEquals("ALLOW", eval("ACLClient.decide(snapshot, null, 'security', 'userProfile', 'view');").asString());
+        assertEquals("ALLOW", eval("ACLClient.decide(snapshot, null, 'SECURITY', 'USERPROFILE', 'VIEW');").asString());
+        assertEquals("test", eval("ACLClient.decideOutcome(snapshot, null, 'security', 'userProfile', 'view').rule;").asString());
     }
 
     @Test
-    public void testDecideDenyWhenNoMatch() throws Exception {
-        String lib = loadClientJs();
-        try (Context ctx = newJsContext()) {
-            ctx.eval("js", lib);
-
-            // Snapshot with ALLOW only for a different action; lookup should DENY
-            String js = "" +
-                    "var snapshot = {\n" +
-                    "  enabled: true,\n" +
-                    "  scopes: {\n" +
-                    "    'org=*|acct=*|tenant=*|seg=*|owner=*': {\n" +
-                    "      requiresServer: false,\n" +
-                    "      matrix: {\n" +
-                    "        security: { userProfile: { update: { effect: 'ALLOW', priority: 0, finalRule: true, rule: 'test' } } }\n" +
-                    "      }\n" +
-                    "    }\n" +
-                    "  },\n" +
-                    "  requestedScope: 'org=*|acct=*|tenant=*|seg=*|owner=*',\n" +
-                    "  requestedFallback: ['org=*|acct=*|tenant=*|seg=*|owner=*']\n" +
-                    "};\n" +
-                    "ACLClient.decide(snapshot, null, 'security', 'userProfile', 'view');";
-
-            Value result = ctx.eval("js", js);
-            String decision = result.asString();
-            assertEquals("DENY", decision, "Expected DENY when no matching outcome exists");
-        }
+    public void testDecideDeniesAMissingCell() throws Exception {
+        assertEquals("DENY", eval("ACLClient.decide(snapshot, null, 'security', 'userProfile', 'update');").asString());
+        assertEquals("DENY", eval("ACLClient.decide(snapshot, null, 'constructor', 'toString', 'valueOf');").asString());
+        assertEquals("DENY", eval("ACLClient.decide(null, null, 'security', 'userProfile', 'view');").asString());
     }
 
     @Test
-    public void testScopeKeyAndFallbackChain() throws Exception {
-        String lib = loadClientJs();
-        try (Context ctx = newJsContext()) {
-            ctx.eval("js", lib);
-            String js = "" +
-                    "var dd = { orgRefName: 'acme', accountNumber: 'A1', tenantId: 't-1', dataSegment: 0, ownerId: 'u1' };\n" +
-                    "var key = ACLClient.scopeKeyFromDataDomain(dd);\n" +
-                    "var chain = ACLClient.buildFallbackChain(key);\n" +
-                    "({ key: key, chain: chain });";
-            Value obj = ctx.eval("js", js);
-            assertEquals("org=acme|acct=A1|tenant=t-1|seg=0|owner=u1", obj.getMember("key").asString());
-            Value arr = obj.getMember("chain");
-            assertTrue(arr.hasArrayElements());
-            // First fallback should drop owner
-            assertEquals("org=acme|acct=A1|tenant=t-1|seg=0|owner=*", arr.getArrayElement(0).asString());
-            // Last should be global
-            long lastIdx = arr.getArraySize() - 1;
-            assertEquals("org=*|acct=*|tenant=*|seg=*|owner=*", arr.getArrayElement(lastIdx).asString());
-        }
+    public void testOnlyTheSnapshotsOwnDataDomainIsAnswered() throws Exception {
+        String same = "{ orgRefName: 'Acme', accountNumber: 'A1', tenantId: 'T-1', dataSegment: 0, ownerId: 'u1' }";
+        String other = "{ orgRefName: 'acme', accountNumber: 'A1', tenantId: 't-2', dataSegment: 0, ownerId: 'u1' }";
+        assertEquals("ALLOW", eval("ACLClient.decide(snapshot, " + same + ", 'security', 'userProfile', 'view');").asString());
+        assertEquals("DENY", eval("ACLClient.decide(snapshot, " + other + ", 'security', 'userProfile', 'view');").asString());
+        assertTrue(eval("ACLClient.decideOutcome(snapshot, " + other + ", 'security', 'userProfile', 'view') === null;").asBoolean());
+    }
+
+    @Test
+    public void testScopeKeyIsLowerCaseAndThereIsNoWidening() throws Exception {
+        Value obj = eval("var k = ACLClient.scopeKeyFromDataDomain({ orgRefName: 'Acme', accountNumber: 'A1', tenantId: 't-1', dataSegment: 0 });\n" +
+                "({ key: k, chain: ACLClient.buildFallbackChain(k) });");
+        assertEquals("org=acme|acct=a1|tenant=t-1|seg=0|owner=*", obj.getMember("key").asString());
+        assertEquals(1, obj.getMember("chain").getArraySize());
+        assertEquals("org=acme|acct=a1|tenant=t-1|seg=0|owner=*", obj.getMember("chain").getArrayElement(0).asString());
     }
 }

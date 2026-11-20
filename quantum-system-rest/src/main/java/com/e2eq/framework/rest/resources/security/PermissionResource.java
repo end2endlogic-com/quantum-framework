@@ -892,6 +892,25 @@ public class PermissionResource {
       return Response.ok(resp).build();
    }
 
+
+   /**
+    * Everything one identity may do in one application, decided by the rule engine.
+    *
+    * <p>Each action the application registers (its FunctionalArea and FunctionalDomain rows) is
+    * evaluated with {@link RuleContext#checkRules} exactly as a request would be: the realm's and the
+    * application's policies, rule precedence, wildcard patterns and scripts all apply. The allowed actions
+    * are returned as one scoped matrix with exact, lower-case keys, so a client can show or hide actions
+    * without another call. Only allowed actions have a cell; a client treats a missing cell as denied. The
+    * backend still enforces every request.</p>
+    *
+    * <p>The application and its vocabulary are read under the caller's own rules, exactly as
+    * {@code GET /fd?applicationId=} reads them, so a caller who may not see the application gets 404 and
+    * one who may not list its vocabulary is refused. Granting people their own snapshot is a policy
+    * decision: allow them to view the application and list its vocabulary.</p>
+    *
+    * <p>{@code area}, {@code functionalDomain} and {@code action} narrow the evaluation when given.
+    * {@code roles} adds no role to the snapshot.</p>
+    */
    @POST
    @Path("/check-with-index")
    @Authenticated
@@ -904,85 +923,197 @@ public class PermissionResource {
       }
       String realm = inspectionRealm(req.realm);
       requireInspection(req.identity, realm, req.tenantId, req.roles);
-      String applicationId = (req.applicationId != null && !req.applicationId.isBlank()) ? req.applicationId :
-              SecurityContext.getPrincipalContext().map(PrincipalContext::getApplicationId).orElse(null);
-      if (applicationId == null || applicationId.isBlank()) {
+      String applicationId = requestApplicationId(req.applicationId);
+      if (applicationId == null) {
          return Response.status(Response.Status.BAD_REQUEST).entity("applicationId is required").build();
       }
+      // The application and its vocabulary are read under the caller's own rules (SECURITY/APPLICATION,
+      // FUNCTIONAL_AREA, FUNCTIONAL_DOMAIN), so tenant isolation and any deny on those records hold here.
+      Response unknown = unknownApplication(applicationId);
+      if (unknown != null) return unknown;
+      Map<String, Map<String, Set<String>>> vocabulary = registeredVocabulary(applicationId);
+      narrow(vocabulary, req.area, req.functionalDomain, req.action);
 
-      // Determine implied identities using centralized resolver. If identity is a role, returned set will just contain it.
-      Set<String> identities = identityRoleResolver.resolveRolesForIdentity(req.identity, realm, applicationId, securityIdentity);
-      // Ensure the original identity is included
-      identities.add(req.identity);
+      // The snapshot is the identity's own: its owner is that identity unless the request names another.
+      String ownerId = (req.ownerId != null && !req.ownerId.isBlank()) ? req.ownerId : req.identity;
+      DataDomain dd = requestDataDomain(req.orgRefName, req.accountNumber, req.tenantId, req.dataSegment, ownerId, req.identity);
+      Set<String> roles = evaluationRoles(req.identity, realm, applicationId, null);
+      PrincipalContext pc = evaluationPrincipal(req.identity, roles, realm, applicationId, dd, req.scope);
+      Map<String, Map<String, Map<String, EvaluationActionDecision>>> decisions =
+              engineDecisions(pc, vocabulary, realm, applicationId, dd.getOwnerId(), null, null,
+                      com.e2eq.framework.model.securityrules.EvalMode.LEGACY);
 
-      // Optional requested data-domain: only if client provided all fields explicitly
-      RuleIndexSnapshot idx;
-      boolean hasAllDataDomainFields =
-              (req.orgRefName != null && !req.orgRefName.isBlank()) &&
-              (req.accountNumber != null && !req.accountNumber.isBlank()) &&
-              (req.tenantId != null && !req.tenantId.isBlank()) &&
-              (req.dataSegment != null) &&
-              (req.ownerId != null && !req.ownerId.isBlank());
+      Set<String> sources = new TreeSet<>(roles);
+      sources.add(req.identity);
+      return Response.ok(accessSnapshot(decisions, sources, dd)).build();
+   }
 
-      if (hasAllDataDomainFields) {
-         DataDomain dd = new DataDomain(req.orgRefName, req.accountNumber, req.tenantId, req.dataSegment, req.ownerId);
-         idx = ruleContext.exportScopedAccessMatrixForIdentities(identities, dd);
-      } else {
-         idx = ruleContext.exportScopedAccessMatrixForIdentities(identities, null);
+   /** The snapshot shape clients already read: one scope, exact lower-case cells for allowed actions only. */
+   private RuleIndexSnapshot accessSnapshot(Map<String, Map<String, Map<String, EvaluationActionDecision>>> decisions,
+                                            Set<String> sources, DataDomain dd) {
+      RuleIndexSnapshot snap = new RuleIndexSnapshot();
+      snap.setEnabled(true);
+      snap.setVersion(ruleContext.getPolicyVersion());
+      snap.setPolicyVersion(ruleContext.getPolicyVersion());
+      snap.setRequiresServer(false);
+      snap.getSources().addAll(sources);
+      RuleIndexSnapshot.ScopedMatrix scope = new RuleIndexSnapshot.ScopedMatrix();
+      for (Map.Entry<String, Map<String, Map<String, EvaluationActionDecision>>> area : decisions.entrySet()) {
+         for (Map.Entry<String, Map<String, EvaluationActionDecision>> domain : area.getValue().entrySet()) {
+            for (Map.Entry<String, EvaluationActionDecision> action : domain.getValue().entrySet()) {
+               EvaluationActionDecision decision = action.getValue();
+               if (!"ALLOW".equalsIgnoreCase(decision.effect)) continue;
+               RuleIndexSnapshot.Outcome outcome = new RuleIndexSnapshot.Outcome();
+               outcome.setEffect("ALLOW");
+               outcome.setRule(decision.rule);
+               outcome.setPriority(decision.priority != null ? decision.priority : 0);
+               outcome.setFinalRule(Boolean.TRUE.equals(decision.finalRule));
+               scope.getMatrix()
+                       .computeIfAbsent(lower(area.getKey()), k -> new HashMap<>())
+                       .computeIfAbsent(lower(domain.getKey()), k -> new HashMap<>())
+                       .put(lower(action.getKey()), outcome);
+            }
+         }
       }
-      return Response.ok(idx).build();
+      String key = scopeKey(dd);
+      snap.getScopes().put(key, scope);
+      snap.setRequestedScope(key);
+      snap.setRequestedFallback(List.of(key));
+      return snap;
    }
 
-   // Lookup outcome in a scoped matrix using wildcard resolution and fallback chain
-   private static RuleIndexSnapshot.Outcome lookupOutcome(RuleIndexSnapshot snap, String area, String domain, String action) {
-      if (snap == null) return null;
-      String startKey = snap.getRequestedScope() != null ? snap.getRequestedScope() : "org=*|acct=*|tenant=*|seg=*|owner=*";
-      List<String> fallback = snap.getRequestedFallback() != null ? snap.getRequestedFallback() : List.of("org=*|acct=*|tenant=*|seg=*|owner=*");
-      List<String> tryScopes = new ArrayList<>();
-      tryScopes.add(startKey);
-      tryScopes.addAll(fallback);
-      Map<String, RuleIndexSnapshot.ScopedMatrix> scopes = snap.getScopes();
-      if (scopes == null) return null;
-      for (String key : tryScopes) {
-         RuleIndexSnapshot.ScopedMatrix sm = scopes.get(key);
-         if (sm == null || sm.isRequiresServer()) continue;
-         Map<String, Map<String, Map<String, RuleIndexSnapshot.Outcome>>> m = sm.getMatrix();
-         if (m == null) continue;
-         RuleIndexSnapshot.Outcome out = lookupInMatrix(m, area, domain, action);
-         if (out != null) return out;
+   /** The scope key of a data domain, lower case, as clients compute it. */
+   static String scopeKey(DataDomain dd) {
+      return "org=" + scopePart(dd.getOrgRefName())
+              + "|acct=" + scopePart(dd.getAccountNum())
+              + "|tenant=" + scopePart(dd.getTenantId())
+              + "|seg=" + dd.getDataSegment()
+              + "|owner=" + scopePart(dd.getOwnerId());
+   }
+
+   private static String scopePart(String value) {
+      return value == null || value.isBlank() ? "*" : value.trim().toLowerCase(Locale.ROOT);
+   }
+
+   private static String lower(String value) {
+      return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+   }
+
+   /** The request's application, else the authenticated principal's; null when neither names one. */
+   private static String requestApplicationId(String requested) {
+      String applicationId = (requested != null && !requested.isBlank()) ? requested.trim() :
+              SecurityContext.getPrincipalContext().map(PrincipalContext::getApplicationId).orElse(null);
+      return (applicationId == null || applicationId.isBlank()) ? null : applicationId;
+   }
+
+   /** The data domain an evaluation runs in: the request's fields, else the caller's, else the default. */
+   private DataDomain requestDataDomain(String orgRefName, String accountNumber, String tenantId, Integer dataSegment,
+                                        String ownerId, String identity) {
+      String org = (orgRefName != null && !orgRefName.isBlank()) ? orgRefName :
+              SecurityContext.getPrincipalContext().map(pc -> pc.getDataDomain().getOrgRefName()).orElse(securityUtils.getDefaultDataDomain().getOrgRefName());
+      String acct = (accountNumber != null && !accountNumber.isBlank()) ? accountNumber :
+              SecurityContext.getPrincipalContext().map(pc -> pc.getDataDomain().getAccountNum()).orElse(securityUtils.getDefaultDataDomain().getAccountNum());
+      String tenant = (tenantId != null && !tenantId.isBlank()) ? tenantId :
+              SecurityContext.getPrincipalContext().map(pc -> pc.getDataDomain().getTenantId()).orElse(securityUtils.getDefaultDataDomain().getTenantId());
+      int seg = (dataSegment != null) ? dataSegment :
+              SecurityContext.getPrincipalContext().map(pc -> pc.getDataDomain().getDataSegment()).orElse(securityUtils.getDefaultDataDomain().getDataSegment());
+      String owner = (ownerId != null && !ownerId.isBlank()) ? ownerId :
+              SecurityContext.getResourceContext().map(ResourceContext::getOwnerId)
+                      .or(() -> SecurityContext.getPrincipalContext().map(PrincipalContext::getUserId))
+                      .orElse(identity);
+      return new DataDomain(org, acct, tenant, seg, owner);
+   }
+
+   /** The identity's roles for this realm and application, plus any "what if" roles; never the identity itself. */
+   private Set<String> evaluationRoles(String identity, String realm, String applicationId, String[] extraRoles) {
+      Set<String> roles = identityRoleResolver.resolveRolesForIdentity(identity, realm, applicationId, securityIdentity);
+      Set<String> out = roles == null ? new HashSet<>() : new HashSet<>(roles);
+      if (extraRoles != null) out.addAll(Arrays.asList(extraRoles));
+      out.remove(identity);
+      out.removeIf(role -> role == null || role.isBlank());
+      return out;
+   }
+
+   private static PrincipalContext evaluationPrincipal(String identity, Set<String> roles, String realm, String applicationId,
+                                                       DataDomain dd, String scope) {
+      return new PrincipalContext.Builder()
+              .withDefaultRealm(realm)
+              .withApplicationId(applicationId)
+              .withDataDomain(dd)
+              .withUserId(identity)
+              .withRoles(roles.toArray(new String[0]))
+              .withScope(scope != null ? scope : "api")
+              .build();
+   }
+
+   /** Keep only the area, domain and action asked for; a blank filter keeps everything. */
+   private static Map<String, Map<String, Set<String>>> narrow(Map<String, Map<String, Set<String>>> vocabulary,
+                                                               String area, String functionalDomain, String action) {
+      if (area != null && !area.isBlank()) {
+         vocabulary.keySet().removeIf(a -> !a.equalsIgnoreCase(area));
       }
-      return null;
-   }
-
-   private static RuleIndexSnapshot.Outcome lookupInMatrix(Map<String, Map<String, Map<String, RuleIndexSnapshot.Outcome>>> m,
-                                                           String area, String domain, String action) {
-      String[][] tries = new String[][]{
-              {area, domain, action},
-              {area, domain, "*"},
-              {area, "*", action},
-              {area, "*", "*"},
-              {"*", domain, action},
-              {"*", domain, "*"},
-              {"*", "*", action},
-              {"*", "*", "*"}
-      };
-      for (String[] t : tries) {
-         Map<String, Map<String, RuleIndexSnapshot.Outcome>> dmap = m.get(t[0]);
-         if (dmap == null) continue;
-         Map<String, RuleIndexSnapshot.Outcome> amap = dmap.get(t[1]);
-         if (amap == null) continue;
-         RuleIndexSnapshot.Outcome out = amap.get(t[2]);
-         if (out != null) return out;
+      if (functionalDomain != null && !functionalDomain.isBlank()) {
+         for (Map<String, Set<String>> domains : vocabulary.values()) {
+            domains.keySet().removeIf(d -> !d.equalsIgnoreCase(functionalDomain));
+         }
       }
-      return null;
+      if (action != null && !action.isBlank()) {
+         for (Map<String, Set<String>> domains : vocabulary.values()) {
+            for (Set<String> actions : domains.values()) {
+               actions.removeIf(a -> !a.equalsIgnoreCase(action));
+            }
+         }
+      }
+      return vocabulary;
    }
 
-   private static Map<String, Map<String, List<String>>> ensureOutMap(Map<String, Map<String, List<String>>> root, String area, String domain) {
-      Map<String, List<String>> dom = root.computeIfAbsent(area, k -> new TreeMap<>(String.CASE_INSENSITIVE_ORDER));
-      dom.computeIfAbsent(domain, k -> new ArrayList<>());
-      return root;
+   /**
+    * The rule engine's decision for every action in {@code vocabulary}: the same {@link RuleContext#checkRules}
+    * a request gets, so realm and application policies, precedence, patterns and scripts all count.
+    */
+   private Map<String, Map<String, Map<String, EvaluationActionDecision>>> engineDecisions(
+           PrincipalContext pc, Map<String, Map<String, Set<String>>> vocabulary, String realm, String applicationId,
+           String ownerId, Class<? extends com.e2eq.framework.model.persistent.base.UnversionedBaseModel> modelClass,
+           Map<String, Object> resource, com.e2eq.framework.model.securityrules.EvalMode mode) {
+      Map<String, Map<String, Map<String, EvaluationActionDecision>>> decisions = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+      for (Map.Entry<String, Map<String, Set<String>>> areaEntry : vocabulary.entrySet()) {
+         String areaKey = areaEntry.getKey();
+         Map<String, Map<String, EvaluationActionDecision>> domDecisions = decisions.computeIfAbsent(areaKey, k -> new TreeMap<>(String.CASE_INSENSITIVE_ORDER));
+         for (Map.Entry<String, Set<String>> domEntry : areaEntry.getValue().entrySet()) {
+            String domainKey = domEntry.getKey();
+            Map<String, EvaluationActionDecision> actDecisions = domDecisions.computeIfAbsent(domainKey, k -> new TreeMap<>(String.CASE_INSENSITIVE_ORDER));
+            for (String action : domEntry.getValue()) {
+               ResourceContext rc = new ResourceContext.Builder()
+                       .withRealm(realm)
+                       .withApplicationId(applicationId)
+                       .withArea(areaKey)
+                       .withFunctionalDomain(domainKey)
+                       .withAction(action)
+                       .withOwnerId(ownerId)
+                       .build();
+               SecurityCheckResponse resp = ruleContext.checkRules(pc, rc, modelClass, resource, RuleEffect.DENY, mode);
+               String effect = (resp.getDecision() != null ? resp.getDecision() : (resp.getFinalEffect() != null ? resp.getFinalEffect().name() : "DENY"));
+               EvaluationActionDecision actionDecision = new EvaluationActionDecision();
+               actionDecision.effect = effect;
+               actionDecision.decisionScope = (resp.getDecisionScope() != null ? resp.getDecisionScope() : "DEFAULT");
+               actionDecision.scopedConstraintsPresent = resp.isScopedConstraintsPresent();
+               actionDecision.scopedConstraints = (resp.getScopedConstraints() != null ? resp.getScopedConstraints() : java.util.Collections.emptyList());
+               actionDecision.naLabel = resp.getNaLabel();
+               actionDecision.rule = resp.getWinningRuleName();
+               actionDecision.priority = resp.getWinningRulePriority();
+               actionDecision.finalRule = resp.getWinningRuleFinal();
+               actDecisions.put(action, actionDecision);
+            }
+         }
+      }
+      return decisions;
    }
 
+   /**
+    * Per-action decisions for an identity across the vocabulary this service knows, from the rule engine.
+    * {@code useIndex} is accepted for compatibility and ignored: every action is evaluated by the engine,
+    * because a precomputed matrix cannot reproduce realm policies, precedence or patterns.
+    */
    @POST
    @Path("/fd/evaluate")
    @Authenticated
@@ -996,47 +1127,14 @@ public class PermissionResource {
       // Realm resolution (same as /check)
       String realm = inspectionRealm(req.realm);
       requireInspection(req.identity, realm, req.tenantId, req.roles);
-      String applicationId = (req.applicationId != null && !req.applicationId.isBlank()) ? req.applicationId :
-              SecurityContext.getPrincipalContext().map(PrincipalContext::getApplicationId).orElse(null);
-      if (applicationId == null || applicationId.isBlank()) {
+      String applicationId = requestApplicationId(req.applicationId);
+      if (applicationId == null) {
          return Response.status(Response.Status.BAD_REQUEST).entity("applicationId is required").build();
       }
 
-      // Build DataDomain with fallbacks
-      String org = (req.orgRefName != null && !req.orgRefName.isBlank()) ? req.orgRefName :
-              SecurityContext.getPrincipalContext().map(pc -> pc.getDataDomain().getOrgRefName()).orElse(securityUtils.getDefaultDataDomain().getOrgRefName());
-      String acct = (req.accountNumber != null && !req.accountNumber.isBlank()) ? req.accountNumber :
-              SecurityContext.getPrincipalContext().map(pc -> pc.getDataDomain().getAccountNum()).orElse(securityUtils.getDefaultDataDomain().getAccountNum());
-      String tenant = (req.tenantId != null && !req.tenantId.isBlank()) ? req.tenantId :
-              SecurityContext.getPrincipalContext().map(pc -> pc.getDataDomain().getTenantId()).orElse(securityUtils.getDefaultDataDomain().getTenantId());
-      int seg = (req.dataSegment != null) ? req.dataSegment :
-              SecurityContext.getPrincipalContext().map(pc -> pc.getDataDomain().getDataSegment()).orElse(securityUtils.getDefaultDataDomain().getDataSegment());
-      String ownerId = (req.ownerId != null && !req.ownerId.isBlank()) ? req.ownerId :
-              SecurityContext.getResourceContext().map(ResourceContext::getOwnerId)
-                      .or(() -> SecurityContext.getPrincipalContext().map(PrincipalContext::getUserId))
-                      .orElse(req.identity);
-      DataDomain dd = new DataDomain(org, acct, tenant, seg, ownerId);
-
-      // Resolve identities (roles) and include the original identity
-      Set<String> identities = identityRoleResolver.resolveRolesForIdentity(req.identity, realm, applicationId, securityIdentity);
-      if (identities == null) identities = new HashSet<>();
-      // Remove the userId if present so set holds only roles; but we will still add identity explicitly below for index completeness
-      identities.remove(req.identity);
-      if (req.roles != null) identities.addAll(Arrays.asList(req.roles));
-      identities.add(req.identity);
-
-      // Build PrincipalContext for fallback evaluation when index is disabled or incomplete
-      Set<String> roleSetForPc = new HashSet<>(identities);
-      roleSetForPc.remove(req.identity);
-      String[] rolesArr = roleSetForPc.isEmpty() ? new String[0] : roleSetForPc.toArray(new String[0]);
-      PrincipalContext pc = new PrincipalContext.Builder()
-              .withDefaultRealm(realm)
-              .withApplicationId(applicationId)
-              .withDataDomain(dd)
-              .withUserId(req.identity)
-              .withRoles(rolesArr)
-              .withScope(req.scope != null ? req.scope : "api")
-              .build();
+      DataDomain dd = requestDataDomain(req.orgRefName, req.accountNumber, req.tenantId, req.dataSegment, req.ownerId, req.identity);
+      PrincipalContext pc = evaluationPrincipal(req.identity, evaluationRoles(req.identity, realm, applicationId, req.roles),
+              realm, applicationId, dd, req.scope);
 
       // Discover area->domain->actions the same way as /fd?includeActions=true
       Map<String, Map<String, Set<String>>> discovered = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
@@ -1073,40 +1171,17 @@ public class PermissionResource {
             if (!declaredAny) addDefaultActions(actions);
          }
       }
-
-      // Optional filtering
-      if (req.area != null && !req.area.isBlank()) {
-         discovered.keySet().removeIf(a -> !a.equalsIgnoreCase(req.area));
-      }
-      if (req.functionalDomain != null && !req.functionalDomain.isBlank()) {
-         for (Map.Entry<String, Map<String, Set<String>>> e : discovered.entrySet()) {
-            e.getValue().keySet().removeIf(d -> !d.equalsIgnoreCase(req.functionalDomain));
-         }
-      }
-      if (req.action != null && !req.action.isBlank()) {
-         for (Map.Entry<String, Map<String, Set<String>>> e : discovered.entrySet()) {
-            for (Map.Entry<String, Set<String>> d : e.getValue().entrySet()) {
-               d.getValue().removeIf(act -> !act.equalsIgnoreCase(req.action));
-            }
-         }
-      }
-
-      // Export optimized index snapshot for these identities scoped to dd
-      RuleIndexSnapshot snap = ruleContext.exportScopedAccessMatrixForIdentities(identities, dd);
-
-      Map<String, Map<String, List<String>>> allow = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
-      Map<String, Map<String, List<String>>> deny = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
-      Map<String, Map<String, Map<String, EvaluationActionDecision>>> decisions = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+      narrow(discovered, req.area, req.functionalDomain, req.action);
 
       // Parse evalMode and resolve modelClass/resource (parity with /check)
       com.e2eq.framework.model.securityrules.EvalMode mode = com.e2eq.framework.model.securityrules.EvalMode.LEGACY;
-      if (req != null && req.evalMode != null && !req.evalMode.isBlank()) {
+      if (req.evalMode != null && !req.evalMode.isBlank()) {
          try {
             mode = com.e2eq.framework.model.securityrules.EvalMode.valueOf(req.evalMode.trim().toUpperCase());
          } catch (IllegalArgumentException ignored) { /* keep LEGACY */ }
       }
       Class<?> mc = null;
-      if (req != null && req.modelClass != null && !req.modelClass.isBlank()) {
+      if (req.modelClass != null && !req.modelClass.isBlank()) {
          try {
             mc = Class.forName(req.modelClass.trim());
          } catch (Throwable t) {
@@ -1118,62 +1193,22 @@ public class PermissionResource {
       }
       @SuppressWarnings("unchecked")
       Class<? extends com.e2eq.framework.model.persistent.base.UnversionedBaseModel> typed = (Class<? extends com.e2eq.framework.model.persistent.base.UnversionedBaseModel>) mc;
-      java.util.Map<String, Object> resourceMap = (req != null ? req.resource : null);
 
-      // Classify each discovered action using index first (if enabled), then fall back to server evaluation
-      for (Map.Entry<String, Map<String, Set<String>>> areaEntry : discovered.entrySet()) {
-         String areaKey = areaEntry.getKey();
-         Map<String, Map<String, EvaluationActionDecision>> domDecisions = decisions.computeIfAbsent(areaKey, k -> new TreeMap<>(String.CASE_INSENSITIVE_ORDER));
-         for (Map.Entry<String, Set<String>> domEntry : areaEntry.getValue().entrySet()) {
-            String domainKey = domEntry.getKey();
-            Map<String, EvaluationActionDecision> actDecisions = domDecisions.computeIfAbsent(domainKey, k -> new TreeMap<>(String.CASE_INSENSITIVE_ORDER));
-            for (String action : domEntry.getValue()) {
-               Boolean isAllow;
-               RuleIndexSnapshot.Outcome out = null;
-               if (useIndex && snap != null && snap.isEnabled()) {
-                  out = lookupOutcome(snap, areaKey, domainKey, action);
-               }
-               EvaluationActionDecision actionDecision = new EvaluationActionDecision();
-               if (out != null) {
-                  isAllow = "ALLOW".equalsIgnoreCase(out.getEffect());
-                  actionDecision.effect = isAllow ? "ALLOW" : "DENY";
-                  actionDecision.decisionScope = "EXACT"; // index outcome is treated as exact for client purposes
-                  actionDecision.rule = out.getRule();
-                  actionDecision.priority = out.getPriority();
-                  actionDecision.finalRule = out.isFinalRule();
-                  actionDecision.source = out.getSource();
-               } else {
-                  // Fallback to server-side evaluation for exact combination
-                  ResourceContext rc = new ResourceContext.Builder()
-                          .withRealm(realm)
-                          .withApplicationId(applicationId)
-                          .withArea(areaKey)
-                          .withFunctionalDomain(domainKey)
-                          .withAction(action)
-                          .withOwnerId(ownerId)
-                          .build();
-                  SecurityCheckResponse resp = ruleContext.checkRules(pc, rc, typed, resourceMap, RuleEffect.DENY, mode);
-                  String effect = (resp.getDecision() != null ? resp.getDecision() : (resp.getFinalEffect() != null ? resp.getFinalEffect().name() : "DENY"));
-                  isAllow = "ALLOW".equalsIgnoreCase(effect);
-                  actionDecision.effect = effect;
-                  actionDecision.decisionScope = (resp.getDecisionScope() != null ? resp.getDecisionScope() : "DEFAULT");
-                  actionDecision.scopedConstraintsPresent = resp.isScopedConstraintsPresent();
-                  actionDecision.scopedConstraints = (resp.getScopedConstraints() != null ? resp.getScopedConstraints() : java.util.Collections.emptyList());
-                  actionDecision.naLabel = resp.getNaLabel();
-                  // Map winning rule metadata when available (non-index path)
-                  actionDecision.rule = resp.getWinningRuleName();
-                  actionDecision.priority = resp.getWinningRulePriority();
-                  actionDecision.finalRule = resp.getWinningRuleFinal();
-                }
-               Map<String, Map<String, List<String>>> target = isAllow ? allow : deny;
-               Map<String, List<String>> domMap = target.computeIfAbsent(areaKey, k -> new TreeMap<>(String.CASE_INSENSITIVE_ORDER));
-               List<String> acts = domMap.computeIfAbsent(domainKey, k -> new ArrayList<>());
-               acts.add(action);
-               actDecisions.put(action, actionDecision);
+      Map<String, Map<String, Map<String, EvaluationActionDecision>>> decisions =
+              engineDecisions(pc, discovered, realm, applicationId, dd.getOwnerId(), typed, req.resource, mode);
+
+      Map<String, Map<String, List<String>>> allow = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+      Map<String, Map<String, List<String>>> deny = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+      for (Map.Entry<String, Map<String, Map<String, EvaluationActionDecision>>> area : decisions.entrySet()) {
+         for (Map.Entry<String, Map<String, EvaluationActionDecision>> domain : area.getValue().entrySet()) {
+            for (Map.Entry<String, EvaluationActionDecision> action : domain.getValue().entrySet()) {
+               Map<String, Map<String, List<String>>> target = "ALLOW".equalsIgnoreCase(action.getValue().effect) ? allow : deny;
+               target.computeIfAbsent(area.getKey(), k -> new TreeMap<>(String.CASE_INSENSITIVE_ORDER))
+                       .computeIfAbsent(domain.getKey(), k -> new ArrayList<>())
+                       .add(action.getKey());
             }
          }
       }
-
       // Sort actions for stable output
       allow.values().forEach(m -> m.values().forEach(list -> list.sort(String::compareToIgnoreCase)));
       deny.values().forEach(m -> m.values().forEach(list -> list.sort(String::compareToIgnoreCase)));
@@ -1182,7 +1217,7 @@ public class PermissionResource {
       res.allow = allow;
       res.deny = deny;
       res.decisions = decisions;
-      res.evalModeUsed = (req != null && req.evalMode != null && !req.evalMode.isBlank()) ? req.evalMode.trim().toUpperCase() : com.e2eq.framework.model.securityrules.EvalMode.LEGACY.name();
+      res.evalModeUsed = (req.evalMode != null && !req.evalMode.isBlank()) ? req.evalMode.trim().toUpperCase() : com.e2eq.framework.model.securityrules.EvalMode.LEGACY.name();
       return Response.ok(res).build();
    }
 }
