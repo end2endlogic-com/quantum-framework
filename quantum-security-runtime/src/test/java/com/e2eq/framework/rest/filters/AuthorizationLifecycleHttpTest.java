@@ -153,10 +153,14 @@ class AuthorizationLifecycleHttpTest {
     }
 
     protected HttpResponse<String> call(String user, String tenant, String requestedRealm) throws Exception {
+        return call(user, tenant, requestedRealm, "lifecycle");
+    }
+
+    protected HttpResponse<String> call(String user, String tenant, String requestedRealm, String path) throws Exception {
         String token = Jwt.issuer("https://lifecycle.invalid").subject(user).upn(user)
                 .groups(Set.of("issuer-only")).claim("userId", user).claim("realm", "tenant-a")
                 .claim("azp", "source-app").expiresIn(60).sign();
-        var request = HttpRequest.newBuilder(base.resolve("lifecycle"))
+        var request = HttpRequest.newBuilder(base.resolve(path))
                 .header("Authorization", "Bearer " + token);
         if (tenant != null) request.header("X-Tenant-Id", tenant);
         if (requestedRealm != null) request.header("X-Realm", requestedRealm);

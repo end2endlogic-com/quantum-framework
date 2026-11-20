@@ -109,7 +109,20 @@ class ApplicationAccessIntegrationTest extends BaseRepoTest {
             draft.setLifecycleState(ApplicationLifecycleState.DRAFT);
             applicationRepo.save(draft);
         }
+        // Round 6: a realm named by a request parameter must be registered before the endpoint sees it.
+        com.e2eq.framework.model.security.Realm row = new com.e2eq.framework.model.security.Realm();
+        row.setRefName(realm);
+        row.setDisplayName(realm);
+        row.setDatabaseName(realm);
+        row.setEmailDomain(realm + ".example.test");
+        row.setDomainContext(new com.e2eq.framework.model.security.DomainContext(securityUtils.getSystemDataDomain(), realm));
+        try (SecurityCallScope.Scope ignored = SecurityCallScope.openIgnoringRules()) {
+            realmRepo.save(envConfigUtils.getSystemRealm(), row);
+        }
     }
+
+    @Inject
+    com.e2eq.framework.model.persistent.morphia.RealmRepo realmRepo;
 
     @AfterEach
     void cleanUp() {
@@ -119,6 +132,8 @@ class ApplicationAccessIntegrationTest extends BaseRepoTest {
         ds.find(com.e2eq.framework.model.security.UserRealmRole.class).filter(Filters.eq("realmRefName", realm))
             .delete(new DeleteOptions().multi(true));
         ds.find(Application.class).filter(Filters.in("refName", List.of(app, draftApp, "legacy-" + app, "bind-preview-" + app)))
+            .delete(new DeleteOptions().multi(true));
+        ds.find(com.e2eq.framework.model.security.Realm.class).filter(Filters.eq("refName", realm))
             .delete(new DeleteOptions().multi(true));
     }
 

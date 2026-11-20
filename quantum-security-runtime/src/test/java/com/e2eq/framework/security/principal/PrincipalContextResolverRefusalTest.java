@@ -349,6 +349,21 @@ class PrincipalContextResolverRefusalTest {
     }
 
     @Test
+    void aDelegationThatNamesNoApplicationIsRefused() {
+        refused(PrincipalResolutionError.DELEGATION_NOT_ALLOWED, 403,
+                () -> resolve(world.identity("svc-deleg@acme").applicationId(null)
+                        .actingOnBehalfOf(null, "alice@acme")));
+    }
+
+    @Test
+    void theRealmOwningTheApplicationIsNotAGrantForADelegatingService() {
+        // acme-D1 is owned by the application; with no explicit grant the service may not delegate.
+        world.credential("svc-deleg@acme").setApplicationRegEx(null);
+        refused(PrincipalResolutionError.APPLICATION_NOT_GRANTED, 403,
+                () -> resolve(world.identity("svc-deleg@acme").actingOnBehalfOf(null, "alice@acme")));
+    }
+
+    @Test
     void aDelegatingServiceWithoutDelegationScopeIsRefused() {
         world.credential("svc-deleg@acme").setAuthorizedImpersonateIds(null);
         refused(PrincipalResolutionError.DELEGATION_NOT_ALLOWED, 403,

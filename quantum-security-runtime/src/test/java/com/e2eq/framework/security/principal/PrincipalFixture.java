@@ -181,6 +181,13 @@ public final class PrincipalFixture {
             }
             return roles.isEmpty() ? new String[]{"ANONYMOUS"} : roles.toArray(String[]::new);
         }
+
+        /** The fixture models no tenant-owned groups, so no session tenant changes the roles. */
+        @Override
+        public String[] withSessionTenantGroups(String[] roles, CredentialUserIdPassword credential, String realm,
+                                                String applicationId, String sessionTenantId) {
+            return roles;
+        }
     }
 
     public final ApplicationAccessDirectory access = new FixtureAccess(this);
@@ -308,6 +315,8 @@ public final class PrincipalFixture {
         forAlice.setUserId("alice@acme");
         deleg.setAuthorizedImpersonateIds(List.of(forAlice));
         deleg.setRealmRegEx("acme-*|pooled");
+        // An explicit grant of the application (the realm owning it is not one for a delegating service).
+        deleg.setApplicationRegEx(APP);
     }
 
     public PrincipalContextResolver resolver() {

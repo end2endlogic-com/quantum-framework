@@ -23,7 +23,7 @@ public class BadRequestExceptionMapper implements ExceptionMapper<BadRequestExce
         error.setStatusMessage(exception.getMessage());
         error.setStatus(Response.Status.BAD_REQUEST.getStatusCode());
         error.setReasonMessage(String.format("Bad request: %s", exception.getMessage()));
-        error.setDebugMessage(ExceptionLoggingUtils.getStackTrace(exception));
+        error.setDebugMessage(ClientErrorDetail.stackTrace(exception));
 
         return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
     }

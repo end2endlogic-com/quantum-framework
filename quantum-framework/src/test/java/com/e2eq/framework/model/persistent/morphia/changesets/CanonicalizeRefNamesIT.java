@@ -302,9 +302,13 @@ public class CanonicalizeRefNamesIT extends BaseRepoTest {
          session.commitTransaction();
       }
       assertEquals("TENANT_ONLY_POLICY", refName(realm, "policy", id));
-      // The REST surface accepts only realms in the catalog, never an arbitrary database.
-      given().when().get("/system/migration/refnames/" + realm).then().statusCode(404);
-      given().when().get("/system/migration/refnames/admin").then().statusCode(404);
+      // The REST surface accepts only realms in the catalog, never an arbitrary database. Since round 6
+      // the request boundary (RealmParameterAdmissionFilter) refuses an unregistered or reserved realm
+      // path parameter, typed, before the endpoint opens it (was the endpoint's own 404).
+      given().when().get("/system/migration/refnames/" + realm).then().statusCode(403)
+            .body("code", org.hamcrest.Matchers.equalTo("REALM_NOT_AUTHORIZED"));
+      given().when().get("/system/migration/refnames/admin").then().statusCode(403)
+            .body("code", org.hamcrest.Matchers.equalTo("REALM_NOT_AUTHORIZED"));
    }
 
    @Test
