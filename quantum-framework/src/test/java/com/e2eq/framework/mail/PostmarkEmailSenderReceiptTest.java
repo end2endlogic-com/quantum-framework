@@ -113,9 +113,13 @@ class PostmarkEmailSenderReceiptTest {
 
     @Test
     void rejectedSendIsADeliveryFailure() {
-        var sender = sender(new FixedHttpClient(422, "{\"ErrorCode\":300}"), config("key", "noreply@example.test"));
-        assertEquals(MessageDeliveryException.Reason.DELIVERY_UNAVAILABLE,
-            assertThrows(MessageDeliveryException.class, () -> sender.deliverWithReceipt(email())).reason());
+        var sender = sender(new FixedHttpClient(422, "{\"ErrorCode\":300,\"Message\":\"Invalid 'To' address: 'user@example.test'\"}"),
+            config("key", "noreply@example.test"));
+        var refused = assertThrows(MessageDeliveryException.class, () -> sender.deliverWithReceipt(email()));
+        assertEquals(MessageDeliveryException.Reason.DELIVERY_UNAVAILABLE, refused.reason());
+        assertTrue(refused.getMessage().contains("422"));
+        assertFalse(refused.getMessage().contains("user@example.test"), "the provider's error body is not repeated");
+        assertNull(refused.getCause());
         var legacy = assertThrows(IllegalStateException.class, () -> sender.deliver(email()));
         assertTrue(legacy.getMessage().contains("422"), "deliver() keeps its exception and message");
     }

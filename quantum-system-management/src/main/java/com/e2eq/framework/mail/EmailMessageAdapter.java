@@ -11,6 +11,11 @@ import java.util.List;
  * Email as a {@link MessageChannelAdapter}: resolves the template by channel and locale,
  * renders it with Qute and hands it to the application's {@link EmailDeliveryService}
  * (SMTP, Postmark or another sender), which is used as it is.
+ *
+ * <p>Email providers plug in as an {@link EmailDeliveryService}, not as another EMAIL
+ * {@link MessageChannelAdapter}: a second EMAIL adapter makes the default
+ * {@link ChannelMessageDelivery} refuse email sends ({@code AMBIGUOUS_ADAPTER}) until the
+ * application supplies a {@link MessageDelivery} that chooses between them.
  */
 @ApplicationScoped
 public class EmailMessageAdapter implements MessageChannelAdapter {
@@ -37,7 +42,15 @@ public class EmailMessageAdapter implements MessageChannelAdapter {
 
     @Override
     public String providerId() {
-        return senders.isResolvable() ? senders.get().providerId() : "email";
+        if (!senders.isResolvable()) {
+            return "email";
+        }
+        Instance.Handle<EmailDeliveryService> handle = senders.getHandle();
+        try {
+            return handle.get().providerId();
+        } finally {
+            handle.destroy();
+        }
     }
 
     @Override
@@ -74,7 +87,13 @@ public class EmailMessageAdapter implements MessageChannelAdapter {
             .htmlBody(rendered.htmlBody())
             .textBody(rendered.textBody())
             .build();
-        DeliveryReceipt receipt = senders.get().deliverWithReceipt(email);
+        DeliveryReceipt receipt;
+        Instance.Handle<EmailDeliveryService> handle = senders.getHandle();
+        try {
+            receipt = handle.get().deliverWithReceipt(email);
+        } finally {
+            handle.destroy();
+        }
         if (receipt == null) {
             throw new MessageDeliveryException(MessageDeliveryException.Reason.DELIVERY_UNAVAILABLE,
                 "the email sender returned no receipt");

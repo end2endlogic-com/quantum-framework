@@ -32,7 +32,12 @@ class MessageDeliveryTest {
         when(instance.isResolvable()).thenReturn(beans.size() == 1);
         when(instance.isAmbiguous()).thenReturn(beans.size() > 1);
         when(instance.isUnsatisfied()).thenReturn(beans.isEmpty());
-        if (beans.size() == 1) when(instance.get()).thenReturn(beans.get(0));
+        if (beans.size() == 1) {
+            when(instance.get()).thenReturn(beans.get(0));
+            Instance.Handle<T> handle = mock(Instance.Handle.class);
+            when(handle.get()).thenReturn(beans.get(0));
+            when(instance.getHandle()).thenReturn(handle);
+        }
         when(instance.stream()).thenAnswer(invocation -> beans.stream());
         return instance;
     }
@@ -95,6 +100,13 @@ class MessageDeliveryTest {
             () -> adapter(declared, List.of(sender)).send(emailRequest("auth.magic-link", Map.of())));
         assertEquals(MessageDeliveryException.Reason.TEMPLATE_PARAMETER_MISSING, missing.reason());
         assertTrue(missing.getMessage().contains("[link]"));
+
+        var nullValue = new java.util.HashMap<String, Object>();
+        nullValue.put("link", null);
+        assertEquals(MessageDeliveryException.Reason.TEMPLATE_PARAMETER_MISSING,
+            assertThrows(MessageDeliveryException.class,
+                () -> adapter(declared, List.of(sender)).send(emailRequest("auth.magic-link", nullValue))).reason(),
+            "a null value counts as missing, not as an untyped NullPointerException");
 
         EmailTemplateResolver providerTemplate = (realm, key) -> Optional.of(new EmailTemplateDefinition(key, null, null,
             null, EmailTemplateDefinition.Origin.REALM_DB, MessageChannel.EMAIL, null, "tmpl-1", null, List.of()));

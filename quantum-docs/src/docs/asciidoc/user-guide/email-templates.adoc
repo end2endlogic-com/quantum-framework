@@ -394,7 +394,7 @@ The same template key can be sent over email, SMS or WhatsApp, and in several lo
 
 Two active variants with the same channel and locale are refused when resolved; the resolver does not pick one.
 
-`EmailTemplateResolver.resolve(realm, templateKey, channel, locale)` tries the requested locale in the realm override and then on the classpath, then the default locale the same way. The classpath layout adds a channel and an optional locale directory; `templates/email/{templateKey}/` keeps meaning email in the default locale:
+`EmailTemplateResolver.resolve(realm, templateKey, channel, locale)` tries the realm override in the requested locale and then in its default locale, so a realm's own text is never replaced by shipped classpath text. Only when the realm has nothing for the channel (no matching variant and, for email, no content of its own) is the classpath tried, again requested locale first and then the default. The classpath layout adds a channel and an optional locale directory; `templates/email/{templateKey}/` keeps meaning email in the default locale:
 
 [source,text]
 ----
@@ -427,7 +427,7 @@ DeliveryReceipt receipt = delivery.send(new MessageRequest(
 
 Delivery fails closed. A send that cannot be handed to a provider throws `MessageDeliveryException` with a `reason`: `NO_ADAPTER`, `AMBIGUOUS_ADAPTER`, `CHANNEL_NOT_SUPPORTED`, `TEMPLATE_NOT_FOUND`, `TEMPLATE_PARAMETER_MISSING`, `PROVIDER_TEMPLATE_UNSUPPORTED` or `DELIVERY_UNAVAILABLE`. Through this path `PostmarkEmailSender` refuses a missing API key or from-address (`DELIVERY_UNAVAILABLE`) instead of skipping, and returns Postmark's `MessageID` on the receipt. Its `deliver(RenderedEmail)` method still behaves as described above.
 
-The framework's default `MessageDelivery` (`ChannelMessageDelivery`) sends through the single `MessageChannelAdapter` bean registered for the recipient's channel. The framework ships one adapter, `EmailMessageAdapter`, which resolves and renders the email template and hands it to the application's `EmailDeliveryService` (Postmark, SMTP or a custom sender). SMS and WhatsApp adapters are not part of the open-source framework: an application or extension registers them as `MessageChannelAdapter` beans. To choose between several providers for one channel (per region, for example), provide your own `MessageDelivery` bean; it replaces the default.
+The framework's default `MessageDelivery` (`ChannelMessageDelivery`) sends through the single `MessageChannelAdapter` bean registered for the recipient's channel. The framework ships one adapter, `EmailMessageAdapter`, which resolves and renders the email template and hands it to the application's `EmailDeliveryService` (Postmark, SMTP or a custom sender). Email providers plug in as an `EmailDeliveryService`; registering a second EMAIL adapter makes the default refuse email sends (`AMBIGUOUS_ADAPTER`) until you supply a routing `MessageDelivery`. SMS and WhatsApp adapters are not part of the open-source framework: an application or extension registers them as `MessageChannelAdapter` beans. To choose between several providers for one channel (per region, for example), provide your own `MessageDelivery` bean; it replaces the default.
 
 A custom `EmailDeliveryService` takes part without changes: the default `deliverWithReceipt` calls `deliver` and reports `QUEUED` with no message id. A sender whose `deliver` can return without sending must override `deliverWithReceipt` and throw instead.
 

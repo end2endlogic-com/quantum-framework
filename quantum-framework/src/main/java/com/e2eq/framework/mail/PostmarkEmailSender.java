@@ -94,13 +94,13 @@ public class PostmarkEmailSender implements EmailDeliveryService {
         }
 
         Map<String, Object> payload = payload(email, from);
-        String responseBody;
-        try {
-            responseBody = post(apiKey, payload);
-        } catch (IllegalStateException e) {
+        HttpResponse<String> response = send(apiKey, payload);
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            // Postmark error bodies can name the recipient; report the status only.
             throw new MessageDeliveryException(MessageDeliveryException.Reason.DELIVERY_UNAVAILABLE,
-                "Postmark did not accept the message.", e);
+                "Postmark did not accept the message (status " + response.statusCode() + ").");
         }
+        String responseBody = response.body();
         String messageId = null;
         try {
             var messageIdNode = responseBody == null ? null : objectMapper.readTree(responseBody).get("MessageID");
@@ -145,6 +145,14 @@ public class PostmarkEmailSender implements EmailDeliveryService {
     }
 
     private String post(String apiKey, Map<String, Object> payload) {
+        HttpResponse<String> response = send(apiKey, payload);
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            throw new IllegalStateException("Postmark delivery failed with status " + response.statusCode() + ": " + response.body());
+        }
+        return response.body();
+    }
+
+    private HttpResponse<String> send(String apiKey, Map<String, Object> payload) {
         try {
             HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(POSTMARK_SEND_EMAIL_URL))
@@ -153,12 +161,7 @@ public class PostmarkEmailSender implements EmailDeliveryService {
                 .header("X-Postmark-Server-Token", apiKey)
                 .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(payload), StandardCharsets.UTF_8))
                 .build();
-
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-            if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                throw new IllegalStateException("Postmark delivery failed with status " + response.statusCode() + ": " + response.body());
-            }
-            return response.body();
+            return httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
         } catch (IOException | InterruptedException e) {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();

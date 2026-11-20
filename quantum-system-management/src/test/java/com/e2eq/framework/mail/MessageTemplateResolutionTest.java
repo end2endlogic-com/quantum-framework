@@ -87,19 +87,30 @@ class MessageTemplateResolutionTest {
     }
 
     @Test
-    void requestedLocaleOnClasspathBeatsRealmDefaultLocale() {
+    void realmOverrideBeatsShippedClasspathLocale() {
         EmailTemplate template = realmTemplate();
         template.setTemplateKey("framework-test");
         var resolver = resolverWith(template);
 
         var resolved = resolver.resolve(REALM, "framework-test", MessageChannel.EMAIL, "pt-BR").orElseThrow();
-        assertEquals("pt-BR", resolved.locale());
-        assertEquals(EmailTemplateDefinition.Origin.CLASSPATH, resolved.origin());
+        assertEquals(EmailTemplateDefinition.Origin.REALM_DB, resolved.origin(),
+            "a realm's own default-locale text is not replaced by shipped classpath text");
+        assertEquals("Realm subject", resolved.subjectTemplate());
+        assertNull(resolved.locale());
+        assertEquals(List.of("link"), resolved.parameterNames());
 
-        var defaultLocale = resolver.resolve(REALM, "framework-test", MessageChannel.EMAIL, null).orElseThrow();
-        assertEquals(EmailTemplateDefinition.Origin.REALM_DB, defaultLocale.origin());
-        assertEquals("Realm subject", defaultLocale.subjectTemplate());
-        assertEquals(List.of("link"), defaultLocale.parameterNames());
+        var noRealm = new DefaultEmailTemplateResolver(null).resolve(null, "framework-test", MessageChannel.EMAIL, "pt-BR").orElseThrow();
+        assertEquals("pt-BR", noRealm.locale(), "without a realm override the classpath locale applies");
+    }
+
+    @Test
+    void realmDocumentWithoutContentForAChannelFallsToClasspath() {
+        EmailTemplate smsOnly = realmTemplate(MessageTemplateVariant.builder().channel(MessageChannel.SMS).textTemplate("s").build());
+        smsOnly.setTemplateKey("framework-test");
+        smsOnly.setSubjectTemplate(null);
+        smsOnly.setTextTemplate(null);
+        var resolved = resolverWith(smsOnly).resolve(REALM, "framework-test", MessageChannel.EMAIL, null).orElseThrow();
+        assertEquals(EmailTemplateDefinition.Origin.CLASSPATH, resolved.origin());
     }
 
     @Test

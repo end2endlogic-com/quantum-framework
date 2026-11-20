@@ -18,8 +18,9 @@ import java.util.Optional;
 /**
  * Resolves templates from the realm's {@code email_templates} override, then the classpath.
  *
- * <p>By channel and locale: the requested locale is tried first in the realm override and
- * then on the classpath, then the default locale the same way. Classpath layout:
+ * <p>By channel and locale: the realm override is tried in the requested locale and then
+ * its default locale; only when the realm has nothing for the channel is the classpath
+ * tried the same way. A realm document with no content for a channel does not cover it. Classpath layout:
  * {@code templates/email/{key}/} (default locale, unchanged) or
  * {@code templates/{channel}/{key}/{locale}/}, each with {@code subject.txt},
  * {@code body.html} and/or {@code body.txt}.
@@ -88,12 +89,16 @@ public class DefaultEmailTemplateResolver implements EmailTemplateResolver {
             ? Optional.empty()
             : emailTemplateRepo.findActiveByTemplateKey(realm, normalizedKey);
 
+        // A realm override is authoritative for the channel in every locale it covers,
+        // so shipped classpath text never replaces a realm's own content.
         for (String candidate : locales) {
             Optional<EmailTemplateDefinition> fromRealm = override
                 .flatMap(template -> fromRealmTemplate(normalizedKey, template, channel, candidate));
             if (fromRealm.isPresent()) {
                 return fromRealm;
             }
+        }
+        for (String candidate : locales) {
             Optional<EmailTemplateDefinition> fromClasspath = fromClasspath(normalizedKey, channel, candidate);
             if (fromClasspath.isPresent()) {
                 return fromClasspath;

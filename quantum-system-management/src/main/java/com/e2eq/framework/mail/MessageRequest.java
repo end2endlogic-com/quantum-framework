@@ -34,7 +34,8 @@ public record MessageRequest(
             throw new IllegalArgumentException("templateKey is required");
         }
         templateKey = templateKey.trim();
-        parameters = parameters == null ? Map.of() : Map.copyOf(parameters);
+        // Null values are kept so a missing declared parameter is refused as TEMPLATE_PARAMETER_MISSING.
+        parameters = parameters == null ? Map.of() : java.util.Collections.unmodifiableMap(new java.util.LinkedHashMap<>(parameters));
     }
 
     /** Parameters can carry secrets (sign-in links, codes); never log them. */
