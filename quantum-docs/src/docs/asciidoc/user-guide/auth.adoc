@@ -477,6 +477,8 @@ An `EMAIL` credential signs in by proving possession of the mailbox with a singl
 
 An `EMAIL` credential may set a password as an optional second sign-in method; email sign-in stays available. The framework provides the challenge model, the verifier (`EmailChallengeVerifier`) and `AuthProvider.loginWithVerifiedEmail`; the endpoints that send and redeem the emails belong to the service that hosts sign-in.
 
+The challenge is channel-neutral: it records a `channel` (`EMAIL`, `SMS` or `WHATSAPP`), a `recipient` and an optional `redirect` the authority checked when it created the challenge. For an email challenge `email` and `recipient` are the same address; for other channels `email` is absent. Challenges stored before these fields existed read back as email challenges to their `email`. `loginWithVerifiedEmail` is for email challenges; a caller must not pass it a challenge for another channel.
+
 [[service-tokens]]
 === Service Tokens for System-to-System Integration
 
