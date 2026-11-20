@@ -189,6 +189,19 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
    }
 
    /**
+    * Identity-only service token (design {@code IDENTITY_ONLY_TOKENS_DESIGN.md} section 4):
+    * the service credential's subject and userId, and the credential id as {@code jti}. It
+    * carries no roles, realm, tenant or audience and does not expire; revoke the credential.
+    */
+   public String generateServiceIdentityToken(String subject, String userId, String credentialId) {
+      try {
+         return TokenUtils.generateServiceIdentityToken(subject, userId, credentialId, issuer);
+      } catch (IOException | NoSuchAlgorithmException | InvalidKeySpecException e) {
+         throw new RuntimeException("Failed to generate service identity token", e);
+      }
+   }
+
+   /**
     * Long-lived token for one user and one service. The signed claims are that user's
     * ({@code userId}, realm, tenant, org, account, and the granted roles) and the
     * service as both {@code aud} and {@code azp}. It does not set {@code token_type=service}.

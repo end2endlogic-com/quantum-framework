@@ -399,6 +399,51 @@ public class TokenUtils {
 	}
 
 	/**
+	 * {@code exp} of an identity-only service token. Service tokens do not expire
+	 * ({@code IDENTITY_ONLY_TOKENS_DESIGN.md} section 1): revoking the credential is how
+	 * one stops working. MicroProfile JWT verifiers refuse a token without {@code exp},
+	 * so the claim is present and set this far ahead; no caller chooses it.
+	 */
+	public static final long SERVICE_IDENTITY_LIFETIME_SECONDS = 100L * 365 * 24 * 60 * 60;
+
+	/**
+	 * Identity-only service token ({@code IDENTITY_ONLY_TOKENS_DESIGN.md} sections 1 and 4):
+	 * {@code iss}, {@code sub}, {@code userId}, {@code iat}, {@code jti} (the credential id) and
+	 * {@code token_type=service}, plus {@code scope=authToken}, which marks an access token
+	 * rather than a refresh token, and the fixed far-future {@code exp} above. No groups, realm,
+	 * tenant, organization, account, {@code aud}, {@code azp} or realm boundary: receivers
+	 * resolve roles and tenancy from the credential through Auth.
+	 */
+	public static String generateServiceIdentityToken(String subject,
+											 String userId,
+											 String credentialId,
+											 String issuer) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+		requireText(subject, "subject");
+		requireText(userId, "userId");
+		requireText(credentialId, "credentialId");
+		requireText(issuer, "issuer");
+		PrivateKey privateKey = signingKey();
+		long now = currentTimeInSecs();
+		return Jwt.claims()
+				.issuer(issuer.trim())
+				.subject(subject.trim())
+				.issuedAt(now)
+				.expiresAt(now + SERVICE_IDENTITY_LIFETIME_SECONDS)
+				.claim("userId", userId.trim())
+				.claim("jti", credentialId.trim())
+				.claim("scope", AUTH_SCOPE)
+				.claim(com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.TOKEN_TYPE_CLAIM,
+						com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.SERVICE_TOKEN_TYPE)
+				.jws().keyId(resolveSigningKeyId()).sign(privateKey);
+	}
+
+	private static void requireText(String value, String name) {
+		if (value == null || value.isBlank()) {
+			throw new ValidationException(name + " is required");
+		}
+	}
+
+	/**
 	 * Application-scoped token: mints a MULTI-audience token whose {@code aud} is the
 	 * set of applications the user is authorized for in the active realm (multi-aud
 	 * SSO — each suite app accepts a token whose {@code aud} contains its own id), and

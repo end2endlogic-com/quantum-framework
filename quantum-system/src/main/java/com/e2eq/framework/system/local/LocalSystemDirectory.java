@@ -61,7 +61,14 @@ public class LocalSystemDirectory implements SystemDirectory {
 
     @Override
     public Optional<Realm> findRealmByRefName(String refName) {
-        return realmRepo.findByRefName(refName, true, systemRealmId());
+        Optional<Realm> exact = realmRepo.findByRefName(refName, true, systemRealmId());
+        if (exact.isPresent() || refName == null || refName.isBlank()) {
+            return exact;
+        }
+        // A refName is a database name, and MongoDB refuses two databases whose names differ only
+        // in case, so a catalog lookup matches it ignoring case: X-Realm naming a mixed-case realm
+        // (a pooled app-P1) in another case is that realm. Registration stays keyed by the exact name.
+        return realmRepo.findByRefNameIgnoringCase(refName.trim(), systemRealmId());
     }
 
     @Override

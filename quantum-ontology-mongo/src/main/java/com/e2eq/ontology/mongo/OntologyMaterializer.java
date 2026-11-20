@@ -91,9 +91,10 @@ public class OntologyMaterializer {
         List<Reasoner.Edge> base = new ArrayList<>(explicitEdges != null ? explicitEdges : List.of());
         base.addAll(foreign);
 
-        List<Reasoner.Edge> extendedEdges = chainSnapshotEdges(realmId, dataDomain, entityId, base, registry);
+        Map<List<String>, List<String>> ownImages = new HashMap<>();
+        List<Reasoner.Edge> extendedEdges = chainSnapshotEdges(realmId, dataDomain, entityId, base, registry, ownImages);
         var snap = new Reasoner.EntitySnapshot(tenantId, entityId, entityType, extendedEdges);
-        var out = withoutImagesOf(reasoner.infer(snap, registry), foreign);
+        var out = withoutImagesOf(reasoner.infer(snap, registry), foreign, ownImages, extendedEdges);
 
         // 1) Upsert EXPLICIT edges as-is for traversal and cascade logic
         // Separate computed edges (from ComputedEdgeProvider) from regular explicit edges
@@ -143,7 +144,7 @@ public class OntologyMaterializer {
 
         // 2) + 3) Upsert new INFERRED edges and prune inferred edges no longer justified
         List<OntologyEdge> existingAfterUpsert = upsertAndPruneInferred(realmId, dataDomain, entityId, out, existingAll,
-                assertedKeys(List.of(), explicitEdges), changes);
+                assertedKeys(List.of(), explicitEdges), ownImages, changes);
 
         // 4) Prune explicit edges that are no longer present in the entity snapshot
         // Determine all predicates that currently exist for this source
@@ -259,7 +260,8 @@ public class OntologyMaterializer {
      * chain can take, the outgoing edges of the nodes they reach.
      */
     private List<Reasoner.Edge> chainSnapshotEdges(String realmId, DataDomain dataDomain, String entityId,
-                                                   List<Reasoner.Edge> baseEdges, OntologyRegistry registry) {
+                                                   List<Reasoner.Edge> baseEdges, OntologyRegistry registry,
+                                                   Map<List<String>, List<String>> ownImages) {
         // Build an extended snapshot that includes neighbor edges for chain inference.
         // For each explicit edge A->B, fetch B's outgoing edges so chains like [refersToB, refersToC]
         // can be evaluated to produce A->C inferred edges.
@@ -297,6 +299,9 @@ public class OntologyMaterializer {
                     // Fetch neighbor's outgoing edges from the edge repo
                     List<OntologyEdge> neighborEdges = edgeRepo.findBySrc(realmId, dataDomain, neighborId);
                     for (OntologyEdge ne : neighborEdges) {
+                        if (ne.isInferred() && entityId.equals(ownerOf(ne))) {
+                            ownImages.put(List.of(ne.getSrc(), ne.getP(), ne.getDst()), mirroredKey(ne));
+                        }
                         // Convert OntologyEdge to Reasoner.Edge
                         extendedEdges.add(new Reasoner.Edge(
                                 ne.getSrc(), ne.getSrcType(), ne.getP(),
@@ -325,7 +330,8 @@ public class OntologyMaterializer {
      */
     private List<OntologyEdge> upsertAndPruneInferred(String realmId, DataDomain dataDomain, String entityId,
                                                       Reasoner.InferenceResult out, List<OntologyEdge> existingAll,
-                                                      Set<List<String>> asserted, EdgeChanges changes) {
+                                                      Set<List<String>> asserted,
+                                                      Map<List<String>, List<String>> ownImages, EdgeChanges changes) {
         // 2) Collect new INFERRED edges. Most leave the entity; inverse and symmetric images of its
         // edges land on the other node and are owned by this entity all the same.
         Map<String, Set<String>> newByP = new HashMap<>();
@@ -343,6 +349,11 @@ public class OntologyMaterializer {
                         .filter(ex -> Objects.equals(ex.getP(), e.p()) && Objects.equals(ex.getDst(), e.dstId()))
                         .findFirst().orElse(null);
             } else {
+                // The snapshot holds the neighbours' edges too, so the reasoner also derives edges that
+                // start at a neighbour. Those are the neighbour's to write. Written from here they would
+                // replace the neighbour's own derivation (a chain edge becomes an inverse image) and the
+                // two nodes would rewrite the same edge on every re-derivation.
+                if (!mirrorsEdgeOf(e, entityId)) continue;
                 newElsewhere.add(List.of(e.srcId(), e.p(), e.dstId()));
                 existing = findEdge(realmId, dataDomain, e.srcId(), e.p(), e.dstId());
                 // The other node asserts (or computes) this edge itself: leave it as it is
@@ -373,7 +384,7 @@ public class OntologyMaterializer {
         Map<String, Set<String>> foreignByP = new HashMap<>();
         for (OntologyEdge e : existingAfterUpsert) {
             if (!e.isInferred()) continue;
-            if (ownerOf(e) != null && !entityId.equals(ownerOf(e))) {
+            if (ownedElsewhere(e, entityId, ownImages)) {
                 foreignByP.computeIfAbsent(e.getP(), k -> new HashSet<>()).add(e.getDst());
                 continue;
             }
@@ -404,12 +415,32 @@ public class OntologyMaterializer {
     /**
      * Delete the inverse and symmetric images {@code entityId} owns on other nodes, except those in
      * {@code keep} (keys {@code [src, p, dst]}), recording each removal.
+     *
+     * <p>An image is also kept while the edge it mirrors is stored at {@code entityId} as another
+     * node's inferred edge. Such a pair, two inferred images that name each other as their source
+     * and no asserted edge, is what releases that let an image overwrite the other end's assertion
+     * left behind. Neither end can tell which side asserted it, so neither removes its half: the
+     * pair stays until one end asserts the edge again (which makes it that end's own) or a reindex
+     * rebuilds both. Removing it here would also make the two ends undo each other's work on every
+     * re-derivation, and chain propagation would never settle.</p>
      */
     private void pruneImagesElsewhere(String realmId, DataDomain dataDomain, String entityId,
                                       Set<List<String>> keep, EdgeChanges changes) {
+        Set<List<String>> ownedElsewhere = null;
         for (OntologyEdge e : edgeRepo.findByDst(realmId, dataDomain, entityId)) {
             if (!e.isInferred() || !entityId.equals(ownerOf(e)) || Objects.equals(e.getSrc(), entityId)) continue;
             if (keep.contains(List.of(e.getSrc(), e.getP(), e.getDst()))) continue;
+            if (ownedElsewhere == null) {
+                ownedElsewhere = new HashSet<>();
+                for (OntologyEdge own : edgeRepo.findBySrc(realmId, dataDomain, entityId)) {
+                    String owner = own.isInferred() ? ownerOf(own) : null;
+                    if (owner != null && !owner.equals(entityId)) {
+                        ownedElsewhere.add(List.of(own.getSrc(), own.getP(), own.getDst()));
+                    }
+                }
+            }
+            List<String> mirrored = mirroredKey(e);
+            if (mirrored != null && ownedElsewhere.contains(mirrored)) continue;
             changes.removed().add(toEdgeRecord(e, dataDomain));
             edgeRepo.deleteInferredEdge(realmId, dataDomain, e.getSrc(), e.getP(), e.getDst());
         }
@@ -454,13 +485,48 @@ public class OntologyMaterializer {
      * to its own source.
      */
     static String ownerOf(OntologyEdge e) {
+        Map<?, ?> in = mirroredInput(e);
+        return in != null && in.get("src") != null ? String.valueOf(in.get("src")) : null;
+    }
+
+    /**
+     * Whether an inferred edge stored at {@code entityId} belongs to another node. An inverse or
+     * symmetric edge of one of the entity's own images ({@code ownImages}) is the entity's own: it
+     * follows from another of the entity's edges by way of that image, and goes when that edge goes.
+     */
+    private static boolean ownedElsewhere(OntologyEdge e, String entityId, Map<List<String>, List<String>> ownImages) {
+        String owner = ownerOf(e);
+        if (owner == null || owner.equals(entityId)) return false;
+        // The image this edge came from mirrors another of the entity's edges. When it mirrors this
+        // very edge the two are a pair of images naming each other, which neither end may claim.
+        List<String> source = ownImages.get(mirroredKey(e));
+        return source == null || source.equals(List.of(e.getSrc(), e.getP(), e.getDst()));
+    }
+
+    /** Whether a derived edge is the inverse or symmetric image of an edge that starts at {@code entityId}. */
+    private static boolean mirrorsEdgeOf(Reasoner.Edge e, String entityId) {
+        Reasoner.Provenance prov = e.prov().orElse(null);
+        if (prov == null || (!"inverse".equals(prov.rule()) && !"symmetric".equals(prov.rule()))) return false;
+        return prov.inputs() != null && prov.inputs().get("inputs") instanceof List<?> l && !l.isEmpty()
+                && l.get(0) instanceof Map<?, ?> in && entityId.equals(String.valueOf(in.get("src")));
+    }
+
+    /** Key {@code [src, p, dst]} of the edge an inverse or symmetric edge mirrors; {@code null} for any other edge. */
+    private static List<String> mirroredKey(OntologyEdge e) {
+        Map<?, ?> in = mirroredInput(e);
+        if (in == null || in.get("src") == null || in.get("p") == null || in.get("dst") == null) return null;
+        return List.of(String.valueOf(in.get("src")), String.valueOf(in.get("p")), String.valueOf(in.get("dst")));
+    }
+
+    /** The provenance input of an inverse or symmetric edge: the edge it mirrors. */
+    private static Map<?, ?> mirroredInput(OntologyEdge e) {
         Map<String, Object> prov = e.getProv();
         if (prov == null) return null;
         Object rule = prov.get("rule");
         if (!"inverse".equals(rule) && !"symmetric".equals(rule)) return null;
         Object inputs = prov.get("inputs");
         if (!(inputs instanceof Map<?, ?> m) || !(m.get("inputs") instanceof List<?> l) || l.isEmpty()) return null;
-        return l.get(0) instanceof Map<?, ?> in && in.get("src") != null ? String.valueOf(in.get("src")) : null;
+        return l.get(0) instanceof Map<?, ?> in ? in : null;
     }
 
     /**
@@ -489,24 +555,61 @@ public class OntologyMaterializer {
     /**
      * Drop the reasoner's inverse and symmetric images of {@code foreign} edges: those images are the
      * owning node's own edges, which this entity must not rewrite as inferred.
+     *
+     * <p>Also drop an edge derived from one of {@code ownImages} (the entity's own images that the
+     * snapshot read back from its neighbours, mapped to the edge each mirrors) when it is that same
+     * mirrored edge. An image is a consequence of the entity's edge and never a reason for it:
+     * mirrored back, it would keep the edge (and so itself) alive after the edge's real justification
+     * is gone, and would replace the edge's own derivation with an inverse. A different edge derived
+     * from an own image, such as the inverse of a symmetric image, is kept only while the edge that
+     * image mirrors is asserted in {@code snapshot} or derived in this pass: the stored image is read
+     * before it is pruned, and must not carry its consequences past the edge it came from.</p>
      */
-    private static Reasoner.InferenceResult withoutImagesOf(Reasoner.InferenceResult out, List<Reasoner.Edge> foreign) {
-        if (foreign.isEmpty()) return out;
+    private static Reasoner.InferenceResult withoutImagesOf(Reasoner.InferenceResult out, List<Reasoner.Edge> foreign,
+                                                            Map<List<String>, List<String>> ownImages,
+                                                            List<Reasoner.Edge> snapshot) {
+        if (foreign.isEmpty() && ownImages.isEmpty()) return out;
         Set<List<String>> mirrored = new HashSet<>();
         for (Reasoner.Edge f : foreign) {
             mirrored.add(List.of(f.srcId(), f.p(), f.dstId()));
         }
+        Set<List<String>> justified = new HashSet<>();
+        for (Reasoner.Edge e : snapshot) {
+            if (!e.inferred()) justified.add(List.of(e.srcId(), e.p(), e.dstId()));
+        }
         List<Reasoner.Edge> kept = new ArrayList<>();
+        Map<Reasoner.Edge, List<String>> viaOwnImage = new LinkedHashMap<>();
         for (Reasoner.Edge e : out.addEdges()) {
             String rule = e.prov().map(Reasoner.Provenance::rule).orElse(null);
-            boolean image = ("inverse".equals(rule) || "symmetric".equals(rule)) && e.prov()
+            List<String> input = !("inverse".equals(rule) || "symmetric".equals(rule)) ? null : e.prov()
                     .map(pr -> pr.inputs().get("inputs"))
                     .filter(l -> l instanceof List<?> list && !list.isEmpty() && list.get(0) instanceof Map<?, ?>)
                     .map(l -> (Map<?, ?>) ((List<?>) l).get(0))
-                    .map(in -> mirrored.contains(List.of(String.valueOf(in.get("src")), String.valueOf(in.get("p")),
-                            String.valueOf(in.get("dst")))))
-                    .orElse(false);
-            if (!image) kept.add(e);
+                    .map(in -> List.of(String.valueOf(in.get("src")), String.valueOf(in.get("p")),
+                            String.valueOf(in.get("dst"))))
+                    .orElse(null);
+            List<String> key = List.of(e.srcId(), e.p(), e.dstId());
+            if (input != null && (mirrored.contains(input) || key.equals(ownImages.get(input)))) continue;
+            if (input != null && ownImages.containsKey(input)) {
+                viaOwnImage.put(e, ownImages.get(input));
+                continue;
+            }
+            kept.add(e);
+            justified.add(key);
+        }
+        // An edge kept this way may itself be what another own image mirrors, so repeat until none is added
+        boolean added = true;
+        while (added && !viaOwnImage.isEmpty()) {
+            added = false;
+            for (var it = viaOwnImage.entrySet().iterator(); it.hasNext(); ) {
+                Map.Entry<Reasoner.Edge, List<String>> en = it.next();
+                if (!justified.contains(en.getValue())) continue;
+                Reasoner.Edge e = en.getKey();
+                kept.add(e);
+                justified.add(List.of(e.srcId(), e.p(), e.dstId()));
+                it.remove();
+                added = true;
+            }
         }
         return new Reasoner.InferenceResult(out.addTypes(), out.addLabels(), kept, out.removeEdges());
     }
@@ -532,11 +635,12 @@ public class OntologyMaterializer {
         }
         List<Reasoner.Edge> foreign = ownedElsewhere(existingAll, entityId, base);
         base.addAll(foreign);
-        List<Reasoner.Edge> extendedEdges = chainSnapshotEdges(realmId, dataDomain, entityId, base, registry);
+        Map<List<String>, List<String>> ownImages = new HashMap<>();
+        List<Reasoner.Edge> extendedEdges = chainSnapshotEdges(realmId, dataDomain, entityId, base, registry, ownImages);
         var out = withoutImagesOf(
                 reasoner.infer(new Reasoner.EntitySnapshot(dataDomain.getTenantId(), entityId, entityType, extendedEdges), registry),
-                foreign);
-        upsertAndPruneInferred(realmId, dataDomain, entityId, out, existingAll, assertedKeys(existingAll, base), changes);
+                foreign, ownImages, extendedEdges);
+        upsertAndPruneInferred(realmId, dataDomain, entityId, out, existingAll, assertedKeys(existingAll, base), ownImages, changes);
         return changes;
     }
 
@@ -593,7 +697,7 @@ public class OntologyMaterializer {
         if (existing == null || updated == null) return existing != updated;
         if (existing.isInferred() != updated.isInferred()) return true;
         if (!Objects.equals(existing.isDerived(), updated.isDerived())) return true;
-        if (!Objects.equals(existing.getProv(), updated.getProv())) return true;
+        if (!sameProvenance(existing.getProv(), updated.getProv())) return true;
         if (!Objects.equals(existing.getSupport(), updated.getSupport())) return true;
         if (!Objects.equals(existing.getProps(), updated.getProps())) return true;
         if (!Objects.equals(existing.getValidFrom(), updated.getValidFrom())) return true;
@@ -609,11 +713,35 @@ public class OntologyMaterializer {
         return false;
     }
 
+    /**
+     * Whether two provenance maps say the same thing. A stored provenance comes back as nested BSON
+     * documents and a freshly inferred one is plain maps and lists; a BSON document never equals a
+     * plain map, so comparing them directly reports every stored inferred edge as modified. A missing
+     * provenance equals an empty one.
+     */
+    static boolean sameProvenance(Map<String, Object> a, Map<String, Object> b) {
+        return Objects.equals(plain(a == null ? Map.of() : a), plain(b == null ? Map.of() : b));
+    }
+
+    private static Object plain(Object value) {
+        if (value instanceof Map<?, ?> map) {
+            Map<String, Object> out = new HashMap<>();
+            map.forEach((k, v) -> out.put(String.valueOf(k), plain(v)));
+            return out;
+        }
+        if (value instanceof Collection<?> items) {
+            List<Object> out = new ArrayList<>(items.size());
+            for (Object item : items) out.add(plain(item));
+            return out;
+        }
+        return value;
+    }
+
     private boolean isModifiedRecord(OntologyEdge existing, EdgeRecord updated) {
         if (existing == null || updated == null) return existing != null || updated != null;
         if (existing.isInferred() != updated.isInferred()) return true;
         if (!Objects.equals(existing.isDerived(), updated.isDerived())) return true;
-        if (!Objects.equals(existing.getProv(), updated.getProv())) return true;
+        if (!sameProvenance(existing.getProv(), updated.getProv())) return true;
         if (!Objects.equals(existing.getProps(), updated.getProps())) return true;
         if (!Objects.equals(existing.getValidFrom(), updated.getValidFrom())) return true;
         if (!Objects.equals(existing.getValidTo(), updated.getValidTo())) return true;
@@ -712,6 +840,7 @@ public class OntologyMaterializer {
         Map<String, Map<String, Set<String>>> entityComputedByP = new HashMap<>();
         Map<String, Map<String, Set<String>>> entityInferredByP = new HashMap<>();
         Map<String, Set<List<String>>> entityImagesElsewhere = new HashMap<>();
+        Map<String, Map<List<String>, List<String>>> entityOwnImages = new HashMap<>();
 
         int skippedCount = 0;
 
@@ -737,6 +866,7 @@ public class OntologyMaterializer {
             // Build extended edges for chain inference (same logic as single apply)
             List<Reasoner.Edge> extendedEdges = new ArrayList<>(explicitEdges != null ? explicitEdges : List.of());
             extendedEdges.addAll(foreign);
+            Map<List<String>, List<String>> ownImages = new HashMap<>();
             if (explicitEdges != null && !registry.propertyChains().isEmpty()) {
                 Set<String> visitedNodes = new HashSet<>();
                 visitedNodes.add(entityId);
@@ -756,6 +886,9 @@ public class OntologyMaterializer {
                         if (!visitedNodes.add(neighborId)) continue;
                         List<OntologyEdge> neighborEdges = edgeRepo.findBySrc(realmId, dataDomain, neighborId);
                         for (OntologyEdge ne : neighborEdges) {
+                            if (ne.isInferred() && entityId.equals(ownerOf(ne))) {
+                                ownImages.put(List.of(ne.getSrc(), ne.getP(), ne.getDst()), mirroredKey(ne));
+                            }
                             extendedEdges.add(new Reasoner.Edge(
                                     ne.getSrc(), ne.getSrcType(), ne.getP(),
                                     ne.getDst(), ne.getDstType(), ne.isInferred(),
@@ -772,7 +905,8 @@ public class OntologyMaterializer {
 
             // Run reasoner to get inferred edges
             var snap = new Reasoner.EntitySnapshot(dataDomain.getTenantId(), entityId, entityType, extendedEdges);
-            var out = withoutImagesOf(reasoner.infer(snap, registry), foreign);
+            var out = withoutImagesOf(reasoner.infer(snap, registry), foreign, ownImages, extendedEdges);
+            entityOwnImages.put(entityId, ownImages);
 
             // Collect explicit and computed edges - only if new or changed
             Map<String, Set<String>> explicitByP = new HashMap<>();
@@ -840,7 +974,9 @@ public class OntologyMaterializer {
                     if (asserted.contains(List.of(e.srcId(), e.p(), e.dstId()))) continue; // asserted here: leave it
                     existing = existingForEntity.get(e.srcId() + "|" + e.p() + "|" + e.dstId());
                 } else {
-                    // An inverse or symmetric image on another node
+                    // An inverse or symmetric image on another node; edges the reasoner derives for a
+                    // neighbour from the neighbour's own edges are the neighbour's to write
+                    if (!mirrorsEdgeOf(e, entityId)) continue;
                     imagesElsewhere.add(List.of(e.srcId(), e.p(), e.dstId()));
                     existing = findEdge(realmId, dataDomain, e.srcId(), e.p(), e.dstId());
                     if (existing != null && !existing.isInferred()) continue; // asserted there: leave it
@@ -912,8 +1048,7 @@ public class OntologyMaterializer {
             for (OntologyEdge e : existingMap.values()) {
                 if (e.isInferred()) {
                     existingInferredPreds.add(e.getP());
-                    String owner = ownerOf(e);
-                    if (owner != null && !owner.equals(entityId)) {
+                    if (ownedElsewhere(e, entityId, entityOwnImages.getOrDefault(entityId, Map.of()))) {
                         foreignByP.computeIfAbsent(e.getP(), k -> new HashSet<>()).add(e.getDst());
                     }
                 } else if (Boolean.TRUE.equals(e.isDerived())) {

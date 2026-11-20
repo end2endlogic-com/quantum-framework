@@ -242,6 +242,24 @@ MigrationService also exposes programmatic index utilities used by the Migration
 - MigrationService.checkDataBaseVersion() compares the stored DatabaseVersion in each well‑known realm to quantum.database.version and throws a DatabaseMigrationException when lower than required. This prevents the app from running against an incompatible schema.
 - MigrationService.checkInitialized(realm) is a convenience that asserts DatabaseVersion exists and is >= required version; helpful for preflight checks.
 
+=== A database ahead of the code
+
+The version is semantic, so a difference in the major component means the schema is not compatible.
+
+[cols="2,3",options="header"]
+|===
+| Stored version against `quantum.database.version` | Result
+| No `DatabaseVersion` | Refused with `DatabaseMigrationException`: run migrations.
+| Lower | Refused with `DatabaseMigrationException`: run migrations. Startup runs them for the realms this service owns.
+| Equal | Served.
+| Higher by a minor or patch version | Served, and logged as a warning.
+| Higher by a major version | Refused with `DatabaseAheadOfCodeException`. The message names the realm and both versions.
+|===
+
+`DatabaseAheadOfCodeException` is a `DatabaseMigrationException`, so `MigrationCheckRequestFilter` refuses requests to that realm like any other version mismatch. It differs at startup: no change set in older code can bring a newer database back, so startup does not try to migrate a startup realm in this state. It logs the message and fails. Deploy code built for that database version, or restore the database; do not lower the stored version by hand.
+
+A rollback of the code across a major database version is therefore refused. Plan the rollback with the data: restore the database, or write the downgrade as an explicit migration first.
+
 == Notes and best practices
 
 - Make change sets idempotent: Always check for existing records before creating/updating indexes or documents.

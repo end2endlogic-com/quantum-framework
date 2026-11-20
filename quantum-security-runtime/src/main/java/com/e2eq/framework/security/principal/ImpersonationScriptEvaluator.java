@@ -14,8 +14,21 @@ import java.util.Objects;
  * {@code SecurityFilter.runScript}: runtime configuration
  * ({@code quantum.security.scripting.*}) wins; the constructor values apply only when no
  * configuration is available.
+ *
+ * <p>A script that runs answers {@code true} or {@code false}; anything but a boolean {@code true}
+ * is {@code false}. A script that cannot run (the GraalJS engine fails to start, for example
+ * because its resource cache directory is not writable, the script does not parse or throws, or it
+ * times out) is not a {@code false}: it is logged at ERROR and raised as
+ * {@link ScriptEvaluationException}, so a deployment fault is never read as a policy decision.
  */
 public class ImpersonationScriptEvaluator {
+
+    /** The impersonation script could not be evaluated; the cause says why. */
+    public static class ScriptEvaluationException extends RuntimeException {
+        public ScriptEvaluationException(String message, Throwable cause) {
+            super(message, cause);
+        }
+    }
 
     private static final java.util.concurrent.atomic.AtomicBoolean WARNED_PERMISSIVE =
             new java.util.concurrent.atomic.AtomicBoolean(false);
@@ -88,8 +101,7 @@ public class ImpersonationScriptEvaluator {
                 Value v = c.eval("js", script);
                 return v.isBoolean() ? v.asBoolean() : false;
             } catch (Throwable t) {
-                Log.warn("Script execution failed in permissive mode; returning false", t);
-                return false;
+                throw failed(userId, realm, "failed in permissive mode", t);
             }
         }
 
@@ -128,14 +140,25 @@ public class ImpersonationScriptEvaluator {
             Boolean result = fut.get(Math.max(1L, timeoutMs), java.util.concurrent.TimeUnit.MILLISECONDS);
             return result;
         } catch (java.util.concurrent.TimeoutException te) {
-            Log.warnf("Impersonation script timed out after %d ms; returning false", (timeoutMs <= 0 ? 1500L : timeoutMs));
-            return false;
-        } catch (Throwable t) {
-            Log.warn("Impersonation script execution failed; returning false", t);
-            return false;
+            throw failed(userId, realm, "timed out after " + timeoutMs + " ms", te);
+        } catch (java.util.concurrent.ExecutionException ee) {
+            throw failed(userId, realm, "failed", ee.getCause() == null ? ee : ee.getCause());
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            throw failed(userId, realm, "was interrupted", ie);
+        } catch (RuntimeException re) {
+            throw failed(userId, realm, "failed", re);
         } finally {
             executor.shutdownNow();
         }
 
+    }
+
+    private static ScriptEvaluationException failed(String userId, String realm, String what, Throwable cause) {
+        // The cause is logged with the detail; the message, which a refusal returns, stays generic.
+        Log.errorf(cause, "impersonateFilterScript of %s in realm %s could not be evaluated: %s (%s)",
+                userId, realm, what, cause.getClass().getName());
+        return new ScriptEvaluationException(String.format(
+                "the delegation scope of %s in realm %s could not be evaluated", userId, realm), cause);
     }
 }

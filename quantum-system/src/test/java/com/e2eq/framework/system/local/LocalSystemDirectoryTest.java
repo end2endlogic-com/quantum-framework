@@ -61,6 +61,27 @@ class LocalSystemDirectoryTest {
         assertFalse(SecurityContext.isIgnoringRules());
     }
 
+    @Test
+    void aRealmIsFoundByItsRefNameInAnyCaseButTheExactNameWins() {
+        RealmRepo realmRepo = mock(RealmRepo.class);
+        EnvConfigUtils env = mock(EnvConfigUtils.class);
+        when(env.getSystemRealm()).thenReturn("quantum-system");
+        Realm pooled = new Realm();
+        pooled.setRefName("helixor-code-P1");
+        when(realmRepo.findByRefName(eq("helixor-code-P1"), eq(true), anyString())).thenReturn(java.util.Optional.of(pooled));
+        when(realmRepo.findByRefName(eq("HELIXOR-CODE-p1"), eq(true), anyString())).thenReturn(java.util.Optional.empty());
+        when(realmRepo.findByRefNameIgnoringCase(eq("HELIXOR-CODE-p1"), anyString())).thenReturn(java.util.Optional.of(pooled));
+        when(realmRepo.findByRefName(eq("unknown"), eq(true), anyString())).thenReturn(java.util.Optional.empty());
+        when(realmRepo.findByRefNameIgnoringCase(eq("unknown"), anyString())).thenReturn(java.util.Optional.empty());
+
+        LocalSystemDirectory directory = new LocalSystemDirectory(realmRepo, mock(CredentialRepo.class), env);
+
+        assertSame(pooled, directory.findRealmByRefName("helixor-code-P1").orElseThrow());
+        verify(realmRepo, never()).findByRefNameIgnoringCase(eq("helixor-code-P1"), anyString());
+        assertSame(pooled, directory.findRealmByRefName("HELIXOR-CODE-p1").orElseThrow());
+        assertTrue(directory.findRealmByRefName("unknown").isEmpty());
+    }
+
     private static EntityReference application(String refName) {
         return EntityReference.builder().entityType("Application")
             .entityRefName(refName).entityDisplayName(refName).build();

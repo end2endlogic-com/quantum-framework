@@ -53,6 +53,11 @@ public final class ApplicationDeclarationGate implements SeedPackGate {
         List<FunctionalArea> areas(String realm);
 
         List<FunctionalDomain> domains(String realm);
+
+        /** The applications already registered, so a realm one of them declares is not claimed twice. */
+        default List<Application> applications(String realm) {
+            return List.of();
+        }
     }
 
     private final VocabularyEnforcement enforcement;
@@ -102,7 +107,8 @@ public final class ApplicationDeclarationGate implements SeedPackGate {
                 convert(rows.get(COLLECTION_POLICY), Policy.class, diagnostics));
         String realm = context.getRealm();
         diagnostics.addAll(ApplicationDeclarationValidator.validate(declaration,
-                ApplicationDeclarationValidator.heldVocabulary(applicationId, held.areas(realm), held.domains(realm)),
+                ApplicationDeclarationValidator.heldVocabulary(applicationId, held.areas(realm), held.domains(realm),
+                        held.applications(realm)),
                 enforcement));
         report(pack, applicationId, diagnostics);
     }

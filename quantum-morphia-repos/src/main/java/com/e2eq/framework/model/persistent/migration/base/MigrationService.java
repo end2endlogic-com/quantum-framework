@@ -7,6 +7,7 @@ import com.e2eq.framework.model.persistent.morphia.ChangeSetRecordRepo;
 import com.e2eq.framework.model.persistent.morphia.DatabaseVersionRepo;
 
 import com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper;
+import com.e2eq.framework.exceptions.DatabaseAheadOfCodeException;
 import com.e2eq.framework.exceptions.DatabaseMigrationException;
 import com.e2eq.framework.model.securityrules.SecurityCallScope;
 import com.e2eq.framework.util.SecurityUtils;
@@ -180,6 +181,10 @@ public class MigrationService {
       Log.infof("### Realm %s exists, checking if it is initialized", realm);
       try {
          checkInitialized(realm);
+      } catch (DatabaseAheadOfCodeException e) {
+         // Older code against a newer database: no change set here can help, so startup fails.
+         Log.errorf("    ### Realm %s cannot be served by this code: %s", realm, e.getMessage());
+         throw e;
       } catch (DatabaseMigrationException e) {
          Log.warnf("    ### Realm %s is not initialized or is out of date (%s), initializing it", realm, e.getMessage());
          migrateRealmSynchronously(realm);
@@ -311,6 +316,7 @@ public class MigrationService {
       if (currentSemVersion.compareTo(requiredSemVersion) < 0) {
          throw new DatabaseMigrationException(realm, currentVersion.getCurrentVersionString(), targetDatabaseVersion);
       }
+      refuseMajorAhead(realm, currentSemVersion, requiredSemVersion);
 
       // Check for pending changesets with mismatched checksums or version bumps
       Datastore datastore = morphiaDataStoreWrapper.getDataStore(realm);
@@ -445,6 +451,17 @@ public class MigrationService {
       return databaseVersionRepo.findCurrentVersion(datastore);
    }
 
+   /**
+    * Refuse a database whose major version is higher than the major version this code requires.
+    * A database ahead by a minor or patch version stays compatible under semantic versioning and
+    * is only logged by the caller.
+    */
+   static void refuseMajorAhead (String realm, Semver current, Semver required) {
+      if (current.getMajor() > required.getMajor()) {
+         throw new DatabaseAheadOfCodeException(realm, current.getVersion(), required.getVersion());
+      }
+   }
+
    public void migrationRequired (Datastore datastore, String requiredVersion) {
 
       Semver requiredSemver = Semver.parse(requiredVersion);
@@ -458,6 +475,7 @@ public class MigrationService {
          if (odbVersion.get().getCurrentSemVersion().isLowerThan(requiredVersion)) {
             throw new DatabaseMigrationException(datastore.getDatabase().getName(), odbVersion.get().toString(), requiredVersion);
          }
+         refuseMajorAhead(datastore.getDatabase().getName(), odbVersion.get().getCurrentSemVersion(), requiredSemver);
 
       } else
          throw new IllegalStateException(String.format("Empty database version collection found for  dataStore:%s, dataStore needs to be initialized", datastore.getDatabase().getName()));

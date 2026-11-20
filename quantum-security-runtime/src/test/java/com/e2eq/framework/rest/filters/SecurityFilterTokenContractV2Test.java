@@ -143,11 +143,11 @@ class SecurityFilterTokenContractV2Test {
     void aV1TokenKeepsTheSignedClaimsPathUntilStep4() throws Exception {
         SecurityFilter filter = filter(Map.of("sub", "sub-alice", "realm", "acme-D1", "tenantId", "acme-t"));
         Method method = SecurityFilter.class.getDeclaredMethod("localCredentialRequest",
-                ContainerRequestContext.class, String.class, String.class);
+                ContainerRequestContext.class, String.class, String.class, boolean.class);
         method.setAccessible(true);
         PrincipalContextRequest request;
         try {
-            request = (PrincipalContextRequest) method.invoke(filter, request(Map.of()), null, null);
+            request = (PrincipalContextRequest) method.invoke(filter, request(Map.of()), null, null, false);
         } catch (InvocationTargetException e) {
             throw (Exception) e.getCause();
         }
@@ -176,7 +176,12 @@ class SecurityFilterTokenContractV2Test {
         filter.credentialRepo = world.credentialRepo;
         filter.identityRoleResolver = world.roleResolver;
         filter.securityUtils = world.securityUtils;
-        filter.accessDirectory = world.access;
+        @SuppressWarnings("unchecked")
+        jakarta.enterprise.inject.Instance<com.e2eq.framework.model.persistent.morphia.ApplicationAccessDirectory> directory =
+                org.mockito.Mockito.mock(jakarta.enterprise.inject.Instance.class);
+        org.mockito.Mockito.when(directory.isResolvable()).thenReturn(true);
+        org.mockito.Mockito.when(directory.get()).thenReturn(world.access);
+        filter.accessDirectory = directory;
         filter.sessionApplicationId = Optional.of(PrincipalFixture.APP);
         return filter;
     }
