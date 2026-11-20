@@ -1,5 +1,6 @@
 package com.e2eq.framework.security.principal;
 
+import com.e2eq.framework.model.persistent.base.ActiveStatus;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
 import com.e2eq.framework.model.security.DataDomainPolicyEntry;
 import com.e2eq.framework.model.securityrules.PrincipalContext;
@@ -54,6 +55,18 @@ class IdentityOnlySignedTenantSelectionTest {
     void aPlatformOperationSelectsNoTenantWhenNoneIsRequested() {
         // Several reachable tenants and no default: selection would refuse, but none is needed.
         resolve(v2("alice@acme", null, true));
+    }
+
+    @Test
+    void aDisabledCredentialsV2TokenIsRefusedAtTheAuthority() {
+        world.credential("alice@acme").setDataDomainPolicy(
+                PrincipalFixture.policy(DataDomainPolicyEntry.ResolutionMode.FIXED, "tenant-a"));
+        for (ActiveStatus status : new ActiveStatus[] {ActiveStatus.INACTIVE, ActiveStatus.DELETED}) {
+            world.credential("alice@acme").setActiveStatus(status);
+            PrincipalResolutionException refusal = assertThrows(PrincipalResolutionException.class,
+                    () -> resolve(v2("alice@acme", null, false)));
+            assertEquals(PrincipalResolutionError.PRINCIPAL_DISABLED, refusal.error());
+        }
     }
 
     @Test

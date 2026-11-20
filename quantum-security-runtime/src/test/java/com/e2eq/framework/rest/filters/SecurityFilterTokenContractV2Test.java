@@ -97,13 +97,25 @@ class SecurityFilterTokenContractV2Test {
 
     @Test
     void xTenantIdIsCheckedAgainstTheAssignment() {
+        // The filter selects the tenant from X-Tenant-Id (none on a SelectsIssuerTenant operation)
+        // and passes its selection; the header is not read again.
         PrincipalContext context = filter(V2).resolveIdentityOnlyAccessToken(
-                request(Map.of("X-Tenant-Id", "tenant-b")), "pooled", null).context();
+                request(Map.of("X-Tenant-Id", "tenant-b")), "pooled", "tenant-b").context();
         assertEquals("tenant-b", context.getDataDomain().getTenantId());
         RemotePrincipalResolutionException refused = assertThrows(RemotePrincipalResolutionException.class,
                 () -> filter(V2).resolveIdentityOnlyAccessToken(
-                        request(Map.of("X-Tenant-Id", "tenant-z")), "pooled", null));
+                        request(Map.of("X-Tenant-Id", "tenant-z")), "pooled", "tenant-z"));
         assertEquals("TENANT_NOT_AUTHORIZED", refused.code());
+    }
+
+    @Test
+    void aTenantTheFilterDidNotSelectIsNotTakenFromTheHeader() {
+        // A SelectsIssuerTenant operation: the filter passes no tenant although X-Tenant-Id is set,
+        // so the header's tenant is not selected (two reachable tenants, no default: selection required).
+        RemotePrincipalResolutionException refused = assertThrows(RemotePrincipalResolutionException.class,
+                () -> filter(V2).resolveIdentityOnlyAccessToken(
+                        request(Map.of("X-Tenant-Id", "tenant-b")), "pooled", null));
+        assertEquals("TENANT_SELECTION_REQUIRED", refused.code());
     }
 
     @Test

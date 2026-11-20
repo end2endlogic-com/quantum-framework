@@ -175,17 +175,28 @@ final class RepoSecurityContextResolver {
     /**
      * The application of a principal context rebuilt from the identity: this application's
      * configured id; else, with none configured, the application a v1 token's provider recorded
-     * ({@link #identityApplication()}); else, at the identity authority, its own application. A
-     * token contract v2 identity records no application, so at Auth it takes Auth's own, as a v1
-     * token signed in to it did. Without an application, application-scoped policies, denies
-     * included, would not apply.
+     * ({@link #identityApplication()}); else, at the identity authority and only for a token
+     * contract v2 user access token, its own application. A v2 access token records no
+     * application, so at Auth it takes Auth's own, as a v1 token signed in to it did. Any other
+     * identity without one (a v1 or v2 service token) keeps none, as SecurityFilter resolves it.
      */
     String rebuiltApplication() {
         if (applicationId != null) {
             return applicationId;
         }
         String recorded = identityApplication();
-        return recorded != null ? recorded : authorityApplicationId;
+        return recorded != null || !identityOnlyAccessToken() ? recorded : authorityApplicationId;
+    }
+
+    private boolean identityOnlyAccessToken() {
+        if (securityIdentity == null) return false;
+        Object value = securityIdentity.getPrincipal() instanceof org.eclipse.microprofile.jwt.JsonWebToken jwt
+                ? jwt.getClaim("token_type")
+                : null;
+        if (value == null) {
+            value = securityIdentity.getAttribute("token_type");
+        }
+        return com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.isAccessTokenType(value);
     }
 
     /**

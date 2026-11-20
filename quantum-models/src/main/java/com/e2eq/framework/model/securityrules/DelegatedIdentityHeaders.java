@@ -26,4 +26,13 @@ public final class DelegatedIdentityHeaders {
 
     private DelegatedIdentityHeaders() {
     }
+
+    /**
+     * True for the {@code token_type} claim value of a token contract v2 user access token. Only
+     * such a token falls back to the identity authority's own application: a v1 token (role-bearing,
+     * service or user) and a v2 service token keep the application they resolved for.
+     */
+    public static boolean isAccessTokenType(Object tokenTypeClaim) {
+        return tokenTypeClaim != null && ACCESS_TOKEN_TYPE.equalsIgnoreCase(String.valueOf(tokenTypeClaim).trim());
+    }
 }

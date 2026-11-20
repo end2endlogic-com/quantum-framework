@@ -113,19 +113,34 @@ public class PermissionActionDependencyResolver implements ActionDependencyResol
     /**
      * No resolved principal application: this application's configured id; only when none is
      * configured, a v1 identity's azp, so application-scoped policies (denies included) still
-     * apply; else, at the identity authority, its own application (a token contract v2 identity
-     * names none). The azp fallback is deleted with the claims path.
+     * apply; else, at the identity authority and only for a token contract v2 user access token
+     * (which names none), its own application. Any other identity without azp (a v1 or v2 service
+     * token) keeps no application, as SecurityFilter resolves it. The azp fallback is deleted with
+     * the claims path.
      */
-    private String configuredApplicationId() {
+    String configuredApplicationId() {
         String configured = receivingApplication == null ? null : receivingApplication.applicationId();
         if (configured != null) {
             return configured;
         }
         String recorded = recordedApplicationId();
-        if (recorded != null || receivingApplication == null) {
+        if (recorded != null || receivingApplication == null || !identityOnlyAccessToken()) {
             return recorded;
         }
         return receivingApplication.identityAuthorityApplicationId();
+    }
+
+    private boolean identityOnlyAccessToken() {
+        if (securityIdentity == null) {
+            return false;
+        }
+        Object value = securityIdentity.getPrincipal() instanceof org.eclipse.microprofile.jwt.JsonWebToken jwt
+                ? jwt.getClaim("token_type")
+                : null;
+        if (value == null) {
+            value = securityIdentity.getAttribute("token_type");
+        }
+        return com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.isAccessTokenType(value);
     }
 
     private String recordedApplicationId() {

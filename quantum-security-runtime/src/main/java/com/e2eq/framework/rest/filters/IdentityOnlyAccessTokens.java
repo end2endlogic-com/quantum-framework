@@ -88,19 +88,24 @@ final class IdentityOnlyAccessTokens {
         requireResolvable(trustTokenClaims, application, null, resolver);
     }
 
-    static PrincipalContextRequest request(JsonWebToken token, Target target, String realm,
+    /**
+     * @param tenantId the tenant the caller selected for this operation (SecurityFilter's selection:
+     *                 none on an operation that selects the issuer's tenant), never read here from
+     *                 the X-Tenant-Id header
+     */
+    static PrincipalContextRequest request(JsonWebToken token, Target target, String realm, String tenantId,
                                            UnaryOperator<String> header, boolean tenantSelectionOptional) {
         return target.authority()
-                ? authorityRequest(token, target.application(), realm, header, tenantSelectionOptional)
-                : request(token, target.application(), realm, header, tenantSelectionOptional);
+                ? authorityRequest(token, target.application(), realm, tenantId, header, tenantSelectionOptional)
+                : request(token, target.application(), realm, tenantId, header, tenantSelectionOptional);
     }
 
-    static PrincipalContextRequest request(JsonWebToken token, String application, String realm,
+    static PrincipalContextRequest request(JsonWebToken token, String application, String realm, String tenantId,
                                            UnaryOperator<String> header, boolean tenantSelectionOptional) {
         return PrincipalContextRequest.identity(text(token.getClaim("sub")), text(token.getClaim("userId")))
                 .applicationId(application)
                 .realm(trimToNull(realm))
-                .tenantId(trimToNull(header.apply("X-Tenant-Id")))
+                .tenantId(trimToNull(tenantId))
                 .tenantSelectionOptional(tenantSelectionOptional)
                 .impersonate(trimToNull(header.apply("X-Impersonate-Subject")),
                         trimToNull(header.apply("X-Impersonate-UserId")))
@@ -114,14 +119,15 @@ final class IdentityOnlyAccessTokens {
      * credential path a v1 token takes there), with no token claim beyond the identity. The realm,
      * tenant and roles a v1 token carried are not in a v2 token, so the realm is the request's
      * selection (X-Realm), else the identity's realm for Auth's application, else the credential's
-     * home realm ({@link #resolve(PrincipalContextResolver, JsonWebToken, Target, String, UnaryOperator, boolean)}), the tenant the request's selection else
+     * home realm ({@link #resolve(PrincipalContextResolver, JsonWebToken, Target, String, String, UnaryOperator, boolean)}), the tenant the request's selection else
      * the identity's default tenant in that realm (as identity mode selects it), and the roles the credential's grants in that realm for {@code application};
      * application admission does not apply, exactly as it does not for a v1 token there (Auth names
      * no session application). The application is Auth's own, where a v1 token supplied its
      * {@code azp}, so application-scoped policies apply as they did.
      */
     static PrincipalContextRequest authorityRequest(JsonWebToken token, String application, String realm,
-                                                    UnaryOperator<String> header, boolean tenantSelectionOptional) {
+                                                    String tenantId, UnaryOperator<String> header,
+                                                    boolean tenantSelectionOptional) {
         var claims = new PrincipalContextRequest.SignedClaims(null, null, null, false,
                 trimToNull(header.apply("X-Realm")),
                 trimToNull(header.apply(DelegatedIdentityHeaders.ORIGINAL_SUBJECT)),
@@ -130,7 +136,7 @@ final class IdentityOnlyAccessTokens {
         PrincipalContextRequest.Builder builder = PrincipalContextRequest.signedTokenClaims(text(token.getClaim("sub")), claims)
                 .applicationId(application)
                 .realm(trimToNull(realm))
-                .tenantId(trimToNull(header.apply("X-Tenant-Id")))
+                .tenantId(trimToNull(tenantId))
                 .impersonate(trimToNull(header.apply("X-Impersonate-Subject")),
                         trimToNull(header.apply("X-Impersonate-UserId")))
                 .actingOnBehalfOf(trimToNull(header.apply(DelegatedIdentityHeaders.EFFECTIVE_SUBJECT)),
@@ -162,7 +168,7 @@ final class IdentityOnlyAccessTokens {
      * in to, a v2 token names none.
      */
     static PrincipalContextResolution resolve(PrincipalContextResolver resolver, JsonWebToken token, Target target,
-                                              String realm, UnaryOperator<String> header,
+                                              String realm, String tenantId, UnaryOperator<String> header,
                                               boolean tenantSelectionOptional) {
         return resolve(resolver, () -> {
             String selected = trimToNull(realm);
@@ -171,7 +177,7 @@ final class IdentityOnlyAccessTokens {
                     && trimToNull(header.apply("X-Impersonate-UserId")) == null) {
                 selected = resolver.identityRealmFor(text(token.getClaim("sub")), target.application());
             }
-            return request(token, target, selected, header, tenantSelectionOptional);
+            return request(token, target, selected, tenantId, header, tenantSelectionOptional);
         });
     }
 

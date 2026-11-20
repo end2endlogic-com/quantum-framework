@@ -169,7 +169,11 @@ public class PrincipalContextResolver {
         boolean identity = request.identityOnly();
 
         CredentialUserIdPassword caller = findCredential(request);
-        if (identity && credentialDisabled(caller)) {
+        // A token contract v2 access token at the identity authority resolves in signed mode with
+        // no claims, but, like identity mode, from the credential: a disabled credential is refused.
+        boolean identityOnlyToken = !identity && request.signedClaims() != null
+                && request.signedClaims().identityOnlyToken();
+        if ((identity || identityOnlyToken) && credentialDisabled(caller)) {
             throw refusal(PrincipalResolutionError.PRINCIPAL_DISABLED,
                     "Credential for '" + caller.getUserId() + "' is " + caller.getActiveStatus());
         }
