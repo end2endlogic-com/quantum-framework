@@ -2,6 +2,7 @@ package com.e2eq.framework.model.persistent.morphia;
 
 import com.e2eq.framework.model.auth.EmailChallenge;
 import com.e2eq.framework.model.auth.EmailChallengeRepository;
+import com.e2eq.framework.model.messaging.MessageChannel;
 import com.e2eq.framework.model.security.EmailChallengeRecord;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.model.IndexOptions;
@@ -48,7 +49,12 @@ public class EmailChallengeRepo extends MorphiaRepo<EmailChallengeRecord> implem
     }
 
     public void revokeOtherPending(EmailChallenge current) {
-        collection().updateMany(and(eq("email", current.email()), eq("applicationId", current.applicationId()),
+        // Email challenges match on the stored email field, which records written before
+        // channels also carry; other channels match on channel and recipient.
+        var sameRecipient = current.channel() == MessageChannel.EMAIL
+                ? eq("email", current.email())
+                : and(eq("channel", current.channel().name()), eq("recipient", current.recipient()));
+        collection().updateMany(and(sameRecipient, eq("applicationId", current.applicationId()),
                         eq("purpose", current.purpose().name()), ne("challengeId", current.id()),
                         in("state", EmailChallenge.State.PENDING.name(), EmailChallenge.State.PENDING_DELIVERY.name())),
                 combine(set("state", EmailChallenge.State.REVOKED.name()), inc("revision", 1)));

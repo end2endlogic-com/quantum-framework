@@ -1,6 +1,7 @@
 package com.e2eq.framework.mail;
 
 import com.e2eq.framework.config.PostMarkConfig;
+import com.e2eq.framework.model.messaging.MessageChannel;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkus.logging.Log;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -13,6 +14,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -61,6 +63,58 @@ public class PostmarkEmailSender implements EmailDeliveryService {
             return;
         }
 
+        post(apiKey, payload(email, from));
+    }
+
+    @Override
+    public String providerId() {
+        return "postmark";
+    }
+
+    /**
+     * Same send as {@link #deliver}, but fails closed: an unconfigured API key or sender is
+     * refused instead of skipped, and the receipt carries Postmark's {@code MessageID}.
+     */
+    @Override
+    public DeliveryReceipt deliverWithReceipt(RenderedEmail email) {
+        Objects.requireNonNull(email, "Rendered email is required.");
+
+        String apiKey = normalize(postMarkConfig.apiKey().orElse(null));
+        if (apiKey == null) {
+            throw new MessageDeliveryException(MessageDeliveryException.Reason.DELIVERY_UNAVAILABLE,
+                "Postmark API key is not configured.");
+        }
+        String from = normalize(email.getFrom());
+        if (from == null) {
+            from = normalize(postMarkConfig.defaultFromEmailAddress().orElse(null));
+        }
+        if (from == null) {
+            throw new MessageDeliveryException(MessageDeliveryException.Reason.DELIVERY_UNAVAILABLE,
+                "No from address is configured for Postmark.");
+        }
+
+        Map<String, Object> payload = payload(email, from);
+        String responseBody;
+        try {
+            responseBody = post(apiKey, payload);
+        } catch (IllegalStateException e) {
+            throw new MessageDeliveryException(MessageDeliveryException.Reason.DELIVERY_UNAVAILABLE,
+                "Postmark did not accept the message.", e);
+        }
+        String messageId = null;
+        try {
+            var messageIdNode = responseBody == null ? null : objectMapper.readTree(responseBody).get("MessageID");
+            if (messageIdNode != null && messageIdNode.isTextual() && !messageIdNode.asText().isBlank()) {
+                messageId = messageIdNode.asText();
+            }
+        } catch (IOException e) {
+            // Postmark accepted the message (2xx); an unreadable body only loses the id.
+            Log.warn("Postmark accepted the message but its response had no readable MessageID.");
+        }
+        return new DeliveryReceipt(providerId(), MessageChannel.EMAIL, messageId, DeliveryStatus.QUEUED, Instant.now(), null);
+    }
+
+    private Map<String, Object> payload(RenderedEmail email, String from) {
         String to = joinEmails(email.getTo());
         if (to == null) {
             throw new IllegalArgumentException("At least one email recipient is required.");
@@ -87,7 +141,10 @@ public class PostmarkEmailSender implements EmailDeliveryService {
         addIfPresent(payload, "Bcc", joinEmails(email.getBcc()));
         addIfPresent(payload, "ReplyTo", normalize(email.getReplyTo()));
         addIfPresent(payload, "MessageStream", normalize(email.getMessageStream()));
+        return payload;
+    }
 
+    private String post(String apiKey, Map<String, Object> payload) {
         try {
             HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(POSTMARK_SEND_EMAIL_URL))
@@ -101,6 +158,7 @@ public class PostmarkEmailSender implements EmailDeliveryService {
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 throw new IllegalStateException("Postmark delivery failed with status " + response.statusCode() + ": " + response.body());
             }
+            return response.body();
         } catch (IOException | InterruptedException e) {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();

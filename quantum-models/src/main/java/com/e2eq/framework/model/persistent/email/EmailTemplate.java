@@ -14,8 +14,15 @@ import lombok.NoArgsConstructor;
 import lombok.ToString;
 import lombok.experimental.SuperBuilder;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
- * Realm-scoped email template override rendered by Qute.
+ * Realm-scoped template override rendered by Qute.
+ *
+ * <p>One document per template key. Its subject/html/text fields are the email template in
+ * the default locale (unchanged since before multi-channel delivery). {@link #variants} add
+ * other channels and locales of the same key; see {@link MessageTemplateVariant}.
  */
 @Entity(value = "email_templates", useDiscriminator = false)
 @RegisterForReflection
@@ -53,6 +60,14 @@ public class EmailTemplate extends BaseModel {
     private String functionalArea;
     private String sampleContextJson;
     private String schemaVersion;
+
+    /** Parameters the default email template requires; a send missing any is refused. */
+    @Builder.Default
+    private List<String> parameterNames = new ArrayList<>();
+
+    /** Other channels and locales of this key. Absent on documents written before them. */
+    @Builder.Default
+    private List<MessageTemplateVariant> variants = new ArrayList<>();
 
     @Override
     public String bmFunctionalArea() {
