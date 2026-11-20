@@ -67,6 +67,10 @@ public record PrincipalContextRequest(Mode mode,
      * @param originalSubject         the {@code X-Originally-Authenticated-Subject} header
      * @param originalUserId          the {@code X-Originally-Authenticated-UserId} header
      * @param tenantSelectionExempt   the endpoint is a platform operation that needs no tenant
+     * @param identityOnlyToken       the token is an identity-only (v2) access token at the identity
+     *                                authority: it names no realm or tenant, so the tenant is selected
+     *                                as for an identity (the requested tenant, else the identity's
+     *                                default), never taken from a claim
      */
     public record SignedClaims(String realm,
                                String tenantId,
@@ -75,7 +79,22 @@ public record PrincipalContextRequest(Mode mode,
                                String impersonationRealm,
                                String originalSubject,
                                String originalUserId,
-                               boolean tenantSelectionExempt) {
+                               boolean tenantSelectionExempt,
+                               boolean identityOnlyToken) {
+
+        /** Claims of a claims-bearing (v1) token. */
+        public SignedClaims(String realm, String tenantId, SecurityIdentity rolesIdentity,
+                            boolean foreignApplicationToken, String impersonationRealm, String originalSubject,
+                            String originalUserId, boolean tenantSelectionExempt) {
+            this(realm, tenantId, rolesIdentity, foreignApplicationToken, impersonationRealm, originalSubject,
+                    originalUserId, tenantSelectionExempt, false);
+        }
+
+        public SignedClaims {
+            if (identityOnlyToken && (realm != null || tenantId != null || rolesIdentity != null)) {
+                throw new IllegalArgumentException("an identity-only token carries no realm, tenant or roles");
+            }
+        }
     }
 
     public PrincipalContextRequest {

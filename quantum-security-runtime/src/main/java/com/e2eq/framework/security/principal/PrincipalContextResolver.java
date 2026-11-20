@@ -169,7 +169,11 @@ public class PrincipalContextResolver {
         boolean identity = request.identityOnly();
 
         CredentialUserIdPassword caller = findCredential(request);
-        if (identity && credentialDisabled(caller)) {
+        // A token contract v2 access token at the identity authority resolves in signed mode with
+        // no claims, but, like identity mode, from the credential: a disabled credential is refused.
+        boolean identityOnlyToken = !identity && request.signedClaims() != null
+                && request.signedClaims().identityOnlyToken();
+        if ((identity || identityOnlyToken) && credentialDisabled(caller)) {
             throw refusal(PrincipalResolutionError.PRINCIPAL_DISABLED,
                     "Credential for '" + caller.getUserId() + "' is " + caller.getActiveStatus());
         }
@@ -237,6 +241,12 @@ public class PrincipalContextResolver {
             } else if (selectTenant) {
                 context = applyBindingTenantSelection(context, request.tenantId(), grant);
                 context = withBindingRoles(context, grant);
+            }
+        } else if (request.signedClaims().identityOnlyToken()) {
+            // An identity-only token names no tenant: select one as for an identity, unless this is a
+            // platform operation that needs none and none was requested.
+            if (!(request.signedClaims().tenantSelectionExempt() && blank(request.tenantId()))) {
+                context = applyIdentityTenantSelection(context, request.tenantId(), effective);
             }
         } else {
             // The signed tenant claim names a tenant of the realm the token was issued for. It
@@ -824,6 +834,16 @@ public class PrincipalContextResolver {
      * several marked refuse with {@code REALM_NOT_AUTHORIZED}. A binding without the mark never
      * chooses a realm, nor does a group binding: {@link #applicationRealm} decides.
      */
+    /**
+     * {@link #identityRealm} for a verified subject: the realm an identity-only request for
+     * {@code applicationId} runs in when it names none; null when the subject has no credential or
+     * no realm is chosen (the credential's home realm then applies). Refuses typed as
+     * {@link #identityRealm} does (several default realms).
+     */
+    public String identityRealmFor(String subject, String applicationId) {
+        return credentialForSubject(subject).map(credential -> identityRealm(credential, applicationId)).orElse(null);
+    }
+
     String identityRealm(CredentialUserIdPassword credential, String applicationId) {
         String bound = bindingRealm(credential, applicationId);
         return bound != null ? bound : applicationRealm(credential, applicationId);

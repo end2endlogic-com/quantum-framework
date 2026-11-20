@@ -146,6 +146,11 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
 
         // In an application session whose application or realm differs from the token's, the
         // session's roles replace the token's, derived exactly as SecurityFilter derives them.
+        if (identity.getPrincipal() instanceof org.eclipse.microprofile.jwt.JsonWebToken v2Token
+                && IdentityOnlyAccessTokens.isAccessToken(v2Token)) {
+            return identityOnlyAccessIdentity(identity, v2Token, contextRealm, routing);
+        }
+
         SessionRoles session = sessionRoles(identity, contextRealm, routing);
         java.util.Set<String> sessionRoles = session == null ? null : session.roles();
         if (sessionSelection != null && sessionSelection.enabled()) {
@@ -356,6 +361,89 @@ public class RolesAugmentor implements SecurityIdentityAugmentor {
         return new SessionRoles(roleSet(identityRoleResolver.resolveEffectiveRoles(
                 foreign ? null : identity, cred, authorityRealm, realm, applicationId)), realm);
     }
+
+    /**
+     * A token contract v2 user access token on a receiver that resolves locally: the identity
+     * carries the roles {@link IdentityOnlyAccessTokens} resolves for this application and request
+     * (session realm selection, X-Realm, X-Tenant-Id, impersonation), as SecurityFilter resolves the
+     * same request, plus {@code user}. The token names no roles. A receiver that cannot resolve it
+     * (claims path, no application id) or a refusal leaves no roles at all (fail closed);
+     * {@link IdentityOnlyAccessRefusalFilter} answers the request with the typed refusal.
+     */
+    private SecurityIdentity identityOnlyAccessIdentity(SecurityIdentity identity,
+                                                        org.eclipse.microprofile.jwt.JsonWebToken token,
+                                                        String requestedRealm,
+                                                        io.vertx.ext.web.RoutingContext routing) {
+        QuarkusSecurityIdentity.Builder builder = withoutTokenRoles(identity);
+        com.e2eq.framework.model.securityrules.PrincipalContext principal;
+        try {
+            IdentityOnlyAccessTokens.Target target = IdentityOnlyAccessTokens.requireResolvable(trustTokenClaims,
+                    configured(sessionApplicationId), identityAuthorityApplicationId(), principalContextResolver);
+            String realm = selectedRealm(sessionSelection, routing, identity, requestedRealm, configured(sessionRealm));
+            // The resource (whose tenant rule SecurityFilter applies) is not known yet: tenant optional.
+            // The operation (and so whether it selects the issuer's tenant) is not known yet: the
+            // requested tenant, optional; SecurityFilter resolves again with its own selection.
+            principal = IdentityOnlyAccessTokens.resolve(principalContextResolver, token, target, realm,
+                    header(routing, "X-Tenant-Id"), name -> header(routing, name), true).context();
+        } catch (RuntimeException refused) {
+            Log.debugf("RolesAugmentor: identity-only token for %s not resolved: %s",
+                    identity.getPrincipal().getName(), refused.getMessage());
+            if (routing != null) {
+                routing.put(IdentityOnlyAccessTokens.REFUSAL_KEY,
+                        refused instanceof com.e2eq.framework.security.principal.RemotePrincipalResolutionException typed
+                                ? typed
+                                : com.e2eq.framework.security.principal.RemotePrincipalResolutionException.unavailable(
+                                        "Identity-only token resolution failed: " + refused.getClass().getName()));
+            }
+            return builder.build();
+        }
+        builder.addRoles(roleSet(principal.getRoles() == null ? new String[0] : principal.getRoles()));
+        builder.addRole("user");
+        if (principal.getDefaultRealm() != null && !principal.getDefaultRealm().isBlank()) {
+            builder.addAttribute(com.e2eq.framework.model.securityrules.PrincipalIdentityAttributes.ROLES_REALM,
+                    principal.getDefaultRealm().trim());
+        }
+        if (principal.getUserId() != null && !principal.getUserId().isBlank()) {
+            builder.addAttribute("userId", principal.getUserId());
+        }
+        if (principal.getSubjectId() != null && !principal.getSubjectId().isBlank()) {
+            builder.addAttribute("subjectId", principal.getSubjectId());
+            builder.addAttribute("sub", principal.getSubjectId());
+        }
+        builder.addAttribute("originalPrincipal", identity.getPrincipal().getName());
+        return builder.build();
+    }
+
+    /**
+     * The realm a user request selects, as SecurityFilter selects it: the session selection policy
+     * when one is installed, else X-Realm, else the configured session realm.
+     */
+    static String selectedRealm(SessionSelectionCoordinator selection, io.vertx.ext.web.RoutingContext routing,
+                                SecurityIdentity identity, String requested, String configuredRealm) {
+        return selection != null && selection.enabled()
+                ? selection.realm(routing, identity, requested, configuredRealm)
+                : SecurityFilter.sessionRealmSelection(requested, configuredRealm, true);
+    }
+
+    static String configuredValue(Optional<String> value) {
+        return configured(value);
+    }
+
+    @Inject
+    jakarta.enterprise.inject.Instance<com.e2eq.framework.model.persistent.morphia.ReceivingApplication> receivingApplication;
+
+    /** As {@code SecurityFilter#identityAuthorityApplicationId()}: Auth's own application, else null. */
+    String identityAuthorityApplicationId() {
+        if (configured(sessionApplicationId) != null || receivingApplication == null || !receivingApplication.isResolvable()) {
+            return null;
+        }
+        var receiving = receivingApplication.get();
+        return receiving.applicationId() != null ? null : receiving.identityAuthorityApplicationId();
+    }
+
+    // The CDI resolver (with this application's access directory), for token contract v2 tokens.
+    @Inject
+    com.e2eq.framework.security.principal.PrincipalContextResolver principalContextResolver;
 
     private String[] delegatedSessionRoles(org.eclipse.microprofile.jwt.JsonWebToken token, String realm,
                                             io.vertx.ext.web.RoutingContext routing) {

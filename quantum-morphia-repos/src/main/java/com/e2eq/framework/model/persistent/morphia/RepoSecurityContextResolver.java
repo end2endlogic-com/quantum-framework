@@ -25,6 +25,7 @@ final class RepoSecurityContextResolver {
     private final RuleContext ruleContext;
     private final String defaultRealm;
     private final String applicationId;
+    private final String authorityApplicationId;
 
     RepoSecurityContextResolver(
             SecurityIdentity securityIdentity,
@@ -46,6 +47,23 @@ final class RepoSecurityContextResolver {
             RuleContext ruleContext,
             String defaultRealm,
             String applicationId) {
+        this(securityIdentity, credentialRepo, envConfigUtils, ruleContext, defaultRealm, applicationId, null);
+    }
+
+    /**
+     * {@code authorityApplicationId}: at the identity authority, which configures no receiving
+     * application, its own application ({@link ReceivingApplication#identityAuthorityApplicationId()}),
+     * for an identity whose token names none (token contract v2).
+     */
+    RepoSecurityContextResolver(
+            SecurityIdentity securityIdentity,
+            CredentialRepo credentialRepo,
+            EnvConfigUtils envConfigUtils,
+            RuleContext ruleContext,
+            String defaultRealm,
+            String applicationId,
+            String authorityApplicationId) {
+        this.authorityApplicationId = authorityApplicationId;
         this.applicationId = applicationId;
         this.securityIdentity = securityIdentity;
         this.credentialRepo = credentialRepo;
@@ -134,7 +152,7 @@ final class RepoSecurityContextResolver {
 
         PrincipalContext rebuiltContext = new PrincipalContext.Builder()
                 .withDefaultRealm(contextRealm)
-                .withApplicationId(applicationId != null ? applicationId : identityApplication())
+                .withApplicationId(rebuiltApplication())
                 .withDataDomain(dataDomain)
                 .withUserId(userId)
                 .withRoles(roles)
@@ -155,9 +173,35 @@ final class RepoSecurityContextResolver {
     }
 
     /**
-     * No configured receiving application: the application the identity's provider recorded
-     * (the embedded token's azp). Without an application, application-scoped policies, denies
-     * included, would not apply. Step 4 deletes this once every app configures its id.
+     * The application of a principal context rebuilt from the identity: this application's
+     * configured id; else, with none configured, the application a v1 token's provider recorded
+     * ({@link #identityApplication()}); else, at the identity authority and only for a token
+     * contract v2 user access token, its own application. A v2 access token records no
+     * application, so at Auth it takes Auth's own, as a v1 token signed in to it did. Any other
+     * identity without one (a v1 or v2 service token) keeps none, as SecurityFilter resolves it.
+     */
+    String rebuiltApplication() {
+        if (applicationId != null) {
+            return applicationId;
+        }
+        String recorded = identityApplication();
+        return recorded != null || !identityOnlyAccessToken() ? recorded : authorityApplicationId;
+    }
+
+    private boolean identityOnlyAccessToken() {
+        if (securityIdentity == null) return false;
+        Object value = securityIdentity.getPrincipal() instanceof org.eclipse.microprofile.jwt.JsonWebToken jwt
+                ? jwt.getClaim("token_type")
+                : null;
+        if (value == null) {
+            value = securityIdentity.getAttribute("token_type");
+        }
+        return com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.isAccessTokenType(value);
+    }
+
+    /**
+     * The application the identity's provider recorded (a v1 embedded token's azp). Legacy: read
+     * only where no application is configured; a v2 token carries none. Deleted with the claims path.
      */
     private String identityApplication() {
         if (securityIdentity == null) return null;

@@ -140,7 +140,7 @@ public class MigrationCheckRequestFilter implements ContainerRequestFilter {
 
         if (trustTokenClaims && identity != null && !identity.isAnonymous()
                 && identity.getPrincipal() instanceof JsonWebToken token) {
-            Object kind = token.getClaim(com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.TOKEN_TYPE_CLAIM);
+            Object kind = token.getClaim("token_type") /* DelegatedIdentityHeaders.TOKEN_TYPE_CLAIM */;
             if (kind != null && com.e2eq.framework.model.securityrules.DelegatedIdentityHeaders.SERVICE_TOKEN_TYPE
                     .equalsIgnoreCase(kind.toString())) {
                 return envConfigUtils.getSystemRealm();

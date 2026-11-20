@@ -585,6 +585,10 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                 // This holds for a legacy role-bearing service token too (its subject must resolve
                 // from the store, else PRINCIPAL_UNKNOWN), and whatever trust-token-claims says.
                 resolution = resolveIdentityDecision(requestContext, tenantId);
+            } else if (identityOnlyAccessToken()) {
+                // Token contract v2 user access token: resolved from the credential and its grants,
+                // never from claims (IDENTITY_ONLY_TOKENS_DESIGN.md section 1, step 4).
+                resolution = resolveIdentityOnlyAccessToken(requestContext, realm, tenantId);
             } else {
                 resolution = resolver().resolve(localCredentialRequest(requestContext, realm, tenantId, identityOnlyService));
             }
@@ -670,9 +674,10 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         if (authHeader == null || currentJwt() == null) {
             return false;
         }
-        if (identityOnlyServiceToken()) {
+        if (identityOnlyServiceToken() || identityOnlyAccessToken()) {
             // Never the claims paths: an identity-only token names no roles, realm or tenant, and
-            // the service-claims path would run it in the system realm.
+            // the service-claims path would run it in the system realm. A v2 user access token that
+            // this receiver cannot resolve is refused by resolveIdentityOnlyAccessToken, typed.
             return true;
         }
         if (delegatedDecisionOperation()) {
@@ -938,6 +943,53 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
                 .tenantSelectionOptional(isPlatformTenantExemptRequest())
                 .actingOnBehalfOf(actingSubject, actingUserId)
                 .build();
+    }
+
+    /**
+     * A token contract v2 user access token ({@code IDENTITY_ONLY_TOKENS_DESIGN.md} section 1):
+     * {@code token_type=access}, which only the identity-only mint sets. It carries no roles,
+     * realm, tenant or application, so it resolves from the credential, in {@code IDENTITY} mode.
+     */
+    boolean identityOnlyAccessToken() {
+        return IdentityOnlyAccessTokens.isAccessToken(currentJwt());
+    }
+
+    /**
+     * Resolves a token contract v2 user access token on a receiver that holds the credential store,
+     * exactly as Auth's {@code /v1/auth/principal-context/resolve} does: {@code IDENTITY} mode for
+     * this application ({@code quantum.security.session.application-id}), so the caller's status,
+     * application bindings (suspension, tenant narrowing), realm access, tenant selection and
+     * impersonation authorization all apply, and nothing beyond {@code sub} and {@code userId} is
+     * read from the token. Fail closed, typed: a receiver on the delegated-claims path, without a
+     * credential store or without an application id cannot resolve it ({@code
+     * TOKEN_CONTRACT_V2_UNRESOLVED}); a refusal answers with its {@link
+     * com.e2eq.framework.security.principal.PrincipalResolutionError} status and code.
+     */
+    com.e2eq.framework.security.principal.PrincipalContextResolution resolveIdentityOnlyAccessToken(
+            ContainerRequestContext requestContext, String realm, String tenantId) {
+        IdentityOnlyAccessTokens.Target target = IdentityOnlyAccessTokens.requireResolvable(trustTokenClaims,
+                configured(sessionApplicationId), identityAuthorityApplicationId(), credentialRepo);
+        // At the identity authority the request is the local credential request (no admission);
+        // baseRealmOverride is the same selection rule the v1 local path applies.
+        String selected = target.authority()
+                ? baseRealmOverride(realm, trustTokenClaims, impersonationRequested(requestContext),
+                        envConfigUtils.getSystemRealm())
+                : realm;
+        return IdentityOnlyAccessTokens.resolve(identityResolver(), currentJwt(), target, selected, tenantId,
+                requestContext::getHeaderString, isPlatformTenantExemptRequest());
+    }
+
+    /**
+     * The identity authority's own application ({@code quantum.auth.identity-authority.application-id}),
+     * only when this service is the identity authority and names no receiving application: what a v2
+     * access token is resolved for on Auth's own operations, where a v1 token's {@code azp} named it.
+     */
+    String identityAuthorityApplicationId() {
+        if (!identityAuthority || receivingApplicationId() != null
+                || receivingApplication == null || !receivingApplication.isResolvable()) {
+            return null;
+        }
+        return receivingApplication.get().identityAuthorityApplicationId();
     }
 
     private com.e2eq.framework.security.principal.PrincipalContextRequest localCredentialRequest(
@@ -1356,6 +1408,11 @@ public class SecurityFilter implements ContainerRequestFilter, jakarta.ws.rs.con
         String configuredApplication = configured(sessionApplicationId);
         if (configuredApplication != null && isUserPrincipal()) {
             return configuredApplication;
+        }
+        if (identityOnlyAccessToken()) {
+            // A v2 access token names no application: never read azp. At the identity authority it
+            // is Auth's own; elsewhere none (such a receiver refuses the token).
+            return identityAuthorityApplicationId();
         }
         return tokenApplicationId();
     }

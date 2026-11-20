@@ -229,7 +229,8 @@ public  abstract class MorphiaRepo<T extends UnversionedBaseModel> implements Ba
         RepoSecurityContextResolver resolver = cachedSecurityContextResolver;
         if (resolver == null) {
             resolver = new RepoSecurityContextResolver(securityIdentity, credentialRepo, envConfigUtils, ruleContext,
-                    defaultRealm, receivingApplication == null ? null : receivingApplication.applicationId());
+                    defaultRealm, receivingApplication == null ? null : receivingApplication.applicationId(),
+                    receivingApplication == null ? null : receivingApplication.identityAuthorityApplicationId());
             cachedSecurityContextResolver = resolver;
         }
         return resolver;
