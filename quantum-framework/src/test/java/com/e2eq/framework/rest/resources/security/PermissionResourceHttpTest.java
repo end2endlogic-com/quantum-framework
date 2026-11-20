@@ -1,5 +1,6 @@
 package com.e2eq.framework.rest.resources.security;
 
+import com.e2eq.framework.model.persistent.morphia.ApplicationRepo;
 import com.e2eq.framework.model.persistent.morphia.CredentialRepo;
 import com.e2eq.framework.model.persistent.morphia.MorphiaDataStoreWrapper;
 import com.e2eq.framework.model.security.CredentialUserIdPassword;
@@ -35,12 +36,15 @@ class PermissionResourceHttpTest extends BaseRepoTest {
     @Inject CredentialRepo credentials;
     @Inject MorphiaDataStoreWrapper stores;
     @Inject RealmMembershipService memberships;
+    @Inject ApplicationRepo applications;
     private String realm;
 
     @BeforeEach
     void prepare() {
         realm = testUtils.getTestRealm();
         try (var ignored = asSystem()) {
+            // check-with-index answers only for a registered application.
+            applications.ensureRegistered("quantum-framework-test", testUtils.getSystemDataDomain());
             seed(ALICE, "user");
             seed(BOB, "user");
             seed(ADMIN, "user", "admin");
