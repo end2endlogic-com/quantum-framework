@@ -903,9 +903,10 @@ public class PermissionResource {
     * without another call. Only allowed actions have a cell; a client treats a missing cell as denied. The
     * backend still enforces every request.</p>
     *
-    * <p>The application's vocabulary is read with the service's own authority, because a person who may
-    * not list vocabulary records may still ask what they themselves may do. That is why only allowed
-    * actions are returned: the answer discloses nothing the person could not find out by acting.</p>
+    * <p>The application and its vocabulary are read under the caller's own rules, exactly as
+    * {@code GET /fd?applicationId=} reads them, so a caller who may not see the application gets 404 and
+    * one who may not list its vocabulary is refused. Granting people their own snapshot is a policy
+    * decision: allow them to view the application and list its vocabulary.</p>
     *
     * <p>{@code area}, {@code functionalDomain} and {@code action} narrow the evaluation when given.
     * {@code roles} adds no role to the snapshot.</p>
@@ -926,16 +927,11 @@ public class PermissionResource {
       if (applicationId == null) {
          return Response.status(Response.Status.BAD_REQUEST).entity("applicationId is required").build();
       }
-      Map<String, Map<String, Set<String>>> vocabulary;
-      try (SecurityCallScope.Scope ignored = SecurityCallScope.openIgnoringRules()) {
-         if (applicationRepo.findByRefName(applicationId).isEmpty()) {
-            return Response.status(Response.Status.NOT_FOUND)
-                    .entity(Map.of("code", "APPLICATION_UNKNOWN",
-                            "message", "application '" + applicationId + "' is not registered with this service"))
-                    .build();
-         }
-         vocabulary = registeredVocabulary(applicationId);
-      }
+      // The application and its vocabulary are read under the caller's own rules (SECURITY/APPLICATION,
+      // FUNCTIONAL_AREA, FUNCTIONAL_DOMAIN), so tenant isolation and any deny on those records hold here.
+      Response unknown = unknownApplication(applicationId);
+      if (unknown != null) return unknown;
+      Map<String, Map<String, Set<String>>> vocabulary = registeredVocabulary(applicationId);
       narrow(vocabulary, req.area, req.functionalDomain, req.action);
 
       // The snapshot is the identity's own: its owner is that identity unless the request names another.

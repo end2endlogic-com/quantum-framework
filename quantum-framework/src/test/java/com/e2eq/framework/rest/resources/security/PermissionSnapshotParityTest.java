@@ -45,8 +45,8 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * check-with-index is the rule engine's answer, cell for cell: every action in the snapshot is one that
  * {@code /check} allows, and every action {@code /check} allows is in it. A realm policy (not only the
- * system rules) decides, a wildcard action pattern counts, and an ordinary user gets their own snapshot
- * although they may not list the application's vocabulary.
+ * system rules) and an application policy decide, and a wildcard action pattern counts. The vocabulary
+ * is read under the caller's own rules, so the policy also lets the user see it.
  */
 @QuarkusTest
 class PermissionSnapshotParityTest extends BaseRepoTest {
@@ -102,6 +102,10 @@ class PermissionSnapshotParityTest extends BaseRepoTest {
         p.setDataDomain(securityUtils.getSystemDataDomain());
         p.getRules().add(rule("snapshot-parity-deny-delete", "delete", RuleEffect.DENY, 10, true));
         p.getRules().add(rule("snapshot-parity-allow-all", "*", RuleEffect.ALLOW, 20, false));
+        // Loading one's own snapshot reads the application and its vocabulary under one's own rules.
+        p.getRules().add(rule("snapshot-parity-see-app", "security", "application", "view", RuleEffect.ALLOW, 1, true));
+        p.getRules().add(rule("snapshot-parity-list-areas", "security", "functional_area", "list", RuleEffect.ALLOW, 1, true));
+        p.getRules().add(rule("snapshot-parity-list-domains", "security", "functional_domain", "list", RuleEffect.ALLOW, 1, true));
         // An application policy: APPROVE is refused in this application only.
         Policy a = new Policy();
         a.setRefName("SNAPSHOT_PARITY_APP_POLICY");
@@ -163,9 +167,6 @@ class PermissionSnapshotParityTest extends BaseRepoTest {
         assertFalse(cells.containsKey("delete"), "the realm policy's final deny wins, as in the engine");
         assertFalse(cells.containsKey("approve"), "the application policy's deny counts");
 
-        // The person may not list the vocabulary themselves; the snapshot read it with the service's authority.
-        Response vocabulary = given().queryParam("applicationId", APP).get("/system/permissions/fd");
-        assertEquals(403, vocabulary.statusCode(), vocabulary.asString());
         cells.values().forEach(cell -> assertEquals("ALLOW", cell.get("effect"), "only allowed actions are returned"));
     }
 
@@ -214,8 +215,12 @@ class PermissionSnapshotParityTest extends BaseRepoTest {
     }
 
     private Rule rule(String name, String action, RuleEffect effect, int priority, boolean finalRule) {
+        return rule(name, "snap_area", "snap_doc", action, effect, priority, finalRule);
+    }
+
+    private Rule rule(String name, String area, String domain, String action, RuleEffect effect, int priority, boolean finalRule) {
         SecurityURIHeader header = new SecurityURIHeader.Builder()
-                .withIdentity("user").withArea("snap_area").withFunctionalDomain("snap_doc").withAction(action).build();
+                .withIdentity("user").withArea(area).withFunctionalDomain(domain).withAction(action).build();
         SecurityURIBody body = new SecurityURIBody.Builder()
                 .withRealm("*").withOrgRefName("*").withAccountNumber("*")
                 .withTenantId("*").withOwnerId("*").withDataSegment("*").withResourceId("*").build();

@@ -126,14 +126,17 @@ the realm's and the application's policies, rule precedence, wildcard patterns a
 Nothing in the snapshot is a guess, so every cell agrees with `/check` for the same identity, realm,
 application and data domain.
 
-Only allowed actions are returned. A missing cell means denied. The vocabulary is read with the
-service's own authority, because a person who may not list vocabulary records may still ask what they
-themselves may do; returning only allowed actions keeps the answer to what the person could find out by
-acting.
+Only allowed actions are returned. A missing cell means denied.
+
+The application and its vocabulary are read under the caller's own rules, as `GET /fd?applicationId=`
+reads them, so tenant isolation and any deny on those records hold. A caller who may not see the
+application gets the same `404` as for an unregistered one; a caller who may not list its vocabulary is
+refused (`403`). To let people load their own snapshot, grant them, by policy, `VIEW` on
+`SECURITY/APPLICATION` and `LIST` on `SECURITY/FUNCTIONAL_AREA` and `SECURITY/FUNCTIONAL_DOMAIN` for
+the application's rows.
 
 `applicationId` is required (or taken from the caller's principal). An application that is not
-registered returns `404` with `"code": "APPLICATION_UNKNOWN"`. Application ids are not secret, so this
-tells a caller which applications are registered. `area`, `functionalDomain` and `action`
+registered, or that the caller may not see, returns `404` with `"code": "APPLICATION_UNKNOWN"`. `area`, `functionalDomain` and `action`
 narrow the evaluation when given. `roles` adds no role to the snapshot.
 
 .Request (send data-domain as top-level fields; omitted fields come from the caller's context, and `ownerId` defaults to `identity`)
