@@ -4,7 +4,6 @@ package com.e2eq.framework.model.persistent.morphia;
 import com.e2eq.framework.model.persistent.morphia.interceptors.*;
 
 import com.e2eq.framework.util.EnvConfigUtils;
-import com.coditory.sherlock.connector.AcquireResult;
 import com.coditory.sherlock.DistributedLock;
 import com.coditory.sherlock.Sherlock;
 import com.coditory.sherlock.mongo.MongoSherlock;
@@ -87,6 +86,9 @@ public class MorphiaDataStoreWrapper {
 
    protected static final boolean ENABLE_ONE_DB_PER_TENANT = false;
 
+   /** Pause between attempts to take a realm's index lock while another process holds it. */
+   private static final long INDEX_LOCK_RETRY_MILLIS = 250L;
+
    public MorphiaDataStoreWrapper () {
    }
 
@@ -138,11 +140,37 @@ public class MorphiaDataStoreWrapper {
    private MorphiaDatastore createMorphiaDatastore(String realm) {
       Log.infof("Creating MorphiaDatastore for realm/database: %s", realm);
 
-      // Clone the MorphiaConfig and override the database
+      // Clone the MorphiaConfig and override the database. Indexes and document validations are
+      // switched off for construction: the constructor would otherwise apply them outside the
+      // per-realm lock below, which is the concurrent index build that lock exists to prevent.
+      // Whether they are applied is decided from the base config, under the lock.
       MorphiaConfig baseConfig = dataStore.getMapper().getConfig();
-      MorphiaConfig configForRealm = baseConfig.database(realm);
+      MorphiaConfig configForRealm = baseConfig.database(realm)
+          .applyIndexes(false)
+          .applyDocumentValidations(false);
 
-      MorphiaDatastore mdatastore = new MorphiaDatastore(mongoClient, configForRealm);
+      // Reuse the entity types already mapped on the base datastore, and hand them to Morphia as
+      // classes so that it does not scan the classpath again for every configured package.
+      //
+      // The set is the one a realm datastore has always held. Constructing it used to scan the
+      // configured packages, which mapped every entity in them whatever RealmEntityMappingPolicy
+      // said; the policy only ever decided about base types from outside those packages.
+      // Applications rely on the first half: they store policy, userProfile and userGroup documents
+      // in tenant realms, and those collections get their unique indexes only because the types are
+      // mapped here. Narrowing that is a separate decision, not a side effect of removing the scan.
+      List<Class<?>> realmEntityTypes = new ArrayList<>();
+      int skippedEntityCount = 0;
+      for (Class<?> entityType : getMappedEntityTypesFromBase()) {
+         if (RealmEntityMappingPolicy.isInMappedPackages(entityType, baseConfig.packages())
+             || shouldMapEntityType(realm, entityType)) {
+            realmEntityTypes.add(entityType);
+         } else {
+            skippedEntityCount++;
+            Log.debugf("Skipping system-plane entity type %s for tenant realm/database %s", entityType.getName(), realm);
+         }
+      }
+
+      MorphiaDatastore mdatastore = new MorphiaDatastore(mongoClient, configForRealm, realmEntityTypes);
 
       // Add interceptors
       mdatastore.getMapper().addInterceptor(validationInterceptor);
@@ -154,24 +182,11 @@ public class MorphiaDataStoreWrapper {
          mdatastore.getMapper().addInterceptor(realmRecordSavedInterceptor);
       }
 
-      // Reuse already-mapped entity types from the base datastore (no classpath scanning per realm),
-      // but do not project system-plane security/identity entities into tenant realms.
-      int mappedEntityCount = 0;
-      int skippedEntityCount = 0;
-      for (Class<?> entityType : getMappedEntityTypesFromBase()) {
-         if (shouldMapEntityType(realm, entityType)) {
-            mdatastore.getMapper().map(entityType);
-            mappedEntityCount++;
-         } else {
-            skippedEntityCount++;
-            Log.debugf("Skipping system-plane entity type %s for tenant realm/database %s", entityType.getName(), realm);
-         }
-      }
       if (skippedEntityCount > 0) {
          Log.infof(
              "MorphiaDataStoreWrapper: mapped %d entity types and skipped %d system-plane entity types for realm/database %s",
-             mappedEntityCount,
-             skippedEntityCount,
+             Integer.valueOf(realmEntityTypes.size()),
+             Integer.valueOf(skippedEntityCount),
              realm
          );
       }
@@ -194,20 +209,32 @@ public class MorphiaDataStoreWrapper {
       // datastores, and these locks are not reentrant.
       if (baseConfig.applyIndexes() || baseConfig.applyDocumentValidations()) {
          DistributedLock lock = indexLock(realm);
-         AcquireResult result = lock.runLocked(Duration.ofSeconds(indexLockDurationSeconds), () -> {
+         Duration lockDuration = Duration.ofSeconds(indexLockDurationSeconds);
+         long deadline = System.nanoTime() + lockDuration.toNanos();
+         // Nothing else builds this datastore's indexes: the constructor no longer applies them, and
+         // the process holding the lock builds its own entity set, which need not be this one. So a
+         // held lock is waited for, not skipped. It always frees within the lock duration, because
+         // the holder either finishes or its lock expires.
+         while (!lock.runLocked(lockDuration, () -> {
             if (baseConfig.applyIndexes()) {
                mdatastore.applyIndexes();
             }
             if (baseConfig.applyDocumentValidations()) {
                mdatastore.applyDocumentValidations();
             }
-         });
-         if (!result.acquired()) {
-            // Another process holds the lock and is building the very same indexes.
-            // Skipping is the point: running anyway is exactly the concurrent build
-            // this exists to prevent, and the holder creates what this realm needs.
-            Log.warnf("Index creation for realm/database %s skipped: another process holds "
-                    + "the index lock and is building the same indexes", realm);
+         }).acquired()) {
+            if (System.nanoTime() >= deadline) {
+               throw new IllegalStateException(String.format(
+                   "Indexes for realm/database %s were not applied: the index lock was still held after %d seconds",
+                   realm, Long.valueOf(indexLockDurationSeconds)));
+            }
+            try {
+               Thread.sleep(INDEX_LOCK_RETRY_MILLIS);
+            } catch (InterruptedException e) {
+               Thread.currentThread().interrupt();
+               throw new IllegalStateException(
+                   "Interrupted while waiting for the index lock of realm/database " + realm, e);
+            }
          }
       }
 
@@ -220,7 +247,7 @@ public class MorphiaDataStoreWrapper {
     */
    /**
     * The collection {@code type} is stored in, from the base mapper (mapping it there if needed). Works for
-    * system-plane types that a tenant realm's datastore deliberately leaves unmapped.
+    * types a realm's datastore has not mapped.
     */
    public String collectionNameOf(Class<?> type) {
       return dataStore.getMapper().getEntityModel(type).collectionName();

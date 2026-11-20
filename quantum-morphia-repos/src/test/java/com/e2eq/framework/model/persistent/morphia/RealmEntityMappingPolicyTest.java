@@ -98,4 +98,28 @@ class RealmEntityMappingPolicyTest {
             ""
         );
     }
+
+    @Test
+    void plainPackageEntryCoversThatPackageOnly() {
+        java.util.List<String> packages = java.util.List.of("com.e2eq.framework.model.security");
+        assertTrue(RealmEntityMappingPolicy.isInMappedPackages(Policy.class, packages));
+        assertFalse(RealmEntityMappingPolicy.isInMappedPackages(CodeList.class, packages));
+        assertFalse(RealmEntityMappingPolicy.isInMappedPackages(Policy.class, java.util.List.of("com.e2eq.framework.model")),
+            "a plain entry must not reach into subpackages");
+    }
+
+    @Test
+    void wildcardPackageEntryCoversSubpackages() {
+        java.util.List<String> packages = java.util.List.of("com.e2eq.framework.model.*");
+        assertTrue(RealmEntityMappingPolicy.isInMappedPackages(Policy.class, packages));
+        assertTrue(RealmEntityMappingPolicy.isInMappedPackages(CodeList.class, packages));
+        assertFalse(RealmEntityMappingPolicy.isInMappedPackages(Policy.class, java.util.List.of("com.e2eq.framework.mod.*")),
+            "a wildcard entry must stop at a package boundary");
+    }
+
+    @Test
+    void packageEntriesAreTrimmedAndEmptyListMatchesNothing() {
+        assertTrue(RealmEntityMappingPolicy.isInMappedPackages(Policy.class, java.util.List.of(" com.e2eq.framework.model.security ")));
+        assertFalse(RealmEntityMappingPolicy.isInMappedPackages(Policy.class, java.util.List.of()));
+    }
 }

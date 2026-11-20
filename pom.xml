@@ -47,7 +47,7 @@
         <jackson.version>2.20.1</jackson.version>
         <jackson-annotations.version>2.20</jackson-annotations.version>
         <maven.compiler.release>17</maven.compiler.release>
-        <morphia.version>3.0.0</morphia.version>
+        <morphia.version>3.0.2</morphia.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding
         >UTF-8</project.reporting.outputEncoding>
