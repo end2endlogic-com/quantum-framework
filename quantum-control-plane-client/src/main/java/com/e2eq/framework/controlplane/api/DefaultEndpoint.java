@@ -26,6 +26,11 @@ public interface DefaultEndpoint {
     @Consumes(MediaType.APPLICATION_JSON)
     @Valid RealmCatalogEntry findRealmByEmailDomain(@PathParam("emailDomain") @NotNull String emailDomain);
 
+    @DELETE
+    @Path("/control/realms/{refName}/application/{applicationRefName}")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Valid RealmCatalogEntry unlinkRealmApplication(@PathParam("refName") @NotNull String refName, @PathParam("applicationRefName") @NotNull String applicationRefName);
+
     @GET
     @Path("/control/realms/{refName}")
     @Consumes(MediaType.APPLICATION_JSON)

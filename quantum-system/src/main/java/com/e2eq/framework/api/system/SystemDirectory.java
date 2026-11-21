@@ -52,6 +52,20 @@ public interface SystemDirectory {
     /** Create or update the catalog entry for a realm. */
     Realm registerRealm(Realm realm);
 
+    /**
+     * Clears a realm's owning application, the one change {@link #registerRealm}
+     * never makes (it sets an owner only while there is none). The caller names
+     * the owner it expects: a realm owned by a different application is refused
+     * with {@link RealmRegistrationConflictException.Kind#REALM_OWNER_CONFLICT},
+     * and a realm with no owner is returned unchanged. Nothing else on the realm
+     * changes. Empty when the realm is not recorded.
+     *
+     * Directories that cannot write the catalog refuse it.
+     */
+    default Optional<Realm> unlinkRealmApplication(String refName, String applicationRef) {
+        throw new UnsupportedOperationException("this system directory cannot unlink a realm's application");
+    }
+
     // --- identity (current persistence type; see Phase D note above) ---
 
     Optional<CredentialUserIdPassword> findCredentialBySubject(String subject);

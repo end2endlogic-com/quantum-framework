@@ -55,6 +55,27 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/RealmCatalogEntry' }
+  /control/realms/{refName}/application/{applicationRefName}:
+    delete:
+      operationId: unlinkRealmApplication
+      summary: Clear the realm's owning application (owner-plane operation)
+      description: >
+        The one owner change registerRealm never makes: it sets an owner only
+        while there is none. The caller names the application it expects to own
+        the realm; a realm owned by a different application is refused (409
+        REALM_OWNER_CONFLICT) and a realm with no owner is returned unchanged.
+        Nothing else on the realm changes.
+      parameters:
+        - { name: refName, in: path, required: true, schema: { type: string } }
+        - { name: applicationRefName, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: the realm, now without an owning application
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RealmCatalogEntry' }
+        '404': { description: unknown realm }
+        '409': { description: the realm belongs to a different application }
   /control/realms/{refName}/members:
     get:
       operationId: membersOfRealm
