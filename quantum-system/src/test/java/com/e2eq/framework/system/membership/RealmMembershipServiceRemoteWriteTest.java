@@ -39,6 +39,7 @@ class RealmMembershipServiceRemoteWriteTest {
         @Override public RealmCatalogEntry findRealmByEmailDomain(String e) { return null; }
         @Override public RealmCatalogEntry findRealmByRefName(String r) { return null; }
         @Override public RealmCatalogEntry registerRealm(String r, RealmCatalogEntry b) { return b; }
+        @Override public RealmCatalogEntry unlinkRealmApplication(String r, String application) { throw new UnsupportedOperationException(); }
         @Override public List<RealmMembershipEntry> membersOfRealm(String r) { return List.of(); }
         @Override public List<UserRealmRoleEntry> realmsForUser(String u) { return List.of(); }
 

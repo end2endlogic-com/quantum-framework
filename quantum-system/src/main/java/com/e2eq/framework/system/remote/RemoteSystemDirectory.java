@@ -122,6 +122,17 @@ public class RemoteSystemDirectory implements SystemDirectory {
         }
     }
 
+    @Override
+    public Optional<Realm> unlinkRealmApplication(String refName, String applicationRef) {
+        if (refName == null || refName.isBlank() || applicationRef == null || applicationRef.isBlank()) {
+            throw new IllegalArgumentException("unlinking a realm needs the realm and the application it belongs to");
+        }
+        Optional<Realm> saved = getRealm(() -> client().unlinkRealmApplication(refName, applicationRef),
+            "unlinking realm " + refName + " from " + applicationRef);
+        saved.ifPresent(realm -> cache(realm, System.nanoTime()));
+        return saved;
+    }
+
     /** Refresh both lookup caches from a resolved/registered realm. */
     private void cache(Realm realm, long nowNanos) {
         CachedRealm entry = new CachedRealm(realm, nowNanos + CACHE_TTL_NANOS);

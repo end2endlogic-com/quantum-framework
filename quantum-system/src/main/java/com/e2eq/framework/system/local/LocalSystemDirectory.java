@@ -84,6 +84,33 @@ public class LocalSystemDirectory implements SystemDirectory {
         }
     }
 
+    @Override
+    public Optional<Realm> unlinkRealmApplication(String refName, String applicationRef) {
+        if (!hasText(refName) || !hasText(applicationRef)) {
+            throw new IllegalArgumentException("unlinking a realm needs the realm and the application it belongs to");
+        }
+        try (SecurityCallScope.Scope ignored = SecurityCallScope.openIgnoringRules()) {
+            List<Realm> found = realmRepo.findAllByRefNameWithIgnoreRules(refName, systemRealmId());
+            if (found == null || found.isEmpty()) {
+                return Optional.empty();
+            }
+            Realm recorded = found.get(0);
+            String owner = ownerOf(recorded);
+            if (owner == null) {
+                return Optional.of(recorded);
+            }
+            if (!owner.equalsIgnoreCase(applicationRef.trim())) {
+                throw new RealmRegistrationConflictException(
+                    RealmRegistrationConflictException.Kind.REALM_OWNER_CONFLICT, refName,
+                    List.of("applicationRef"),
+                    "belongs to '" + owner + "', not '" + applicationRef.trim() + "'");
+            }
+            recorded.setApplicationRef(null);
+            LOG.infof("REALM_APPLICATION_UNLINKED: realm '%s' no longer belongs to '%s'", refName, owner);
+            return Optional.of(realmRepo.save(systemRealmId(), recorded));
+        }
+    }
+
     /**
      * Registering a realm is keyed by refName. A write that arrives without an id
      * (every control-plane PUT: the catalog contract carries no id) and names a
