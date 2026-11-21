@@ -53,6 +53,11 @@ public class SplitSystemDirectory implements SystemDirectory {
     }
 
     @Override
+    public Optional<Realm> unlinkRealmApplication(String refName, String applicationRef) {
+        return catalog.unlinkRealmApplication(refName, applicationRef);
+    }
+
+    @Override
     public Optional<CredentialUserIdPassword> findCredentialBySubject(String subject) {
         return local.findCredentialBySubject(subject);
     }

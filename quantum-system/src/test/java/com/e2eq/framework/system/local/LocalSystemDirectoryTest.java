@@ -87,6 +87,67 @@ class LocalSystemDirectoryTest {
             .entityRefName(refName).entityDisplayName(refName).build();
     }
 
+    private static LocalSystemDirectory directoryOver(RealmRepo realmRepo) {
+        EnvConfigUtils env = mock(EnvConfigUtils.class);
+        when(env.getSystemRealm()).thenReturn("quantum-system");
+        when(realmRepo.save(eq("quantum-system"), any(Realm.class))).thenAnswer(invocation -> invocation.getArgument(1));
+        return new LocalSystemDirectory(realmRepo, mock(CredentialRepo.class), env);
+    }
+
+    private static Realm ownedBy(String owner) {
+        Realm recorded = new Realm();
+        recorded.setRefName("helixor-digitalworker-D1");
+        recorded.setDatabaseName("helixor-digitalworker-D1");
+        if (owner != null) {
+            recorded.setApplicationRef(application(owner));
+        }
+        return recorded;
+    }
+
+    @Test
+    void unlinkClearsTheOwnerItIsGivenAndNothingElse() {
+        RealmRepo realmRepo = mock(RealmRepo.class);
+        Realm recorded = ownedBy("helixor-digitalworker");
+        when(realmRepo.findAllByRefNameWithIgnoreRules("helixor-digitalworker-D1", "quantum-system")).thenReturn(List.of(recorded));
+
+        Realm saved = directoryOver(realmRepo).unlinkRealmApplication("helixor-digitalworker-D1", "HELIXOR-DIGITALWORKER").orElseThrow();
+
+        assertSame(recorded, saved);
+        assertEquals(null, saved.getApplicationRef());
+        assertEquals("helixor-digitalworker-D1", saved.getDatabaseName());
+        verify(realmRepo).save("quantum-system", recorded);
+    }
+
+    @Test
+    void unlinkRefusesARealmOwnedByAnotherApplication() {
+        RealmRepo realmRepo = mock(RealmRepo.class);
+        when(realmRepo.findAllByRefNameWithIgnoreRules("helixor-digitalworker-D1", "quantum-system")).thenReturn(List.of(ownedBy("helixor-code")));
+
+        RealmRegistrationConflictException refused = assertThrows(RealmRegistrationConflictException.class,
+            () -> directoryOver(realmRepo).unlinkRealmApplication("helixor-digitalworker-D1", "helixor-digitalworker"));
+
+        assertEquals(RealmRegistrationConflictException.Kind.REALM_OWNER_CONFLICT, refused.kind());
+        verify(realmRepo, never()).save(anyString(), any(Realm.class));
+    }
+
+    @Test
+    void unlinkOfARealmWithNoOwnerWritesNothing() {
+        RealmRepo realmRepo = mock(RealmRepo.class);
+        Realm recorded = ownedBy(null);
+        when(realmRepo.findAllByRefNameWithIgnoreRules("helixor-digitalworker-D1", "quantum-system")).thenReturn(List.of(recorded));
+
+        assertSame(recorded, directoryOver(realmRepo).unlinkRealmApplication("helixor-digitalworker-D1", "helixor-digitalworker").orElseThrow());
+        verify(realmRepo, never()).save(anyString(), any(Realm.class));
+    }
+
+    @Test
+    void unlinkOfAnUnknownRealmIsEmpty() {
+        RealmRepo realmRepo = mock(RealmRepo.class);
+        when(realmRepo.findAllByRefNameWithIgnoreRules("nowhere", "quantum-system")).thenReturn(List.of());
+
+        assertTrue(directoryOver(realmRepo).unlinkRealmApplication("nowhere", "helixor-digitalworker").isEmpty());
+    }
+
     @Test
     void registerRealmWithoutAnOwnerKeepsTheRecordedOwner() {
         RealmRepo realmRepo = mock(RealmRepo.class);

@@ -122,6 +122,28 @@ public class RemoteSystemDirectory implements SystemDirectory {
         }
     }
 
+    @Override
+    public Optional<Realm> unlinkRealmApplication(String refName, String applicationRef) {
+        if (refName == null || refName.isBlank() || applicationRef == null || applicationRef.isBlank()) {
+            throw new IllegalArgumentException("unlinking a realm needs the realm and the application it belongs to");
+        }
+        Optional<Realm> saved;
+        try {
+            saved = getRealm(() -> client().unlinkRealmApplication(refName, applicationRef),
+                "unlinking realm " + refName + " from " + applicationRef);
+        } catch (WebApplicationException e) {
+            // The control plane answers a realm owned by another application 409; keep it typed.
+            if (e.getResponse() != null && e.getResponse().getStatus() == 409) {
+                throw new com.e2eq.framework.api.system.RealmRegistrationConflictException(
+                    com.e2eq.framework.api.system.RealmRegistrationConflictException.Kind.REALM_OWNER_CONFLICT, refName,
+                    java.util.List.of("applicationRef"), "does not belong to '" + applicationRef + "'");
+            }
+            throw e;
+        }
+        saved.ifPresent(realm -> cache(realm, System.nanoTime()));
+        return saved;
+    }
+
     /** Refresh both lookup caches from a resolved/registered realm. */
     private void cache(Realm realm, long nowNanos) {
         CachedRealm entry = new CachedRealm(realm, nowNanos + CACHE_TTL_NANOS);

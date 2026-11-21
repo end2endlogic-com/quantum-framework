@@ -47,4 +47,18 @@ class RemoteSystemDirectoryCatalogErrorTest {
             () -> directory.findRealmByRefName("helixor-code-D1"));
         assertTrue(thrown.getMessage().contains("HTTP 500"));
     }
+
+    @Test
+    void unlinkOfARealmOwnedElsewhereStaysTyped() {
+        DefaultEndpoint client = mock(DefaultEndpoint.class);
+        when(client.unlinkRealmApplication("helixor-code-D1", "helixor-digitalworker"))
+            .thenThrow(new jakarta.ws.rs.WebApplicationException(jakarta.ws.rs.core.Response.status(409).build()));
+        RemoteSystemDirectory directory = new RemoteSystemDirectory(client);
+
+        com.e2eq.framework.api.system.RealmRegistrationConflictException refused = org.junit.jupiter.api.Assertions.assertThrows(
+            com.e2eq.framework.api.system.RealmRegistrationConflictException.class,
+            () -> directory.unlinkRealmApplication("helixor-code-D1", "helixor-digitalworker"));
+        org.junit.jupiter.api.Assertions.assertEquals(
+            com.e2eq.framework.api.system.RealmRegistrationConflictException.Kind.REALM_OWNER_CONFLICT, refused.kind());
+    }
 }
