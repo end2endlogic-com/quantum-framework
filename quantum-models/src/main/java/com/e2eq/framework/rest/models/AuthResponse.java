@@ -35,6 +35,24 @@ public class AuthResponse {
     protected List<String> applications;
     /** Registered application id actively entered (the token's {@code azp} claim). */
     protected String activeApplicationId;
+    /**
+     * Where to send the browser after a sign-in link or code is verified: the destination the
+     * authority checked against the application's allowlist when the challenge started. Set only
+     * by a verified sign-in challenge that stored one still allowed; absent everywhere else.
+     */
+    @org.eclipse.microprofile.openapi.annotations.media.Schema(description = "Where to send the browser after "
+            + "a verified sign-in link, as checked against the application's allowlist when the challenge started. "
+            + "Sent only by a sign-in challenge verification that stored one and still allows it.")
+    protected String redirect;
+
+    /** The all-arguments constructor as it was before {@code redirect}; keeps its descriptor. */
+    public AuthResponse(String access_token, String refresh_token, long expires_at, String mongodburl,
+                        String realm, List<String> roles, String authProvider,
+                        List<AccessibleRealmInfo> accessibleRealms, List<AccessibleTenantInfo> accessibleTenants,
+                        List<String> applications, String activeApplicationId) {
+        this(access_token, refresh_token, expires_at, mongodburl, realm, roles, authProvider, accessibleRealms,
+                accessibleTenants, applications, activeApplicationId, null);
+    }
 
     // Backward-compatible constructor
     public AuthResponse(String access_token, String refresh_token, long expires_at) {
