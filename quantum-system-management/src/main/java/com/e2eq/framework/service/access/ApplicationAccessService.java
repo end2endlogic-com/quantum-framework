@@ -211,9 +211,10 @@ public class ApplicationAccessService {
     * (subject, application, realm), so a write from one tenant replaces what the binding holds for
     * its other tenants, and {@link #listBindings} shows a tenant only its own slice.
     *
-    * <p>The caller must administer the request's tenant (as for listing) and every tenant of the
-    * binding (as for replacing it, {@link #putBinding}); the platform reads any. Empty when the
-    * person holds no binding of the application in the realm.
+    * <p>The caller must administer the request's tenant (as for listing) and hold the authority
+    * replacing the binding needs ({@link #putBinding}): every tenant of it, and each of its roles
+    * grantable by the caller. The platform reads any. Empty when the person holds no binding of the
+    * application in the realm.
     */
    public Optional<UserAppRole> findUserBinding(String callerRealm, String applicationId, String userId) {
       accessDirectory.requireLocalDirectory();
@@ -235,12 +236,8 @@ public class ApplicationAccessService {
          .filter(binding -> user.equals(trimmed(binding.getUserId())))
          .findFirst());
       if (found.isPresent() && !platform) {
-         List<String> tenants = ApplicationBindingValidator.tenants(found.get());
-         if (authorityFor(callerRealm, tenants) == Authority.NONE) {
-            throw new ApplicationAccessException(Code.ROLE_NOT_GRANTABLE, String.format(
-               "%s's binding of '%s' covers tenants %s; the caller administers none or not all of them",
-               user, application.getRefName(), tenants));
-         }
+         // Exactly the authority replacing it needs: every tenant, and every role grantable by the caller.
+         requireMayGrant(callerRealm, application, found.get());
       }
       return found;
    }

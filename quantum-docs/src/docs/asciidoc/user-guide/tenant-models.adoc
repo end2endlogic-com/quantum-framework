@@ -803,9 +803,9 @@ a binding that covers only other tenants is not in a tenant's list. Before
 writing one person's roles, read their whole binding with
 `GET user/{userId}?applicationId=`: there is one binding per (user,
 application, realm), so a `PUT` replaces what it holds for its other tenants.
-The read needs the same authority as replacing the binding (the request's
-tenant and every tenant of the binding); `404 NOT_FOUND` means the person holds
-none.
+The read needs the request's tenant and the authority replacing the binding
+needs (every tenant of it, and each of its roles grantable by the caller);
+`404 NOT_FOUND` means the person holds none.
 
 Binding roles join the principal's global roles, so a role name that a
 `@RolesAllowed` check or the platform recognizes is reserved and never

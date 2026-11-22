@@ -529,6 +529,12 @@ class ApplicationAccessAuthorityTest extends BaseRepoTest {
         assertEquals(List.of(TENANT_B), asSystem(() -> accessService.findUserBinding(POOLED, app, bob)).orElseThrow().getTenantIds());
 
         refused(Code.ROLE_NOT_GRANTABLE, () -> as(signedIn(realmAdminA, TENANT_A), () -> accessService.findUserBinding(POOLED, app, bob)));
+        // A role the administrator may not grant (planner-owner: grantable by nobody but the platform) hides
+        // the binding from it, as it would refuse replacing it.
+        String dave = member("person-dave", List.of(TENANT_A, TENANT_B), List.of("viewer"));
+        asSystem(() -> accessService.putBinding(POOLED, binding(dave, List.of(TENANT_B), null, "planner-owner")));
+        refused(Code.ROLE_NOT_GRANTABLE, () -> as(signedIn(realmAdminAB, TENANT_A), () -> accessService.findUserBinding(POOLED, app, dave)));
+        refused(Code.ROLE_NOT_GRANTABLE, () -> as(signedIn(realmAdminAB, TENANT_A), () -> accessService.putBinding(POOLED, binding(dave, List.of(TENANT_A), null, "planner-user"))));
         refused(Code.ROLE_NOT_GRANTABLE, () -> as(signedIn(viewer, TENANT_A), () -> accessService.findUserBinding(POOLED, app, carol)));
         refused(Code.BINDING_SUBJECT_INVALID, () -> as(signedIn(realmAdminAB, TENANT_A), () -> accessService.findUserBinding(POOLED, app, " ")));
         refused(Code.APPLICATION_UNKNOWN, () -> as(signedIn(realmAdminAB, TENANT_A), () -> accessService.findUserBinding(POOLED, "no-such-app-" + suffix, bob)));
