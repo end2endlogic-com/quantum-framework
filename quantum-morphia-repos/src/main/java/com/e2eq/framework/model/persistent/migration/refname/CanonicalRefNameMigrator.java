@@ -166,7 +166,7 @@ public class CanonicalRefNameMigrator {
          String id = id(row);
          if (to == null) {
             actions.add(new Action(entity, collection, id, from, null, null, Kind.UNRESOLVABLE,
-                  "no canonical spelling satisfies " + RefNameRule.DESCRIPTION));
+                  "no canonical spelling exists; " + RefNameRule.DESCRIPTION));
             continue;
          }
          List<Object> slot = slot(row, to);

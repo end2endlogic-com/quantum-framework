@@ -49,6 +49,9 @@ public class RefNameViolationException extends RuntimeException {
             "%s: refName of %s id=%s cannot change from '%s' to '%s'", code, entityType, entityId, stored, offered);
          case REFNAME_REQUIRED -> String.format(
             "%s: %s requires an explicit refName on create; %s", code, entityType, rule);
+         case REFNAME_GENERATED_ID -> String.format(
+            "%s: refName '%s' for new %s looks like a generated id but is not this record's id; omit refName and it is set to the record's ObjectId. %s",
+            code, offered, entityType, rule);
          default -> String.format(
             "%s: refName '%s' for new %s is not allowed; %s", code, offered, entityType, rule);
       };
