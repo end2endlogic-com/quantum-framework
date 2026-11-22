@@ -54,7 +54,7 @@ public final class EmailChallengeVerifier {
             replace(current, current.transition(EmailChallenge.State.EXPIRED, current.attempts()));
             throw new Rejected(Failure.EXPIRED);
         }
-        boolean bound = purpose != EmailChallenge.Purpose.CLI_SIGN_IN
+        boolean bound = !purpose.bound()
                 || constantEquals(current.clientBindingDigest(), bindingDigest(clientVerifier));
         boolean correct = constantEquals(current.secretDigest(), digest(id, purpose, secret));
         int attempts = Math.min(current.attempts() + 1, current.maxAttempts());

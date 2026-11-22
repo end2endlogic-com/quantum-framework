@@ -691,6 +691,22 @@ public class CustomTokenAuthProvider extends BaseAuthProvider implements AuthPro
       return loginInternal(proof.email(), null, proof.applicationId(), realmId, true);
    }
 
+   @Override
+   public LoginResponse loginWithVerifiedPhone(com.e2eq.framework.model.auth.EmailChallenge proof, String userId,
+                                               String realmId) {
+      Objects.requireNonNull(proof, "Verified phone proof is required");
+      if (proof.state() != com.e2eq.framework.model.auth.EmailChallenge.State.VERIFIED
+            || !java.time.Instant.now().isBefore(proof.expiresAt())
+            || proof.channel() == com.e2eq.framework.model.messaging.MessageChannel.EMAIL
+            || (proof.purpose() != com.e2eq.framework.model.auth.EmailChallenge.Purpose.CLI_SIGN_IN
+                && proof.purpose() != com.e2eq.framework.model.auth.EmailChallenge.Purpose.PORTAL_SIGN_IN)
+            || userId == null || userId.isBlank()) {
+         throw new SecurityException("PHONE_PROOF_INVALID");
+      }
+      // Same admission as a verified email: only EMAIL credentials, no password involved.
+      return loginInternal(userId, null, proof.applicationId(), realmId, true);
+   }
+
    /**
     * Internal issuer boundary: invoke only after server-side verification of an
     * authorization code or external provider identity. Never expose this method
