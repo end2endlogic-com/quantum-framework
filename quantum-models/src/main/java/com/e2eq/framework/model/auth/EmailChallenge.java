@@ -28,6 +28,10 @@ public record EmailChallenge(
      * and a sign-in link never sets a password. PHONE_VERIFICATION (a code sent to a phone a
      * signed-in person is adding) is bound to that person and never signs anyone in.
      */
+    // PHONE_VERIFICATION is redeemed only inside the authority's phone enrolment; no request or
+    // response carries it, so the published enum keeps the values clients send and read.
+    @org.eclipse.microprofile.openapi.annotations.media.Schema(
+            enumeration = {"CLI_SIGN_IN", "PORTAL_SIGN_IN", "PASSWORD_SETUP"})
     public enum Purpose {
         CLI_SIGN_IN, PORTAL_SIGN_IN, PASSWORD_SETUP, PHONE_VERIFICATION;
 
