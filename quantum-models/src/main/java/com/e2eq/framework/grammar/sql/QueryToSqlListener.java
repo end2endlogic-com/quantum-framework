@@ -63,6 +63,8 @@ public class QueryToSqlListener extends BIAPIQueryBaseListener {
 
     private final Deque<String> sqlStack = new ArrayDeque<>();
     private final Deque<Integer> opTypeStack = new ArrayDeque<>();
+    /** Stack depths at each open group, so a group composes only what was added inside it. */
+    private final Deque<int[]> groupMarkers = new ArrayDeque<>();
     private final Map<String, Object> named = new LinkedHashMap<>();
     /** Maps an ontology field reference to its physical source column. Identity by default. */
     private final Function<String, String> columnResolver;
@@ -174,19 +176,25 @@ public class QueryToSqlListener extends BIAPIQueryBaseListener {
     }
 
     private void buildComposite() {
+        buildCompositeSince(0, 0);
+    }
+
+    /**
+     * Compose the operators and predicates added since the given stack depths (mirrors
+     * QueryToFilterListener.buildCompositeSince). A group calls this with the depths at which it
+     * opened, so operators outside the group are left for the enclosing scope.
+     */
+    private void buildCompositeSince(int startOpSize, int startSqlSize) {
         List<String> andParts = new ArrayList<>();
         List<String> orParts = new ArrayList<>();
 
-        // Unwind operators (mirrors QueryToFilterListener.buildCompositeSince, start=0). An
-        // LPAREN marker closes a group using ONLY inner-scope predicates; walk order guarantees
-        // outer operators sit below the marker and are processed in later iterations.
-        while (!opTypeStack.isEmpty()) {
+        while (opTypeStack.size() > startOpSize) {
             int op = opTypeStack.pop();
             if (op == BIAPIQueryParser.AND) {
-                if (sqlStack.isEmpty()) throw new UnsupportedQueryException("AND without right-hand predicate");
+                if (sqlStack.size() <= startSqlSize) throw new UnsupportedQueryException("AND without right-hand predicate");
                 andParts.add(sqlStack.pop());
             } else if (op == BIAPIQueryParser.OR) {
-                if (sqlStack.isEmpty()) throw new UnsupportedQueryException("OR without predicate");
+                if (sqlStack.size() <= startSqlSize) throw new UnsupportedQueryException("OR without predicate");
                 if (!andParts.isEmpty()) {
                     andParts.add(sqlStack.pop());
                     orParts.add(combine(andParts, " AND "));
@@ -194,28 +202,11 @@ public class QueryToSqlListener extends BIAPIQueryBaseListener {
                 } else {
                     orParts.add(sqlStack.pop());
                 }
-            } else if (op == BIAPIQueryParser.LPAREN) {
-                if (sqlStack.isEmpty()) throw new UnsupportedQueryException("Group close found no inner predicate");
-                if (andParts.isEmpty()) {
-                    orParts.add(sqlStack.pop());
-                } else {
-                    andParts.add(sqlStack.pop());
-                    orParts.add(combine(andParts, " AND "));
-                    andParts = new ArrayList<>();
-                }
-                if (orParts.size() == 1) {
-                    sqlStack.push(orParts.get(0));
-                } else if (orParts.size() > 1) {
-                    sqlStack.push(combine(orParts, " OR "));
-                } else {
-                    throw new UnsupportedQueryException("Empty parenthesized group");
-                }
-                orParts = new ArrayList<>();
             } else {
                 throw new UnsupportedQueryException("Unsupported composition operator");
             }
         }
-        int inner = sqlStack.size();
+        int inner = sqlStack.size() - startSqlSize;
         if (!andParts.isEmpty()) {
             if (inner <= 0) throw new UnsupportedQueryException("AND composition missing left-hand predicate");
             andParts.add(sqlStack.pop());
@@ -325,11 +316,15 @@ public class QueryToSqlListener extends BIAPIQueryBaseListener {
     // OR in userQuery escaping the policy AND (which would be a governance leak).
 
     @Override public void enterExprGroup(BIAPIQueryParser.ExprGroupContext ctx) {
-        opTypeStack.push(ctx.lp.getType()); // LPAREN marker; closed in buildComposite
+        groupMarkers.push(new int[] {opTypeStack.size(), sqlStack.size()});
     }
 
     @Override public void exitExprGroup(BIAPIQueryParser.ExprGroupContext ctx) {
-        buildComposite();
+        int[] start = groupMarkers.pop();
+        buildCompositeSince(start[0], start[1]);
+        if (sqlStack.size() != start[1] + 1) {
+            throw new UnsupportedQueryException("Parenthesized group must compose to exactly one predicate");
+        }
     }
 
     @Override public void enterNotExpr(BIAPIQueryParser.NotExprContext ctx) {
