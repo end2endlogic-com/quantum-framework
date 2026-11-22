@@ -148,6 +148,10 @@ These keys are read by `SecurityFilter` and its collaborators in `quantum-securi
 |unset
 |Unset keeps the local principal construction. `remote` resolves every verified bearer through a `RemotePrincipalSource` bean: the token only identifies the caller (an _identity-only token_) and the directory owner returns roles and tenancy. Startup fails (typed `PrincipalSourceConfigurationException` codes) if `remote` is set without exactly one source bean, without an application id, together with `quantum.security.session.realm` or `quantum.security.session.selection-policy`, with `quantum.auth.trust-token-claims=true`, with `quantum.auth.expected-audience` or `mp.jwt.verify.audiences`, or with `quarkus.http.auth.proactive=false`. A deployment whose configuration declares `remote` for its profile but whose effective value is overridden to something else also fails (`PRINCIPAL_SOURCE_NOT_REMOTE`).
 
+|`quantum.auth.principal-source.application`
+|`configured`
+|Which application Auth resolves each caller for in remote mode. `configured` is this service's own (`quantum.security.session.application-id`). `caller` is for a platform service that holds data for other applications, such as the memory plane: each request names its application in the `X-Application-Id` header, and Auth admits the caller to it and resolves their realm, tenant and roles for it, as it would for that application itself. A request that names none is refused (400 `INVALID_REQUEST`); it never falls back to the service's own application, whose id stays required. `caller` without `remote`, or any other value, fails startup (`PRINCIPAL_SOURCE_INVALID`).
+
 |`quantum.security.session.application-id`
 |unset
 |Application session (opt-in). A user's session runs as this application, whichever application the token was minted for. Roles are resolved for (user, session realm, this application). Also the receiving application id sent to the remote principal source; `quantum.application-registration.application-id` is the fallback there. Service tokens and anonymous requests are unchanged.

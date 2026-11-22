@@ -54,6 +54,8 @@ public record RemotePrincipalRequest(String bearer,
     /** Request headers naming the realm, tenant, impersonation and acting-on-behalf-of selections. */
     public static final String REALM_HEADER = "X-Realm";
     public static final String TENANT_HEADER = "X-Tenant-Id";
+    /** The application a caller names where the service resolves callers for theirs ({@link RemotePrincipalSettings#APPLICATION_SOURCE}). */
+    public static final String APPLICATION_HEADER = "X-Application-Id";
     public static final String IMPERSONATE_SUBJECT_HEADER = "X-Impersonate-Subject";
     public static final String IMPERSONATE_USER_ID_HEADER = "X-Impersonate-UserId";
     public static final String ACTING_SUBJECT_HEADER =
