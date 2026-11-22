@@ -129,6 +129,41 @@ class SecurityFilterRemotePrincipalSourceTest {
     }
 
     @Test
+    void aServiceResolvingForTheCallersApplicationSendsTheNamedApplication() {
+        RecordingSource source = new RecordingSource(principal("tenant-b"));
+        SecurityFilter filter = filter(source, CLAIMS);
+        filter.remotePrincipalSettings = callerNamedSettings(source);
+
+        filter.determinePrincipalContext(request(Map.of(
+                "Authorization", "Bearer raw-token",
+                RemotePrincipalRequest.APPLICATION_HEADER, "helixor-digitalworker")));
+
+        assertEquals("helixor-digitalworker", source.only().applicationId());
+    }
+
+    @Test
+    void aServiceResolvingForTheCallersApplicationRefusesARequestThatNamesNone() {
+        RecordingSource source = new RecordingSource(principal("tenant-b"));
+        SecurityFilter filter = filter(source, CLAIMS);
+        filter.remotePrincipalSettings = callerNamedSettings(source);
+
+        RemotePrincipalResolutionException refused = assertThrows(RemotePrincipalResolutionException.class,
+                () -> filter.determinePrincipalContext(request(Map.of("Authorization", "Bearer raw-token"))));
+
+        assertEquals("INVALID_REQUEST", refused.code());
+        assertTrue(source.requests.isEmpty(), "Auth is not asked for the service's own application instead");
+    }
+
+    private static RemotePrincipalSettings callerNamedSettings(RemotePrincipalSource source) {
+        return new RemotePrincipalSettings() {
+            @Override public boolean remote() { return true; }
+            @Override public boolean callerNamesApplication() { return true; }
+            @Override public String applicationId() { return APP; }
+            @Override public RemotePrincipalSource source() { return source; }
+        };
+    }
+
+    @Test
     void serviceTokensResolveRemotelyToo() {
         Map<String, Object> service = new HashMap<>(CLAIMS);
         service.put("token_type", "service");

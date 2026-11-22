@@ -36,11 +36,20 @@ import java.util.Set;
  *       ({@code quantum.auth.expected-audience} or {@code mp.jwt.verify.audiences}: Auth's
  *       {@code APPLICATION_NOT_GRANTED} is the application gate, and identity-only tokens carry no
  *       {@code aud}), or with {@code quarkus.http.auth.proactive=false};</li>
+ *   <li>{@value #APPLICATION_SOURCE} other than {@code configured} (the default) or
+ *       {@code caller}, or {@code caller} without remote mode;</li>
  *   <li>in a deployment (launch mode not dev or test), any configuration source declaring
  *       {@code remote} for the active profile while the effective value is not {@code remote}: an
  *       environment variable or system property outranks {@code application.properties}, so a
  *       stray {@code QUANTUM_AUTH_PRINCIPAL_SOURCE} must not quietly bring back token claims.</li>
  * </ul>
+ *
+ * <p>{@value #APPLICATION_SOURCE}{@code =caller} is for a platform service that holds data for
+ * other applications (the memory plane): Auth resolves each caller for the application the request
+ * names in {@value RemotePrincipalRequest#APPLICATION_HEADER}, and admits, places and roles the
+ * caller for that application exactly as it would for the application itself. A request that names
+ * none is refused; it never falls back to the service's own application. The service's own id stays
+ * required: it is still the receiving application elsewhere (service tokens, registration).
  */
 @ApplicationScoped
 public class RemotePrincipalSettings {
@@ -51,9 +60,15 @@ public class RemotePrincipalSettings {
     static final String EXPECTED_AUDIENCE = "quantum.auth.expected-audience";
     static final String VERIFY_AUDIENCES = "mp.jwt.verify.audiences";
     static final String PROACTIVE = "quarkus.http.auth.proactive";
+    public static final String APPLICATION_SOURCE = "quantum.auth.principal-source.application";
+    public static final String APPLICATION_CONFIGURED = "configured";
+    public static final String APPLICATION_CALLER = "caller";
 
     @ConfigProperty(name = PROPERTY)
     Optional<String> principalSource = Optional.empty();
+
+    @ConfigProperty(name = APPLICATION_SOURCE)
+    Optional<String> applicationSource = Optional.empty();
 
     @ConfigProperty(name = ReceivingApplication.SESSION_APPLICATION_ID)
     Optional<String> sessionApplicationId = Optional.empty();
@@ -98,6 +113,17 @@ public class RemotePrincipalSettings {
      */
     void check(LaunchMode launchMode, boolean declaredRemote) {
         String mode = configured(principalSource);
+        String application = configured(applicationSource);
+        if (application != null && !APPLICATION_CONFIGURED.equals(application) && !APPLICATION_CALLER.equals(application)) {
+            throw new PrincipalSourceConfigurationException(Code.PRINCIPAL_SOURCE_INVALID,
+                    APPLICATION_SOURCE + " must be '" + APPLICATION_CONFIGURED + "' or '" + APPLICATION_CALLER
+                            + "', was '" + application + "'");
+        }
+        if (APPLICATION_CALLER.equals(application) && !REMOTE.equals(mode)) {
+            throw new PrincipalSourceConfigurationException(Code.PRINCIPAL_SOURCE_INVALID,
+                    APPLICATION_SOURCE + "=" + APPLICATION_CALLER + " needs " + PROPERTY + "=" + REMOTE
+                            + ": only Auth may admit a caller to the application its request names");
+        }
         if (mode == null) {
             if (declaredRemote && launchMode != null && !launchMode.isDevOrTest()) {
                 throw new PrincipalSourceConfigurationException(Code.PRINCIPAL_SOURCE_NOT_REMOTE,
@@ -292,6 +318,30 @@ public class RemotePrincipalSettings {
     /** The receiving application id sent to Auth, or null when none is configured. */
     public String applicationId() {
         return ReceivingApplication.of(sessionApplicationId, registrationApplicationId);
+    }
+
+    /** True when each request names the application Auth resolves the caller for. */
+    public boolean callerNamesApplication() {
+        return APPLICATION_CALLER.equals(configured(applicationSource));
+    }
+
+    /**
+     * The application Auth resolves this request's caller for: this service's own, or with
+     * {@value #APPLICATION_SOURCE}{@code =caller} the one the request names in
+     * {@value RemotePrincipalRequest#APPLICATION_HEADER}, refused ({@code INVALID_REQUEST}) when it
+     * names none.
+     */
+    public String applicationFor(java.util.function.UnaryOperator<String> header) {
+        if (!callerNamesApplication()) {
+            return applicationId();
+        }
+        String named = trimmed(header.apply(RemotePrincipalRequest.APPLICATION_HEADER));
+        if (named == null || named.isEmpty()) {
+            throw new RemotePrincipalResolutionException(400, "INVALID_REQUEST",
+                    "Name the application in " + RemotePrincipalRequest.APPLICATION_HEADER,
+                    "This service resolves each caller for the application its request names; this request names none");
+        }
+        return named;
     }
 
     public RemotePrincipalSource source() {

@@ -206,6 +206,55 @@ class RemotePrincipalSettingsTest {
         assertRefused(session, Code.PRINCIPAL_SOURCE_SESSION_REALM);
     }
 
+    @Test
+    void byDefaultEveryCallerResolvesForThisServicesOwnApplication() {
+        RemotePrincipalSettings settings = remoteSettings();
+        assertDoesNotThrow(() -> settings.check(LaunchMode.NORMAL, false));
+        assertFalse(settings.callerNamesApplication());
+        assertEquals("helixor-di", settings.applicationFor(name -> "another-app"));
+        settings.applicationSource = Optional.of("configured");
+        assertEquals("helixor-di", settings.applicationFor(name -> "another-app"));
+    }
+
+    @Test
+    void callerModeResolvesForTheApplicationTheRequestNames() {
+        RemotePrincipalSettings settings = remoteSettings();
+        settings.applicationSource = Optional.of(" caller ");
+        assertDoesNotThrow(() -> settings.check(LaunchMode.NORMAL, false));
+        assertTrue(settings.callerNamesApplication());
+        assertEquals("helixor-digitalworker", settings.applicationFor(
+                name -> RemotePrincipalRequest.APPLICATION_HEADER.equals(name) ? " helixor-digitalworker " : null));
+        // The service's own id is still required: it stays the receiving application elsewhere.
+        assertEquals("helixor-di", settings.applicationId());
+    }
+
+    @Test
+    void callerModeRefusesARequestThatNamesNoApplication() {
+        RemotePrincipalSettings settings = remoteSettings();
+        settings.applicationSource = Optional.of("caller");
+        for (String named : new String[] {null, "", "  "}) {
+            RemotePrincipalResolutionException refused = assertThrows(RemotePrincipalResolutionException.class,
+                    () -> settings.applicationFor(name -> named));
+            assertEquals(400, refused.status());
+            assertEquals("INVALID_REQUEST", refused.code());
+        }
+    }
+
+    @Test
+    void callerModeNeedsRemoteResolution() {
+        RemotePrincipalSettings settings = settings(null, true);
+        settings.registrationApplicationId = Optional.of("helixor-di");
+        settings.applicationSource = Optional.of("caller");
+        assertRefused(settings, Code.PRINCIPAL_SOURCE_INVALID);
+    }
+
+    @Test
+    void anUnknownApplicationSourceFailsStartup() {
+        RemotePrincipalSettings settings = remoteSettings();
+        settings.applicationSource = Optional.of("token");
+        assertRefused(settings, Code.PRINCIPAL_SOURCE_INVALID);
+    }
+
     private static void assertRefused(RemotePrincipalSettings settings, Code code) {
         PrincipalSourceConfigurationException refused = assertThrows(PrincipalSourceConfigurationException.class,
                 () -> settings.check(LaunchMode.NORMAL, true));

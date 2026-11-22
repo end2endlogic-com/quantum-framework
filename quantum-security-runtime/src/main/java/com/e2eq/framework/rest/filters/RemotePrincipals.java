@@ -33,7 +33,7 @@ final class RemotePrincipals {
                     "The verified token has no raw encoding to present to Auth");
         }
         RemotePrincipalRequest request = RemotePrincipalRequest.fromHeaders(bearer, text(token.getClaim("iss")),
-                text(token.getClaim("sub")), settings.applicationId(), header, tenantSelectionOptional);
+                text(token.getClaim("sub")), settings.applicationFor(header), header, tenantSelectionOptional);
         return RequestAuthorizationState.remotePrincipal(routing, request, settings.source());
     }
 
