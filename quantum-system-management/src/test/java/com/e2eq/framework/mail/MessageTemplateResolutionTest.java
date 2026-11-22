@@ -61,6 +61,21 @@ class MessageTemplateResolutionTest {
     }
 
     @Test
+    void anSmsTemplateRendersWithoutASubject() {
+        var resolver = new DefaultEmailTemplateResolver(null);
+        var render = new EmailTemplateRenderService(io.quarkus.qute.Engine.builder().addDefaults().build(),
+            new com.fasterxml.jackson.databind.ObjectMapper(), resolver);
+        var sms = resolver.resolve(null, "framework-test", MessageChannel.SMS, null).orElseThrow();
+        var rendered = render.render(sms, java.util.Map.of("link", "https://x.test/#t"));
+        assertNull(rendered.subject());
+        assertTrue(rendered.textBody().contains("https://x.test/#t"));
+        var email = resolver.resolve(null, "framework-test", MessageChannel.EMAIL, null).orElseThrow();
+        var noSubject = new EmailTemplateDefinition(email.templateKey(), " ", null, "plain body", email.origin());
+        assertThrows(IllegalStateException.class, () -> render.render(noSubject, java.util.Map.of()),
+            "an email still needs a subject");
+    }
+
+    @Test
     void localeIsNormalisedSoItCannotEscapeTheTemplateDirectory() {
         assertNull(DefaultEmailTemplateResolver.normalizeLocale("../../etc"));
         assertNull(DefaultEmailTemplateResolver.normalizeLocale("  "));

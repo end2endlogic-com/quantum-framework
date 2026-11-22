@@ -46,7 +46,9 @@ public class EmailTemplateRenderService {
         String htmlBody = renderTemplate(template.htmlTemplate(), renderData, Variant.TEXT_HTML);
         String textBody = renderTemplate(template.textTemplate(), renderData, Variant.TEXT_PLAIN);
 
-        if (subject == null || subject.isBlank()) {
+        // Only email has a subject line; SMS and WhatsApp templates are a text body alone.
+        if (template.channel() == com.e2eq.framework.model.messaging.MessageChannel.EMAIL
+                && (subject == null || subject.isBlank())) {
             throw new IllegalStateException("Rendered email subject is blank for template key " + template.templateKey());
         }
         if ((htmlBody == null || htmlBody.isBlank()) && (textBody == null || textBody.isBlank())) {
