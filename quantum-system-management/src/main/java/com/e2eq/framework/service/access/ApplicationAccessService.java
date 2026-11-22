@@ -205,6 +205,46 @@ public class ApplicationAccessService {
       return visible;
    }
 
+   /**
+    * One person's binding of an application in the caller's realm, whole: every tenant it covers.
+    * This is the read for a caller about to write that person's roles. There is one binding per
+    * (subject, application, realm), so a write from one tenant replaces what the binding holds for
+    * its other tenants, and {@link #listBindings} shows a tenant only its own slice.
+    *
+    * <p>The caller must administer the request's tenant (as for listing) and every tenant of the
+    * binding (as for replacing it, {@link #putBinding}); the platform reads any. Empty when the
+    * person holds no binding of the application in the realm.
+    */
+   public Optional<UserAppRole> findUserBinding(String callerRealm, String applicationId, String userId) {
+      accessDirectory.requireLocalDirectory();
+      String user = trimmed(userId);
+      if (user == null) {
+         throw new ApplicationAccessException(Code.BINDING_SUBJECT_INVALID, "a userId is required");
+      }
+      Application application = application(applicationId);
+      boolean platform = isPlatform();
+      if (!platform) {
+         String tenant = tenantOf(null);
+         if (authorityFor(callerRealm, List.of(tenant)) == Authority.NONE) {
+            throw new ApplicationAccessException(Code.ROLE_NOT_GRANTABLE,
+               "only an administrator of tenant '" + tenant + "' may read its members' bindings");
+         }
+      }
+      Optional<UserAppRole> found = system(() -> userAppRoleRepo.findForSubjectsWithIgnoreRules(user, List.of(),
+            application.getRefName(), callerRealm).stream()
+         .filter(binding -> user.equals(trimmed(binding.getUserId())))
+         .findFirst());
+      if (found.isPresent() && !platform) {
+         List<String> tenants = ApplicationBindingValidator.tenants(found.get());
+         if (authorityFor(callerRealm, tenants) == Authority.NONE) {
+            throw new ApplicationAccessException(Code.ROLE_NOT_GRANTABLE, String.format(
+               "%s's binding of '%s' covers tenants %s; the caller administers none or not all of them",
+               user, application.getRefName(), tenants));
+         }
+      }
+      return found;
+   }
+
    // ------------------------------------------------------------------ installs
 
    /**

@@ -784,7 +784,7 @@ whose principal and resource name different applications is refused with
 
 ==== Who may write
 
-`/api/security/userAppRole` (`GET list`, `PUT`, `DELETE id/{id}`) and
+`/api/security/userAppRole` (`GET list`, `GET user/{userId}`, `PUT`, `DELETE id/{id}`) and
 `/api/security/applicationInstall` (`GET list`, `POST`, `POST id/{id}/uninstall`)
 work in the caller's resolved realm; only the platform may name another realm.
 The caller's authority comes from the administrator definitions access invites
@@ -797,6 +797,15 @@ must cover every tenant of the binding (and of the binding it replaces), and
 each role's `grantableBy` decides: the platform grants any declared role, a
 realm administrator roles grantable by `realm-admin` or `tenant-admin`, a
 tenant administrator roles grantable by `tenant-admin`.
+
+`GET list` shows each binding trimmed to the tenants the caller administers, so
+a binding that covers only other tenants is not in a tenant's list. Before
+writing one person's roles, read their whole binding with
+`GET user/{userId}?applicationId=`: there is one binding per (user,
+application, realm), so a `PUT` replaces what it holds for its other tenants.
+The read needs the same authority as replacing the binding (the request's
+tenant and every tenant of the binding); `404 NOT_FOUND` means the person holds
+none.
 
 Binding roles join the principal's global roles, so a role name that a
 `@RolesAllowed` check or the platform recognizes is reserved and never

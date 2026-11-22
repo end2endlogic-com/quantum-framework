@@ -509,6 +509,32 @@ class ApplicationAccessAuthorityTest extends BaseRepoTest {
     }
 
     @Test
+    void anAdministratorOfEveryTenantReadsAPersonsWholeBindingOthersAreRefused() {
+        String realmAdminAB = member("person-admin-ab", List.of(TENANT_A, TENANT_B), List.of("admin"));
+        String realmAdminA = member("person-admin-a", List.of(TENANT_A), List.of("admin"));
+        String viewer = member("person-viewer", List.of(TENANT_A), List.of("viewer"));
+        String bob = member("person-bob", List.of(TENANT_A, TENANT_B), List.of("viewer"));
+        String carol = member("person-carol", List.of(TENANT_A), List.of("viewer"));
+        asSystem(() -> accessService.install(POOLED, install(null, null, TENANT_A)));
+        asSystem(() -> accessService.install(POOLED, install(null, null, TENANT_B)));
+        // Bob's binding covers tenant B only, so A's binding list never shows it.
+        asSystem(() -> accessService.putBinding(POOLED, binding(bob, List.of(TENANT_B), null, "planner-user")));
+        assertTrue(as(signedIn(realmAdminAB, TENANT_A), () -> accessService.listBindings(POOLED, app, TENANT_A)).isEmpty());
+
+        UserAppRole whole = as(signedIn(realmAdminAB, TENANT_A), () -> accessService.findUserBinding(POOLED, app, bob)).orElseThrow();
+        assertEquals(List.of(TENANT_B), whole.getTenantIds(), "the whole binding, whatever the request's tenant");
+        assertEquals(List.of("planner-user"), whole.getRoles());
+        assertTrue(as(signedIn(realmAdminAB, TENANT_A), () -> accessService.findUserBinding(POOLED, app, carol)).isEmpty(),
+            "no binding reads as empty");
+        assertEquals(List.of(TENANT_B), asSystem(() -> accessService.findUserBinding(POOLED, app, bob)).orElseThrow().getTenantIds());
+
+        refused(Code.ROLE_NOT_GRANTABLE, () -> as(signedIn(realmAdminA, TENANT_A), () -> accessService.findUserBinding(POOLED, app, bob)));
+        refused(Code.ROLE_NOT_GRANTABLE, () -> as(signedIn(viewer, TENANT_A), () -> accessService.findUserBinding(POOLED, app, carol)));
+        refused(Code.BINDING_SUBJECT_INVALID, () -> as(signedIn(realmAdminAB, TENANT_A), () -> accessService.findUserBinding(POOLED, app, " ")));
+        refused(Code.APPLICATION_UNKNOWN, () -> as(signedIn(realmAdminAB, TENANT_A), () -> accessService.findUserBinding(POOLED, "no-such-app-" + suffix, bob)));
+    }
+
+    @Test
     void aPolicyGrantedServiceIdentityListsAnotherRealmsInstallsWithFilters() {
         ApplicationInstall pooledA = asSystem(() -> accessService.install(POOLED, install(null, POOLED, TENANT_A)));
         ApplicationInstall pooledB = asSystem(() -> accessService.install(POOLED, install(null, POOLED, TENANT_B)));
