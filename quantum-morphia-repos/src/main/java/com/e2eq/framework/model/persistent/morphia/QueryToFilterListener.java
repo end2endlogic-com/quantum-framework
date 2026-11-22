@@ -594,32 +594,6 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
                 }
                 break;
              }
-             case BIAPIQueryParser.LPAREN: {
-                // Close the group using only inner-scope filters
-                if (filterStack.size() <= startFilterSize) {
-                   throw new IllegalStateException("Group close found no inner filters");
-                }
-                if (andFilters.isEmpty()) {
-                   orFilters.add(filterStack.pop());
-                } else {
-                   andFilters.add(filterStack.pop());
-                   orFilters.add(Filters.and(andFilters.toArray(Filter[]::new)));
-                   andFilters = new ArrayList<>();
-                }
-
-                // Push combined group back
-                if (orFilters.size() == 1) {
-                   filterStack.push(orFilters.get(0));
-                } else if (orFilters.size() > 1) {
-                   // Validate: MongoDB $text cannot be inside $or
-                   validateNoTextInOrFilters(orFilters, "grouped OR expression");
-                   filterStack.push(Filters.or(orFilters.toArray(Filter[]::new)));
-                } else {
-                   throw new IllegalStateException("OrCriteria is empty; expected at least one filter in group");
-                }
-                orFilters = new ArrayList<>();
-                break;
-             }
              default:
                 throw new IllegalArgumentException("Unsupported operation:" + opType);
           }
@@ -696,14 +670,27 @@ public class QueryToFilterListener extends BIAPIQueryBaseListener {
     }
 
 
+    /**
+     * A parenthesised group is its own scope, like {@code elemMatch} and {@code edgeFilter}: on
+     * exit only the operators and filters added inside it are composed, into exactly one filter.
+     * Composing from the bottom of the stacks instead would also consume the operators that sit
+     * outside the group, so {@code (a) && (b || (c) || d)} dropped {@code a}.
+     */
     @Override
     public void enterExprGroup(BIAPIQueryParser.ExprGroupContext ctx) {
-        opTypeStack.push(ctx.lp.getType());
+        opTypeMarkers.push(opTypeStack.size());
+        filterStackMarkers.push(filterStack.size());
     }
 
     @Override
     public void exitExprGroup(BIAPIQueryParser.ExprGroupContext ctx) {
-        buildComposite();
+        int startOp = opTypeMarkers.pop();
+        int startFilter = filterStackMarkers.pop();
+        buildCompositeSince(startOp, startFilter);
+        if (filterStack.size() != startFilter + 1) {
+            throw new IllegalStateException("Group must compose to exactly one filter; found "
+                    + (filterStack.size() - startFilter));
+        }
     }
 
 

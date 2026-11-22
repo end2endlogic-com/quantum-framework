@@ -208,24 +208,6 @@ public class QueryToPredicateJsonListener extends BIAPIQueryBaseListener {
                         ors.add(predicateStack.pop());
                     }
                 }
-                case BIAPIQueryParser.LPAREN -> {
-                    if (predicateStack.size() <= startPredSize) throw new IllegalStateException("Group close found no inner predicates");
-                    if (ands.isEmpty()) {
-                        ors.add(predicateStack.pop());
-                    } else {
-                        ands.add(predicateStack.pop());
-                        ors.add(allOf(ands));
-                        ands = new ArrayList<>();
-                    }
-                    if (ors.size() == 1) {
-                        predicateStack.push(ors.get(0));
-                    } else if (ors.size() > 1) {
-                        predicateStack.push(anyOf(ors));
-                    } else {
-                        throw new IllegalStateException("Or list empty in group");
-                    }
-                    ors = new ArrayList<>();
-                }
                 default -> throw new IllegalArgumentException("Unsupported operation:" + opType);
             }
         }
@@ -283,9 +265,20 @@ public class QueryToPredicateJsonListener extends BIAPIQueryBaseListener {
 
     // ---- Operators and groups ----
     /** {@inheritDoc} */
-    @Override public void enterExprGroup(BIAPIQueryParser.ExprGroupContext ctx) { opTypeStack.push(ctx.lp.getType()); }
+    @Override public void enterExprGroup(BIAPIQueryParser.ExprGroupContext ctx) {
+        // A group is its own scope: compose only what was added inside it (see QueryToFilterListener).
+        opTypeMarkers.push(opTypeStack.size());
+        predStackMarkers.push(predicateStack.size());
+    }
     /** {@inheritDoc} */
-    @Override public void exitExprGroup(BIAPIQueryParser.ExprGroupContext ctx) { buildComposite(); }
+    @Override public void exitExprGroup(BIAPIQueryParser.ExprGroupContext ctx) {
+        int startOp = opTypeMarkers.pop();
+        int startPred = predStackMarkers.pop();
+        buildCompositeSince(startOp, startPred);
+        if (predicateStack.size() != startPred + 1) {
+            throw new IllegalStateException("Group must compose to exactly one predicate; found " + (predicateStack.size() - startPred));
+        }
+    }
     /** {@inheritDoc} */
     @Override public void enterExprOp(BIAPIQueryParser.ExprOpContext ctx) { opTypeStack.push(ctx.op.getType()); }
 
