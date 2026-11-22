@@ -71,6 +71,30 @@ public class UserAppRoleResource {
         return Response.ok(accessService.listBindings(realm(), applicationId, tenantId)).build();
     }
 
+    @GET
+    @Path("user/{userId}")
+    @FunctionalAction("LIST")
+    @Operation(summary = "One person's binding of an application",
+        description = "The binding userId holds for applicationId in the caller's realm, with every tenant it covers. "
+            + "Read it before writing that person's roles: there is one binding per (user, application, realm), so a PUT "
+            + "replaces what it holds for its other tenants. Allowed for the platform, and for an administrator of the "
+            + "request's tenant who may also replace the binding: administers every tenant of it and may grant each of its roles.")
+    @APIResponses({
+        @APIResponse(responseCode = "200", description = "The binding",
+            content = @Content(mediaType = "application/json", schema = @Schema(implementation = UserAppRole.class))),
+        @APIResponse(responseCode = "400", description = "APPLICATION_UNKNOWN, BINDING_INVALID or BINDING_SUBJECT_INVALID",
+            content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class))),
+        @APIResponse(responseCode = "403", description = "ROLE_NOT_GRANTABLE: the caller does not administer the request's tenant, or may not replace the binding",
+            content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class))),
+        @APIResponse(responseCode = "404", description = "NOT_FOUND: the person holds no binding of the application in the realm",
+            content = @Content(mediaType = "application/json", schema = @Schema(implementation = RestError.class)))
+    })
+    public Response userBinding(@PathParam("userId") String userId, @QueryParam("applicationId") String applicationId) {
+        return Response.ok(accessService.findUserBinding(realm(), applicationId, userId)
+            .orElseThrow(() -> new ApplicationAccessException(ApplicationAccessException.Code.NOT_FOUND,
+                "no binding of '" + applicationId + "' for " + userId))).build();
+    }
+
     @PUT
     @FunctionalAction("SAVE")
     @Operation(summary = "Create or replace a binding",
