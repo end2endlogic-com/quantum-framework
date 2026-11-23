@@ -341,10 +341,15 @@ so it must be meaningful and spelled exactly one way. Entities annotated with `@
 (currently `UserGroup` and `Policy`) are held to a canonical rule by `MorphiaRepo` on every write path,
 including REST resources, `/api/query/save`, CSV import, and seed packs:
 
-* On create, a `refName` that is given must match `^[A-Z][A-Z0-9_]*$`, be 3-64 characters, and not look like a
-  generated id (`^[0-9a-f]{16,}$`, case-insensitive). Values are judged as given; the server never trims or
-  re-cases them. A `refName` that is not given defaults to the record's ObjectId (hex), as for every other entity;
-  sending the record's own id as its `refName` is the same default.
+* On create, `refName` takes one of exactly two forms:
+** *The record's ObjectId.* Omit `refName` (or send the record's own id) and the repository sets it to the
+   ObjectId in hex, as for every other entity. Use this when the record has no meaningful name.
+** *An upper snake case name.* `^[A-Z][A-Z0-9_]*$`, 3-64 characters, for example `OPS_TEAM` or
+   `TENANT_ADMIN`. Use this when other records or configuration join on the name.
++
+Anything else is refused: lower case or dashes (`ops-team`, `REFNAME_INVALID_FORMAT`), or a hex id, UUID or hash
+that is not the record's own id (`REFNAME_GENERATED_ID`). Do not invent an id-like value; omit `refName` instead.
+Values are judged as given; the server never trims or re-cases them.
 * After create, `refName` is immutable. Saving, merging, or field-updating a different value fails. A merge that
   omits `refName` leaves it untouched; a full save that omits it stands for the ObjectId default, so it is
   accepted only when the stored `refName` is that default.
@@ -363,7 +368,7 @@ Violations raise `RefNameViolationException`, rendered as a `RestError` with `er
 
 | `REFNAME_REQUIRED` | 400 | No refName where one is required (not raised on create: a missing refName defaults to the ObjectId)
 | `REFNAME_INVALID_FORMAT` | 400 | Pattern or length violation
-| `REFNAME_GENERATED_ID` | 400 | Looks like an ObjectId, dashless UUID, or hash
+| `REFNAME_GENERATED_ID` | 400 | Looks like an ObjectId, dashless UUID, or hash but is not the record's own id; omit refName to get the ObjectId
 | `REFNAME_RESERVED` | 400 | A client tried to create a declared legacy name reserved for framework code
 | `REFNAME_IMMUTABLE` | 409 | Attempt to change the refName of an existing record
 |===

@@ -83,7 +83,7 @@ endif::[]
 
 **Migration**:: Versioned database schema and data changes managed by Quantum's migration framework with changeset tracking.
 
-**Canonical refName**:: The spelling rule for the `refName` of `@CanonicalRefName` entities (`UserGroup`, `Policy`): upper snake case (`^[A-Z][A-Z0-9_]*$`), 3 to 64 characters, immutable after create. A refName that is not given defaults to the record's ObjectId.
+**Canonical refName**:: The rule for the `refName` of `@CanonicalRefName` entities (`UserGroup`, `Policy`). The refName is one of two things: the record's own ObjectId (omit refName and the repository sets it), or an upper snake case name (`^[A-Z][A-Z0-9_]*$`, 3 to 64 characters, such as `OPS_TEAM`). Anything else is refused, including an ObjectId that is not the record's own. It is immutable after create.
 
 ==== Annotations
 

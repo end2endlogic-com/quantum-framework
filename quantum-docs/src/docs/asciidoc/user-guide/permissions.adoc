@@ -497,8 +497,8 @@ When a query expands a relationship (`expand(...)` through the QueryGateway), ea
 
 `Policy` and `UserGroup` are joined on by `refName`, so they are marked `@CanonicalRefName` and their refName has one canonical spelling:
 
-* A refName that is given must match `^[A-Z][A-Z0-9_]*$`, be 3 to 64 characters, and not look like a generated id (16 or more hex characters). There is no trimming or re-casing.
-* A refName that is not given defaults to the record's ObjectId, as for every other entity. A refName equal to the record's own id counts as that default.
+* The refName is either the record's own ObjectId or an upper snake case name. Omit refName (or send the record's own id) and the repository sets it to the ObjectId. Otherwise give a name matching `^[A-Z][A-Z0-9_]*$`, 3 to 64 characters, such as `OPS_TEAM`.
+* Any other value is refused: lower case or dashes, or a hex id, UUID or hash that is not the record's own id. There is no trimming or re-casing.
 * refName is immutable after create, on save, merge, field updates and bulk updates. A merge that omits refName leaves it untouched.
 * The check runs in the repository on every write path (REST, QueryGateway save, CSV import, seed packs), and `skipValidation` does not bypass it. Existing records are not re-validated.
 * Names that predate the rule (declared on the annotation or in `quantum.refname.legacy-allowed.<SimpleClassName>`) are admitted only for framework writes. A client that tries to claim one is refused with `REFNAME_RESERVED`.
