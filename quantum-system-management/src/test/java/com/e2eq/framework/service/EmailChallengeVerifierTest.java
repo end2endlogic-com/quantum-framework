@@ -86,4 +86,24 @@ class EmailChallengeVerifierTest {
         assertThrows(IllegalArgumentException.class, () -> new EmailChallengeVerifier(new Store(), Clock.systemUTC(), new byte[0]));
         assertFalse(pending(EmailChallenge.Purpose.PORTAL_SIGN_IN).value.get().toString().contains("user@example.test"));
     }
+    @Test void phoneVerificationIsBoundToItsRequesterAndRedeemsOnlyForItself() {
+        Store store = new Store();
+        var v = verifier(store, NOW);
+        store.value.set(new EmailChallenge("challenge", null, "test-app", EmailChallenge.Purpose.PHONE_VERIFICATION,
+                v.digest("challenge", EmailChallenge.Purpose.PHONE_VERIFICATION, "012345"), EmailChallengeVerifier.bindingDigest(BINDING),
+                NOW.plusSeconds(300), 0, 5, EmailChallenge.State.PENDING, 0,
+                com.e2eq.framework.model.messaging.MessageChannel.SMS, "+14155550100", null));
+        assertThrows(EmailChallengeVerifier.Rejected.class, () -> v.verify("challenge", "test-app",
+                EmailChallenge.Purpose.PHONE_VERIFICATION, "012345", "b".repeat(43)), "another requester");
+        assertThrows(EmailChallengeVerifier.Rejected.class, () -> v.verify("challenge", "test-app",
+                EmailChallenge.Purpose.PORTAL_SIGN_IN, "012345", null), "never a sign-in");
+        assertEquals(EmailChallenge.State.VERIFIED, v.verify("challenge", "test-app",
+                EmailChallenge.Purpose.PHONE_VERIFICATION, "012345", BINDING).state());
+        assertThrows(IllegalArgumentException.class, () -> new EmailChallenge("c", "a@example.test", "test-app",
+                EmailChallenge.Purpose.PHONE_VERIFICATION, "d", EmailChallengeVerifier.bindingDigest(BINDING),
+                NOW, 0, 5, EmailChallenge.State.PENDING, 0), "a phone verification is never emailed");
+        assertThrows(IllegalArgumentException.class, () -> new EmailChallenge("c", null, "test-app",
+                EmailChallenge.Purpose.PHONE_VERIFICATION, "d", null, NOW, 0, 5, EmailChallenge.State.PENDING, 0,
+                com.e2eq.framework.model.messaging.MessageChannel.SMS, "+14155550100", null), "binding required");
+    }
 }

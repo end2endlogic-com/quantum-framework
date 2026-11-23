@@ -84,6 +84,29 @@ public class AuthLoginService {
                 () -> new SecurityException("EMAIL_IDENTITY_MISSING"))));
     }
 
+    /**
+     * Called only after atomic proof verification inside the authentication authority, for a
+     * challenge sent to a phone; {@code userId} is the account the authority bound that phone to.
+     */
+    public LoginResult loginWithVerifiedPhone(com.e2eq.framework.model.auth.EmailChallenge proof, String userId,
+                                              String providerName, String realmId) {
+        if (proof == null || proof.state() != com.e2eq.framework.model.auth.EmailChallenge.State.VERIFIED) {
+            throw new SecurityException("PHONE_PROOF_INVALID");
+        }
+        List<AuthProvider> providers = authProviderFactory.getLoginProviders(providerName);
+        if (providers.size() != 1) throw new SecurityException("PHONE_PROVIDER_AMBIGUOUS");
+        AuthProvider provider = providers.get(0);
+        AuthProvider.LoginResponse result = withAnonymousAuthenticationAccess(
+                () -> provider.loginWithVerifiedPhone(proof, userId, realmId));
+        if (!result.authenticated() || result.positiveResponse() == null) {
+            return LoginResult.failure(List.of("phone: authentication or authorization rejected"));
+        }
+        Optional<CredentialUserIdPassword> credential = withAnonymousAuthenticationAccess(
+                () -> findCredential(null, result.positiveResponse().userId()));
+        return LoginResult.success(toAuthResponse(provider, result, credential.orElseThrow(
+                () -> new SecurityException("PHONE_IDENTITY_MISSING"))));
+    }
+
     public LoginResult login(String userId, String password, String providerOverride) {
         return login(userId, password, providerOverride, null, null);
     }

@@ -138,6 +138,15 @@ public interface AuthProvider {
         throw new UnsupportedOperationException("This provider does not support email authentication");
     }
 
+    /**
+     * Internal authority boundary for a verified SMS or WhatsApp sign-in challenge. The
+     * authority resolved {@code userId} from its own record of the phone a person proved
+     * earlier; a provider admits it exactly as a verified email (EMAIL credentials only).
+     */
+    default LoginResponse loginWithVerifiedPhone(EmailChallenge proof, String userId, String realmId) {
+        throw new UnsupportedOperationException("This provider does not support phone authentication");
+    }
+
     LoginResponse refreshTokens(String refreshToken);
 
     /**

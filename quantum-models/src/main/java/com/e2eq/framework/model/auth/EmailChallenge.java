@@ -25,9 +25,19 @@ public record EmailChallenge(
     /**
      * What a challenge proves the address for. A challenge redeems only for its own
      * purpose: PASSWORD_SETUP (an emailed set-password link) never signs anyone in,
-     * and a sign-in link never sets a password.
+     * and a sign-in link never sets a password. PHONE_VERIFICATION (a code sent to a phone a
+     * signed-in person is adding) is bound to that person and never signs anyone in.
      */
-    public enum Purpose { CLI_SIGN_IN, PORTAL_SIGN_IN, PASSWORD_SETUP }
+    // PHONE_VERIFICATION is redeemed only inside the authority's phone enrolment; no request or
+    // response carries it, so the published enum keeps the values clients send and read.
+    @org.eclipse.microprofile.openapi.annotations.media.Schema(
+            enumeration = {"CLI_SIGN_IN", "PORTAL_SIGN_IN", "PASSWORD_SETUP"})
+    public enum Purpose {
+        CLI_SIGN_IN, PORTAL_SIGN_IN, PASSWORD_SETUP, PHONE_VERIFICATION;
+
+        /** Whether redeeming needs the client binding the challenge was created with. */
+        public boolean bound() { return this == CLI_SIGN_IN || this == PHONE_VERIFICATION; }
+    }
     public enum State { PENDING_DELIVERY, PENDING, VERIFIED, EXPIRED, LOCKED, REVOKED }
 
     public EmailChallenge {
@@ -52,7 +62,10 @@ public record EmailChallenge(
         if (attempts < 0 || maxAttempts < 1 || attempts > maxAttempts || revision < 0) {
             throw new IllegalArgumentException("Invalid challenge counters");
         }
-        if (purpose == Purpose.CLI_SIGN_IN) requireText(clientBindingDigest, "clientBindingDigest");
+        if (purpose.bound()) requireText(clientBindingDigest, "clientBindingDigest");
+        if (purpose == Purpose.PHONE_VERIFICATION && channel == MessageChannel.EMAIL) {
+            throw new IllegalArgumentException("a phone verification is sent to a phone");
+        }
     }
 
     /** Email challenge without a redirect: the constructor every caller used before channels. */
