@@ -590,7 +590,64 @@ public class RuleContext {
        addAnonymousAuthenticationRule();
        addApplicationServiceInstallRule("install");
        addApplicationServiceInstallRule("uninstall");
+       addSystemPrincipalDirectoryRule();
 
+    }
+
+    /** Area and functional domain of the control-plane directory (realm memberships, realm registry). */
+    public static final String CONTROL_PLANE_DIRECTORY_AREA = "system";
+    public static final String CONTROL_PLANE_DIRECTORY_DOMAIN = "control_plane_directory";
+
+    /**
+     * The precondition of {@link #addSystemPrincipalDirectoryRule}: the principal is not a service
+     * identity. {@code pctx} is the principal binding in both scripting modes.
+     */
+    public static final String NOT_SERVICE_IDENTITY_PRECONDITION =
+            "pctx.scope !== '" + com.e2eq.framework.model.securityrules.PrincipalContext.SCOPE_SERVICE + "'";
+
+    /**
+     * Makes a system principal (a person or a login holding the {@code system} role) the
+     * administrator of the control-plane directory in every realm and tenant: it may read and
+     * write any realm membership there, including a membership whose record belongs to another
+     * tenant (a service token's membership is stored in its issuer's tenant). Without it the only
+     * rule that applies is "tenant admin can administer the tenant records", which confines every
+     * caller, {@code system} included, to its own tenant's records, so no identity could grant
+     * into another tenant. The services still decide who reaches each write (a system principal
+     * by stored roles, RoleGrantGuard for the roles granted); this rule only stops the repository
+     * from refusing that write.
+     *
+     * <p>A service identity holding {@code system} (an application's service token, principal scope
+     * {@link com.e2eq.framework.model.securityrules.PrincipalContext#SCOPE_SERVICE}) is excluded:
+     * application runtimes get {@code system} for their own install, not to administer other
+     * tenants' memberships.</p>
+     */
+    void addSystemPrincipalDirectoryRule() {
+        SecurityURIHeader header = new SecurityURIHeader.Builder()
+                .withIdentity("system")
+                .withArea(CONTROL_PLANE_DIRECTORY_AREA)
+                .withFunctionalDomain(CONTROL_PLANE_DIRECTORY_DOMAIN)
+                .withAction("*")
+                .build();
+
+        SecurityURIBody body = new SecurityURIBody.Builder()
+                .withRealm("*")
+                .withOrgRefName("*")
+                .withAccountNumber("*")
+                .withTenantId("*")
+                .withOwnerId("*")
+                .withDataSegment("*")
+                .build();
+
+        Rule rule = new Rule.Builder()
+                .withName("SysRoleControlPlaneDirectory")
+                .withDescription("A system principal administers the control-plane directory in every realm and tenant")
+                .withSecurityURI(new SecurityURI(header, body))
+                .withPreconditionScript(NOT_SERVICE_IDENTITY_PRECONDITION)
+                .withEffect(RuleEffect.ALLOW)
+                .withPriority(-100)
+                .withFinalRule(true)
+                .build();
+        this.addRule(header, rule);
     }
 
     /**
