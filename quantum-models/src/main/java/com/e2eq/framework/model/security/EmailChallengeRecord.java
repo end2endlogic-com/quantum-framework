@@ -1,6 +1,7 @@
 package com.e2eq.framework.model.security;
 
 import com.e2eq.framework.model.auth.EmailChallenge;
+import com.e2eq.framework.model.messaging.MessageChannel;
 import com.e2eq.framework.model.persistent.base.BaseModel;
 import dev.morphia.annotations.Entity;
 import java.time.Instant;
@@ -25,10 +26,15 @@ public class EmailChallengeRecord extends BaseModel {
     private int maxAttempts;
     private EmailChallenge.State state;
     private long revision;
+    /** Absent on records stored before channels; such a record reads back as EMAIL to {@link #email}. */
+    private MessageChannel channel;
+    private String recipient;
+    private String redirect;
 
     public EmailChallenge snapshot() {
         return new EmailChallenge(challengeId, email, applicationId, purpose, secretDigest,
-                clientBindingDigest, expiresAt, attempts, maxAttempts, state, revision);
+                clientBindingDigest, expiresAt, attempts, maxAttempts, state, revision,
+                channel, recipient, redirect);
     }
     public static EmailChallengeRecord from(EmailChallenge challenge) {
         var record = new EmailChallengeRecord();
@@ -44,6 +50,9 @@ public class EmailChallengeRecord extends BaseModel {
         record.maxAttempts = challenge.maxAttempts();
         record.state = challenge.state();
         record.revision = challenge.revision();
+        record.channel = challenge.channel();
+        record.recipient = challenge.recipient();
+        record.redirect = challenge.redirect();
         return record;
     }
     @Override public String bmFunctionalArea() { return "SECURITY"; }

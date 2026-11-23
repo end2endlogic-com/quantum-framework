@@ -144,6 +144,12 @@ Tenants can override any classpath template by storing an `EmailTemplate` docume
 
 | `schemaVersion`
 | Optional version marker for template lifecycle tracking
+
+| `parameterNames`
+| Parameters the email template requires. A channel-neutral send missing any of them is refused (`TEMPLATE_PARAMETER_MISSING`). Optional.
+
+| `variants`
+| Other channels and locales of the same key; see <<message-channels-and-locales>>. Optional; documents written before channels have none.
 |===
 
 ==== Rendering templates
@@ -354,6 +360,76 @@ public class CmsBackedTemplateResolver implements EmailTemplateResolver {
     }
 }
 ----
+
+[[message-channels-and-locales]]
+==== Channels, locales and channel-neutral delivery
+
+The same template key can be sent over email, SMS or WhatsApp, and in several locales. There is still one `EmailTemplate` document per key (one per purpose, such as `auth.magic-link`); its own subject/html/text fields are the email template in the default locale, exactly as before. Each entry in `variants` (a `MessageTemplateVariant`) adds one channel and locale:
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| `channel`
+| `EMAIL`, `SMS` or `WHATSAPP`
+
+| `locale`
+| BCP 47 tag such as `pt-BR`; absent for the channel's default-locale variant
+
+| `active`
+| Inactive variants are skipped
+
+| `subjectTemplate`, `htmlTemplate`, `textTemplate`
+| Qute templates for content Quantum renders (email, and SMS providers that take free text)
+
+| `providerTemplateId`
+| Set when the provider holds a pre-approved template (WhatsApp, China SMS); nothing is rendered locally and only the named parameters are sent
+
+| `senderSignature`
+| Provider-registered sender signature, where the provider requires one
+
+| `parameterNames`
+| Parameters a send must supply
+|===
+
+Two active variants with the same channel and locale are refused when resolved; the resolver does not pick one.
+
+`EmailTemplateResolver.resolve(realm, templateKey, channel, locale)` tries the realm override in the requested locale and then in its default locale, so a realm's own text is never replaced by shipped classpath text. Only when the realm has nothing for the channel (no matching variant and, for email, no content of its own) is the classpath tried, again requested locale first and then the default. The classpath layout adds a channel and an optional locale directory; `templates/email/{templateKey}/` keeps meaning email in the default locale:
+
+[source,text]
+----
+templates/
+  email/auth.magic-link/            subject.txt, body.html, body.txt
+  email/auth.magic-link/pt-BR/      subject.txt, body.html, body.txt
+  sms/auth.magic-link/              body.txt
+----
+
+The two-argument `resolve(realm, templateKey)` and `EmailTemplateRenderService.render(realm, templateKey, context)` are unchanged and never return a variant. A resolver written before channels answers only email in the default locale.
+
+===== Sending through `MessageDelivery`
+
+`MessageDelivery.send(MessageRequest)` sends one templated message on any channel and returns a `DeliveryReceipt` (provider id, provider message id, starting status `QUEUED` or `SENT`). A `MessageRequest` carries the realm, a `MessageRecipient` (channel and address), the template key, parameters, an optional locale, an optional sender and an optional idempotency key.
+
+[source,java]
+----
+@Inject
+MessageDelivery delivery;
+
+DeliveryReceipt receipt = delivery.send(new MessageRequest(
+    realmId,
+    new MessageRecipient(MessageChannel.EMAIL, user.getEmail()),
+    "password-reset",
+    Map.of("name", user.getDisplayName(), "resetLink", resetUrl),
+    "pt-BR",
+    "noreply@example.com",
+    requestId));
+----
+
+Delivery fails closed. A send that cannot be handed to a provider throws `MessageDeliveryException` with a `reason`: `NO_ADAPTER`, `AMBIGUOUS_ADAPTER`, `CHANNEL_NOT_SUPPORTED`, `TEMPLATE_NOT_FOUND`, `TEMPLATE_PARAMETER_MISSING`, `PROVIDER_TEMPLATE_UNSUPPORTED` or `DELIVERY_UNAVAILABLE`. Through this path `PostmarkEmailSender` refuses a missing API key or from-address (`DELIVERY_UNAVAILABLE`) instead of skipping, and returns Postmark's `MessageID` on the receipt. Its `deliver(RenderedEmail)` method still behaves as described above.
+
+The framework's default `MessageDelivery` (`ChannelMessageDelivery`) sends through the single `MessageChannelAdapter` bean registered for the recipient's channel. The framework ships one adapter, `EmailMessageAdapter`, which resolves and renders the email template and hands it to the application's `EmailDeliveryService` (Postmark, SMTP or a custom sender). Email providers plug in as an `EmailDeliveryService`; registering a second EMAIL adapter makes the default refuse email sends (`AMBIGUOUS_ADAPTER`) until you supply a routing `MessageDelivery`. SMS and WhatsApp adapters are not part of the open-source framework: an application or extension registers them as `MessageChannelAdapter` beans. To choose between several providers for one channel (per region, for example), provide your own `MessageDelivery` bean; it replaces the default.
+
+A custom `EmailDeliveryService` takes part without changes: the default `deliverWithReceipt` calls `deliver` and reports `QUEUED` with no message id. A sender whose `deliver` can return without sending must override `deliverWithReceipt` and throw instead.
 
 ==== When to use email templates
 

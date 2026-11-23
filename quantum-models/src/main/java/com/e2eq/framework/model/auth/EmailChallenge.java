@@ -1,13 +1,27 @@
 package com.e2eq.framework.model.auth;
 
+import com.e2eq.framework.model.messaging.MessageChannel;
+
 import java.time.Instant;
 import java.util.Objects;
 
-/** Immutable state passed through the authority's atomic challenge repository. */
+/**
+ * Immutable state passed through the authority's atomic challenge repository.
+ *
+ * <p>Channel-neutral: {@code channel} and {@code recipient} say where the secret was sent.
+ * For {@link MessageChannel#EMAIL} the recipient is the address and {@code email} carries
+ * the same value, so email callers keep reading {@link #email()}. For other channels
+ * {@code email} is {@code null}. A challenge stored before these fields existed has no
+ * channel or recipient and reads back as an email challenge for its {@code email}.
+ *
+ * <p>{@code redirect} is the destination the authority already checked when it created the
+ * challenge; the client never carries it. It is optional.
+ */
 public record EmailChallenge(
         String id, String email, String applicationId, Purpose purpose,
         String secretDigest, String clientBindingDigest, Instant expiresAt,
-        int attempts, int maxAttempts, State state, long revision) {
+        int attempts, int maxAttempts, State state, long revision,
+        MessageChannel channel, String recipient, String redirect) {
     /**
      * What a challenge proves the address for. A challenge redeems only for its own
      * purpose: PASSWORD_SETUP (an emailed set-password link) never signs anyone in,
@@ -18,29 +32,50 @@ public record EmailChallenge(
 
     public EmailChallenge {
         requireText(id, "id");
-        requireText(email, "email");
+        if (channel == null) channel = MessageChannel.EMAIL;
+        if (channel == MessageChannel.EMAIL) {
+            requireText(email, "email");
+            if (recipient == null) recipient = email;
+            if (!recipient.equals(email)) {
+                throw new IllegalArgumentException("recipient must equal email for an email challenge");
+            }
+        } else if (email != null) {
+            throw new IllegalArgumentException("email is set only for an email challenge");
+        }
+        requireText(recipient, "recipient");
         requireText(applicationId, "applicationId");
         requireText(secretDigest, "secretDigest");
         Objects.requireNonNull(purpose, "purpose");
         Objects.requireNonNull(expiresAt, "expiresAt");
         Objects.requireNonNull(state, "state");
+        if (redirect != null && redirect.isBlank()) redirect = null;
         if (attempts < 0 || maxAttempts < 1 || attempts > maxAttempts || revision < 0) {
             throw new IllegalArgumentException("Invalid challenge counters");
         }
         if (purpose == Purpose.CLI_SIGN_IN) requireText(clientBindingDigest, "clientBindingDigest");
     }
 
+    /** Email challenge without a redirect: the constructor every caller used before channels. */
+    public EmailChallenge(
+            String id, String email, String applicationId, Purpose purpose,
+            String secretDigest, String clientBindingDigest, Instant expiresAt,
+            int attempts, int maxAttempts, State state, long revision) {
+        this(id, email, applicationId, purpose, secretDigest, clientBindingDigest, expiresAt,
+                attempts, maxAttempts, state, revision, MessageChannel.EMAIL, email, null);
+    }
+
     public EmailChallenge transition(State next, int nextAttempts) {
         return new EmailChallenge(id, email, applicationId, purpose, secretDigest,
-                clientBindingDigest, expiresAt, nextAttempts, maxAttempts, next, revision + 1);
+                clientBindingDigest, expiresAt, nextAttempts, maxAttempts, next, revision + 1,
+                channel, recipient, redirect);
     }
 
     private static void requireText(String value, String field) {
         if (value == null || value.isBlank()) throw new IllegalArgumentException(field + " is required");
     }
 
-    /** Never expose secret digests or email addresses through default logging. */
+    /** Never expose secret digests, recipients or redirects through default logging. */
     @Override public String toString() {
-        return "EmailChallenge[id=" + id + ", purpose=" + purpose + ", state=" + state + "]";
+        return "EmailChallenge[id=" + id + ", channel=" + channel + ", purpose=" + purpose + ", state=" + state + "]";
     }
 }

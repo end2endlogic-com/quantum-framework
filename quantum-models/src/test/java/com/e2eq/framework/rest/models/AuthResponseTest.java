@@ -37,6 +37,24 @@ class AuthResponseTest {
         assertFalse(payload.has("activeApplicationId"));
         assertFalse(payload.has("accessibleRealms"));
         assertFalse(payload.has("accessibleTenants"));
+        assertFalse(payload.has("redirect"));
+    }
+
+    @Test
+    void carriesARedirectOnlyWhenOneIsSet() throws Exception {
+        AuthResponse response = new AuthResponse("access", "refresh", 123L);
+        response.setRedirect("/workspace/projects");
+
+        JsonNode payload = objectMapper.readTree(objectMapper.writeValueAsString(response));
+        assertEquals("/workspace/projects", payload.get("redirect").asText());
+        assertEquals("/workspace/projects",
+                objectMapper.readValue("{\"access_token\":\"a\",\"redirect\":\"/workspace/projects\"}",
+                        AuthResponse.class).getRedirect());
+
+        AuthResponse previous = new AuthResponse("a", "r", 1L, null, "realm", List.of(), "custom",
+                List.of(), List.of(), List.of(), "app");
+        assertEquals(null, previous.getRedirect());
+        assertEquals("app", previous.getActiveApplicationId());
     }
 
     @Test
