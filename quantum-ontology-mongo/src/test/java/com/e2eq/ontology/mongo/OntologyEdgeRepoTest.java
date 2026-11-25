@@ -32,6 +32,9 @@ public class OntologyEdgeRepoTest {
 
     @Inject
     MorphiaDatastore datastore;
+
+    @Inject
+    OntologyMaterializer materializer;
     
     private DataDomain testDataDomain;
     private DataDomain testDataDomainOrgB;
@@ -66,6 +69,26 @@ public class OntologyEdgeRepoTest {
         testDataDomainOrgB.setTenantId("test-ontology-types");
         testDataDomainOrgB.setOwnerId("system");
         testDataDomainOrgB.setDataSegment(0);
+    }
+
+    @Test
+    void functionalSnapshotReplacesTargetWithoutChangingOtherDataDomains() {
+        var a = new com.e2eq.ontology.core.Reasoner.Edge("ORDER-1", "Order", "placedBy", "CUST-1", "Customer", false, Optional.empty());
+        var b = new com.e2eq.ontology.core.Reasoner.Edge("ORDER-1", "Order", "placedBy", "CUST-2", "Customer", false, Optional.empty());
+        edgeRepo.upsert(testDataDomain, "Customer", "CUST-1", "memberOf", "Organization", "ORG-1", false, Map.of());
+        edgeRepo.upsert(testDataDomain, "Customer", "CUST-2", "memberOf", "Organization", "ORG-2", false, Map.of());
+        materializer.apply("test-ontology-types", testDataDomain, "ORDER-1", "Order", List.of(a));
+        materializer.apply("test-ontology-types", testDataDomainOrgB, "ORDER-1", "Order", List.of(a));
+        assertThrows(CardinalityViolationException.class,
+                () -> materializer.apply("test-ontology-types", testDataDomain, "ORDER-1", "Order", List.of(a, b)));
+        assertEquals(java.util.Set.of("CUST-1"), edgeRepo.dstIdsBySrc(testDataDomain, "placedBy", "ORDER-1"));
+        materializer.apply("test-ontology-types", testDataDomain, "ORDER-1", "Order", List.of(b));
+        materializer.apply("test-ontology-types", testDataDomain, "ORDER-1", "Order", List.of(b));
+        assertEquals(java.util.Set.of("CUST-2"), edgeRepo.dstIdsBySrc(testDataDomain, "placedBy", "ORDER-1"));
+        assertEquals(java.util.Set.of("ORG-2"), edgeRepo.dstIdsBySrc(testDataDomain, "placedInOrg", "ORDER-1"));
+        assertEquals(java.util.Set.of("CUST-1"), edgeRepo.dstIdsBySrc(testDataDomainOrgB, "placedBy", "ORDER-1"));
+        materializer.apply("test-ontology-types", testDataDomain, "ORDER-1", "Order", List.of());
+        assertEquals(java.util.Set.of(), edgeRepo.dstIdsBySrc(testDataDomain, "placedBy", "ORDER-1"));
     }
 
     @Test

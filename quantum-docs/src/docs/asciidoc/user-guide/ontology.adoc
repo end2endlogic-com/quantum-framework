@@ -1681,7 +1681,7 @@ This release expands the ontology engine and query integration to support a rich
 - transitive properties
   - For transitive p, if (s, p, m) and (m, p, o) then (s, p, o) is inferred. Typical for ancestorOf, partOf and locatedIn within hierarchical contexts. A transitive property cannot be a chain step, so keep a predicate used in chains (such as memberOf in placedBy ∘ memberOf) non-transitive.
 - functional properties
-  - For functional p, each source s has at most one destination o. Upserts replace the prior value. Useful for single-valued relations like placedBy on Order.
+  - For functional p, each source s has at most one destination o. Saving an entity snapshot replaces its prior explicit value. The materializer validates the complete incoming snapshot before removing the obsolete explicit edge, then refreshes inferred relationships. A snapshot containing multiple distinct targets is refused without deleting the previous assertion. Direct edge upserts still reject a different target; use entity saves for replacement. Useful for single-valued relations like placedBy on Order.
 
 All inferred edges carry inferred=true and provenance containing the rule used (e.g., transitive, inverse, subPropertyOf). These edges live in the same collection and are fully queryable.
 

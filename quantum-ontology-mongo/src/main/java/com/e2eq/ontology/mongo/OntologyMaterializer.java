@@ -95,6 +95,33 @@ public class OntologyMaterializer {
         var snap = new Reasoner.EntitySnapshot(tenantId, entityId, entityType, extendedEdges);
         var out = withoutImagesOf(reasoner.infer(snap, registry), foreign);
 
+        // Validate the complete replacement before removing any persisted relationship.
+        // A functional property permits one target in the new snapshot, not one target
+        // forever: the old explicit assertion must go before its replacement is inserted.
+        Map<String, Set<String>> functionalTargets = new LinkedHashMap<>();
+        if (explicitEdges != null) {
+            for (var e : explicitEdges) {
+                if (!registry.propertyOf(e.p()).map(OntologyRegistry.PropertyDef::functional).orElse(false)) continue;
+                Set<String> targets = functionalTargets.computeIfAbsent(e.p(), p -> new LinkedHashSet<>());
+                if (!targets.isEmpty() && !targets.contains(e.dstId())) {
+                    throw new com.e2eq.ontology.exceptions.CardinalityViolationException(
+                            e.p(), e.srcId(), e.srcType(), targets.iterator().next(), e.dstId());
+                }
+                targets.add(e.dstId());
+            }
+            for (var e : explicitEdges) {
+                if (!functionalTargets.containsKey(e.p())
+                        || e.prov().map(p -> "computed".equals(p.rule())).orElse(false)) continue;
+                for (var previous : existingAll) {
+                    if (Objects.equals(previous.getP(), e.p()) && !previous.isInferred()
+                            && !Boolean.TRUE.equals(previous.isDerived()) && !Objects.equals(previous.getDst(), e.dstId())) {
+                        changes.removed().add(toEdgeRecord(previous, dataDomain));
+                    }
+                }
+                edgeRepo.deleteExplicitBySrcNotIn(realmId, dataDomain, entityId, e.p(), Set.of(e.dstId()));
+            }
+        }
+
         // 1) Upsert EXPLICIT edges as-is for traversal and cascade logic
         // Separate computed edges (from ComputedEdgeProvider) from regular explicit edges
         Map<String, Set<String>> explicitByP = new HashMap<>();
