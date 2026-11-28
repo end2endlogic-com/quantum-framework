@@ -99,6 +99,11 @@ To activate publication after merging the workflow into `1.4.3-SNAPSHOT`:
 * Generate a Central Portal publishing token and add its username as the GitHub
   Actions repository secret `CENTRAL_USERNAME`, and its password as
   `CENTRAL_PASSWORD`. These are token credentials, not the account login.
+* The POMs and the workflow use Maven server id `central-portal`, not `central`.
+  Maven 3.10+ reserves `central` for Maven Central (`repo.maven.apache.org`) and
+  withholds its credentials from `central.sonatype.com`, which fails every upload
+  with HTTP 401. To publish from a workstation, put the same token under
+  `<server><id>central-portal</id>...</server>` in `~/.m2/settings.xml`.
 * Push a commit to the branch, or dispatch the workflow on that branch. Missing
   credentials fail the publication step explicitly; build failures prevent it.
 
