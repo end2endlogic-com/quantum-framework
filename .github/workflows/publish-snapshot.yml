@@ -35,7 +35,10 @@ jobs:
           # compiler newer than this branch's Polyglot 24.1.0 libraries.
           java-version: '21.0.4'
           cache: maven
-          server-id: central
+          # Not "central": Maven 3.10+ reserves that id for Maven Central
+          # (repo.maven.apache.org) and withholds its credentials from
+          # central.sonatype.com, so every upload got HTTP 401.
+          server-id: central-portal
           server-username: CENTRAL_USERNAME
           server-password: CENTRAL_PASSWORD
 

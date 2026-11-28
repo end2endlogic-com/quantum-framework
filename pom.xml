@@ -326,7 +326,7 @@
                         <version>0.7.0</version>
                         <extensions>true</extensions>
                         <configuration>
-                            <publishingServerId>central</publishingServerId>
+                            <publishingServerId>central-portal</publishingServerId>
                             <excludeArtifacts>
                                 <excludeArtifact>quantum-docs</excludeArtifact>
                             </excludeArtifacts>
